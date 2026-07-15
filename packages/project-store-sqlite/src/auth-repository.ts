@@ -9,7 +9,18 @@ import type {
 export function createSqliteAuthRepository(db: Database.Database): AuthRepository & {
   /** Test helpers — not part of the AuthRepository port. */
   deleteMembershipForTest(organizationId: string, userId: string): void;
+  /** Deletes membership while keeping sessions (FK briefly disabled) for resolve tests. */
+  deleteMembershipKeepingSessionForTest(
+    organizationId: string,
+    userId: string,
+  ): void;
   disableUserForTest(userId: string): void;
+  /** Read-only dump for secret-leak assertions. */
+  dumpSensitiveColumnsForTest(): {
+    sessionIdHashes: string[];
+    csrfHashes: string[];
+    subjects: string[];
+  };
 } {
   const stmts = {
     findOrgByHd: db.prepare(`
@@ -184,8 +195,31 @@ export function createSqliteAuthRepository(db: Database.Database): AuthRepositor
       stmts.deleteSessionsForMember.run(organizationId, userId);
       stmts.deleteMembership.run(organizationId, userId);
     },
+    deleteMembershipKeepingSessionForTest(organizationId, userId) {
+      db.pragma("foreign_keys = OFF");
+      try {
+        stmts.deleteMembership.run(organizationId, userId);
+      } finally {
+        db.pragma("foreign_keys = ON");
+      }
+    },
     disableUserForTest(userId) {
       stmts.disableUser.run(new Date().toISOString(), userId);
+    },
+    dumpSensitiveColumnsForTest() {
+      const sessions = db
+        .prepare(
+          `SELECT id_hash AS idHash, csrf_hash AS csrfHash FROM sessions`,
+        )
+        .all() as Array<{ idHash: string; csrfHash: string }>;
+      const subjects = db
+        .prepare(`SELECT subject FROM external_identities`)
+        .all() as Array<{ subject: string }>;
+      return {
+        sessionIdHashes: sessions.map((s) => s.idHash),
+        csrfHashes: sessions.map((s) => s.csrfHash),
+        subjects: subjects.map((s) => s.subject),
+      };
     },
   };
 }
