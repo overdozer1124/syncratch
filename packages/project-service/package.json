@@ -1,0 +1,24 @@
+{
+  "name": "@blocksync/project-service",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL R1 project persistence use-cases. No production API stability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@blocksync/auth-context": "workspace:*",
+    "@blocksync/project-envelope": "workspace:*",
+    "@blocksync/project-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
