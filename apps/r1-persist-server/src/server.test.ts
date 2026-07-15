@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,15 +11,17 @@ import { createPersistApp } from "./server.js";
 
 function makeApp() {
   const dir = mkdtempSync(join(tmpdir(), "r1-http-"));
+  const snapDir = join(dir, "snapshots");
   const repo = openSqliteProjectRepository({ dbPath: join(dir, "p.sqlite") });
   const service = createProjectService({
     auth: new StubAuthContext(),
     repo,
-    snapshots: createFsSnapshotStore(join(dir, "snapshots")),
+    snapshots: createFsSnapshotStore(snapDir),
   });
   const app = createPersistApp({ auth: new StubAuthContext(), service });
   return {
     app,
+    snapDir,
     close: () => repo.close(),
     headers: { "x-user-id": "user-a", "content-type": "application/json" },
   };
@@ -186,4 +188,52 @@ describe("r1-persist-server", () => {
       close();
     }
   });
+
+  it("maps SNAPSHOT_HASH_MISMATCH to HTTP 422", async () => {
+    const { app, snapDir, close, headers } = makeApp();
+    try {
+      const created = await (
+        await app.request("/v1/projects", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ title: "Corrupt" }),
+        })
+      ).json();
+      await app.request(`/v1/projects/${created.projectId}/document`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          baseRevision: 0,
+          transactionId: "tx-1",
+          schemaVersion: 1,
+          document: richFixtureDocument(),
+        }),
+      });
+      const snap = await (
+        await app.request(`/v1/projects/${created.projectId}/snapshots`, {
+          method: "POST",
+          headers,
+          body: "{}",
+        })
+      ).json();
+
+      writeFileSync(join(snapDir, snap.storageKey), "{not-json");
+
+      const res = await app.request(`/v1/projects/${created.projectId}/restore`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          snapshotId: snap.snapshotId,
+          baseRevision: 1,
+          transactionId: "tx-corrupt",
+          schemaVersion: 1,
+        }),
+      });
+      expect(res.status).toBe(422);
+      expect((await res.json()).code).toBe("SNAPSHOT_HASH_MISMATCH");
+    } finally {
+      close();
+    }
+  });
 });
+

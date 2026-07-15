@@ -1,10 +1,11 @@
 # Release 1 Slice — Project Persistence Design
 
 > **Date:** 2026-07-15
-> **Status:** Approved for implementation (Approach A + P1/P2 revisions)
-> **Revision:** sync TX contract, request schemaVersion, requestHash (post-`254cefa`)
+> **Status:** **Technical Go** (R1 project persistence slice)
+> **Approval baseline SHA:** `3d6053b3652c286b10f1fd75ffb5ae4f9b23bf31`
 > **Prerequisite:** Gate 0 Technical Go @ `4a14e05`; SB3 isolate timeout @ `ae645a0` (independent)
 > **Spec anchors:** §11–12, §44–45, §55
+> **Evidence:** `docs/r1/GO_NO_GO.md`
 
 ## 1. Goal
 

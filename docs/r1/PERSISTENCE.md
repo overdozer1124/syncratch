@@ -2,6 +2,8 @@
 
 Experimental slice behind repository ports. Not Gate 0-gated.
 
+**Technical Go baseline:** `3d6053b3652c286b10f1fd75ffb5ae4f9b23bf31` — see `docs/r1/GO_NO_GO.md`.
+
 ## Stack
 
 - **Identity:** `@blocksync/auth-context` (`StubAuthContext`, `x-user-id`)
