@@ -1,0 +1,22 @@
+{
+  "name": "@blocksync/project-envelope",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL R1 blocksync.project/v1 envelope and document hashes. No production API stability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@blocksync/project-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
