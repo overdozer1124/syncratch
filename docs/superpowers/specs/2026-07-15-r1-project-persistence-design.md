@@ -171,11 +171,19 @@ On every save:
 
 Same `transactionId` with same document but different `schemaVersion` or operation kind → **`TRANSACTION_PAYLOAD_MISMATCH`**.
 
-Example requestHash material (canonical JSON, then sha256):
+Example requestHash material (canonical JSON keys sorted as implemented, then sha256):
 
 ```json
-{ "op": "save_document", "schemaVersion": 1, "contentHash": "<hex>" }
+{ "contentHash": "<hex>", "op": "save_document", "schemaVersion": 1 }
 ```
+
+Restore:
+
+```json
+{ "contentHash": "<hex>", "op": "restore", "schemaVersion": 1, "snapshotId": "<id>" }
+```
+
+Restore revisions also set `envelope.revisionMeta = { op: "restore", snapshotId }`.
 
 ## 5. Save algorithm (idempotent + CAS)
 
@@ -216,10 +224,11 @@ Flow:
 Write path:
 
 1. Canonicalize + hash head document; re-validate schema.
-2. Write `snapshots/{contentHash}.{uniqueSuffix}.tmp` (unique suffix per attempt, e.g. random or pid+hrtime) → `fsync` → atomic `rename` to `{contentHash}.json`.
-3. If final `{contentHash}.json` already exists: verify its content hash matches; **discard** the temp file; reuse the existing file.
-4. Insert DB row referencing `storage_key` / hash for **`(project_id, snapshot_id)`**.
-5. If DB insert fails after file exists: leave orphan file; **startup GC** deletes unreferenced snapshot files. Never delete a file still referenced by DB.
+2. Persist **`canonicalizeDocument(document)` UTF-8 bytes** (not `JSON.stringify(document)`). `putAtomic` requires `sha256(bytes) === contentHash` before write.
+3. Write `snapshots/{contentHash}.{uniqueSuffix}.tmp` → `fsync` → atomic `rename` to `{contentHash}.json`.
+4. If final `{contentHash}.json` already exists: verify its content hash matches; **discard** the temp file; reuse the existing file. Same head may create multiple snapshot rows sharing one file.
+5. Insert DB row referencing `storage_key` / hash for **`(project_id, snapshot_id)`**.
+6. If DB insert fails after file exists: leave orphan file; **startup** calls `gcOrphans(listAllSnapshotStorageKeys())`. Never delete a file still referenced by DB.
 
 **Restore:**
 

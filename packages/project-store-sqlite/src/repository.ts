@@ -107,6 +107,9 @@ export function openSqliteProjectRepository(
       WHERE project_id = ?
       ORDER BY id
     `),
+    listAllStorageKeys: db.prepare(`
+      SELECT DISTINCT storage_key AS storageKey FROM project_snapshots
+    `),
   };
 
   const createTx = (): ProjectRepositoryTx => ({
@@ -202,6 +205,11 @@ export function openSqliteProjectRepository(
     listSnapshotMeta(projectId) {
       return stmts.listSnapshots.all(projectId) as SnapshotMeta[];
     },
+
+    listAllSnapshotStorageKeys() {
+      const rows = stmts.listAllStorageKeys.all() as Array<{ storageKey: string }>;
+      return rows.map((r) => r.storageKey);
+    },
   });
 
   const txApi = createTx();
@@ -210,6 +218,9 @@ export function openSqliteProjectRepository(
     db,
     close() {
       db.close();
+    },
+    listAllSnapshotStorageKeys() {
+      return txApi.listAllSnapshotStorageKeys();
     },
     withTransaction<T>(fn: (tx: ProjectRepositoryTx) => T): T {
       const run = db.transaction(() => fn(txApi));

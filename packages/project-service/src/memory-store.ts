@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ProjectEnvelopeV1 } from "@blocksync/project-envelope";
 import { StaleRevisionError } from "./errors.js";
 import type {
@@ -34,6 +35,9 @@ export function createMemoryProjectRepository(): ProjectRepository & {
   const snapshots = new Map<string, SnapshotMeta>();
 
   const repo: ProjectRepository & { failNextTransaction?: boolean } = {
+    listAllSnapshotStorageKeys() {
+      return [...new Set([...snapshots.values()].map((s) => s.storageKey))];
+    },
     withTransaction<T>(fn: (tx: ProjectRepositoryTx) => T): T {
       // Snapshot-and-restore for rollback simulation.
       const snapProjects = structuredClone([...projects.entries()]);
@@ -147,6 +151,10 @@ export function createMemoryProjectRepository(): ProjectRepository & {
             .filter((s) => s.projectId === projectId)
             .sort((a, b) => a.snapshotId.localeCompare(b.snapshotId));
         },
+
+        listAllSnapshotStorageKeys() {
+          return [...new Set([...snapshots.values()].map((s) => s.storageKey))];
+        },
       };
 
       try {
@@ -188,6 +196,10 @@ export function createMemorySnapshotStore(): SnapshotStore & {
   return {
     files,
     putAtomic(contentHash, bytes) {
+      const hash = createHash("sha256").update(bytes).digest("hex");
+      if (hash !== contentHash) {
+        throw new Error("SNAPSHOT_BYTES_HASH_MISMATCH");
+      }
       const storageKey = `${contentHash}.json`;
       const existing = files.get(storageKey);
       if (existing) {

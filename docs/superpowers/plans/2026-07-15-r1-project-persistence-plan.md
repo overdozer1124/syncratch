@@ -296,9 +296,9 @@ Also run design §9 items 2–11 as needed (concurrency / rollback / BOLA may li
 - Create: `docs/r1/PERSISTENCE.md`
 - Create: `.github/workflows/r1-persist.yml` (does **not** gate Gate 0)
 
-- [ ] Document stub headers, data dir, orphan GC, pinned deps, sync TX rules
-- [ ] CI: build + `r1-persist-demo` tests
-- [ ] Commit `docs(r1): persistence runbook and CI`
+- [x] Document stub headers, data dir, orphan GC, pinned deps, sync TX rules
+- [x] CI: typecheck/build apps + `r1-persist-demo` tests (`r1:persist:typecheck` before tests)
+- [x] Commit `docs(r1): persistence runbook and CI`
 
 ---
 

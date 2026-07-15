@@ -61,11 +61,17 @@ export interface ProjectRepositoryTx {
   getSnapshotMeta(projectId: string, snapshotId: string): SnapshotMeta | null;
 
   listSnapshotMeta(projectId: string): SnapshotMeta[];
+
+  /** All storage keys currently referenced by snapshot rows (for orphan GC). */
+  listAllSnapshotStorageKeys(): string[];
 }
 
 export interface ProjectRepository {
   /** SYNC callback only — never return a Promise from fn. */
   withTransaction<T>(fn: (tx: ProjectRepositoryTx) => T): T;
+
+  /** Outside TX is fine — used at process startup for snapshot orphan GC. */
+  listAllSnapshotStorageKeys(): string[];
 }
 
 export interface SnapshotStore {

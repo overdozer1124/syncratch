@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdtempSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -15,7 +15,7 @@ const tsxBin = require.resolve("tsx/cli");
 
 async function startServer(
   dataDir: string,
-): Promise<{ proc: ChildProcessWithoutNullStreams; port: number; kill: () => Promise<void> }> {
+): Promise<{ proc: ChildProcess; port: number; kill: () => Promise<void> }> {
   const proc = spawn(process.execPath, [tsxBin, childEntry], {
     env: {
       ...process.env,
@@ -25,8 +25,14 @@ async function startServer(
     stdio: ["ignore", "pipe", "pipe"],
   });
 
+  if (!proc.stdout || !proc.stderr) {
+    throw new Error("child process stdio not available");
+  }
+  const stdout = proc.stdout;
+  const stderr = proc.stderr;
+
   const port = await new Promise<number>((resolve, reject) => {
-    const rl = createInterface({ input: proc.stdout });
+    const rl = createInterface({ input: stdout });
     const timer = setTimeout(() => reject(new Error("server start timeout")), 15000);
     rl.on("line", (line) => {
       const m = /^READY (\d+)$/.exec(line.trim());
@@ -36,8 +42,7 @@ async function startServer(
         resolve(Number(m[1]));
       }
     });
-    proc.stderr.on("data", (buf) => {
-      // surface child errors in CI logs
+    stderr.on("data", (buf: Buffer) => {
       process.stderr.write(buf);
     });
     proc.on("exit", (code) => {

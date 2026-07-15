@@ -57,3 +57,11 @@ export class UnauthorizedError extends Error {
     this.name = "UnauthorizedError";
   }
 }
+
+export class BadRequestError extends Error {
+  readonly code = "BAD_REQUEST" as const;
+  constructor(message = "BAD_REQUEST") {
+    super(message);
+    this.name = "BadRequestError";
+  }
+}

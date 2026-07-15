@@ -158,9 +158,17 @@ describe("project-envelope", () => {
       op: "restore",
       schemaVersion: 1,
       contentHash: ch,
+      snapshotId: "snap-1",
+    });
+    const d = requestHash({
+      op: "restore",
+      schemaVersion: 1,
+      contentHash: ch,
+      snapshotId: "snap-2",
     });
     expect(a).not.toBe(b);
     expect(a).not.toBe(c);
+    expect(c).not.toBe(d);
     expect(a).toBe(
       createHash("sha256")
         .update(

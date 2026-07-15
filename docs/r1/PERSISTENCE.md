@@ -22,7 +22,9 @@ Layout:
 - `projects.sqlite` — projects, members, revisions, snapshot metadata
 - `snapshots/{contentHash}.json` — immutable payloads
 
-Orphan policy: if a snapshot file exists without a DB row, `gcOrphans` removes it (and leftover `.tmp` files).
+Orphan policy: on process startup, `bootstrapPersistRuntime` calls
+`snapshots.gcOrphans(repo.listAllSnapshotStorageKeys())` to delete unreferenced
+`.json` snapshot files and leftover `.tmp` files.
 
 ## Auth headers (stub)
 
@@ -54,17 +56,22 @@ Same-org users who are not members cannot list/get/save/snapshot/restore.
 2. `repo.withTransaction(tx => { ... })` must not `await`
 3. ACL, transactionId lookup, CAS, and revision insert run in that single sync TX
 
+## Snapshot blob bytes
+
+Snapshot files store `canonicalizeDocument(document)` UTF-8 bytes. The
+filename/`contentHash` is `sha256` of those same bytes. `putAtomic` rejects
+writes where `sha256(bytes) !== contentHash`.
+
+## Restore requestHash
+
+Restore commits use `requestHash({ op: "restore", schemaVersion, contentHash, snapshotId })`
+and set `envelope.revisionMeta = { op: "restore", snapshotId }`.
+
 ## Tests
 
 ```bash
-pnpm --filter @blocksync/auth-context test
-pnpm --filter @blocksync/project-envelope test
-pnpm --filter @blocksync/project-service test
-pnpm --filter @blocksync/project-autosave test
-pnpm --filter @blocksync/project-snapshots-fs test
-pnpm --filter @blocksync/project-store-sqlite test
-pnpm --filter @blocksync/r1-persist-server test
-pnpm --filter @blocksync/r1-persist-demo test
+pnpm r1:persist:typecheck
+pnpm r1:persist:test
 ```
 
-CI workflow: `.github/workflows/r1-persist.yml` (separate from Gate 0).
+CI workflow: `.github/workflows/r1-persist.yml` (typecheck apps, then tests; separate from Gate 0).

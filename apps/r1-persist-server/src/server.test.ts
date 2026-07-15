@@ -96,6 +96,92 @@ describe("r1-persist-server", () => {
         headers: { "x-user-id": "user-b" },
       });
       expect((await listB.json()).projects).toEqual([]);
+
+      const badJson = await app.request("/v1/projects", {
+        method: "POST",
+        headers,
+        body: "{not-json",
+      });
+      expect(badJson.status).toBe(400);
+      expect((await badJson.json()).code).toBe("BAD_REQUEST");
+    } finally {
+      close();
+    }
+  });
+
+  it("same head snapshotted twice can both restore", async () => {
+    const { app, close, headers } = makeApp();
+    try {
+      const createdRes = await app.request("/v1/projects", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ title: "Snap" }),
+      });
+      const created = await createdRes.json();
+      await app.request(`/v1/projects/${created.projectId}/document`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          baseRevision: 0,
+          transactionId: "tx-1",
+          schemaVersion: 1,
+          document: richFixtureDocument(),
+        }),
+      });
+      const s1 = await (
+        await app.request(`/v1/projects/${created.projectId}/snapshots`, {
+          method: "POST",
+          headers,
+          body: "{}",
+        })
+      ).json();
+      const s2 = await (
+        await app.request(`/v1/projects/${created.projectId}/snapshots`, {
+          method: "POST",
+          headers,
+          body: "{}",
+        })
+      ).json();
+      expect(s1.snapshotId).not.toBe(s2.snapshotId);
+
+      await app.request(`/v1/projects/${created.projectId}/document`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          baseRevision: 1,
+          transactionId: "tx-2",
+          schemaVersion: 1,
+          document: emptyDocument(),
+        }),
+      });
+
+      const r1 = await app.request(`/v1/projects/${created.projectId}/restore`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          snapshotId: s1.snapshotId,
+          baseRevision: 2,
+          transactionId: "tx-r1",
+          schemaVersion: 1,
+        }),
+      });
+      const r2 = await app.request(`/v1/projects/${created.projectId}/restore`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          snapshotId: s2.snapshotId,
+          baseRevision: 3,
+          transactionId: "tx-r2",
+          schemaVersion: 1,
+        }),
+      });
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+      const e1 = await r1.json();
+      const e2 = await r2.json();
+      expect(e1.contentHash).toBe(s1.contentHash);
+      expect(e2.contentHash).toBe(s2.contentHash);
+      expect(e1.revisionMeta.op).toBe("restore");
     } finally {
       close();
     }

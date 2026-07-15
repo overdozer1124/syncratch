@@ -12,6 +12,10 @@ import {
 
 export const PROJECT_FORMAT = "blocksync.project/v1" as const;
 
+export type RevisionMeta =
+  | { op: "save_document" }
+  | { op: "restore"; snapshotId: string };
+
 export interface ProjectEnvelopeV1 {
   format: typeof PROJECT_FORMAT;
   projectId: string;
@@ -23,6 +27,8 @@ export interface ProjectEnvelopeV1 {
   updatedAt: string;
   updatedByUserId: string;
   document: ProjectDocument;
+  /** Set on revisions created after bootstrap (create revision 0 omits this). */
+  revisionMeta?: RevisionMeta;
 }
 
 export type RequestOp = "save_document" | "restore";
@@ -97,13 +103,20 @@ export function requestHash(args: {
   op: RequestOp;
   schemaVersion: number;
   contentHash: string;
+  snapshotId?: string;
 }): string {
-  const material = JSON.stringify({
+  const material: Record<string, string | number> = {
     contentHash: args.contentHash,
     op: args.op,
     schemaVersion: args.schemaVersion,
-  });
-  return createHash("sha256").update(material).digest("hex");
+  };
+  if (args.op === "restore") {
+    if (!args.snapshotId) {
+      throw new Error("requestHash restore requires snapshotId");
+    }
+    material.snapshotId = args.snapshotId;
+  }
+  return createHash("sha256").update(JSON.stringify(material)).digest("hex");
 }
 
 export function emptyDocument(): ProjectDocument {
@@ -205,7 +218,7 @@ export function assertEnvelope(value: unknown): ProjectEnvelopeV1 {
   if (v.schemaVersion !== document.schemaVersion) {
     throw new Error("SCHEMA_VERSION_MISMATCH");
   }
-  return {
+  const envelope: ProjectEnvelopeV1 = {
     format: PROJECT_FORMAT,
     projectId: v.projectId,
     organizationId: v.organizationId,
@@ -217,4 +230,8 @@ export function assertEnvelope(value: unknown): ProjectEnvelopeV1 {
     updatedByUserId: v.updatedByUserId,
     document,
   };
+  if (v.revisionMeta && typeof v.revisionMeta === "object") {
+    envelope.revisionMeta = v.revisionMeta as RevisionMeta;
+  }
+  return envelope;
 }

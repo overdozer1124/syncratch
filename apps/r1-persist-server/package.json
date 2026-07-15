@@ -5,10 +5,12 @@
   "type": "module",
   "description": "EXPERIMENTAL R1 project persistence HTTP server. No production API stability.",
   "exports": {
-    ".": "./src/server.ts"
+    ".": "./src/server.ts",
+    "./bootstrap": "./src/bootstrap.ts"
   },
   "scripts": {
     "start": "tsx src/main.ts",
+    "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -247,6 +247,10 @@ describe("project-service", () => {
     });
     expect(restored.revision).toBe(3);
     expect(restored.contentHash).toBe(contentHash(snapDoc));
+    expect(restored.revisionMeta).toEqual({
+      op: "restore",
+      snapshotId: snap.snapshotId,
+    });
 
     await expect(
       service.restoreSnapshot(userA, {
@@ -257,6 +261,50 @@ describe("project-service", () => {
         schemaVersion: 1,
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("can snapshot the same head twice and restore either", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "Snap2" });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 0,
+      transactionId: "tx-s0",
+      schemaVersion: 1,
+      document: richFixtureDocument(),
+    });
+    const first = await service.createSnapshot(userA, { projectId: created.projectId });
+    const second = await service.createSnapshot(userA, { projectId: created.projectId });
+    expect(first.snapshotId).not.toBe(second.snapshotId);
+    expect(first.contentHash).toBe(second.contentHash);
+    expect(first.storageKey).toBe(second.storageKey);
+
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 1,
+      transactionId: "tx-diverge",
+      schemaVersion: 1,
+      document: emptyDocument(),
+    });
+
+    const r1 = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: first.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-r1",
+      schemaVersion: 1,
+    });
+    const r2 = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: second.snapshotId,
+      baseRevision: 3,
+      transactionId: "tx-r2",
+      schemaVersion: 1,
+    });
+    expect(r1.contentHash).toBe(first.contentHash);
+    expect(r2.contentHash).toBe(second.contentHash);
+    expect(r1.revisionMeta?.op).toBe("restore");
+    expect(r2.revisionMeta?.op).toBe("restore");
   });
 
   it("rolls back memory transaction on forced error", async () => {

@@ -154,6 +154,62 @@ describe("sqlite project repository contracts", () => {
     repo.close();
   });
 
+  it("same head can be snapshotted twice and both restores work", async () => {
+    const dir = tempDir("r1-snap2-");
+    const repo = openSqliteProjectRepository({
+      dbPath: join(dir, "projects.sqlite"),
+    });
+    const service = createProjectService({
+      auth: new StubAuthContext(),
+      repo,
+      snapshots: createFsSnapshotStore(join(dir, "snapshots")),
+    });
+    const created = await service.createProject(userA, { title: "S" });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 0,
+      transactionId: "tx-1",
+      schemaVersion: 1,
+      document: richFixtureDocument(),
+    });
+    const first = await service.createSnapshot(userA, {
+      projectId: created.projectId,
+    });
+    const second = await service.createSnapshot(userA, {
+      projectId: created.projectId,
+    });
+    expect(first.storageKey).toBe(second.storageKey);
+
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 1,
+      transactionId: "tx-2",
+      schemaVersion: 1,
+      document: emptyDocument(),
+    });
+    const r1 = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: first.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-r1",
+      schemaVersion: 1,
+    });
+    const r2 = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: second.snapshotId,
+      baseRevision: 3,
+      transactionId: "tx-r2",
+      schemaVersion: 1,
+    });
+    expect(r1.contentHash).toBe(first.contentHash);
+    expect(r2.contentHash).toBe(second.contentHash);
+    expect(r1.revisionMeta).toEqual({
+      op: "restore",
+      snapshotId: first.snapshotId,
+    });
+    repo.close();
+  });
+
   it("BOLA: cannot restore other project's snapshot id", async () => {
     const dir = tempDir("r1-bola-");
     const repo = openSqliteProjectRepository({

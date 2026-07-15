@@ -5,6 +5,7 @@
   "type": "module",
   "description": "EXPERIMENTAL R1 persistence acceptance tests. No production API stability.",
   "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

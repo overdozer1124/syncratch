@@ -28,6 +28,10 @@ export function createFsSnapshotStore(rootDir: string): SnapshotStore {
 
   return {
     putAtomic(contentHash, bytes) {
+      if (sha256(bytes) !== contentHash) {
+        throw new Error("SNAPSHOT_BYTES_HASH_MISMATCH");
+      }
+
       const storageKey = `${contentHash}.json`;
       const finalPath = join(rootDir, storageKey);
 

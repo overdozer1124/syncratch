@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { AuthContext, AuthPrincipal } from "@blocksync/auth-context";
 import {
   PROJECT_FORMAT,
+  canonicalizeDocument,
   contentHash,
   emptyDocument,
   requestHash,
   type ProjectEnvelopeV1,
+  type RevisionMeta,
 } from "@blocksync/project-envelope";
 import { validateProject, type ProjectDocument } from "@blocksync/project-schema";
 import { DurableProjectAccessPolicy } from "./access.js";
@@ -71,9 +73,10 @@ function buildEnvelope(args: {
   document: ProjectDocument;
   updatedAt: string;
   updatedByUserId: string;
+  revisionMeta?: RevisionMeta;
 }): ProjectEnvelopeV1 {
   const hash = contentHash(args.document);
-  return {
+  const envelope: ProjectEnvelopeV1 = {
     format: PROJECT_FORMAT,
     projectId: args.projectId,
     organizationId: args.organizationId,
@@ -85,6 +88,10 @@ function buildEnvelope(args: {
     updatedByUserId: args.updatedByUserId,
     document: args.document,
   };
+  if (args.revisionMeta) {
+    envelope.revisionMeta = args.revisionMeta;
+  }
+  return envelope;
 }
 
 export interface ProjectService {
@@ -104,6 +111,58 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
   const access = deps.access ?? new DurableProjectAccessPolicy();
   const now = deps.now ?? (() => new Date());
   const idFactory = deps.idFactory ?? (() => randomUUID());
+
+  function commitDocument(
+    principal: AuthPrincipal,
+    input: {
+      projectId: string;
+      baseRevision: number;
+      transactionId: string;
+      schemaVersion: number;
+      document: ProjectDocument;
+      revisionMeta: RevisionMeta;
+      reqHash: string;
+      docHash: string;
+    },
+  ): ProjectEnvelopeV1 {
+    return deps.repo.withTransaction((tx) => {
+      access.assertCan(principal, input.projectId, "write", tx);
+      const existing = tx.findRevisionByTransactionId(
+        input.projectId,
+        input.transactionId,
+      );
+      if (existing) {
+        if (existing.requestHash !== input.reqHash) {
+          throw new TransactionPayloadMismatchError();
+        }
+        return existing.envelope;
+      }
+
+      const head = tx.getHead(input.projectId);
+      if (!head) throw new NotFoundError();
+
+      const envelope = buildEnvelope({
+        projectId: input.projectId,
+        organizationId: head.organizationId,
+        title: head.title,
+        revision: input.baseRevision + 1,
+        schemaVersion: input.schemaVersion,
+        document: input.document,
+        updatedAt: now().toISOString(),
+        updatedByUserId: principal.userId,
+        revisionMeta: input.revisionMeta,
+      });
+
+      return tx.commitRevision({
+        projectId: input.projectId,
+        baseRevision: input.baseRevision,
+        transactionId: input.transactionId,
+        envelope,
+        contentHash: input.docHash,
+        requestHash: input.reqHash,
+      });
+    });
+  }
 
   const service: ProjectService = {
     async createProject(hints, input) {
@@ -163,42 +222,15 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
         schemaVersion: input.schemaVersion,
         contentHash: docHash,
       });
-
-      return deps.repo.withTransaction((tx) => {
-        access.assertCan(principal, input.projectId, "write", tx);
-        const existing = tx.findRevisionByTransactionId(
-          input.projectId,
-          input.transactionId,
-        );
-        if (existing) {
-          if (existing.requestHash !== reqHash) {
-            throw new TransactionPayloadMismatchError();
-          }
-          return existing.envelope;
-        }
-
-        const head = tx.getHead(input.projectId);
-        if (!head) throw new NotFoundError();
-
-        const envelope = buildEnvelope({
-          projectId: input.projectId,
-          organizationId: head.organizationId,
-          title: head.title,
-          revision: input.baseRevision + 1,
-          schemaVersion: input.schemaVersion,
-          document: input.document,
-          updatedAt: now().toISOString(),
-          updatedByUserId: principal.userId,
-        });
-
-        return tx.commitRevision({
-          projectId: input.projectId,
-          baseRevision: input.baseRevision,
-          transactionId: input.transactionId,
-          envelope,
-          contentHash: docHash,
-          requestHash: reqHash,
-        });
+      return commitDocument(principal, {
+        projectId: input.projectId,
+        baseRevision: input.baseRevision,
+        transactionId: input.transactionId,
+        schemaVersion: input.schemaVersion,
+        document: input.document,
+        revisionMeta: { op: "save_document" },
+        reqHash,
+        docHash,
       });
     },
 
@@ -212,9 +244,8 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
       });
 
       assertValidDocument(head.document);
-      const bytes = new TextEncoder().encode(
-        JSON.stringify(head.document),
-      );
+      const canonical = canonicalizeDocument(head.document);
+      const bytes = new TextEncoder().encode(canonical);
       const { storageKey } = deps.snapshots.putAtomic(head.contentHash, bytes);
       const meta: SnapshotMeta = {
         snapshotId: idFactory(),
@@ -268,12 +299,25 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
         );
       }
 
-      return service.saveDocument(hints, {
+      assertSchemaMatch(input.schemaVersion, document);
+      assertValidDocument(document);
+      const docHash = contentHash(document);
+      const reqHash = requestHash({
+        op: "restore",
+        schemaVersion: input.schemaVersion,
+        contentHash: docHash,
+        snapshotId: input.snapshotId,
+      });
+
+      return commitDocument(principal, {
         projectId: input.projectId,
         baseRevision: input.baseRevision,
         transactionId: input.transactionId,
         schemaVersion: input.schemaVersion,
         document,
+        revisionMeta: { op: "restore", snapshotId: input.snapshotId },
+        reqHash,
+        docHash,
       });
     },
   };

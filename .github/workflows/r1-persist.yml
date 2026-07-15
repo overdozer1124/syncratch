@@ -48,6 +48,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Typecheck R1 apps
+        run: pnpm r1:persist:typecheck
       - name: R1 persistence unit and acceptance tests
         run: |
           pnpm --filter @blocksync/auth-context test

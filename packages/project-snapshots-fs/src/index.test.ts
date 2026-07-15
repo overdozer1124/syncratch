@@ -23,6 +23,14 @@ describe("createFsSnapshotStore", () => {
     });
   });
 
+  it("rejects bytes that do not match contentHash", () => {
+    const dir = mkdtempSync(join(tmpdir(), "snap-bad-"));
+    const store = createFsSnapshotStore(dir);
+    expect(() =>
+      store.putAtomic("0".repeat(64), new TextEncoder().encode("{}")),
+    ).toThrow(/SNAPSHOT_BYTES_HASH_MISMATCH/);
+  });
+
   it("gcOrphans removes unreferenced files and temps", () => {
     const dir = mkdtempSync(join(tmpdir(), "snap-"));
     const store = createFsSnapshotStore(dir);
