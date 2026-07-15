@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-16  
 **Verdict:** **Technical Go — real GIS conditional**  
-**Implementation HEAD:** _(filled at submit)_  
+**Implementation HEAD:** `_(see submit SHA after final commit)_`  
 **Design / Plan baseline:** `ed1303e4f813c487d8e2b5fa373e68e1f221e3d3`
 
 Gate 0 Technical Go and R1 persistence Technical Go baselines are unchanged.
@@ -30,15 +30,17 @@ pnpm r1:persist:test
 pnpm r1:auth:test
 ```
 
-## Evidence summary (fixture)
+All four commands passed on the submit HEAD (working tree clean).
 
-See implementation submit notes for:
+## Fixture evidence pointers
 
-- DB migration / FK contract tests
-- Cookie attribute + CSRF/CORS HTTP tests
-- Two-org BOLA, membership delete → 401, concurrent first login
-- Restart session+CSRF mutation
-- No raw session/CSRF/Google ID token in DB dumps
+| Evidence | Where |
+|---|---|
+| DB migration / FK / unique `(provider,subject)` | `packages/project-store-sqlite/src/auth-repository.contract.test.ts` |
+| Cookie Secure/SameSite/Path set+clear; CSRF both-required; CORS preflight | `apps/r1-persist-server/src/auth.routes.test.ts` |
+| Two-org BOLA; hd mismatch; membership delete→401; concurrent first login; restart CSRF; hashed-only secrets | `apps/r1-persist-server/src/auth.acceptance.test.ts` |
+| Runbook | `docs/r1/AUTH.md` |
+| Real GIS template | `docs/r1/AUTH_EVIDENCE.md` |
 
 ## Final Go gate
 

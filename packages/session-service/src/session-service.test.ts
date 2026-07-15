@@ -186,7 +186,9 @@ describe("createSessionService login", () => {
       hash,
     });
     await service.loginWithGoogleIdToken("tok");
-    const opts = verify.mock.calls[0]?.[1] as Record<string, unknown>;
+    const call = verify.mock.calls.at(0);
+    expect(call).toBeDefined();
+    const opts = call![1] as Record<string, unknown>;
     expect(opts).not.toHaveProperty("authorizedParties");
   });
 });
