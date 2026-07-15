@@ -95,6 +95,43 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
 
+  apps/r1-persist-demo:
+    dependencies:
+      '@blocksync/auth-context':
+        specifier: workspace:*
+        version: link:../../packages/auth-context
+      '@blocksync/project-autosave':
+        specifier: workspace:*
+        version: link:../../packages/project-autosave
+      '@blocksync/project-envelope':
+        specifier: workspace:*
+        version: link:../../packages/project-envelope
+      '@blocksync/project-service':
+        specifier: workspace:*
+        version: link:../../packages/project-service
+      '@blocksync/project-snapshots-fs':
+        specifier: workspace:*
+        version: link:../../packages/project-snapshots-fs
+      '@blocksync/project-store-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/project-store-sqlite
+      '@blocksync/r1-persist-server':
+        specifier: workspace:*
+        version: link:../r1-persist-server
+      '@hono/node-server':
+        specifier: ^1.14.4
+        version: 1.19.14(hono@4.12.30)
+    devDependencies:
+      tsx:
+        specifier: ^4.20.3
+        version: 4.23.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+
   apps/r1-persist-server:
     dependencies:
       '@blocksync/auth-context':
