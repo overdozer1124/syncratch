@@ -1,22 +1,22 @@
 # Release 1 Slice — Project Persistence Design
 
-> **Date:** 2026-07-15  
-> **Status:** Revised draft for re-review (do not implement until approved)  
-> **Revision:** addresses review P1/P2 on `7dbd33a`  
-> **Prerequisite:** Gate 0 Technical Go @ `4a14e05`; SB3 isolate timeout @ `ae645a0` (independent)  
-> **Spec anchors:** §11–12, §44–45, §55  
+> **Date:** 2026-07-15
+> **Status:** Approved for implementation (Approach A + P1/P2 revisions)
+> **Revision:** sync TX contract, request schemaVersion, requestHash (post-`254cefa`)
+> **Prerequisite:** Gate 0 Technical Go @ `4a14e05`; SB3 isolate timeout @ `ae645a0` (independent)
+> **Spec anchors:** §11–12, §44–45, §55
 
 ## 1. Goal
 
 Server-authoritative project persistence for one authenticated principal (stub identity):
 
-1. Create / list / get projects (**membership-scoped only**)  
-2. Save with revision CAS + **idempotent `transactionId`**  
-3. Debounced autosave with **generation / pending document** semantics  
-4. Immutable snapshots + restore as **new revision**  
-5. Unsaved / retry / conflict client states  
-6. Process restart restores head from durable store  
-7. Server-side `project-schema` before commit  
+1. Create / list / get projects (**membership-scoped only**)
+2. Save with revision CAS + **idempotent `transactionId`**
+3. Debounced autosave with **generation / pending document** semantics
+4. Immutable snapshots + restore as **new revision**
+5. Unsaved / retry / conflict client states
+6. Process restart restores head from durable store
+7. Server-side `project-schema` before commit
 
 Out of scope: Scratch Editor UI, Google OAuth, Yjs multiplayer, SB3 UX, classes/teacher.
 
@@ -55,6 +55,24 @@ Out of scope: Scratch Editor UI, Google OAuth, Yjs multiplayer, SB3 UX, classes/
 
 **Pinned stack for this plan:** `better-sqlite3` (not `node:sqlite`); **Hono** on Node (not raw `node:http`).
 
+### 2.1 better-sqlite3 transaction contract
+
+`better-sqlite3` transaction callbacks must finish **synchronously**. Do not return a `Promise` from the callback.
+
+```typescript
+export interface ProjectRepository {
+  /** Sync only — no await inside fn. */
+  withTransaction<T>(fn: (tx: ProjectRepositoryTx) => T): T;
+}
+```
+
+Service rules:
+
+1. `await auth.resolve(...)` **before** opening a DB transaction.
+2. Inside `withTransaction`, perform ACL check, idempotent lookup, CAS, and revision insert **with no `await`**.
+3. Public service methods may return `Promise` (resolve auth, FS snapshot I/O), but DB work inside the callback stays sync.
+4. Contract tests include: thrown error inside the callback **rolls back** (no partial head/revision writes).
+
 ## 3. Identity vs authorization
 
 ### 3.1 AuthContext — identity only
@@ -80,26 +98,28 @@ Later: `GoogleAuthContext` implements the **same** `resolve` surface only.
 
 ### 3.2 Durable access — ProjectAccessPolicy
 
-Authorization reads **only** persisted rows (`projects.owner_user_id`, `project_members`):
+Authorization reads **only** persisted rows (`projects.owner_user_id`, `project_members`), typically via the open sync transaction:
 
 ```typescript
 export type ProjectAction = "read" | "write" | "admin";
 
 export interface ProjectAccessPolicy {
+  /** Sync — used inside withTransaction when backed by SQLite. */
   assertCan(
     principal: AuthPrincipal,
     projectId: string,
     action: ProjectAction,
-  ): Promise<void>; // throws ForbiddenError / NotFoundError
+    tx: ProjectRepositoryTx,
+  ): void; // throws ForbiddenError / NotFoundError
 }
 ```
 
 Rules:
 
-- Same organization is **not** enough.  
-- **List:** return only projects where principal is owner or `project_members` row exists.  
-- **Get / save / snapshot / restore:** require membership (or owner) for the action; non-members → **404** (or 403; pick **404** for existence hiding on get-by-id) if not a member, even if same org.  
-- Create: insert `projects` + owner membership **in one DB transaction**; no separate memory registry.  
+- Same organization is **not** enough.
+- **List:** return only projects where principal is owner or `project_members` row exists.
+- **Get / save / snapshot / restore:** require membership (or owner) for the action; non-members → **404** for existence hiding on get-by-id, even if same org.
+- Create: insert `projects` + owner membership **in one DB transaction**; no separate memory registry.
 - Restart: ACL comes from SQLite; no warm-up Map.
 
 ## 4. Envelope + canonicalization
@@ -123,40 +143,71 @@ export interface ProjectEnvelopeV1 {
 
 `canonicalizeDocument(doc)` produces a **deterministic UTF-8 JSON** covering the **entire** `ProjectDocument`:
 
-- `schemaVersion`  
-- `extensions` (sorted)  
-- `meta` (keys sorted recursively)  
-- `targets[]` sorted by `id`, each including: `id`, `name`, `isStage`, `blocks` (keys sorted; each block fields sorted), `variables`, `lists`, `broadcasts`  
+- `schemaVersion`
+- `extensions` (sorted)
+- `meta` (keys sorted recursively)
+- `targets[]` sorted by `id`, each including: `id`, `name`, `isStage`, `blocks` (keys sorted; each block fields sorted), `variables`, `lists`, `broadcasts`
 
 `contentHash = sha256(canonicalizeDocument(doc))`.
 
 Acceptance fixtures **must** include: multiple sprites, variables, lists, broadcasts, extensions, Japanese names/strings. Equality checks use `contentHash` **or** deep-equal of parsed canonicalize output — **not** a targets/blocks/vars-only fingerprint.
 
-### 4.2 schemaVersion rule
+### 4.2 schemaVersion rule (client-supplied)
 
-On every save / snapshot write / restore:
+Save / restore inputs carry an explicit **client `schemaVersion`** (spec §11.2). The server does **not** invent it solely from `document.schemaVersion` for the mismatch check.
 
-- Reject if `envelope.schemaVersion !== document.schemaVersion` → `422 SCHEMA_VERSION_MISMATCH`  
-- `validateProject(document)` must succeed  
+On every save:
+
+- If `schemaVersion !== document.schemaVersion` → `422 SCHEMA_VERSION_MISMATCH`
+- `validateProject(document)` must succeed
+- Server-written envelope uses the (matching) `schemaVersion`
+
+### 4.3 contentHash vs requestHash
+
+| Hash | Covers | Use |
+|---|---|---|
+| `contentHash` | Canonical full `document` only | Envelope field; snapshot payload identity; restart equality |
+| `requestHash` | Idempotency payload: `op`, `schemaVersion`, `contentHash` (and any other fields in the logical save request that must not drift) | Stored with `client_transaction_id`; replay/mismatch |
+
+Same `transactionId` with same document but different `schemaVersion` or operation kind → **`TRANSACTION_PAYLOAD_MISMATCH`**.
+
+Example requestHash material (canonical JSON, then sha256):
+
+```json
+{ "op": "save_document", "schemaVersion": 1, "contentHash": "<hex>" }
+```
 
 ## 5. Save algorithm (idempotent + CAS)
 
-Inputs: `projectId`, `baseRevision`, `transactionId`, `document`.
+HTTP / service input:
 
-Inside **one SQLite transaction**:
+```typescript
+{
+  baseRevision: number;
+  transactionId: string;
+  schemaVersion: number;
+  document: ProjectDocument;
+}
+```
 
-1. Resolve principal; `assertCan(..., "write")`.  
-2. Compute `payloadHash = contentHash(document)`; validate schema + schemaVersion.  
-3. **Lookup** `project_revisions` by `(project_id, client_transaction_id)`:  
-   - If found and `content_hash === payloadHash` → return stored envelope (**idempotent success**).  
-   - If found and hash differs → **409** `TRANSACTION_PAYLOAD_MISMATCH` (or 422); no mutation.  
-4. Read `head_revision` with row lock (`SELECT …`).  
-5. If `baseRevision !== head` → **409** `STALE_REVISION`.  
-6. CAS: `UPDATE projects SET head_revision = head+1, … WHERE id=? AND head_revision=baseRevision`; if 0 rows → `STALE_REVISION`.  
-7. Insert revision row with new revision, envelope JSON, hashes, `client_transaction_id`.  
-8. Commit; return new envelope.  
+Flow:
 
-**Concurrency test (required):** two parallel saves, same `baseRevision`, different `transactionId`/payloads → exactly one `200`, one `409 STALE_REVISION`; head advances by 1.
+1. `principal = await auth.resolve(...)` — **outside** any DB transaction.
+2. Validate document structure; compute `contentHash`; if `schemaVersion !== document.schemaVersion` → reject; compute `requestHash`.
+3. Open **one sync** `withTransaction`:
+   1. `access.assertCan(principal, projectId, "write", tx)`.
+   2. Lookup revision by `(project_id, client_transaction_id)`:
+      - Found and `request_hash === requestHash` → return stored envelope (idempotent success).
+      - Found and hash differs → `TRANSACTION_PAYLOAD_MISMATCH`; no mutation.
+   3. Read head revision.
+   4. If `baseRevision !== head` → `STALE_REVISION`.
+   5. CAS update `head_revision` where `head_revision = baseRevision`; 0 rows → `STALE_REVISION`.
+   6. Insert revision row (`content_hash`, `request_hash`, `client_transaction_id`, envelope JSON).
+4. Return new envelope.
+
+**Concurrency test (required):** two saves, same `baseRevision`, different `transactionId`/payloads → exactly one success, one `STALE_REVISION`; head advances by 1.
+
+**Rollback test (required):** error thrown mid-callback leaves head and revisions unchanged.
 
 ## 6. Snapshots (P2)
 
@@ -164,16 +215,20 @@ Inside **one SQLite transaction**:
 
 Write path:
 
-1. Canonicalize + hash head document; re-validate schema.  
-2. Write `snapshots/{contentHash}.json.tmp` → `fsync` → atomic `rename` to `{contentHash}.json`.  
-3. Insert DB row referencing `storage_key` / hash.  
-4. If DB insert fails after file exists: leave orphan file; **startup GC** deletes unreferenced snapshot files (orphan policy). Never delete a file still referenced by DB.
+1. Canonicalize + hash head document; re-validate schema.
+2. Write `snapshots/{contentHash}.{uniqueSuffix}.tmp` (unique suffix per attempt, e.g. random or pid+hrtime) → `fsync` → atomic `rename` to `{contentHash}.json`.
+3. If final `{contentHash}.json` already exists: verify its content hash matches; **discard** the temp file; reuse the existing file.
+4. Insert DB row referencing `storage_key` / hash for **`(project_id, snapshot_id)`**.
+5. If DB insert fails after file exists: leave orphan file; **startup GC** deletes unreferenced snapshot files. Never delete a file still referenced by DB.
 
 **Restore:**
 
-1. Load snapshot file; verify `sha256(file) === content_hash` in DB.  
-2. Parse document; `validateProject` + schemaVersion rules.  
-3. Call normal `saveDocument` with caller’s `baseRevision` + new `transactionId` (reason tagged `restore` in revision meta if we store it).  
+1. Lookup snapshot by **`(projectId, snapshotId)` only** — never by `snapshotId` alone (prevents BOLA across projects).
+2. Load file; verify `sha256(file) === content_hash` in DB.
+3. Parse document; `validateProject` + client `schemaVersion` rules on the ensuing save.
+4. Call normal `saveDocument` with caller’s `baseRevision`, `schemaVersion`, and new `transactionId`.
+
+**BOLA test (required):** Project B’s `snapshotId` cannot restore into Project A.
 
 ## 7. Autosave client — generation / pending
 
@@ -183,11 +238,11 @@ type SaveState = "clean" | "dirty" | "saving" | "error" | "conflict";
 
 Invariants:
 
-1. Each local edit bumps `generation` and sets `pendingDocument`.  
-2. While `saving`, further edits update `pendingDocument` / `generation` but **do not** clear dirty.  
-3. On save **success**: if `response matched the generation that was sent`, advance `baseRevision` from response; if `pendingDocument` is newer (`generation > sentGeneration`), stay/set `dirty` and schedule another debounce; else `clean`.  
-4. **Never** mark `clean` if a newer pending document exists.  
-5. Retries of the **same logical save** reuse the same `transactionId` + same serialized payload; a new logical save (new generation sent) gets a **new** `transactionId`.  
+1. Each local edit bumps `generation` and sets `pendingDocument`.
+2. While `saving`, further edits update `pendingDocument` / `generation` but **do not** clear dirty.
+3. On save **success**: if `response matched the generation that was sent`, advance `baseRevision` from response; if `pendingDocument` is newer (`generation > sentGeneration`), stay/set `dirty` and schedule another debounce; else `clean`.
+4. **Never** mark `clean` if a newer pending document exists.
+5. Retries of the **same logical save** reuse the same `transactionId` + same serialized payload (including `schemaVersion`); a new logical save (new generation sent) gets a **new** `transactionId`.
 6. `dispose()`: clear debounce timer, retry timers, and callbacks; no further network.
 
 Debounce default 800ms; retry delays `[500, 1000, 2000]` then stay `error`.
@@ -199,10 +254,10 @@ Debounce default 800ms; retry delays `[500, 1000, 2000]` then stay `error`.
 | `POST` | `/v1/projects` | authenticated |
 | `GET` | `/v1/projects` | **member projects only** |
 | `GET` | `/v1/projects/:id` | member |
-| `PUT` | `/v1/projects/:id/document` | member write; body `{ baseRevision, transactionId, document }` |
+| `PUT` | `/v1/projects/:id/document` | member write; body `{ baseRevision, transactionId, schemaVersion, document }` |
 | `POST` | `/v1/projects/:id/snapshots` | member write; explicit only |
 | `GET` | `/v1/projects/:id/snapshots` | member |
-| `POST` | `/v1/projects/:id/restore` | member write |
+| `POST` | `/v1/projects/:id/restore` | member write; body includes `snapshotId` scoped to `:id` |
 
 Errors: `401`, `403`/`404`, `409 STALE_REVISION`, `409 TRANSACTION_PAYLOAD_MISMATCH`, `422 SCHEMA_INVALID`, `422 SCHEMA_VERSION_MISMATCH`.
 
@@ -210,26 +265,30 @@ Errors: `401`, `403`/`404`, `409 STALE_REVISION`, `409 TRANSACTION_PAYLOAD_MISMA
 
 Fixture document includes multi-sprite, variables, lists, broadcasts, extensions, Japanese strings.
 
-1. **Create → edit → autosave → child-process restart → get** — same `revision` + `contentHash` (full canonicalization). Server killed **after** save ACK; same `R1_DATA_DIR`.  
-2. **Stale revision** → 409; head hash unchanged.  
-3. **Invalid structure** → 422; head unchanged.  
-4. **Snapshot → divergent save → restore** → new revision; `contentHash` equals snapshot; prior revisions remain.  
-5. **Idempotent replay** — successful save, re-PUT same `transactionId`+payload → same envelope; different payload same id → mismatch error.  
-6. **Concurrent CAS** — two same-base saves → one success, one stale.  
-7. **ACL** — same-org non-member denied list/get/save/snapshot/restore.  
-8. **Autosave generation** — edit during in-flight save remains dirty and is saved afterward with new base.  
+1. **Create → edit → autosave → child-process restart → get** — same `revision` + `contentHash` (full canonicalization). Server killed **after** save ACK; same `R1_DATA_DIR`.
+2. **Stale revision** → 409; head hash unchanged.
+3. **Invalid structure** → 422; head unchanged.
+4. **Snapshot → divergent save → restore** → new revision; `contentHash` equals snapshot; prior revisions remain.
+5. **Idempotent replay** — successful save, re-PUT same `transactionId` + same requestHash material → same envelope; different document / schemaVersion / op → mismatch error.
+6. **Concurrent CAS** — two same-base saves → one success, one stale.
+7. **ACL** — same-org non-member denied list/get/save/snapshot/restore.
+8. **Autosave generation** — edit during in-flight save remains dirty and is saved afterward with new base.
 9. **dispose** — no timers after dispose (fake-timer assertion).
+10. **TX rollback** — forced error mid-save leaves DB unchanged.
+11. **BOLA restore** — cannot restore Project B snapshot into Project A.
 
 ## 10. Non-goals
 
 Google GIS body, Scratch GUI, Yjs, automatic snapshot thresholds, Postgres production ops.
 
-## 11. Review checklist (re-review)
+## 11. Review checklist
 
-- [x] Approach A approved  
-- [ ] Auth = identity only; ACL from durable membership  
-- [ ] Idempotent save order + CAS concurrency test  
-- [ ] Autosave generation / pending document  
-- [ ] Full document canonicalization + rich fixture + child-process restart  
-- [ ] Snapshot atomic write + orphan GC; restore re-validate; schemaVersion equality  
-- [ ] Stack pinned: better-sqlite3 + Hono; snapshots explicit-only  
+- [x] Approach A approved
+- [x] Auth = identity only; ACL from durable membership
+- [x] Sync SQLite TX (no Promise in callback); auth resolve before TX
+- [x] Client `schemaVersion` on save; requestHash ≠ contentHash
+- [x] Idempotent save order + CAS concurrency + rollback tests
+- [x] Autosave generation / pending document
+- [x] Full document canonicalization + rich fixture + child-process restart
+- [x] Snapshot atomic write (unique temp) + orphan GC; restore `(projectId, snapshotId)` + BOLA
+- [x] Stack pinned: better-sqlite3 + Hono; snapshots explicit-only
