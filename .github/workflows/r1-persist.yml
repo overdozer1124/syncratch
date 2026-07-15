@@ -1,0 +1,60 @@
+name: r1-persist
+
+on:
+  push:
+    paths:
+      - "packages/auth-context/**"
+      - "packages/project-envelope/**"
+      - "packages/project-service/**"
+      - "packages/project-autosave/**"
+      - "packages/project-store-sqlite/**"
+      - "packages/project-snapshots-fs/**"
+      - "apps/r1-persist-server/**"
+      - "apps/r1-persist-demo/**"
+      - "docs/r1/**"
+      - "docs/superpowers/**/2026-07-15-r1-project-persistence-*"
+      - ".github/workflows/r1-persist.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  pull_request:
+    paths:
+      - "packages/auth-context/**"
+      - "packages/project-envelope/**"
+      - "packages/project-service/**"
+      - "packages/project-autosave/**"
+      - "packages/project-store-sqlite/**"
+      - "packages/project-snapshots-fs/**"
+      - "apps/r1-persist-server/**"
+      - "apps/r1-persist-demo/**"
+      - "docs/r1/**"
+      - "docs/superpowers/**/2026-07-15-r1-project-persistence-*"
+      - ".github/workflows/r1-persist.yml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: R1 persistence unit and acceptance tests
+        run: |
+          pnpm --filter @blocksync/auth-context test
+          pnpm --filter @blocksync/project-envelope test
+          pnpm --filter @blocksync/project-service test
+          pnpm --filter @blocksync/project-autosave test
+          pnpm --filter @blocksync/project-snapshots-fs test
+          pnpm --filter @blocksync/project-store-sqlite test
+          pnpm --filter @blocksync/r1-persist-server test
+          pnpm --filter @blocksync/r1-persist-demo test

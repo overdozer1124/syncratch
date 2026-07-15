@@ -13,7 +13,8 @@
     "gate0:collab": "pnpm --filter @blocksync/gate0-collab-demo test:collab",
     "gate0:summary": "node scripts/gate0-summary.mjs",
     "build": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" build",
-    "test": "pnpm gate0:test"
+    "test": "pnpm gate0:test",
+    "r1:persist:test": "pnpm --filter @blocksync/auth-context --filter @blocksync/project-envelope --filter @blocksync/project-service --filter @blocksync/project-autosave --filter @blocksync/project-snapshots-fs --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server --filter @blocksync/r1-persist-demo test"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
