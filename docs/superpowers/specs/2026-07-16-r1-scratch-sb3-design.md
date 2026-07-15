@@ -2,7 +2,7 @@
 
 > **Date:** 2026-07-16
 > **Status:** Revised draft for re-review (do not implement until approved)
-> **Revision:** P1/P2 closure — Scratch field pin, import TX, SVG/display fixed, lease/GC/quota, dataFormat limits (post-`d64adee`)
+> **Revision:** comments/monitors empty OK, block mutation pin, GC/quota races, SVG parser pin, equivalence pairing (post-`3d228cd`)
 > **Baselines:** Gate 0 Technical Go @ `4a14e05`; R1 persistence Technical Go @ `3d6053b`; R1 auth Technical Go — real GIS conditional @ `570e237`
 > **Vendor pin:** Scratch Editor `v14.1.0` / `7c172e469eb3c21c1e6326ea6cccea60bc14e3a8` (unchanged)
 > **Spec anchors:** §6, §10–14, §40, §42–43, §55, §62
@@ -19,7 +19,7 @@ Wire a **narrow Scratch editing surface** and **server-side safe SB3 import/expo
 5. **No silent stubbing**; **unknown / unstoreable → hard reject** (no `acceptWarnings` API this slice)
 6. Untrusted media is **validated in isolation** before any display path; original bytes retained for export
 
-**Out of scope:** Yjs, teacher UI, AI, real GIS evidence, vendor pin change, ZIP byte-identical round-trip, full Scratch website UI, **approval UX for partial import**.
+**Out of scope:** Yjs, teacher UI, AI, real GIS evidence, vendor pin change, ZIP byte-identical round-trip, full Scratch website UI, **approval UX for partial import**, **non-empty comments/monitors round-trip**.
 
 **Capacity rule:** shrink GUI breadth before weakening asset fidelity or tenant isolation.
 
@@ -28,6 +28,7 @@ Wire a **narrow Scratch editing surface** and **server-side safe SB3 import/expo
 ### 2.1 Not required
 
 - Bit-identical SB3 ZIP hashes.
+- Stable Scratch block UIDs across export → re-import (see §6.7 target pairing + block graph normalization).
 
 ### 2.2 Required
 
@@ -35,7 +36,7 @@ After **import → edit/save → restart → export → re-import** (modulo cont
 
 | Layer | Must preserve |
 |---|---|
-| Structure | All **保持** fields in §6.4 (targets, blocks, variables, lists, broadcasts, extensions, sprite/stage pose, layerOrder, currentCostume) |
+| Structure | All **保持** fields in §6.4–§6.5 (targets, blocks incl. **mutation**, variables, lists, broadcasts, extensions, sprite/stage pose, layerOrder, currentCostume) |
 | Assets | Exact costume/sound **bytes**; no stubs |
 | Metadata | `assetId`, `md5ext`, canonical `dataFormat`, name, rotation centers / rate / sampleCount / sound `format` as applicable; refs consistent |
 | Integrity | SHA-256 of bytes; Scratch md5/`assetId` match on import |
@@ -46,9 +47,11 @@ After **import → edit/save → restart → export → re-import** (modulo cont
 |---|---|
 | Limit / path / ZIP malice | Hard reject — no project |
 | Missing asset bytes / md5 or sha mismatch | Hard reject |
-| **明示拒否** fields in §6.4 (comments, monitors, legacy SB2 keys, unknown top-level keys) | Hard reject |
-| Disallowed extensions, unknown opcodes | Hard reject |
-| Partial import with user approval | **Out of scope** — remove any `acceptWarnings` design |
+| **Non-empty** `comments` / `monitors` / block `comment` | Hard reject |
+| Legacy SB2 keys, unknown top-level/target keys | Hard reject |
+| Disallowed extensions / opcodes (§6.6) | Hard reject |
+| Reference to `gc_state != 'live'` asset | Hard reject (save/import/GET) |
+| Partial import with user approval | **Out of scope** |
 
 ## 3. Approaches (approved triad + revised sub-decisions)
 
@@ -71,12 +74,15 @@ Global `has(sha)` alone is forbidden: a caller who learns another org’s sha co
 
 asset_objects(
   sha256 TEXT PRIMARY KEY
-    CHECK(length(sha256) = 64 AND sha256 GLOB '[0-9a-f][0-9a-f]*'),
+    CHECK(length(sha256) = 64 AND lower(sha256) NOT GLOB '*[^0-9a-f]*'),
   byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
   md5_hex TEXT NOT NULL
-    CHECK(length(md5_hex) = 32 AND md5_hex GLOB '[0-9a-f][0-9a-f]*'),
+    CHECK(length(md5_hex) = 32 AND lower(md5_hex) NOT GLOB '*[^0-9a-f]*'),
   data_format TEXT NOT NULL
     CHECK(data_format IN ('svg','png','jpg','bmp','gif','wav','mp3')),
+  gc_state TEXT NOT NULL DEFAULT 'live'
+    CHECK(gc_state IN ('live','quarantining','quarantined')),
+  quarantine_started_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -88,37 +94,58 @@ organization_asset_grants(
   PRIMARY KEY (organization_id, sha256)
 );
 
--- In-flight import protection (NOT mixed into grants).
 asset_import_leases(
   lease_id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL REFERENCES organizations(organization_id),
   sha256 TEXT NOT NULL
-    CHECK(length(sha256) = 64 AND sha256 GLOB '[0-9a-f][0-9a-f]*'),
+    CHECK(length(sha256) = 64 AND lower(sha256) NOT GLOB '*[^0-9a-f]*'),
   import_session_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
 
+-- Quota reservation for concurrent imports (distinct sha set + bytes).
+organization_asset_quota_reservations(
+  reservation_id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organizations(organization_id),
+  import_session_id TEXT NOT NULL UNIQUE,
+  reserved_bytes INTEGER NOT NULL CHECK(reserved_bytes >= 0),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+organization_asset_quota_reservation_shas(
+  reservation_id TEXT NOT NULL
+    REFERENCES organization_asset_quota_reservations(reservation_id),
+  sha256 TEXT NOT NULL,
+  byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
+  PRIMARY KEY (reservation_id, sha256)
+);
+
 CREATE INDEX asset_import_leases_expires ON asset_import_leases(expires_at);
 CREATE INDEX asset_import_leases_session ON asset_import_leases(import_session_id);
+CREATE INDEX asset_objects_gc_state ON asset_objects(gc_state);
+CREATE INDEX quota_reservations_expires ON organization_asset_quota_reservations(expires_at);
 ```
 
-- FS bytes remain at `R1_DATA_DIR/assets/{sha256}` (write-once). **Never** join paths without passing §4.5 hex + containment checks.
-- Concurrent imports of same bytes: `putIfAbsent` on FS (outside TX) + single TX inserts object (if new) + grant + project revision 0.
+- FS live bytes: `R1_DATA_DIR/assets/{sha256}` (write-once while `gc_state='live'`).
+- Quarantined bytes: `R1_DATA_DIR/assets/.quarantine/{sha256}`.
+- All sha columns stored **lowercase** hex.
 
-### 4.2 Mandatory checks (save / restore / export)
+### 4.2 Mandatory checks (save / restore / export / import)
 
-Not `has(sha)` alone. For every `CostumeRef` / `SoundRef` in the document:
+For every `CostumeRef` / `SoundRef`:
 
-1. `organization_asset_grants` contains `(caller.organizationId, contentSha256)`
-2. `asset_objects.sha256` matches file digest
-3. `md5_hex` == ref.`assetId`
-4. stored `data_format` == ref.`dataFormat` (canonical form from §6.2)
-5. `md5ext` suffix matches canonical format and stem == `assetId`
-6. `byte_length` == file length
-7. Sound: `rate` / `sampleCount` match parsed audio (§6.3)
+1. `asset_objects.gc_state === 'live'` (reject `quarantining` / `quarantined`)
+2. `organization_asset_grants` contains `(caller.organizationId, contentSha256)`
+3. `asset_objects.sha256` matches file digest
+4. `md5_hex` == ref.`assetId`
+5. stored `data_format` == ref.`dataFormat` (canonical §6.2)
+6. `md5ext` suffix matches canonical format and stem == `assetId`
+7. `byte_length` == file length
+8. Sound: `rate` / `sampleCount` rules (§6.3)
 
-Mismatch → reject entire save/restore/export.
+Mismatch → reject entire save/restore/export/import.
 
 ### 4.3 Asset URL (project-scoped, head-only)
 
@@ -126,14 +153,13 @@ Mismatch → reject entire save/restore/export.
 GET /v1/projects/:projectId/assets/:sha256
 ```
 
-- **Head-only for R1:** sha must appear in the project’s **current head envelope document**. Snapshot-scoped asset GET is **out of scope** (no `?snapshot=` parameter).
-- Authorization: caller can read project **and** head document references sha.
+- **Head-only for R1:** sha must appear in the project’s **current head envelope document**.
+- Authorization: caller can read project **and** head document references sha **and** object is `gc_state='live'`.
 - Response headers (all formats including SVG):
   - `Content-Type: application/octet-stream`
   - `Content-Disposition: attachment; filename="{sha256}"`
   - `X-Content-Type-Options: nosniff`
 - **Do not** expose `/v1/assets/:sha256` without project scope.
-- **Do not** serve SVG as `image/svg+xml` on a same-origin navigable URL.
 
 ### 4.4 Import SQLite atomicity (fixed — no nested transactions)
 
@@ -145,14 +171,12 @@ GET /v1/projects/:projectId/assets/:sha256
 |---|---|---|
 | Spool + worker ZIP parse, media limits, SVG safety, extract to holding dir | Worker process | **Outside** SQLite |
 | FS `putIfAbsent` verified bytes → `R1_DATA_DIR/assets/{sha256}` | Parent, pre-TX | **Outside** SQLite |
-| Insert `asset_objects`, `organization_asset_grants`, project row, revision 0 envelope | Parent | **Single synchronous TX** on shared better-sqlite3 connection |
-| Delete `asset_import_leases` for session | Same TX as above | Committed with project |
+| Quota reservation + object/grant/project/revision 0 + lease/reservation release | Parent | **Single synchronous TX** (`BEGIN IMMEDIATE`) |
 | Worker kill + temp dir cleanup | Parent `finally` | Outside TX |
 
-**Import-only API (repository + service):**
+**Import-only API:**
 
 ```typescript
-// project-store-sqlite — one db.transaction() callback; no nested withTransaction.
 importSb3CreateProjectAtomic(input: {
   organizationId: string
   ownerUserId: string
@@ -161,129 +185,138 @@ importSb3CreateProjectAtomic(input: {
   envelope: ProjectEnvelopeV1 // revision 0
   assetObjects: Array<{ sha256; byteLength; md5Hex; dataFormat }>
   grantShas: string[]
-  releaseLeaseSessionId: string
+  releaseImportSessionId: string // leases + quota reservation
 }): ProjectHead
 ```
 
-**Rollback semantics:**
+**Inside the same TX (order matters):**
 
-- TX failure → **no** project row, **no** revision row, **no** `asset_objects` insert, **no** `organization_asset_grants` rows for this import.
-- FS bytes written before TX failure remain as **orphan files** (no DB row referencing them) → eligible for later GC after lease expiry.
-- Leases for the import session are deleted in the same TX on success; on TX failure, leases remain until TTL expiry (§9.2) then GC may collect orphan bytes.
+1. Re-check org + global quota using **distinct sha union** (§4.6) including this import’s new shas.
+2. Insert `asset_objects` (if new, `gc_state='live'`) + grants.
+3. Insert project + revision 0.
+4. Delete import leases + quota reservation for session.
+
+**Rollback:** no project/revision/grant/object rows; FS orphan bytes only; reservation released on failure path via lease/reservation TTL.
 
 ### 4.5 Path safety (contentSha256 → FS)
 
-Before any read/write under `assets/`:
+`path.resolve` alone is **insufficient** (does not neutralize symlinks/reparse points).
+
+Before any read/write:
 
 1. Reject sha not matching `/^[0-9a-f]{64}$/`.
-2. Resolve with `path.resolve(assetsRoot, sha256)` and require `resolved === path.join(assetsRoot, sha256)` (no `..`, no separators inside sha).
-3. **Tests required:** symlink or reparse point under `assetsRoot` pointing outside must not be followed for read/write; open must use resolved path containment check.
+2. **Validate `assetsRoot` at startup:** `lstat` + `realpath`; must be a directory; must not be a symlink/reparse point escaping intended data dir.
+3. Candidate file path `join(assetsRoot, sha256)`:
+   - `lstat` candidate; reject if symlink/reparse point/junction.
+   - `realpath(assetsRoot)` must prefix `realpath(candidate)` when candidate exists.
+4. Open with **no-follow** semantics (POSIX `O_NOFOLLOW`; Windows: reject reparse/symlink before open — document platform tests).
+5. Never follow symlinks inside `assets/`, `assets/.quarantine/`, spool, or holding dirs.
 
 ### 4.6 Capacity quotas (R1)
 
 | Limit | Value | Enforcement |
 |---|---|---|
 | Per-asset byte length | 10 MiB | Worker + `asset_objects.byte_length` |
-| Per-organization referenced asset bytes | **512 MiB** | Sum `byte_length` for shas referenced by **any durable revision** in org; reject import/save if exceeded |
-| Total `R1_DATA_DIR/assets/` store | **2 GiB** | Reject import `putIfAbsent` when global sum would exceed |
+| Per-organization referenced asset bytes | **512 MiB** | **Distinct sha union** across all durable revisions in org **plus** active quota reservations (§4.6.1) |
+| Total on-disk under `R1_DATA_DIR` | **2 GiB** | Sum live + quarantine asset bytes **+ spool + holding + temp** (§4.6.2) |
 | Per-project import ZIP spool | 32 MiB | HTTP stream cap |
 
-Referenced-byte sum for org quota uses revision documents only (not grant rows alone).
+#### 4.6.1 Org quota — distinct sha union
+
+For organization `O`:
+
+```text
+quotaBytes(O) = SUM(byte_length) for sha in UNION(
+  { contentSha256 from every durable revision document of projects in O },
+  { sha256 in active organization_asset_quota_reservation_shas for O where reservation.expires_at > now }
+)
+```
+
+Same sha referenced by multiple revisions counts **once**. Import/save TX must recompute under `BEGIN IMMEDIATE` before commit.
+
+#### 4.6.2 Global disk guard
+
+Before accepting spool write, holding write, or `putIfAbsent`:
+
+```text
+diskUsage = bytes(assets/live) + bytes(assets/.quarantine) + bytes(import-spool/) + bytes(import-holding/) + bytes(worker-temp/)
+```
+
+Reject when `diskUsage + incoming > 2 GiB`.
 
 ## 5. Envelope / contentHash compatibility (P1)
 
 ### 5.1 Problem
 
-Unconditionally changing `contentHash` to hash `{document, assetSha256s}` breaks existing V1 revision/snapshot verification. Asset shas already appear inside `AssetRef` fields when schemaVersion includes them — **correct per-version canonicalize of the document is enough**; a parallel manifest is unnecessary.
+Unconditionally changing `contentHash` breaks V1 verification. Per-version canonicalize of the document (including asset refs and **mutation**) is sufficient.
 
 ### 5.2 Rules
 
 | Document `schemaVersion` | Canonicalizer | Existing V1 data |
 |---|---|---|
-| **1** (current) | **Unchanged** byte-for-byte canonical algorithm used today | Must continue to verify |
-| **2+** (assets) | Extend `canonicalizeTarget` to include §6.4 **保持** target fields + `CostumeRef`/`SoundRef` in **stable key order** | N/A for legacy rows |
+| **1** (current) | **Unchanged** | Must continue to verify |
+| **2+** (assets) | Extend `canonicalizeTarget` with §6.4–§6.5 **保持** fields + stable `mutation` key order | N/A for legacy rows |
 
-- Maintain **schemaVersion-dispatched** `canonicalizeDocument(doc)` / `contentHash(doc)`.
-- Do **not** introduce a silent second hashing pass that alters V1.
-- **Regression tests required:** existing V1 create/save/snapshot/restore/idempotent replay remain green with **identical** `contentHash` expectations for the same V1 fixtures.
+- **Regression tests required:** V1 golden hashes unchanged.
 
 ### 5.3 Empty projects
 
-**Pinned:** new projects created via `createProject` remain **schemaVersion 1** (no costume arrays). **First SB3 import** mints **schemaVersion 2** with full costume/sound refs. Equivalence tests use import-created projects.
+**Pinned:** `createProject` → schemaVersion **1**. First SB3 import → schemaVersion **2**.
 
 ## 6. ProjectDocument shape + Scratch project.json field pin
 
-**Source of truth:** Scratch Editor **v14.1.0** — `packages/scratch-vm/src/serialization/sb3.js` (`serializeTarget`, `serializeCostume`, `serializeSound`, top-level `serialize`) and `deserialize-assets.js` (costume/sound format acceptance).
+**Source of truth:** Scratch Editor **v14.1.0** — `packages/scratch-vm/src/serialization/sb3.js` and `deserialize-assets.js`.
 
-### 6.1 Discriminated refs
+### 6.1 Discriminated refs + blocks
 
 ```typescript
 type CostumeDataFormat = "svg" | "png" | "jpg" | "bmp" | "gif"
 type SoundDataFormat = "wav" | "mp3"
 
-interface CostumeRef {
-  kind: "costume"
-  name: string
-  assetId: string           // 32-char md5 hex
-  md5ext: string            // "{assetId}.{canonicalExt}"
-  dataFormat: CostumeDataFormat
-  contentSha256: string     // 64-char hex
-  rotationCenterX: number
-  rotationCenterY: number
-  bitmapResolution?: number // bitmap costumes only; omit when absent in SB3
+interface ScratchBlock {
+  id: string
+  opcode: string
+  next: string | null
+  parent: string | null
+  inputs: Record<string, unknown>   // SB3 serialized input arrays (§6.5)
+  fields: Record<string, unknown>   // SB3 serialized field arrays (§6.5)
+  shadow?: boolean
+  topLevel?: boolean
+  x?: number
+  y?: number
+  mutation?: Record<string, unknown> // required when present in SB3; canonicalized
 }
 
-interface SoundRef {
-  kind: "sound"
-  name: string
-  assetId: string
-  md5ext: string
-  dataFormat: SoundDataFormat
-  contentSha256: string
-  rate: number
-  sampleCount: number
-  format: string            // SB3 "format" field; preserve (often "")
-}
+interface CostumeRef { /* unchanged from prior revision */ }
+interface SoundRef { /* unchanged from prior revision */ }
 ```
-
-- Same `md5ext` may appear on **multiple costumes**; **do not** invent uniqueness constraints on `(target, md5ext)`.
-- `currentCostume`: integer index into `costumes[]`. **schemaVersion ≥ 2 durable save:** stage and every sprite must have `costumes.length >= 1` and `0 <= currentCostume < costumes.length`.
 
 ### 6.2 Format allow-list and canonical aliases
 
-**Costume `dataFormat` (accept on import → store canonical → export canonical ext):**
+(Costume/sound tables unchanged — `jpeg` → **`jpg`**.)
 
-| Import ext (case-insensitive) | Canonical `dataFormat` | Canonical `md5ext` suffix | Scratch VM asset type |
-|---|---|---|---|
-| `svg` | `svg` | `.svg` | ImageVector |
-| `png` | `png` | `.png` | ImageBitmap |
-| `jpg`, `jpeg` | **`jpg`** | **`.jpg`** | ImageBitmap |
-| `bmp` | `bmp` | `.bmp` | ImageBitmap |
-| `gif` | `gif` | `.gif` | ImageBitmap |
-
-**Sound `dataFormat`:**
-
-| Import ext | Canonical | Suffix |
-|---|---|---|
-| `wav` | `wav` | `.wav` |
-| `mp3` | `mp3` | `.mp3` |
-
-Any other extension → **hard reject**. Sniff may corroborate; declared vs detected mismatch → reject.
-
-### 6.3 Media decode limits (beyond byte length)
+### 6.3 Media decode limits + audio metadata
 
 | Format | Limit | Verification |
 |---|---|---|
-| PNG / JPEG / GIF / BMP | Max **4096×4096** pixels; max **16_777_216** pixels | Decode header in worker; reject over limit |
-| SVG | Max **512 KiB** text; max **65_536** DOM nodes (elements + text nodes) | `@xmldom/xmldom` parse in worker; reject over limit |
-| WAV | Max **60 s** duration; max **176_400_000** samples (44.1 kHz × 60 s × stereo ceiling) | Parse RIFF `fmt` + `data` chunks |
-| MP3 | Max **60 s** duration | Frame scan or decode header in worker |
+| PNG / JPEG / GIF / BMP | Max **4096×4096** px; max **16_777_216** px | Decode header in worker |
+| SVG | Max **512 KiB** text; max **65_536** DOM nodes | `@xmldom/xmldom@0.8.10` parse (§7) |
+| WAV | Max **60 s**; max **5_292_000** PCM samples (`44100 × 60 × 2` stereo ceiling) | RIFF `fmt` + `data` |
+| MP3 | Max **60 s** duration | Valid MP3 structure |
 
-**`rate` / `sampleCount` integrity (sounds):**
+**`rate` / `sampleCount` meaning (pinned via vendor fixture corpus):**
 
-- **WAV:** `rate` must equal `fmt.sampleRate`; `sampleCount` must equal sample frames in `data` chunk (exact; mono/stereo accounted).
-- **MP3:** compute duration from frames; require `sampleCount === round(durationSeconds * rate)` with tolerance **±1** sample.
-- Mismatch → hard reject import and save.
+| Format | Rule |
+|---|---|
+| **WAV** | `rate` == `fmt.sampleRate`; `sampleCount` == PCM sample frames in `data` (exact, channels per Scratch SB3 convention) |
+| **MP3** | `sampleCount` is **Scratch SB3 metadata** (same semantics Scratch stores in `project.json`) — **preserve on round-trip**; import verifies valid MP3 + `rate > 0` + `sampleCount > 0` + implied duration `sampleCount/rate ≤ 60s`; **do not reject** solely because MPEG frame scan yields a different sample count (encoder delay/padding). |
+
+**Golden corpus (Task 7 tests):** record `(assetId, rate, sampleCount, md5ext)` from vendor fixtures:
+
+- WAV: `vendor/scratch-editor/packages/scratch-vm/tap-snapshots/vm-state-snapshot/origin.sb3.json` (`pop` 44100/1032; `Meow` 44100/37376)
+- MP3: at least one fixture from `scratch3_music` drum assets once packaged into test SB3
+
+Equivalence asserts **exact** `(rate, sampleCount)` preservation export → re-import.
 
 ### 6.4 Scratch 3 `project.json` field classification (v14.1.0)
 
@@ -291,77 +324,123 @@ Any other extension → **hard reject**. Sniff may corroborate; declared vs dete
 
 | Field | Policy | Notes |
 |---|---|---|
-| `targets` | **保持** | Required array; each target classified below |
-| `meta` | **保持** | `semver`, `vm`, `agent`, `origin` preserved in `ProjectDocument.meta` |
-| `extensions` | **保持** | Must ⊆ R1 allow-list; extra → reject |
-| `monitors` | **明示拒否** | Not in R1 equivalence surface |
-| Any other top-level key | **明示拒否** | e.g. unknown future keys |
+| `targets` | **保持** | Required |
+| `meta` | **保持** | `semver`, `vm`, `agent`, `origin` |
+| `extensions` | **保持** | Must ⊆ §6.6 |
+| `monitors` | **正規化** | **`[]` only** — accept, store as empty, export as `[]` |
+| `monitors` non-empty | **明示拒否** | |
+| Unknown top-level keys | **明示拒否** | |
 
 **Target — common**
 
 | Field | Policy | Notes |
 |---|---|---|
-| `isStage` | **保持** | |
-| `name` | **保持** | Stage name remains `"Stage"` on export |
-| `variables` | **保持** | Map id → `[name, value]` or cloud `[name, value, true]` |
-| `lists` | **保持** | Map id → `[name, value[]]` |
-| `broadcasts` | **保持** | Map id → name string |
-| `blocks` | **保持** | Full SB3 block graph |
-| `comments` | **明示拒否** | |
-| `currentCostume` | **保持** | **正規化:** clamp to `[0, costumes.length-1]` on import (match VM) |
-| `costumes` | **保持** | Array of costume objects; see below |
-| `sounds` | **保持** | Array of sound objects; see below |
-| `volume` | **保持** | Stage and sprites |
-| `layerOrder` | **保持** | Serialized layer ordering |
-| `scripts` | **明示拒否** | SB2 legacy |
-| `targetPaneOrder` | **明示拒否** | Import-only legacy hint |
+| `isStage`, `name`, `variables`, `lists`, `broadcasts` | **保持** | |
+| `blocks` | **保持** | See §6.5 |
+| `comments` | **正規化** | **`{}` only** — accept (vendor `serializeTarget` always emits) |
+| `comments` non-empty | **明示拒否** | |
+| `currentCostume`, `costumes`, `sounds`, `volume`, `layerOrder` | **保持** | |
+| `scripts`, `targetPaneOrder` | **明示拒否** | |
 | Unknown target keys | **明示拒否** | |
 
-**Target — stage only (`isStage: true`)**
+**Stage-only / sprite-only / costume / sound tables:** unchanged from prior revision.
 
-| Field | Policy |
+**Export normalization:** always emit `comments: {}` per target and `monitors: []` at top level (match vendor SB3).
+
+### 6.5 SB3 block object classification (v14.1.0)
+
+**Non-primitive block object** (map value is object, not array):
+
+| Field | Policy | Notes |
+|---|---|---|
+| `opcode` | **保持** | |
+| `next` | **保持** | Include explicit `null` |
+| `parent` | **保持** | |
+| `inputs` | **保持** | SB3 serialized arrays (§6.5.1) |
+| `fields` | **保持** | SB3 serialized arrays (§6.5.2) |
+| `shadow` | **保持** | |
+| `topLevel` | **保持** | |
+| `x`, `y` | **保持** | When `topLevel` (rounded int on export) |
+| `mutation` | **保持** | Canonicalize stable key order; **required for custom blocks** |
+| `comment` | **明示拒否** | Block-attached comment id |
+| Unknown keys | **明示拒否** | |
+
+**Primitive block map entries** (map value is array — top-level or inline in inputs):
+
+| Form | Policy | Notes |
+|---|---|---|
+| `[4..13, …]` primitive constants | **保持** | `MATH_NUM`, `VAR`, `LIST`, etc. per `sb3.js` |
+| Inline primitive in `inputs` | **保持** | e.g. `[1, [4, 10]]` |
+
+#### 6.5.1 Input array encodings (serialized SB3)
+
+| `input[0]` | Meaning | Policy |
+|---|---|---|
+| `1` | Same block + shadow | **保持** |
+| `2` | Block, no shadow | **保持** |
+| `3` | Different block + shadow | **保持** |
+| `[4..13, …]` | Inline primitive | **保持** |
+
+#### 6.5.2 Field array encodings
+
+| Form | Policy |
 |---|---|
-| `tempo` | **保持** |
-| `videoTransparency` | **保持** |
-| `videoState` | **保持** (`on` / `off` / `on-flipped`) |
-| `textToSpeechLanguage` | **保持** (nullable) |
-| `visible`, `x`, `y`, `size`, `direction`, `draggable`, `rotationStyle` | **明示拒否** if present on stage |
+| `[value]` | **保持** |
+| `[value, id]` | **保持** (variables/lists/broadcasts) |
 
-**Target — sprite only (`isStage: false`)**
+#### 6.5.3 Custom procedure / mutation fixtures (required tests)
 
-| Field | Policy |
+Pin golden graphs derived from vendor `test/unit/serialization_procedures.js`:
+
+| Fixture | Opcodes | `mutation` must preserve |
+|---|---|---|
+| **Procedure definition (new format)** | `procedures_definition` → `procedures_prototype` → body | `proccode`, `argumentids`, `argumentnames`, `argumentdefaults`, `warp`, `tagName`, `children` |
+| **Procedure call** | `procedures_call` | `proccode`, argument id arrays / warp as serialized by VM |
+| **Argument reporter** | `argument_reporter_string_number` etc. | fields + attachment to prototype |
+
+Import → export → re-import must preserve **mutation** bytes-equivalent after canonicalization (custom blocks runnable).
+
+### 6.6 R1 opcode / extension allow-list
+
+**Built-in opcode prefixes** (no `project.extensions` entry required — includes standard **procedures**):
+
+`argument_`, `colour_`, `control_`, `data_`, `event_`, `looks_`, `math_`, `motion_`, `operator_`, `procedures_`, `sensing_`, `sound_`
+
+Plus menu/shadow opcodes: `math_number`, `math_positive_number`, `math_whole_number`, `math_integer`, `math_angle`, `colour_picker`, `text`, `event_broadcast_menu`, `data_variable`, `data_listcontents`.
+
+**Allowed extension IDs** (`project.extensions` must be a subset; opcode `extId_*` requires `extId` listed):
+
+| Extension ID | Notes |
 |---|---|
-| `visible` | **保持** |
-| `x`, `y` | **保持** |
-| `size` | **保持** |
-| `direction` | **保持**; **正規化:** wrap/clamp to **[-179, 180]** on import (match VM) |
-| `draggable` | **保持** |
-| `rotationStyle` | **保持** (`all around` / `left-right` / `don't rotate`) |
-| `tempo`, `videoState`, `videoTransparency`, `textToSpeechLanguage` | **明示拒否** if present on sprite |
+| `music` | |
+| `pen` | |
+| `videoSensing` | |
+| `text2speech` | |
+| `translate` | |
 
-**Costume object**
+**Explicit reject** (non-exhaustive): `wedo2`, `ev3`, `microbit`, `makeymakey`, `gdxfor`, `boost`, any URL-shaped extension id, any unknown id.
 
-| Field | Policy |
-|---|---|
-| `name` | **保持** |
-| `assetId` | **保持** |
-| `md5ext` | **保持**; must match `assetId` + canonical suffix |
-| `dataFormat` | **正規化** → canonical lowercase (§6.2) |
-| `rotationCenterX`, `rotationCenterY` | **保持** |
-| `bitmapResolution` | **保持** when present |
-| `textLayerMD5`, `textLayerAsset`, `asset` | **明示拒否** (SB2 / upload inline) |
-| Unknown keys | **明示拒否** |
+Empty `extensions: []` is valid for core-only + custom procedure projects.
 
-**Sound object**
+### 6.7 Equivalence — target pairing + block graph (export → re-import)
 
-| Field | Policy |
-|---|---|
-| `name`, `assetId`, `md5ext`, `rate`, `sampleCount` | **保持** |
-| `dataFormat` | **正規化** → canonical lowercase |
-| `format` | **保持** (legacy string, often `""`) |
-| Unknown keys | **明示拒否** |
+Scratch regenerates target ids and often block ids on re-import. Production equivalence (**Task 7 `equivalenceProduction`**, same rules as Task 0 spike) uses:
 
-**Internal `ProjectDocument` mapping:** each SB3 target becomes a `ScratchTarget` with stable `id` (generated on import, preserved on subsequent saves), plus §6.4 **保持** fields on the target record. Blocks remain keyed by block id.
+**Target pairing:**
+
+1. Stage: sole target with `isStage === true`.
+2. Sprites: match by **`name`** (reject duplicate sprite names on import).
+3. Compare paired targets on all §6.4 **保持** fields except `id`.
+
+**Block graph comparison:**
+
+1. Normalize each target’s blocks to a **structure-only fingerprint** independent of Scratch UIDs:
+   - Top-level blocks identified by `(opcode, x, y)` ordering tie-break.
+   - Walk `next` / `inputs` / `parent` preserving opcode, serialized inputs/fields, and **`mutation` canonical JSON**.
+2. Compare normalized graphs for equality.
+3. Custom procedure fixtures (§6.5.3) must pass after export → re-import.
+
+**Asset refs:** compare by `(assetId, contentSha256, canonical dataFormat, md5ext, …)` not by target id.
 
 ## 7. Untrusted SVG / media (fixed) (P1)
 
@@ -369,199 +448,157 @@ Any other extension → **hard reject**. Sniff may corroborate; declared vs dete
 
 | Item | Pinned choice |
 |---|---|
-| XML/SVG parser | **`@xmldom/xmldom`** — pin exact version from vendor lockfile at implementation time (same major as `scratch-svg-renderer` dependency tree) |
-| CSS `url()` / style scan | **`css-tree@3.2.1`** (vendor `scratch-svg-renderer` pin) |
-| Regex-only gate | **Forbidden** as sole inspection; regex only as css-tree Raw fallback (same pattern as vendor `sanitize-svg.js`) |
-| Policy | **Reject import** on failure (do not store-then-block-display) |
+| XML/SVG parser | **`@xmldom/xmldom@0.8.10`** — explicit **product** dependency in `packages/sb3-tools` (not present in vendor lockfile; pin in package.json) |
+| CSS scan | **`css-tree@3.2.1`** (vendor `scratch-svg-renderer` pin) |
+| Regex-only gate | **Forbidden** as sole inspection |
+| `data:` URIs | **R1: full reject** — no `data:` in href/xlink/style/url() |
+| `#fragment` internal refs | Allowed for same-document SVG fragments only |
 
-**Reject if any:**
+**Explicit reject if any:**
 
-- Disallowed elements: `script`, `foreignObject`, `iframe`, `embed`, `object`, `use` (with external `href`), `animate`/`set`/`handler` linking external URI
-- Event attributes: any attribute name matching `/^on/i`
-- URI attributes (`href`, `xlink:href`) with scheme other than `#fragment` or `data:` (after whitespace strip)
-- CSS in `style` or presentation attributes containing external `url(` (per css-tree walk + Raw fallback)
-- `http:`, `https:`, `javascript:` anywhere in href/xlink/href
-- Node count or byte limits exceeded (§6.3)
+- `DOCTYPE`, internal/external **ENTITY** declarations, **processing instructions** (`<?…?>`)
+- Disallowed elements: `script`, `foreignObject`, `iframe`, `embed`, `object`, external `use`
+- Event attributes `/^on/i`
+- External URI schemes in href/xlink (`http:`, `https:`, `javascript:`, `data:`)
+- CSS **`@import`**; external **`url(`** in styles (css-tree walk + Raw fallback)
+- Node/byte limits (§6.3)
 
 ### 7.2 Asset HTTP delivery
 
-All assets including SVG: **`application/octet-stream`** + **`Content-Disposition: attachment`** + **`nosniff`** (§4.3). Never serve inline SVG MIME on same origin.
+All assets: **`application/octet-stream`** + **`Content-Disposition: attachment`** + **`nosniff`** (§4.3).
 
-### 7.3 Host display path (fixed — Task 0 must prove)
+### 7.3 Host display path (Task 0 must prove)
 
-1. Host `fetch`es project-scoped asset URL with credentials.
-2. Receives **octet-stream** body; holds bytes in memory/`Uint8Array`.
-3. Passes bytes to **`runtime.storage.createAsset(AssetType.ImageVector | ImageBitmap | Sound, dataFormat, bytes)`** — the same boundary Scratch VM uses.
-4. **Forbidden:** `<img src=".../assets/{sha}">`, `blob:` URL from raw SVG for DOM `<img>`, or opening asset URL in iframe/document for SVG costumes.
-5. scratch-svg-renderer sanitization runs inside VM render path on those bytes (vendor behavior).
-
-Task 0 Go criterion **includes** demonstrating steps 1–4 for at least one SVG and one PNG costume.
+Fetch octet-stream → `runtime.storage.createAsset(...)` — **never** `<img src>` / same-origin navigable SVG URL (unchanged).
 
 ### 7.4 Worker isolation
 
-ZIP + media parse + SVG inspect run under heap/time-limited worker (`--max-old-space-size` + wall clock). Kill on timeout; delete temps (tested).
+ZIP + media parse + SVG inspect under heap/time-limited worker; kill + temp cleanup tested.
 
 ## 8. Import / export isolation boundary (P1)
 
-```text
-HTTP multipart
-  → stream to size-capped temp file (reject before full RAM ZIP)
-  → spawn worker (max-old-space-size + wall clock)
-       - zip parse, limits, extract entries to worker temp dir
-       - md5/sha, format allow-list, SVG safety (§7), audio header checks
-       - write verified assets to holding dir
-  → parent receives: ImportManifest (JSON) + paths to verified asset files
-       - NO giant Map clone over IPC
-  → parent: INSERT asset_import_leases (if not already) for manifest shas
-  → parent: FS putIfAbsent for each verified file (outside TX)
-  → parent: importSb3CreateProjectAtomic TX (§4.4)
-  → always: kill worker on timeout; close; delete temps (tested)
-```
+(Unchanged flow; quota reservation created before FS put, committed/released in import TX §4.4.)
 
-Export similarly: output size / time / memory caps; worker or bounded assembler; timeout kill + cleanup tests.
-
-## 9. Grant / lease / GC lifecycle (fixed) (P1)
+## 9. Grant / lease / GC lifecycle + race closure (P1)
 
 ### 9.1 Roles
 
-| Mechanism | Purpose |
-|---|---|
-| `asset_objects` + FS bytes | Global immutable blob store (content-addressed) |
-| `organization_asset_grants` | **Authorization** — org may reference sha in documents / read via project GET |
-| `asset_import_leases` | **In-flight protection** — bytes being imported but not yet in revision 0 |
-| Revision + snapshot scan | **Reachability** — determines whether bytes are still needed |
+(Grants = authorization; leases/reservations = in-flight; GC reference set excludes grants alone — unchanged intent.)
 
-**Grants are NOT part of the GC byte reference set.** Putting every grant into the reference set would pin bytes forever after a one-time cross-project reuse.
-
-### 9.2 Import leases (in-flight)
+### 9.2 Import leases + quota reservations
 
 | Event | Behavior |
 |---|---|
-| Create | After worker manifest validated, before FS put: insert lease rows `(organization_id, sha256, import_session_id, expires_at = now + 15m)` |
-| Renew | Optional: extend `expires_at` on worker progress heartbeat (same session) |
-| Commit success | Delete all leases for `import_session_id` inside import TX (§4.4) |
-| TX rollback / HTTP error | Leases remain until `expires_at` |
-| Crash | Leases expire by TTL; expired leases **excluded** from GC reference set |
+| After worker manifest | Insert leases + **quota reservation** (distinct shas + byte sum) TTL **15m** |
+| Import TX success | Delete leases + reservation (same TX) |
+| Failure / crash | TTL expiry releases reservation; expired excluded from quota union |
 
 ### 9.3 GC byte reference set
 
-Union of `contentSha256` from:
+Union of `contentSha256` from: all revisions + all snapshots + active leases (`expires_at > now`).
 
-1. **Every durable project revision** document in SQLite (full history)
-2. **Every snapshot** envelope on disk
-3. **Active import leases:** `asset_import_leases` where `expires_at > now`
+### 9.4 GC quarantine state machine (closes scan→rename race)
 
-**Not included:** `organization_asset_grants` alone.
+**Problem:** scan-then-rename allows a new revision to reference sha between phases.
 
-### 9.4 Grant revocation
+**Pinned algorithm:**
 
-After a successful GC scan identifies globally unreferenced shas:
+```text
+1. Read-only scan → candidate set C (unreferenced shas, gc_state='live')
+2. For each sha in C (serialized GC worker):
+     BEGIN IMMEDIATE
+       Re-query: sha still unreferenced in revisions/snapshots/leases?
+       If referenced → ROLLBACK; skip
+       UPDATE asset_objects SET gc_state='quarantining' WHERE sha256=? AND gc_state='live'
+       DELETE FROM organization_asset_grants WHERE sha256=?
+     COMMIT
+     FS: rename assets/{sha} → assets/.quarantine/{sha} (no-follow)
+     BEGIN IMMEDIATE
+       If rename succeeded: SET gc_state='quarantined', quarantine_started_at=now
+       If rename failed: SET gc_state='live' (reconcile — see §9.7)
+     COMMIT
+3. After 7-day grace + successful full scan: delete quarantined file + asset_objects row
+```
 
-1. Move FS object to quarantine (§9.6) if not already referenced.
-2. Delete **`organization_asset_grants`** rows for that sha (all orgs).
-3. Delete **`asset_objects`** row when FS file is quarantine-eligible.
+**Save/import/GET:** reject any ref where `gc_state != 'live'`.
 
-**Project delete / revision discard:** no immediate grant delete in request path; **next GC run** revokes grants for shas no longer referenced by any revision/snapshot/lease. Product may add explicit purge API later; R1 relies on GC.
+### 9.5 Grant revocation
 
-**Save referencing sha without grant:** reject (§4.2) — prevents “grant forgery” without a live reference chain.
-
-### 9.5 Org quota vs grants
-
-Quota enforcement (§4.6) uses **revision references**, not grant table size. An org cannot grow past quota by accumulating grants without document references.
+Grant rows deleted in step 2 when entering `quarantining` (same TX as re-check). `asset_objects` row removed only after quarantine grace + final delete.
 
 ### 9.6 Quarantine + final delete
 
-| Step | Rule |
-|---|---|
-| Move | Unreferenced sha → `assets/.quarantine/{sha256}` (atomic rename) |
-| Grace | **7 days** minimum retention in quarantine |
-| Final delete | Only if: (a) still unreferenced in latest GC scan, (b) grace elapsed, (c) **entire GC scan completed without error** |
-| Scan failure | **Abort entire GC** (fail-closed); no deletes; quarantine unchanged |
+7-day grace; fail-closed abort on scan error; no partial mass delete.
 
-Document residual risk if quarantine fills disk (operator alert; manual cleanup runbook in Task 11).
+### 9.7 Startup reconcile
+
+On persist-server boot:
+
+| Condition | Action |
+|---|---|
+| `gc_state='quarantining'` | If live file missing and quarantine file present → `quarantined`; if live present → `live` + restore grants if still referenced |
+| `gc_state='quarantined'` but file only in live path | Move to quarantine or reset state per fs truth |
+| Orphan live file, no DB row | GC candidate |
+| Expired reservations/leases | Delete rows |
 
 ## 10. Scratch host — Task 0 spike (P1)
 
-**First candidate:** embed vendor **scratch-gui / scratch-vm / scratch-blocks** from pin `v14.1.0` via the monorepo vendor tree, wrapped by `apps/r1-scratch-host`.
-
-### 10.1 Provisional schema + fixture (Task 0 runs before Task 1)
-
-Task 0 must compare against a **pinned provisional shape**, not wait for `packages/project-schema` Task 1.
+### 10.1 Provisional schema + fixture
 
 | Artifact | Path |
 |---|---|
-| Provisional TypeScript types | `apps/r1-scratch-host/spike/schema/document-spike-v0.ts` |
-| Expected document fixture | `apps/r1-scratch-host/spike/fixtures/cat-with-sound.expected.json` |
-| Source SB3 | Vendor-derived minimal project with ≥1 SVG costume + ≥1 WAV (record path in spike doc) |
+| Provisional types | `apps/r1-scratch-host/spike/schema/document-spike-v0.ts` (include `mutation` on blocks) |
+| Expected document | `apps/r1-scratch-host/spike/fixtures/cat-with-sound.expected.json` |
+| Procedure fixture | `apps/r1-scratch-host/spike/fixtures/custom-procedure.expected.json` |
 
-**Comparison function (`equivalenceSpikeV0`):** deep equality on all §6.4 **保持** fields + costume/sound refs (`assetId`, canonical `dataFormat`, `contentSha256`, `md5ext`, rotation centers, rate/sampleCount/format). Ignore server-assigned target `id` and envelope metadata. Asset bytes compared by `contentSha256` only in spike (HTTP asset store not required for Task 0 if bytes loaded directly into VM — but display path test §7.3 still required).
+**`equivalenceSpikeV0`:** §6.7 pairing rules; §6.4–§6.5 preserve set; empty `comments`/`monitors` normalized.
 
 ### 10.2 Task 0 Go / Stop
 
-| Criterion | Go | Stop |
-|---|---|---|
-| Pin alone embeds workspace + stage | Yes without fork | Need vendor patch → **STOP**; escalate fork/ADR |
-| Real costumes/sounds display + run | Yes via §7.3 storage boundary | Cannot without stubbing → Stop |
-| Capture block create / delete / connect / field edit | Yes | Stop |
-| Rebuild provisional document from VM **without dropping assets** | Matches `cat-with-sound.expected.json` on §6.4 preserve set | Stop |
-
-Until Task 0 Go, Task 10 host completeness may not claim editor Go. Server Tasks 1–9 may proceed in parallel after design Go.
-
-**Conversion responsibility:** Host is the **only** browser component allowed to mutate the editing Document; server never trusts client-supplied asset **bytes** on save (refs + grants only). Import/export machines own bind/unbind of ZIP ↔ (document, assets).
+(Criteria unchanged + custom procedure mutation smoke + §7.3 display path.)
 
 ## 11. Package diagram
 
 ```text
-project-schema          CostumeRef/SoundRef, schemaVersion 2, §6.4 validators
-project-envelope        schemaVersion-dispatched canonicalize (V1 frozen)
-project-assets-fs       putIfAbsent/get/quarantine; §4.5 path safety
-project-store-sqlite    asset_objects + grants + leases + importSb3CreateProjectAtomic
-sb3-tools               spool-aware worker; §6.4 canonical I/O; §7 SVG worker
-project-service         save/restore grant verify; import calls atomic repo only
-r1-persist-server       import/export routes; head-only asset GET; GC
-r1-scratch-host         narrow GUI after Task 0 Go
+project-schema          §6.4–§6.5 fields, mutation, validators, §6.6 allow-list
+project-envelope        V1 frozen; V2 canonicalize mutation + pose + assets
+project-assets-fs       put/get/quarantine; §4.5 lstat/realpath/no-follow
+project-store-sqlite    objects+grants+leases+reservations+gc_state+atomic import
+sb3-tools               worker; equivalenceProduction; SVG §7; audio corpus
+project-service         verify live assets; atomic import
+r1-persist-server       routes; GC state machine §9.4; reconcile §9.7
+r1-scratch-host         after Task 0 Go
 ```
 
 ## 12. HTTP API (additive)
 
-| Method | Path | Notes |
-|---|---|---|
-| `POST` | `/v1/projects/import-sb3` | multipart → spool → worker → §4.4 atomic TX |
-| `GET` | `/v1/projects/:id/export-sb3` | capped export |
-| `GET` | `/v1/projects/:projectId/assets/:sha256` | head-only ref check; §4.3 headers |
-
-No unscoped `/v1/assets/:sha256`. No `acceptWarnings`. No snapshot-scoped asset GET in R1.
+(Unchanged paths; import uses quota reservation + atomic TX.)
 
 ## 13. Acceptance matrix (blocking)
 
-Prior equivalence + limits, **plus**:
+Prior items **plus**:
 
-- Cross-org sha forgery on save/GET → reject
-- Import failure → no project/grant/object rows (§4.4); FS orphans only
-- Crash between FS write and DB commit → leases TTL → GC can collect orphans; no readable cross-org leak
-- Concurrent same-asset import for two orgs → two grants, one object
-- Concurrent same-org import → single object + grant
-- GC scan failure / corrupt revision → GC aborts; no mass delete
-- Unsafe SVG import rejected (§7.1)
-- Symlink/reparse escape under `assets/` → rejected in tests
-- Org + global disk quota enforced
-- WAV/MP3 rate/sampleCount mismatch → reject
-- V1 persistence fixture regression (hash stable)
-- Host: block add/connect/delete + green flag + §7.3 display path (after Task 0 Go)
+- Vendor `origin.sb3`-class project with empty `comments`/`monitors` **imports successfully**
+- Non-empty comments/monitors/block comment → reject
+- Custom procedure SB3 survives export → re-import (`mutation` preserved)
+- GC concurrent with import/save does not quarantine referenced sha
+- Quota concurrent imports cannot exceed org/global caps
+- `gc_state='quarantining'` asset rejected on save
+- Startup reconcile recovers crashed GC mid-flight
+- MP3 equivalence uses fixture corpus `(rate, sampleCount)` — not frame-derived ±1
 
 ## 14. Review checklist
 
-- [x] A + E1 + S1 retained
-- [x] Org grants + project-scoped asset URLs (head-only)
-- [x] V1 contentHash frozen; V2 schema via document fields
-- [x] SVG/media isolation + delivery policy pinned (§7)
-- [x] Import atomic TX + import-only repo method (§4.4)
-- [x] Lease table + GC reference set without grant pinning (§9)
-- [x] Scratch project.json field classification (§6.4)
-- [x] dataFormat canonical table + media limits (§6.2–6.3)
-- [x] Task 0 provisional schema/fixture (§10.1)
-- [x] Quotas (§4.6)
+- [x] Empty comments/monitors normalized; non-empty rejected
+- [x] Block + mutation classification (§6.5)
+- [x] GC quarantining TX + reconcile (§9.4–§9.7)
+- [x] Quota distinct-sha union + reservations (§4.6)
+- [x] `@xmldom/xmldom@0.8.10` pinned; `data:` rejected (§7)
+- [x] Hex CHECK fixed; path lstat/realpath (§4.1, §4.5)
+- [x] WAV sample ceiling corrected; MP3 corpus semantics (§6.3)
+- [x] Extension allow-list (§6.6)
+- [x] equivalenceProduction target pairing (§6.7)
 
 ## 15. Next after Go
 
-Paint/sound editors, approval UX for partial imports, monitor round-trip, stronger SVG rewriting (vs reject), explicit grant purge API, Envelope V2 only if needed beyond schemaVersion.
+Non-empty comments/monitors round-trip, hardware extensions, explicit grant purge API, paint/sound editors.
