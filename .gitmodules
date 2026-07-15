@@ -1,0 +1,3 @@
+[submodule "vendor/scratch-editor"]
+	path = vendor/scratch-editor
+	url = https://github.com/scratchfoundation/scratch-editor.git

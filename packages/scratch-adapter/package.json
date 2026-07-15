@@ -1,0 +1,24 @@
+{
+  "name": "@blocksync/scratch-adapter",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL Gate 0 Scratch VM observe/step/parity adapter. No R1 API stability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "scratch-vm": "5.0.300"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:observe": "vitest run src/observe.test.ts",
+    "test:step": "vitest run src/step.test.ts",
+    "test:parity": "vitest run src/parity.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

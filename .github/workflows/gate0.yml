@@ -1,0 +1,48 @@
+name: Gate 0
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  gate0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Verify submodule pin and cleanliness
+        run: pnpm gate0:check-pin
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: License inventory present
+        run: pnpm gate0:check-licenses
+
+      - name: Package tests
+        run: pnpm gate0:test
+        env:
+          NODE_ENV: test
+
+      - name: WebSocket collab integration
+        run: pnpm gate0:collab
+        env:
+          NODE_ENV: test
+
+      - name: Auth smoke (skips without GOOGLE_CLIENT_ID)
+        run: pnpm --filter @blocksync/gate0-auth-smoke test
+        env:
+          NODE_ENV: test

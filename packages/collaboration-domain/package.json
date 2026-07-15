@@ -1,0 +1,22 @@
+{
+  "name": "@blocksync/collaboration-domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL Gate 0 Yjs collaboration domain. Validates with project-schema before accept. No R1 API stability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@blocksync/project-schema": "workspace:*",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

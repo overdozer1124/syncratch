@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+docs/gate0/evidence/*.log
+apps/gate0-auth-smoke/.cache/
+vendor/scratch-editor/node_modules/
+vendor/scratch-editor/**/node_modules/
+vendor/scratch-editor/**/dist/
+.pnpm-store/

@@ -1,0 +1,17 @@
+{
+  "name": "@blocksync/gate0-auth-smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Optional Gate 0 real Google GIS smoke (skipped without GOOGLE_CLIENT_ID).",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@blocksync/google-identity": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@blocksync/gate0-collab-demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL Gate 0 two-process WebSocket collab test client.",
+  "scripts": {
+    "test": "vitest run",
+    "test:collab": "vitest run src/collab.integration.test.ts"
+  },
+  "dependencies": {
+    "@blocksync/collaboration-domain": "workspace:*",
+    "@blocksync/gate0-collab-server": "workspace:*",
+    "@blocksync/project-schema": "workspace:*",
+    "ws": "^8.18.2",
+    "yjs": "^13.6.27"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

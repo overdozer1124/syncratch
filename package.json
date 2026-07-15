@@ -1,0 +1,32 @@
+{
+  "name": "blocksync-ai",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gate0:check-pin": "node scripts/check-submodule-pin.mjs",
+    "gate0:check-licenses": "node scripts/check-licenses.mjs",
+    "gate0:test": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" --filter \"./apps/gate0-collab-demo\" test",
+    "gate0:collab": "pnpm --filter @blocksync/gate0-collab-demo test:collab",
+    "gate0:summary": "node scripts/gate0-summary.mjs",
+    "build": "pnpm -r --filter \"./packages/**\" build",
+    "test": "pnpm gate0:test"
+  },
+  "pnpm": {
+    "packageExtensions": {
+      "@scratch/scratch-vm": {
+        "dependencies": {
+          "entities": "^6.0.1"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^24.0.0",
+    "entities": "^6.0.1"
+  }
+}
