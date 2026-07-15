@@ -16,9 +16,11 @@
   },
   "dependencies": {
     "@blocksync/auth-context": "workspace:*",
+    "@blocksync/google-identity": "workspace:*",
     "@blocksync/project-service": "workspace:*",
     "@blocksync/project-snapshots-fs": "workspace:*",
     "@blocksync/project-store-sqlite": "workspace:*",
+    "@blocksync/session-service": "workspace:*",
     "@hono/node-server": "^1.14.4",
     "hono": "^4.8.3"
   },

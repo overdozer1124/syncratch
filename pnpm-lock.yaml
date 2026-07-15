@@ -137,6 +137,9 @@ importers:
       '@blocksync/auth-context':
         specifier: workspace:*
         version: link:../../packages/auth-context
+      '@blocksync/google-identity':
+        specifier: workspace:*
+        version: link:../../packages/google-identity
       '@blocksync/project-service':
         specifier: workspace:*
         version: link:../../packages/project-service
@@ -146,6 +149,9 @@ importers:
       '@blocksync/project-store-sqlite':
         specifier: workspace:*
         version: link:../../packages/project-store-sqlite
+      '@blocksync/session-service':
+        specifier: workspace:*
+        version: link:../../packages/session-service
       '@hono/node-server':
         specifier: ^1.14.4
         version: 1.19.14(hono@4.12.30)
