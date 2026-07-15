@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-16  
 **Verdict:** **Technical Go — real GIS conditional**  
-**Implementation HEAD:** `_(see submit SHA after final commit)_`  
+**Implementation HEAD:** `95acb0b032f41fdded84d483bc75f9fa27941abd`  
 **Design / Plan baseline:** `ed1303e4f813c487d8e2b5fa373e68e1f221e3d3`
 
 Gate 0 Technical Go and R1 persistence Technical Go baselines are unchanged.
