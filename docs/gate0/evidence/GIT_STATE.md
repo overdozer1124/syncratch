@@ -1,14 +1,15 @@
 # Gate 0 Git state evidence
 
-**Root commit SHA (freeze tip):** `227b01649c48a7912ab3afe11876e4ca317a51a1`  
-**Implementation commit:** `4a14e05aba13bf459a534a2a2beffb43657996b3`  
+**Implementation / code freeze SHA:** `4a14e05aba13bf459a534a2a2beffb43657996b3`  
+（以降の docs-only commits はこの SHA を証跡として参照する）
+
 **Recorded:** 2026-07-15 after Gate 0 remediations (control boundaries + prior No-Go fixes).
 
 ## Captured output
 
 ```text
-$ git rev-parse HEAD
-227b01649c48a7912ab3afe11876e4ca317a51a1
+$ git rev-parse 4a14e05aba13bf459a534a2a2beffb43657996b3
+4a14e05aba13bf459a534a2a2beffb43657996b3
 
 $ git ls-files --stage vendor/scratch-editor
 160000 7c172e469eb3c21c1e6326ea6cccea60bc14e3a8 0	vendor/scratch-editor
