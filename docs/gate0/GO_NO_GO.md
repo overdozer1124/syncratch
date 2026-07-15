@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-15（制御ブロック境界 + OPCODE表駆動対応後）  
 **Pin:** `7c172e469eb3c21c1e6326ea6cccea60bc14e3a8` (`v14.1.0`)  
-**Root commit SHA:** （コミット後に `docs/gate0/evidence/GIT_STATE.md` へ記録）
+**Root commit SHA:** `227b01649c48a7912ab3afe11876e4ca317a51a1`
 
 ## Legend
 
