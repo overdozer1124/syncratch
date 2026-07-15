@@ -42,8 +42,11 @@ export class SessionAuthContext implements AuthContext {
     if (row.revokedAt) {
       throw new UnauthenticatedError("session revoked");
     }
-    if (Date.parse(row.expiresAt) <= this.now().getTime()) {
-      throw new UnauthenticatedError("session expired");
+    const expiresMs = Date.parse(row.expiresAt);
+    if (!Number.isFinite(expiresMs) || expiresMs <= this.now().getTime()) {
+      throw new UnauthenticatedError(
+        Number.isFinite(expiresMs) ? "session expired" : "session expires_at invalid",
+      );
     }
 
     const membershipOk = this.authRepo.withTransaction((tx) =>

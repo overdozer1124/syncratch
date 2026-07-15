@@ -71,7 +71,13 @@ type AuthRepoTest = {
     csrfHashes: string[];
     subjects: string[];
   };
+  setSessionExpiresAtForTest(idHash: string, expiresAt: string): void;
   withTransaction: ReturnType<typeof openSqliteStore>["authRepo"]["withTransaction"];
+};
+
+const FIXED_UNAUTHORIZED = {
+  code: "UNAUTHORIZED",
+  message: "Unauthorized",
 };
 
 function makeRuntime(opts: {
@@ -299,6 +305,100 @@ describe("auth fixture acceptance", () => {
       expect(aBody.user.id).toBe(bBody.user.id);
       const dump = rt.authRepo.dumpSensitiveColumnsForTest();
       expect(dump.subjects.filter((s) => s === "race-sub")).toHaveLength(1);
+    } finally {
+      rt.close();
+    }
+  });
+
+  it("expired session → 401 with fixed Unauthorized body", async () => {
+    const rt = makeRuntime({
+      verify: async () => ({ ok: true, claims: claims({}) }),
+    });
+    try {
+      const { res, cookies } = await login(rt.app);
+      expect(res.status).toBe(200);
+      const sessionRaw = cookies.get(SESSION_COOKIE_NAME)!.value;
+      rt.authRepo.setSessionExpiresAtForTest(
+        hash(sessionRaw),
+        "2000-01-01T00:00:00.000Z",
+      );
+      const me = await rt.app.request("/v1/auth/me", {
+        headers: { cookie: cookieHeader(cookies) },
+      });
+      expect(me.status).toBe(401);
+      expect(await me.json()).toEqual(FIXED_UNAUTHORIZED);
+    } finally {
+      rt.close();
+    }
+  });
+
+  it("revoked session → 401 with fixed Unauthorized body", async () => {
+    const rt = makeRuntime({
+      verify: async () => ({ ok: true, claims: claims({}) }),
+    });
+    try {
+      const { res, cookies } = await login(rt.app);
+      expect(res.status).toBe(200);
+      const sessionRaw = cookies.get(SESSION_COOKIE_NAME)!.value;
+      rt.authRepo.withTransaction((tx) =>
+        tx.revokeSession(hash(sessionRaw), new Date().toISOString()),
+      );
+      const me = await rt.app.request("/v1/auth/me", {
+        headers: { cookie: cookieHeader(cookies) },
+      });
+      expect(me.status).toBe(401);
+      expect(await me.json()).toEqual(FIXED_UNAUTHORIZED);
+    } finally {
+      rt.close();
+    }
+  });
+
+  it("logout then reuse old cookies → 401 with fixed Unauthorized body", async () => {
+    const rt = makeRuntime({
+      verify: async () => ({ ok: true, claims: claims({}) }),
+    });
+    try {
+      const { res, cookies } = await login(rt.app);
+      expect(res.status).toBe(200);
+      const csrf = cookies.get(CSRF_COOKIE_NAME)!.value;
+      const logout = await rt.app.request("/v1/auth/logout", {
+        method: "POST",
+        headers: {
+          origin: ORIGIN,
+          cookie: cookieHeader(cookies),
+          "x-csrf-token": csrf,
+        },
+      });
+      expect(logout.status).toBe(204);
+      const me = await rt.app.request("/v1/auth/me", {
+        headers: { cookie: cookieHeader(cookies) },
+      });
+      expect(me.status).toBe(401);
+      expect(await me.json()).toEqual(FIXED_UNAUTHORIZED);
+    } finally {
+      rt.close();
+    }
+  });
+
+  it("auth reject reasons are not distinguishable in HTTP body", async () => {
+    const rt = makeRuntime({
+      verify: async () => ({ ok: true, claims: claims({}) }),
+    });
+    try {
+      const { cookies } = await login(rt.app);
+      const missing = await rt.app.request("/v1/auth/me", { headers: {} });
+      const expiredCookies = cookieHeader(cookies);
+      rt.authRepo.setSessionExpiresAtForTest(
+        hash(cookies.get(SESSION_COOKIE_NAME)!.value),
+        "not-a-date",
+      );
+      const invalidExpiry = await rt.app.request("/v1/auth/me", {
+        headers: { cookie: expiredCookies },
+      });
+      expect(missing.status).toBe(401);
+      expect(invalidExpiry.status).toBe(401);
+      expect(await missing.json()).toEqual(FIXED_UNAUTHORIZED);
+      expect(await invalidExpiry.json()).toEqual(FIXED_UNAUTHORIZED);
     } finally {
       rt.close();
     }

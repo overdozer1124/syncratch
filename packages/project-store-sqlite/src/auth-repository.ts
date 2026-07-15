@@ -21,6 +21,7 @@ export function createSqliteAuthRepository(db: Database.Database): AuthRepositor
     csrfHashes: string[];
     subjects: string[];
   };
+  setSessionExpiresAtForTest(idHash: string, expiresAt: string): void;
 } {
   const stmts = {
     findOrgByHd: db.prepare(`
@@ -105,6 +106,9 @@ export function createSqliteAuthRepository(db: Database.Database): AuthRepositor
     `),
     disableUser: db.prepare(`
       UPDATE users SET status = 'disabled', updated_at = ? WHERE id = ?
+    `),
+    setExpires: db.prepare(`
+      UPDATE sessions SET expires_at = ? WHERE id_hash = ?
     `),
   };
 
@@ -220,6 +224,9 @@ export function createSqliteAuthRepository(db: Database.Database): AuthRepositor
         csrfHashes: sessions.map((s) => s.csrfHash),
         subjects: subjects.map((s) => s.subject),
       };
+    },
+    setSessionExpiresAtForTest(idHash, expiresAt) {
+      stmts.setExpires.run(expiresAt, idHash);
     },
   };
 }

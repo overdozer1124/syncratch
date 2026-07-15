@@ -107,4 +107,17 @@ describe("assertAuthBootConfig", () => {
       ),
     ).toThrow(/client/i);
   });
+
+  it("refuses google mode with empty allowed hosted domains", () => {
+    expect(() =>
+      assertAuthBootConfig(
+        baseEnv({
+          R1_AUTH_MODE: "google",
+          R1_COOKIE_SECURE: "true",
+          R1_GOOGLE_CLIENT_ID: "client.apps.googleusercontent.com",
+          R1_ALLOWED_HOSTED_DOMAINS: "  ,  ",
+        }),
+      ),
+    ).toThrow(/HOSTED_DOMAINS|hosted domain/i);
+  });
 });

@@ -70,11 +70,13 @@ function cookieHeader(jar: Map<string, { value: string; raw: string }>): string 
 function makeGoogleRuntime(opts?: {
   dbPath?: string;
   verify?: (token: string) => Promise<VerifyResult>;
+  cookieSecure?: boolean;
 }) {
   const dir = mkdtempSync(join(tmpdir(), "r1-auth-http-"));
   const dbPath = opts?.dbPath ?? join(dir, "projects.sqlite");
   const snapDir = join(dir, "snapshots");
   const store = openSqliteStore({ dbPath });
+  const cookieSecure = opts?.cookieSecure ?? false;
   const verify =
     opts?.verify ??
     (async () => ok(claims()));
@@ -103,7 +105,7 @@ function makeGoogleRuntime(opts?: {
     service,
     authMode: "google",
     allowedOrigins: [ALLOWED_ORIGIN],
-    cookieSecure: false,
+    cookieSecure,
     sessionService,
     authRepo: store.authRepo,
     hash,
@@ -144,7 +146,7 @@ function makeGoogleRuntime(opts?: {
         service: nextService,
         authMode: "google",
         allowedOrigins: [ALLOWED_ORIGIN],
-        cookieSecure: false,
+        cookieSecure,
         sessionService: nextSession,
         authRepo: next.authRepo,
         hash,
@@ -402,6 +404,78 @@ describe("auth routes (google mode)", () => {
     } finally {
       close();
     }
+  });
+
+  it("cookieSecure=true sets and clears Secure on session and csrf cookies", async () => {
+    const { app, close } = makeGoogleRuntime({ cookieSecure: true });
+    try {
+      const { cookies, res } = await loginOk(app);
+      const setSession = parseCookies(res).get(SESSION_COOKIE_NAME)!;
+      const setCsrf = parseCookies(res).get(CSRF_COOKIE_NAME)!;
+      expect(setSession.raw).toMatch(/(?:^|;)\s*Secure(?:;|$)/i);
+      expect(setCsrf.raw).toMatch(/(?:^|;)\s*Secure(?:;|$)/i);
+
+      const logout = await app.request("/v1/auth/logout", {
+        method: "POST",
+        headers: {
+          origin: ALLOWED_ORIGIN,
+          cookie: cookieHeader(cookies),
+          "x-csrf-token": cookies.get(CSRF_COOKIE_NAME)!.value,
+        },
+      });
+      expect(logout.status).toBe(204);
+      const cleared = parseCookies(logout);
+      expect(cleared.get(SESSION_COOKIE_NAME)!.raw).toMatch(
+        /(?:^|;)\s*Secure(?:;|$)/i,
+      );
+      expect(cleared.get(CSRF_COOKIE_NAME)!.raw).toMatch(
+        /(?:^|;)\s*Secure(?:;|$)/i,
+      );
+    } finally {
+      close();
+    }
+  });
+
+  it("verify failure codes all map to identical AUTH_FAILED body", async () => {
+    const codes = [
+      "BAD_SIGNATURE",
+      "BAD_AUD",
+      "BAD_ISS",
+      "EXPIRED",
+      "EMAIL_NOT_VERIFIED",
+      "HD_MISSING",
+      "HD_MISMATCH",
+    ] as const;
+    const bodies: string[] = [];
+    for (const code of codes) {
+      const { app, close } = makeGoogleRuntime({
+        verify: async () => ({
+          ok: false,
+          code,
+          message: `internal ${code}`,
+        }),
+      });
+      try {
+        const res = await app.request("/v1/auth/google", {
+          method: "POST",
+          headers: {
+            origin: ALLOWED_ORIGIN,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ idToken: "x" }),
+        });
+        expect(res.status).toBe(401);
+        const body = await res.json();
+        expect(body).toEqual({
+          code: "AUTH_FAILED",
+          message: "Authentication failed",
+        });
+        bodies.push(JSON.stringify(body));
+      } finally {
+        close();
+      }
+    }
+    expect(new Set(bodies).size).toBe(1);
   });
 
   it("spoof headers ignored under google mode", async () => {

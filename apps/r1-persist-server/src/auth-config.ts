@@ -72,6 +72,11 @@ export function assertAuthBootConfig(env: NodeJS.ProcessEnv): AuthBootConfig {
         "R1_ALLOWED_ORIGINS must be a non-empty allow-list in google mode",
       );
     }
+    if (allowedHostedDomains.length === 0) {
+      throw new Error(
+        "R1_ALLOWED_HOSTED_DOMAINS must be a non-empty allow-list in google mode",
+      );
+    }
   }
 
   return {

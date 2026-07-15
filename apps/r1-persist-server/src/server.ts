@@ -77,20 +77,33 @@ function headersFromRequest(c: {
   };
 }
 
+/** Public-facing auth failures must not reveal which session state failed. */
+const PUBLIC_UNAUTHORIZED = {
+  status: 401 as const,
+  body: { code: "UNAUTHORIZED", message: "Unauthorized" },
+};
+const PUBLIC_AUTH_FAILED = {
+  status: 401 as const,
+  body: { code: "AUTH_FAILED", message: "Authentication failed" },
+};
+
 function mapError(
   err: unknown,
 ): { status: number; body: { code: string; message: string } } {
   if (err instanceof AuthFailedError) {
-    return { status: 401, body: { code: "AUTH_FAILED", message: err.message } };
+    return { ...PUBLIC_AUTH_FAILED };
   }
   if (err instanceof UnauthenticatedError) {
-    return { status: 401, body: { code: "UNAUTHORIZED", message: err.message } };
+    return { ...PUBLIC_UNAUTHORIZED };
   }
   if (err instanceof BadRequestError) {
     return { status: 400, body: { code: err.code, message: err.message } };
   }
   if (err instanceof UnauthorizedError) {
-    return { status: 401, body: { code: err.code, message: err.message } };
+    return {
+      status: 401,
+      body: { code: err.code, message: "Unauthorized" },
+    };
   }
   if (err instanceof ForbiddenError) {
     return { status: 403, body: { code: err.code, message: err.message } };
@@ -211,6 +224,10 @@ export function createPersistApp(deps: CreateServerDeps): Hono {
   );
 
   app.onError((err, c) => {
+    if (err instanceof UnauthenticatedError || err instanceof AuthFailedError) {
+      // Internal reason only — never echo to clients; no Cookie/credential values.
+      console.warn(`auth_reject class=${err.name} reason=${err.message}`);
+    }
     const mapped = mapError(err);
     return c.json(mapped.body, mapped.status as 400);
   });
