@@ -8,7 +8,7 @@ if (!dataDir) {
 }
 const port = Number(process.env.PORT ?? "0");
 
-const { app, repo } = bootstrapPersistRuntime(dataDir);
+const { app, close } = bootstrapPersistRuntime(dataDir);
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
   process.stdout.write(`READY ${info.port}\n`);
@@ -16,7 +16,7 @@ const server = serve({ fetch: app.fetch, port }, (info) => {
 
 const shutdown = () => {
   try {
-    repo.close();
+    close();
   } catch {
     // ignore
   }

@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import {
   assertEnvelope,
   type ProjectEnvelopeV1,
@@ -10,22 +10,14 @@ import {
   type ProjectSummary,
   type SnapshotMeta,
 } from "@blocksync/project-service";
-import { migrate } from "./migrate.js";
-
-export interface SqliteProjectRepositoryOptions {
-  dbPath: string;
-}
 
 function parseEnvelope(json: string): ProjectEnvelopeV1 {
   return assertEnvelope(JSON.parse(json));
 }
 
-export function openSqliteProjectRepository(
-  options: SqliteProjectRepositoryOptions,
-): ProjectRepository & { close(): void; db: Database.Database } {
-  const db = new Database(options.dbPath);
-  migrate(db);
-
+export function createSqliteProjectRepository(
+  db: Database.Database,
+): ProjectRepository {
   const stmts = {
     insertProject: db.prepare(`
       INSERT INTO projects (id, organization_id, owner_user_id, title, head_revision, created_at, updated_at)
@@ -215,10 +207,6 @@ export function openSqliteProjectRepository(
   const txApi = createTx();
 
   return {
-    db,
-    close() {
-      db.close();
-    },
     listAllSnapshotStorageKeys() {
       return txApi.listAllSnapshotStorageKeys();
     },

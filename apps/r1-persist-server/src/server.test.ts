@@ -6,13 +6,14 @@ import { StubAuthContext } from "@blocksync/auth-context";
 import { emptyDocument, richFixtureDocument } from "@blocksync/project-envelope";
 import { createProjectService } from "@blocksync/project-service";
 import { createFsSnapshotStore } from "@blocksync/project-snapshots-fs";
-import { openSqliteProjectRepository } from "@blocksync/project-store-sqlite";
+import { openSqliteStore } from "@blocksync/project-store-sqlite";
 import { createPersistApp } from "./server.js";
 
 function makeApp() {
   const dir = mkdtempSync(join(tmpdir(), "r1-http-"));
   const snapDir = join(dir, "snapshots");
-  const repo = openSqliteProjectRepository({ dbPath: join(dir, "p.sqlite") });
+  const store = openSqliteStore({ dbPath: join(dir, "p.sqlite") });
+  const repo = store.projectRepo;
   const service = createProjectService({
     auth: new StubAuthContext(),
     repo,
@@ -22,7 +23,7 @@ function makeApp() {
   return {
     app,
     snapDir,
-    close: () => repo.close(),
+    close: () => store.close(),
     headers: { "x-user-id": "user-a", "content-type": "application/json" },
   };
 }

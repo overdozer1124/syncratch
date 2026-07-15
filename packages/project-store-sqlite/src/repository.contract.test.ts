@@ -13,7 +13,7 @@ import {
   createProjectService,
 } from "@blocksync/project-service";
 import { createFsSnapshotStore } from "@blocksync/project-snapshots-fs";
-import { openSqliteProjectRepository } from "./index.js";
+import { openSqliteStore } from "./index.js";
 
 const userA = { headers: { "x-user-id": "user-a" } };
 
@@ -27,7 +27,8 @@ describe("sqlite project repository contracts", () => {
     const dbPath = join(dir, "projects.sqlite");
     const snapDir = join(dir, "snapshots");
 
-    const repo1 = openSqliteProjectRepository({ dbPath });
+    const store1 = openSqliteStore({ dbPath });
+    const repo1 = store1.projectRepo;
     const service1 = createProjectService({
       auth: new StubAuthContext(),
       repo: repo1,
@@ -41,9 +42,10 @@ describe("sqlite project repository contracts", () => {
       schemaVersion: 1,
       document: richFixtureDocument(),
     });
-    repo1.close();
+    store1.close();
 
-    const repo2 = openSqliteProjectRepository({ dbPath });
+    const store2 = openSqliteStore({ dbPath });
+    const repo2 = store2.projectRepo;
     const service2 = createProjectService({
       auth: new StubAuthContext(),
       repo: repo2,
@@ -52,14 +54,13 @@ describe("sqlite project repository contracts", () => {
     const head = await service2.getProject(userA, created.projectId);
     expect(head.revision).toBe(saved.revision);
     expect(head.contentHash).toBe(saved.contentHash);
-    repo2.close();
+    store2.close();
   });
 
   it("CAS: concurrent same-base saves — one success, one stale", async () => {
     const dir = tempDir("r1-cas-");
-    const repo = openSqliteProjectRepository({
-      dbPath: join(dir, "projects.sqlite"),
-    });
+    const store = openSqliteStore({ dbPath: join(dir, "projects.sqlite") });
+    const repo = store.projectRepo;
     const service = createProjectService({
       auth: new StubAuthContext(),
       repo,
@@ -95,14 +96,13 @@ describe("sqlite project repository contracts", () => {
     );
     const head = await service.getProject(userA, created.projectId);
     expect(head.revision).toBe(1);
-    repo.close();
+    store.close();
   });
 
   it("rolls back when callback throws after partial mutation", () => {
     const dir = tempDir("r1-rb-");
-    const repo = openSqliteProjectRepository({
-      dbPath: join(dir, "projects.sqlite"),
-    });
+    const store = openSqliteStore({ dbPath: join(dir, "projects.sqlite") });
+    const repo = store.projectRepo;
 
     repo.withTransaction((tx) => {
       tx.createProject({
@@ -151,15 +151,14 @@ describe("sqlite project repository contracts", () => {
     const after = repo.withTransaction((tx) => tx.getHead("p-rb"));
     expect(after?.revision).toBe(0);
     expect(after?.contentHash).toBe(before?.contentHash);
-    repo.close();
+    store.close();
   });
 
   it("restore replay returns stored envelope after blob deletion", async () => {
     const dir = tempDir("r1-restore-replay-");
     const snapDir = join(dir, "snapshots");
-    const repo = openSqliteProjectRepository({
-      dbPath: join(dir, "projects.sqlite"),
-    });
+    const store = openSqliteStore({ dbPath: join(dir, "projects.sqlite") });
+    const repo = store.projectRepo;
     const snapshots = createFsSnapshotStore(snapDir);
     const service = createProjectService({
       auth: new StubAuthContext(),
@@ -202,14 +201,13 @@ describe("sqlite project repository contracts", () => {
     });
     expect(replay.revision).toBe(first.revision);
     expect(replay.contentHash).toBe(first.contentHash);
-    repo.close();
+    store.close();
   });
 
   it("same head can be snapshotted twice and both restores work", async () => {
     const dir = tempDir("r1-snap2-");
-    const repo = openSqliteProjectRepository({
-      dbPath: join(dir, "projects.sqlite"),
-    });
+    const store = openSqliteStore({ dbPath: join(dir, "projects.sqlite") });
+    const repo = store.projectRepo;
     const service = createProjectService({
       auth: new StubAuthContext(),
       repo,
@@ -258,14 +256,13 @@ describe("sqlite project repository contracts", () => {
       op: "restore",
       snapshotId: first.snapshotId,
     });
-    repo.close();
+    store.close();
   });
 
   it("BOLA: cannot restore other project's snapshot id", async () => {
     const dir = tempDir("r1-bola-");
-    const repo = openSqliteProjectRepository({
-      dbPath: join(dir, "projects.sqlite"),
-    });
+    const store = openSqliteStore({ dbPath: join(dir, "projects.sqlite") });
+    const repo = store.projectRepo;
     const service = createProjectService({
       auth: new StubAuthContext(),
       repo,
@@ -298,6 +295,6 @@ describe("sqlite project repository contracts", () => {
         schemaVersion: 1,
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
-    repo.close();
+    store.close();
   });
 });

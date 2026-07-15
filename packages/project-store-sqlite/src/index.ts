@@ -1,7 +1,8 @@
 /**
- * @experimental R1 SQLite project repository.
+ * @experimental R1 SQLite project + auth store.
  */
 
-export { openSqliteProjectRepository } from "./repository.js";
-export type { SqliteProjectRepositoryOptions } from "./repository.js";
+export { openSqliteStore } from "./store.js";
+export type { SqliteStore, SqliteStoreOptions } from "./store.js";
 export { migrate } from "./migrate.js";
+export { migrateAuth } from "./migrate-auth.js";

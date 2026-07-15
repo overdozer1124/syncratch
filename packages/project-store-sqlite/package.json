@@ -17,6 +17,7 @@
     "@blocksync/project-envelope": "workspace:*",
     "@blocksync/project-service": "workspace:*",
     "@blocksync/project-snapshots-fs": "workspace:*",
+    "@blocksync/session-service": "workspace:*",
     "better-sqlite3": "^12.11.1"
   },
   "devDependencies": {
