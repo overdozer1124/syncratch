@@ -15,3 +15,5 @@ vendor/scratch-editor/**/dist/
 .tmp-vm-dist/
 vendor/scratch-editor-bak*/
 *.zip.bomb
+apps/r1-persist-server/data/
+**/*.sqlite
