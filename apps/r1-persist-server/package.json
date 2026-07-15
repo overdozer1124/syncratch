@@ -1,0 +1,28 @@
+{
+  "name": "@blocksync/r1-persist-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL R1 project persistence HTTP server. No production API stability.",
+  "exports": {
+    ".": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@blocksync/auth-context": "workspace:*",
+    "@blocksync/project-service": "workspace:*",
+    "@blocksync/project-snapshots-fs": "workspace:*",
+    "@blocksync/project-store-sqlite": "workspace:*",
+    "@hono/node-server": "^1.14.4",
+    "hono": "^4.8.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
