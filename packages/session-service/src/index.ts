@@ -15,3 +15,8 @@ export {
   type SessionService,
 } from "./session-service.js";
 export { createMemoryAuthRepository } from "./memory-auth-repository.js";
+export {
+  SessionAuthContext,
+  UnauthenticatedError,
+  type SessionAuthContextDeps,
+} from "./session-auth-context.js";

@@ -129,6 +129,8 @@ export function createMemoryAuthRepository(): AuthRepository & {
   };
   /** Force unique-constraint race for concurrent first-login coverage. */
   forceNextInsertCollision(): void;
+  disableUserForTest(userId: string): void;
+  deleteMembershipForTest(organizationId: string, userId: string): void;
 } {
   let state: State = {
     orgs: new Map(),
@@ -143,6 +145,18 @@ export function createMemoryAuthRepository(): AuthRepository & {
   return {
     forceNextInsertCollision() {
       forceCollision = true;
+    },
+    disableUserForTest(userId) {
+      const u = state.users.get(userId);
+      if (u) u.status = "disabled";
+    },
+    deleteMembershipForTest(organizationId, userId) {
+      state.sessions.forEach((s, key) => {
+        if (s.organizationId === organizationId && s.userId === userId) {
+          state.sessions.delete(key);
+        }
+      });
+      state.memberships.delete(`${organizationId}|${userId}`);
     },
     withTransaction<T>(fn: (inner: AuthRepositoryTx) => T): T {
       const snapshot = cloneState(state);
