@@ -1,16 +1,16 @@
-﻿# R1 Auth / Session / Organization Implementation Plan
+# R1 Auth / Session / Organization Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Cookie-session Google auth with immutable sub竊弛rg bind, double-submit CSRF Cookie, and production stub exclusion 窶・without regressing R1 persistence ACL/CAS.
+**Goal:** Cookie-session Google auth with immutable sub→org bind, double-submit CSRF Cookie, and production stub exclusion — without regressing R1 persistence ACL/CAS.
 
-**Architecture:** One SQLite connection owned by `project-store-sqlite`; auth migrate + `AuthRepository` share that connection; `SessionAuthContext` + session-service; Hono Origin/CSRF/Cookie matrix per design.
+**Architecture:** `auth-context` (types/stub only) ← `session-service` (AuthRepository port + SessionAuthContext + login) ← `project-store-sqlite` (`openSqliteStore` implements repos) ← server. Acyclic.
 
-**Tech Stack:** TypeScript, pnpm, Vitest, better-sqlite3 ^12.11.1+, Hono, `@blocksync/google-identity` (**claim surface unchanged** 窶・no `name`). Spec: `docs/superpowers/specs/2026-07-15-r1-auth-org-design.md`.
+**Tech Stack:** TypeScript, pnpm, Vitest, better-sqlite3 ^12.11.1+, Hono, `@blocksync/google-identity` (**claim surface unchanged** — no `name`). Spec: `docs/superpowers/specs/2026-07-15-r1-auth-org-design.md`.
 
 ## Global Constraints
 
-- Design invariants for CSRF routes, Origin (mandatory on login + mutating), and sub竊弛rg bind are **non-negotiable**
+- Design invariants for CSRF routes, Origin (mandatory on login + mutating), and sub→org bind are **non-negotiable**
 - Never store Google ID tokens / raw session / raw CSRF in DB or logs
 - Production session/CSRF ids: `randomBytes(32).toString("base64url")` only (DI for tests)
 - `AuthContext.resolve` outside TX; ACL + login upsert inside sync TX as specified
@@ -41,7 +41,7 @@ export function assertAuthBootConfig(env: NodeJS.ProcessEnv): {
 }
 ```
 
-- [ ] **Step 1: Failing tests** 窶・production+stub refuse; google+Secure=false refuse; google+empty allowedOrigins refuse; parties parsed
+- [ ] **Step 1: Failing tests** — production+stub refuse; google+Secure=false refuse; google+empty allowedOrigins refuse; parties parsed
 
 - [ ] **Step 2: Implement**
 
@@ -49,21 +49,33 @@ export function assertAuthBootConfig(env: NodeJS.ProcessEnv): {
 
 ---
 
-### Task 2: Auth schema on shared DB connection
+### Task 2: Auth schema on shared DB + AuthRepository port in session-service
 
-**Files (ownership fixed):**
-- Modify: `packages/project-store-sqlite/src/migrate.ts` 窶・call `migrateAuth(db)` after project tables; keep `PRAGMA foreign_keys=ON`
+**Dependency rule:** `AuthRepository` / `AuthRepositoryTx` / `SessionRow` types are defined in `packages/session-service`. `project-store-sqlite` **implements** them. `auth-context` has **no** knowledge of AuthRepository.
+
+**Files (ownership fixed — one factory only):**
+- Create (port): `packages/session-service/src/ports.ts` (may land as minimal package with Task 2)
+- Modify: `packages/project-store-sqlite/src/migrate.ts` — call `migrateAuth(db)` after project tables; `PRAGMA foreign_keys=ON`
 - Create: `packages/project-store-sqlite/src/migrate-auth.ts`
 - Create: `packages/project-store-sqlite/src/auth-repository.ts`, `auth-repository.contract.test.ts`
-- Modify: `packages/project-store-sqlite/src/repository.ts` / `index.ts` 窶・export `openSqliteDatabase(path)` **or** `openSqliteProjectRepository` returns `{ db, projectRepo, authRepo, close }` so bootstrap holds **one** close
+- Modify: `packages/project-store-sqlite/src/index.ts` — **only** this factory:
 
-**Pinned connect lifecycle:**
-1. `bootstrap` 竊・`const store = openSqliteStore(dbPath)` // opens once
-2. `store` runs project migrate + auth migrate
-3. `projectRepo` + `authRepo` share `store.db`
-4. Only `store.close()` closes the connection
+```typescript
+export function openSqliteStore(options: { dbPath: string }): {
+  projectRepo: ProjectRepository
+  authRepo: AuthRepository
+  close(): void
+}
+```
 
-Schema: design ﾂｧ6.1 including FKs, CHECKs, `external_identities.organization_id`, composite FK `sessions(organization_id,user_id) 竊・organization_memberships`.
+**Pinned lifecycle:**
+1. `const store = openSqliteStore({ dbPath })`
+2. Inside: open DB → project migrate → auth migrate → build both repos
+3. Only `store.close()` closes the connection
+
+Schema: design §6.1 including FKs, CHECKs, `external_identities.organization_id`, composite FK `sessions(organization_id,user_id) → organization_memberships`.
+
+Port types live in `packages/session-service/src/ports.ts` (exported from session-service):
 
 ```typescript
 export interface AuthRepository {
@@ -89,7 +101,7 @@ export interface AuthRepositoryTx {
 }
 ```
 
-- [ ] **Step 1: Contract tests** 窶・reopen DB; FK enforce; concurrent first-login simulation unique on `(provider,subject)`
+- [ ] **Step 1: Contract tests** — reopen DB; FK enforce; concurrent first-login simulation unique on `(provider,subject)`
 
 - [ ] **Step 2: Implement**
 
@@ -97,10 +109,10 @@ export interface AuthRepositoryTx {
 
 ---
 
-### Task 3: session-service (bind invariants + entropy)
+### Task 3: session-service (login + entropy; owns AuthRepository port)
 
 **Files:**
-- Create: `packages/session-service/**`
+- Create: `packages/session-service/**` (depends on `auth-context` + `google-identity` only — **not** on `project-store-sqlite`)
 
 ```typescript
 export function createSessionService(deps: {
@@ -121,14 +133,14 @@ Login algorithm (single sync TX after successful verify):
 
 1. Resolve org from `hd` (ensure if first-seen allow-listed domain)
 2. `findExternalIdentity(google, sub)`:
-   - **Exists:** if `identity.organizationId !== resolvedOrgId` 竊・fail `AUTH_FAILED` (no writes). Else update email optional; create **new** session (+ rotate csrf) for existing user/org
-   - **Missing:** create org (if needed), user, identity (with organization_id), membership, session 窶・all in **one** `withTransaction`
+   - **Exists:** if `identity.organizationId !== resolvedOrgId` → fail `AUTH_FAILED` (no writes). Else update email optional; create **new** session (+ rotate csrf) for existing user/org
+   - **Missing:** create org (if needed), user, identity (with organization_id), membership, session — all in **one** `withTransaction`
 3. Return cookie material: raw session + raw csrf (hashes only to DB)
 
 - [ ] **Step 1: Failing tests**
   - first login creates bind
   - re-login same hd OK; different hd AUTH_FAILED + no membership/org change
-  - parallel first login 竊・one identity
+  - parallel first login → one identity
   - email updates; displayName not set from token
   - authorizedParties passed through when configured
 
@@ -138,18 +150,19 @@ Login algorithm (single sync TX after successful verify):
 
 ---
 
-### Task 4: SessionAuthContext (membership every resolve)
+### Task 4: SessionAuthContext in session-service (membership every resolve)
 
 **Files:**
-- Create: `packages/auth-context/src/session-auth-context.ts`, tests
+- Create: `packages/session-service/src/session-auth-context.ts`, tests
+- `auth-context` remains types + `StubAuthContext` only
 
-Resolve steps: cookie 竊・hash 竊・session row 竊・not revoked/expired 竊・user/org active 竊・**`hasActiveMembership`** 竊・principal. Ignore spoof headers.
+Resolve steps: cookie → hash → session row → not revoked/expired → user/org active → **`hasActiveMembership`** → principal. Ignore spoof headers.
 
-- [ ] **Step 1: Failing tests** 窶・membership removed 竍・resolve throws; spoof headers ignored
+- [ ] **Step 1: Failing tests** — membership removed ⇒ resolve throws; spoof headers ignored
 
 - [ ] **Step 2: Implement**
 
-- [ ] **Step 3: PASS; commit** `feat(auth-context): SessionAuthContext membership gate`
+- [ ] **Step 3: PASS; commit** `feat(session-service): SessionAuthContext membership gate`
 
 ---
 
@@ -162,7 +175,7 @@ Resolve steps: cookie 竊・hash 竊・session row 竊・not revoked/expired 竊
 
 Cookie helpers must set/clear with identical `Secure` / `SameSite=Lax` / `Path=/` for `blocksync_session` (HttpOnly) and `blocksync_csrf` (!HttpOnly).
 
-Route matrix = design ﾂｧ7.3 exactly.
+Route matrix = design §7.3 exactly.
 
 `verifyGoogleIdToken` options:
 ```typescript
@@ -175,12 +188,14 @@ Route matrix = design ﾂｧ7.3 exactly.
 ```
 
 - [ ] **Step 1: Failing HTTP tests**
-  - login without Origin 竊・403
-  - login wrong Origin 竊・403
-  - login OK sets both cookies
-  - mutation without Origin 竊・403
-  - mutation with CSRF + Origin OK after restart (same data dir; cookies preserved by client jar)
-  - logout clears both cookies with same Secure/SameSite/Path attributes
+  - login without Origin → 403; wrong Origin → 403
+  - login OK sets session + csrf cookies
+  - mutation: missing CSRF cookie → 403; missing X-CSRF-Token → 403; mismatch → 403
+  - mutation without Origin → 403
+  - mutation with both CSRF cookie+header + Origin OK after restart
+  - CORS OPTIONS preflight allow-listed Origin → ACAO exact + ACAC true + Vary: Origin
+  - CORS disallowed Origin → no Access-Control-Allow-Origin
+  - logout clears both cookies with same Secure/SameSite/Path
   - spoof headers ignored under google mode
 
 - [ ] **Step 2: Implement**
@@ -194,7 +209,7 @@ Route matrix = design ﾂｧ7.3 exactly.
 **Files:**
 - Create/modify: `apps/r1-auth-demo` or extend `r1-persist-demo` google-mode suite
 
-Blocking cases: design ﾂｧ12.1 (including hd mismatch, membership revoke竊・01, concurrent login, cookie clear attrs, CSRF after reload/restart).
+Blocking cases: design §12.1 (including hd mismatch, membership revoke→401, concurrent login, cookie clear attrs, CSRF after reload/restart).
 
 - [ ] **Step 1: Failing acceptance**
 
@@ -210,7 +225,7 @@ Blocking cases: design ﾂｧ12.1 (including hd mismatch, membership revoke竊�
 - `apps/r1-auth-smoke/**`, `docs/r1/AUTH_EVIDENCE.md` template
 - CI: fixture auth only (no live GIS required)
 
-Verdict wording: **Technical Go 窶・real GIS conditional** without evidence.
+Verdict wording: **Technical Go — real GIS conditional** without evidence.
 
 - [ ] Commit `docs(r1): auth smoke and evidence template`
 
@@ -233,13 +248,13 @@ Document: `R1_GOOGLE_AUTHORIZED_PARTIES`, Origin list, Secure guards, stub forbi
 
 | Requirement | Task |
 |---|---|
-| CSRF Cookie + DB hash; no plaintext CSRF in DB | 3, 5, 6 |
-| `/auth/google` no CSRF; Origin+JSON+CORS | 5, 6 |
+| CSRF Cookie + header both required; DB hash only | 3, 5, 6 |
+| `/auth/google` no CSRF; Origin+JSON+CORS preflight | 5, 6 |
 | Mutations Origin mandatory | 5, 6 |
-| Immutable sub竊弛rg; hd mismatch fail | 3, 6 |
+| Immutable sub→org; hd mismatch fail | 3, 6 |
 | Membership on every resolve | 4, 6 |
 | Concurrent first login single TX | 2, 3, 6 |
-| Shared DB connection ownership | 2, 5 |
+| `openSqliteStore` sole factory; acyclic deps | 2, 3, 4, 5 |
 | FK/CHECK/composite FK | 2 |
 | No Google `name` / displayName sync | 3 |
 | `randomBytes(32)` | 3, 5 |
