@@ -12,6 +12,7 @@ import {
   NotFoundError,
   SchemaInvalidError,
   SchemaVersionMismatchError,
+  SnapshotHashMismatchError,
   StaleRevisionError,
   TransactionPayloadMismatchError,
   UnauthorizedError,
@@ -64,7 +65,8 @@ function mapError(
   }
   if (
     err instanceof SchemaInvalidError ||
-    err instanceof SchemaVersionMismatchError
+    err instanceof SchemaVersionMismatchError ||
+    err instanceof SnapshotHashMismatchError
   ) {
     return { status: 422, body: { code: err.code, message: err.message } };
   }

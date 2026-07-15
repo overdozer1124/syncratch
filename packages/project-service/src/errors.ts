@@ -65,3 +65,12 @@ export class BadRequestError extends Error {
     this.name = "BadRequestError";
   }
 }
+
+/** Corrupt or hash-mismatched snapshot blob (HTTP 422). */
+export class SnapshotHashMismatchError extends Error {
+  readonly code = "SNAPSHOT_HASH_MISMATCH" as const;
+  constructor(message = "SNAPSHOT_HASH_MISMATCH") {
+    super(message);
+    this.name = "SnapshotHashMismatchError";
+  }
+}

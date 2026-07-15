@@ -233,9 +233,17 @@ Write path:
 **Restore:**
 
 1. Lookup snapshot by **`(projectId, snapshotId)` only** — never by `snapshotId` alone (prevents BOLA across projects).
-2. Load file; verify `sha256(file) === content_hash` in DB.
-3. Parse document; `validateProject` + client `schemaVersion` rules on the ensuing save.
-4. Call normal `saveDocument` with caller’s `baseRevision`, `schemaVersion`, and new `transactionId`.
+2. Inside the first sync TX (before blob I/O): ACL; load meta; compute
+   `requestHash({ op: "restore", schemaVersion, contentHash: meta.contentHash, snapshotId })`;
+   `findRevisionByTransactionId` — same hash → return stored envelope; different →
+   `TRANSACTION_PAYLOAD_MISMATCH`.
+3. If unprocessed: load blob; verify `sha256(bytes) === meta.contentHash`; controlled JSON parse
+   (corrupt → `SNAPSHOT_HASH_MISMATCH` 422); schema/document validate; re-check
+   `contentHash(document) === meta.contentHash`.
+4. Commit via CAS path (re-check transactionId for races).
+
+**Idempotent restore replay test (required):** restore success → delete/corrupt blob →
+same `transactionId` replay → original envelope (not `SNAPSHOT_BLOB_MISSING`).
 
 **BOLA test (required):** Project B’s `snapshotId` cannot restore into Project A.
 

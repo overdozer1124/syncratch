@@ -67,6 +67,10 @@ writes where `sha256(bytes) !== contentHash`.
 Restore commits use `requestHash({ op: "restore", schemaVersion, contentHash, snapshotId })`
 and set `envelope.revisionMeta = { op: "restore", snapshotId }`.
 
+Idempotent restore looks up `(projectId, transactionId)` **before** reading the snapshot
+blob (using `meta.contentHash` for the hash). A successful restore can therefore be
+replayed even if the blob file was deleted afterward.
+
 ## Tests
 
 ```bash

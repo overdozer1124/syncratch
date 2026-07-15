@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -151,6 +151,57 @@ describe("sqlite project repository contracts", () => {
     const after = repo.withTransaction((tx) => tx.getHead("p-rb"));
     expect(after?.revision).toBe(0);
     expect(after?.contentHash).toBe(before?.contentHash);
+    repo.close();
+  });
+
+  it("restore replay returns stored envelope after blob deletion", async () => {
+    const dir = tempDir("r1-restore-replay-");
+    const snapDir = join(dir, "snapshots");
+    const repo = openSqliteProjectRepository({
+      dbPath: join(dir, "projects.sqlite"),
+    });
+    const snapshots = createFsSnapshotStore(snapDir);
+    const service = createProjectService({
+      auth: new StubAuthContext(),
+      repo,
+      snapshots,
+    });
+    const created = await service.createProject(userA, { title: "Replay" });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 0,
+      transactionId: "tx-1",
+      schemaVersion: 1,
+      document: richFixtureDocument(),
+    });
+    const snap = await service.createSnapshot(userA, {
+      projectId: created.projectId,
+    });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 1,
+      transactionId: "tx-2",
+      schemaVersion: 1,
+      document: emptyDocument(),
+    });
+    const first = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: snap.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-restore-idem",
+      schemaVersion: 1,
+    });
+    unlinkSync(join(snapDir, snap.storageKey));
+
+    const replay = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: snap.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-restore-idem",
+      schemaVersion: 1,
+    });
+    expect(replay.revision).toBe(first.revision);
+    expect(replay.contentHash).toBe(first.contentHash);
     repo.close();
   });
 

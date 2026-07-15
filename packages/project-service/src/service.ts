@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AuthContext, AuthPrincipal } from "@blocksync/auth-context";
 import {
   PROJECT_FORMAT,
@@ -15,6 +15,7 @@ import {
   NotFoundError,
   SchemaInvalidError,
   SchemaVersionMismatchError,
+  SnapshotHashMismatchError,
   TransactionPayloadMismatchError,
   UnauthorizedError,
 } from "./errors.js";
@@ -276,38 +277,57 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
     async restoreSnapshot(hints, input) {
       const principal = await resolveOrThrow(deps.auth, hints);
 
-      const meta = deps.repo.withTransaction((tx) => {
+      // ACL + snapshot meta + idempotent lookup BEFORE any blob I/O.
+      // requestHash uses durable meta.contentHash so replay works if the blob is gone.
+      const early = deps.repo.withTransaction((tx) => {
         access.assertCan(principal, input.projectId, "write", tx);
-        const m = tx.getSnapshotMeta(input.projectId, input.snapshotId);
-        if (!m) throw new NotFoundError();
-        return m;
+        const meta = tx.getSnapshotMeta(input.projectId, input.snapshotId);
+        if (!meta) throw new NotFoundError();
+        const reqHash = requestHash({
+          op: "restore",
+          schemaVersion: input.schemaVersion,
+          contentHash: meta.contentHash,
+          snapshotId: input.snapshotId,
+        });
+        const existing = tx.findRevisionByTransactionId(
+          input.projectId,
+          input.transactionId,
+        );
+        if (existing) {
+          if (existing.requestHash !== reqHash) {
+            throw new TransactionPayloadMismatchError();
+          }
+          return { kind: "replay" as const, envelope: existing.envelope };
+        }
+        return { kind: "proceed" as const, meta, reqHash };
       });
 
+      if (early.kind === "replay") {
+        return early.envelope;
+      }
+
+      const { meta, reqHash } = early;
       const bytes = deps.snapshots.get(meta.storageKey);
       if (!bytes) throw new NotFoundError("SNAPSHOT_BLOB_MISSING");
-      const document = JSON.parse(new TextDecoder().decode(bytes)) as ProjectDocument;
-      const recomputed = contentHash(document);
-      if (recomputed !== meta.contentHash) {
-        throw new SchemaInvalidError(
-          [
-            {
-              code: "INVALID_DOCUMENT",
-              message: "Snapshot content hash mismatch",
-            },
-          ],
-          "SNAPSHOT_HASH_MISMATCH",
-        );
+
+      const rawHash = createHash("sha256").update(bytes).digest("hex");
+      if (rawHash !== meta.contentHash) {
+        throw new SnapshotHashMismatchError();
+      }
+
+      let document: ProjectDocument;
+      try {
+        document = JSON.parse(new TextDecoder().decode(bytes)) as ProjectDocument;
+      } catch {
+        throw new SnapshotHashMismatchError("SNAPSHOT_HASH_MISMATCH: invalid JSON");
       }
 
       assertSchemaMatch(input.schemaVersion, document);
       assertValidDocument(document);
       const docHash = contentHash(document);
-      const reqHash = requestHash({
-        op: "restore",
-        schemaVersion: input.schemaVersion,
-        contentHash: docHash,
-        snapshotId: input.snapshotId,
-      });
+      if (docHash !== meta.contentHash) {
+        throw new SnapshotHashMismatchError();
+      }
 
       return commitDocument(principal, {
         projectId: input.projectId,

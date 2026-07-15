@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { StubAuthContext } from "@blocksync/auth-context";
 import {
@@ -8,6 +9,7 @@ import {
 import {
   SchemaInvalidError,
   SchemaVersionMismatchError,
+  SnapshotHashMismatchError,
   StaleRevisionError,
   TransactionPayloadMismatchError,
   NotFoundError,
@@ -305,6 +307,112 @@ describe("project-service", () => {
     expect(r2.contentHash).toBe(second.contentHash);
     expect(r1.revisionMeta?.op).toBe("restore");
     expect(r2.revisionMeta?.op).toBe("restore");
+  });
+
+  it("restore replay returns stored envelope after blob deletion", async () => {
+    const { service, snapshots } = makeService();
+    const created = await service.createProject(userA, { title: "Replay" });
+    const doc = richFixtureDocument();
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 0,
+      transactionId: "tx-doc",
+      schemaVersion: 1,
+      document: doc,
+    });
+    const snap = await service.createSnapshot(userA, {
+      projectId: created.projectId,
+    });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 1,
+      transactionId: "tx-div",
+      schemaVersion: 1,
+      document: emptyDocument(),
+    });
+
+    const first = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: snap.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-restore-idem",
+      schemaVersion: 1,
+    });
+    expect(first.revision).toBe(3);
+
+    expect(snapshots.files.delete(snap.storageKey)).toBe(true);
+
+    const replay = await service.restoreSnapshot(userA, {
+      projectId: created.projectId,
+      snapshotId: snap.snapshotId,
+      baseRevision: 2,
+      transactionId: "tx-restore-idem",
+      schemaVersion: 1,
+    });
+    expect(replay.revision).toBe(first.revision);
+    expect(replay.contentHash).toBe(first.contentHash);
+    expect(replay.revisionMeta).toEqual(first.revisionMeta);
+
+    await expect(
+      service.restoreSnapshot(userA, {
+        projectId: created.projectId,
+        snapshotId: snap.snapshotId,
+        baseRevision: 2,
+        transactionId: "tx-restore-idem",
+        schemaVersion: 2,
+      }),
+    ).rejects.toBeInstanceOf(TransactionPayloadMismatchError);
+  });
+
+  it("rejects byte-hash mismatch and invalid snapshot JSON as SnapshotHashMismatchError", async () => {
+    const { service, snapshots, repo } = makeService();
+    const created = await service.createProject(userA, { title: "Corrupt" });
+    await service.saveDocument(userA, {
+      projectId: created.projectId,
+      baseRevision: 0,
+      transactionId: "tx-c0",
+      schemaVersion: 1,
+      document: richFixtureDocument(),
+    });
+    const snap = await service.createSnapshot(userA, {
+      projectId: created.projectId,
+    });
+    snapshots.files.set(snap.storageKey, new TextEncoder().encode("{not-json"));
+    await expect(
+      service.restoreSnapshot(userA, {
+        projectId: created.projectId,
+        snapshotId: snap.snapshotId,
+        baseRevision: 1,
+        transactionId: "tx-bad-hash",
+        schemaVersion: 1,
+      }),
+    ).rejects.toBeInstanceOf(SnapshotHashMismatchError);
+
+    const corruptBytes = new TextEncoder().encode("{not-json");
+    const corruptHash = createHash("sha256").update(corruptBytes).digest("hex");
+    const storageKey = `${corruptHash}.json`;
+    snapshots.files.set(storageKey, corruptBytes);
+    repo.withTransaction((tx) => {
+      tx.insertSnapshotMeta({
+        snapshotId: "corrupt-json",
+        projectId: created.projectId,
+        basedOnRevision: 1,
+        reason: "manual",
+        contentHash: corruptHash,
+        storageKey,
+        createdBy: "user-a",
+        createdAt: "2026-07-15T00:00:00.000Z",
+      });
+    });
+    await expect(
+      service.restoreSnapshot(userA, {
+        projectId: created.projectId,
+        snapshotId: "corrupt-json",
+        baseRevision: 1,
+        transactionId: "tx-bad-json",
+        schemaVersion: 1,
+      }),
+    ).rejects.toBeInstanceOf(SnapshotHashMismatchError);
   });
 
   it("rolls back memory transaction on forced error", async () => {
