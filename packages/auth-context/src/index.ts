@@ -4,6 +4,8 @@
 
 export interface AuthRequestHints {
   headers: Record<string, string | undefined>;
+  /** Session / CSRF cookies when present. Stub ignores these. */
+  cookies?: Record<string, string | undefined>;
 }
 
 export interface AuthPrincipal {

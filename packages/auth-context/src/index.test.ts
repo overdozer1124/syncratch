@@ -41,4 +41,13 @@ describe("StubAuthContext", () => {
     expect(StubAuthContext.prototype).not.toHaveProperty("canAccessProject");
     expect(StubAuthContext.prototype).not.toHaveProperty("registerProject");
   });
+
+  it("accepts optional cookies without using them", async () => {
+    const auth = new StubAuthContext();
+    const principal = await auth.resolve({
+      headers: { "x-user-id": "user-a" },
+      cookies: { blocksync_session: "ignored-by-stub" },
+    });
+    expect(principal.userId).toBe("user-a");
+  });
 });
