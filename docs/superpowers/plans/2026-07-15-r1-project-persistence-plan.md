@@ -6,7 +6,7 @@
 
 **Architecture:** `AuthContext` resolves identity only; `ProjectAccessPolicy` reads durable SQLite ownership/members; `project-service` implements idempotent save + sync CAS TX; SQLite + atomic FS snapshots behind ports; Hono HTTP; Vitest acceptance with child-process restart.
 
-**Tech Stack (pinned):** TypeScript, pnpm, Vitest, **better-sqlite3**, **Hono** (Node adapter), Node 24+. Spec: `docs/superpowers/specs/2026-07-15-r1-project-persistence-design.md`.
+**Tech Stack (pinned):** TypeScript, pnpm, Vitest, **better-sqlite3 ^12.11.1+** (Node 24 prebuilds), **Hono** (Node adapter), Node 24+. Spec: `docs/superpowers/specs/2026-07-15-r1-project-persistence-design.md`.
 
 ## Global Constraints
 

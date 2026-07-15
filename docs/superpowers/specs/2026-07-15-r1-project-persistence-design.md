@@ -53,7 +53,7 @@ Out of scope: Scratch Editor UI, Google OAuth, Yjs multiplayer, SB3 UX, classes/
 | `apps/r1-persist-server` | Hono HTTP |
 | `apps/r1-persist-demo` | Acceptance tests |
 
-**Pinned stack for this plan:** `better-sqlite3` (not `node:sqlite`); **Hono** on Node (not raw `node:http`).
+**Pinned stack for this plan:** `better-sqlite3` **^12.11.1+** (Node 24 ABI prebuilds; not `node:sqlite`); **Hono** on Node (not raw `node:http`).
 
 ### 2.1 better-sqlite3 transaction contract
 
