@@ -520,29 +520,61 @@ export function semanticFingerprint(doc: ProjectDocument): string {
   return JSON.stringify(norm);
 }
 
+export interface LoadSb3IsolatedOptions {
+  heapMb?: number;
+  timeoutMs?: number;
+  /**
+   * Test-only: asks the worker to sleep this many ms before loadSb3.
+   * Honoured only when NODE_ENV=test or GATE0_TEST_HOOKS=1 (also enforced in worker).
+   */
+  workerHoldMs?: number;
+}
+
+export interface LoadSb3IsolatedOutcome extends LoadResult {
+  timedOut: boolean;
+  childPid: number | null;
+  childExited: boolean;
+  exitCode: number | null;
+  signal: NodeJS.Signals | string | null;
+}
+
 /**
  * Run loadSb3 in a child process. `--max-old-space-size` limits the V8 old-space
  * heap suggestion for the child (not a process-wide RSS/Buffer hard cap).
- * Complements ZIP-declared size checks. Always applies a wall-clock timeout.
+ * Wall-clock timeout kills the child; the promise resolves only after the child
+ * has exited (no lingering process for the normal path).
  */
 export function loadSb3Isolated(
   bytes: Uint8Array,
   partialLimits: Partial<Sb3SafetyLimits> = {},
-  heapMb = 64,
-  timeoutMs = 15_000,
-): Promise<LoadResult> {
+  options: LoadSb3IsolatedOptions = {},
+): Promise<LoadSb3IsolatedOutcome> {
+  const heapMb = options.heapMb ?? 64;
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const workerHoldMs = options.workerHoldMs ?? 0;
   const worker = join(
     dirname(fileURLToPath(import.meta.url)),
     "load-sb3-worker.mjs",
   );
+
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (result: LoadResult) => {
+    let timedOut = false;
+    const finish = (result: LoadSb3IsolatedOutcome) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      try {
+        child.stdout.removeAllListeners();
+        child.stderr.removeAllListeners();
+        child.removeAllListeners();
+        child.stdin.destroy();
+      } catch {
+        /* ignore */
+      }
       resolve(result);
     };
+
     const child = spawn(
       process.execPath,
       [`--max-old-space-size=${heapMb}`, "--import", "tsx", worker],
@@ -553,27 +585,24 @@ export function loadSb3Isolated(
             ...DEFAULT_LIMITS,
             ...partialLimits,
           }),
+          ...(workerHoldMs > 0
+            ? { GATE0_SB3_WORKER_HOLD_MS: String(workerHoldMs) }
+            : {}),
         },
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
+    const childPid = child.pid ?? null;
+
     const timer = setTimeout(() => {
+      timedOut = true;
       try {
         child.kill("SIGKILL");
       } catch {
         /* ignore */
       }
-      finish({
-        ok: false,
-        warnings: [],
-        issues: [
-          {
-            code: "TOO_LARGE",
-            message: `isolate timed out after ${timeoutMs}ms`,
-          },
-        ],
-      });
     }, timeoutMs);
+
     const out: Buffer[] = [];
     const err: Buffer[] = [];
     child.stdout.on("data", (d) => out.push(d));
@@ -588,12 +617,43 @@ export function loadSb3Isolated(
             message: `isolate spawn failed: ${e.message}`,
           },
         ],
+        timedOut: false,
+        childPid,
+        childExited: true,
+        exitCode: null,
+        signal: null,
       });
     });
     child.on("close", (code, signal) => {
+      if (timedOut) {
+        finish({
+          ok: false,
+          warnings: [],
+          issues: [
+            {
+              code: "TOO_LARGE",
+              message: `isolate timed out after ${timeoutMs}ms`,
+            },
+          ],
+          timedOut: true,
+          childPid,
+          childExited: true,
+          exitCode: code,
+          signal,
+        });
+        return;
+      }
       const text = Buffer.concat(out).toString("utf8");
       try {
-        finish(JSON.parse(text) as LoadResult);
+        const parsed = JSON.parse(text) as LoadResult;
+        finish({
+          ...parsed,
+          timedOut: false,
+          childPid,
+          childExited: true,
+          exitCode: code,
+          signal,
+        });
       } catch {
         finish({
           ok: false,
@@ -604,6 +664,11 @@ export function loadSb3Isolated(
               message: `isolate exited code=${code} signal=${signal}: ${Buffer.concat(err).toString("utf8") || text}`,
             },
           ],
+          timedOut: false,
+          childPid,
+          childExited: true,
+          exitCode: code,
+          signal,
         });
       }
     });

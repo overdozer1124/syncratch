@@ -132,10 +132,90 @@ describe("sb3-tools", () => {
         maxCompressionRatio: 100,
         maxDepth: 4,
       },
-      64,
+      { heapMb: 64 },
     );
     expect(loaded.ok).toBe(false);
     expect(loaded.issues.some((i) => i.code === "TOO_LARGE")).toBe(true);
+    expect(loaded.childExited).toBe(true);
+    expect(loaded.timedOut).toBe(false);
+  }, 20_000);
+
+  it("isolated loader times out when worker is held, then cleans up", async () => {
+    const zip = new JSZip();
+    zip.file(
+      "project.json",
+      JSON.stringify({
+        targets: [
+          {
+            isStage: true,
+            name: "Stage",
+            blocks: {},
+            variables: {},
+            lists: {},
+            broadcasts: {},
+            costumes: [],
+            sounds: [],
+          },
+        ],
+      }),
+    );
+    const bytes = await zip.generateAsync({ type: "uint8array" });
+
+    const timeoutMs = 400;
+    const workerHoldMs = 60_000; // far longer than timeout — stable, not flaky
+    const started = Date.now();
+    let resolveCount = 0;
+    const pending = loadSb3Isolated(bytes, {}, { timeoutMs, workerHoldMs }).then(
+      (r) => {
+        resolveCount += 1;
+        return r;
+      },
+    );
+    const loaded = await pending;
+    const elapsed = Date.now() - started;
+
+    expect(loaded.timedOut).toBe(true);
+    expect(loaded.ok).toBe(false);
+    expect(loaded.childExited).toBe(true);
+    expect(loaded.issues.some((i) => i.message.includes("timed out"))).toBe(
+      true,
+    );
+    // Resolve within timeout + kill/grace budget (not waiting for worker hold)
+    expect(elapsed).toBeLessThan(timeoutMs + 5_000);
+    expect(elapsed).toBeGreaterThanOrEqual(timeoutMs - 50);
+    expect(resolveCount).toBe(1);
+
+    // Child must be gone (ESRCH / falsy kill)
+    if (loaded.childPid != null) {
+      let alive = true;
+      try {
+        alive = process.kill(loaded.childPid, 0);
+      } catch {
+        alive = false;
+      }
+      expect(alive).toBe(false);
+    }
+
+    // Parent still usable: another isolated call succeeds path (rejects oversize)
+    const zip2 = new JSZip();
+    zip2.file("project.json", JSON.stringify({ targets: [] }));
+    zip2.file("big.bin", "y".repeat(8_000));
+    const bytes2 = await zip2.generateAsync({
+      type: "uint8array",
+      compression: "STORE",
+    });
+    const again = await loadSb3Isolated(
+      bytes2,
+      { maxUncompressedBytes: 100 },
+      { timeoutMs: 15_000 },
+    );
+    expect(again.timedOut).toBe(false);
+    expect(again.childExited).toBe(true);
+    expect(again.ok).toBe(false);
+
+    // Late double-resolve: give close handlers time; count must stay 1
+    await new Promise((r) => setTimeout(r, 200));
+    expect(resolveCount).toBe(1);
   }, 20_000);
 
   it("loads exported SB3 into vendor v14.1.0 VM and runs", async () => {
