@@ -1,8 +1,12 @@
 /**
- * @experimental Gate 0 SB3 helpers — minimal safety checks + schema validation.
+ * @experimental Gate 0 SB3 helpers — streaming size guards + schema validation.
  */
 
 import JSZip from "jszip";
+import { createHash } from "node:crypto";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   validateProject,
   type ProjectDocument,
@@ -35,7 +39,8 @@ export type LoadIssueCode =
   | "MISSING_PROJECT_JSON"
   | "INVALID_JSON"
   | "SCHEMA_INVALID"
-  | "RATIO_EXCEEDED";
+  | "RATIO_EXCEEDED"
+  | "ASSET_HASH_MISMATCH";
 
 export interface LoadIssue {
   code: LoadIssueCode;
@@ -45,42 +50,23 @@ export interface LoadIssue {
 export interface LoadResult {
   ok: boolean;
   document?: ProjectDocument;
+  projectJson?: unknown;
   warnings: string[];
   issues: LoadIssue[];
+  assets?: Map<string, Uint8Array>;
 }
 
 function pathDepth(name: string): number {
   return name.split("/").filter(Boolean).length;
 }
 
-function isUnsafePath(name: string): LoadIssue | null {
-  const n = name.replace(/\\/g, "/");
-  if (n.startsWith("/") || /^[a-zA-Z]:/.test(n)) {
-    return { code: "ABSOLUTE_PATH", message: `Absolute path: ${name}` };
-  }
-  // Normalize against a synthetic root; escaping root => traversal
-  const normalized = posixNormalize(`root/${n}`);
-  if (!normalized.startsWith("root/") && normalized !== "root") {
-    return { code: "PATH_TRAVERSAL", message: `Path traversal: ${name}` };
-  }
-  if (n.split("/").includes("..") || n.includes("../")) {
-    return { code: "PATH_TRAVERSAL", message: `Path traversal: ${name}` };
-  }
-  if (pathDepth(n) > DEFAULT_LIMITS.maxDepth) {
-    return { code: "BAD_DEPTH", message: `Path too deep: ${name}` };
-  }
-  return null;
-}
-
-/** Minimal posix normalize without importing node:path (keeps logic testable). */
 function posixNormalize(p: string): string {
   const parts = p.split("/");
   const out: string[] = [];
   for (const part of parts) {
     if (!part || part === ".") continue;
     if (part === "..") {
-      if (out.length === 0 || out[out.length - 1] === "..") out.push("..");
-      else out.pop();
+      if (out.length) out.pop();
       continue;
     }
     out.push(part);
@@ -88,15 +74,81 @@ function posixNormalize(p: string): string {
   return out.join("/");
 }
 
-/** Map Scratch project.json targets into ProjectDocument. */
+/** Read ZIP-declared uncompressed size when JSZip exposes it (no inflate). */
+export function declaredUncompressedSize(file: JSZip.JSZipObject): number | null {
+  const data = (file as unknown as { _data?: { uncompressedSize?: number } })
+    ._data;
+  const n = data?.uncompressedSize;
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * Inflate one zip entry only after ZIP-declared size fits the remaining budget.
+ * Oversized declarations are rejected without calling into inflate (peak memory
+ * stayed at the compressed zip buffer). Unknown/missing declarations refuse extract.
+ */
+export async function extractEntryCapped(
+  file: JSZip.JSZipObject,
+  maxBytes: number,
+): Promise<{ ok: true; data: Uint8Array } | { ok: false; read: number }> {
+  const declared = declaredUncompressedSize(file);
+  if (declared !== null && declared > maxBytes) {
+    return { ok: false, read: declared };
+  }
+  if (declared === null) {
+    // Do not inflate blindly when the archive omits size metadata.
+    return { ok: false, read: 0 };
+  }
+  // Declared size is within budget — inflate. Re-check actual length afterwards.
+  const data = new Uint8Array(await file.async("uint8array"));
+  if (data.byteLength > maxBytes) {
+    return { ok: false, read: data.byteLength };
+  }
+  return { ok: true, data };
+}
+
+export function isUnsafePath(
+  name: string,
+  limits: Sb3SafetyLimits = DEFAULT_LIMITS,
+): LoadIssue | null {
+  const n = name.replace(/\\/g, "/");
+  if (n.startsWith("/") || /^[a-zA-Z]:/.test(n)) {
+    return { code: "ABSOLUTE_PATH", message: `Absolute path: ${name}` };
+  }
+  const normalized = posixNormalize(`root/${n}`);
+  if (!normalized.startsWith("root/") && normalized !== "root") {
+    return { code: "PATH_TRAVERSAL", message: `Path traversal: ${name}` };
+  }
+  if (n.split("/").includes("..") || n.includes("../")) {
+    return { code: "PATH_TRAVERSAL", message: `Path traversal: ${name}` };
+  }
+  if (pathDepth(n) > limits.maxDepth) {
+    return { code: "BAD_DEPTH", message: `Path too deep: ${name}` };
+  }
+  return null;
+}
+
 export function projectJsonToDocument(raw: unknown): ProjectDocument {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("project.json root must be an object");
+  }
   const pj = raw as {
-    targets?: Array<Record<string, unknown>>;
+    targets?: unknown;
     extensions?: string[];
     meta?: Record<string, unknown>;
   };
-  const targets: ScratchTarget[] = (pj.targets ?? []).map((t, i) => {
-    const blocksIn = (t.blocks ?? {}) as Record<string, Record<string, unknown>>;
+  if (!Array.isArray(pj.targets)) {
+    throw new Error("project.json targets must be an array");
+  }
+  const targets: ScratchTarget[] = pj.targets.map((tRaw, i) => {
+    if (!tRaw || typeof tRaw !== "object") {
+      throw new Error(`targets[${i}] must be an object`);
+    }
+    const t = tRaw as Record<string, unknown>;
+    const blocksIn =
+      t.blocks && typeof t.blocks === "object"
+        ? (t.blocks as Record<string, Record<string, unknown>>)
+        : {};
     const blocks: Record<string, ScratchBlock> = {};
     for (const [id, b] of Object.entries(blocksIn)) {
       blocks[id] = {
@@ -130,10 +182,18 @@ export function projectJsonToDocument(raw: unknown): ProjectDocument {
   };
 }
 
+function md5Hex(data: Uint8Array): string {
+  return createHash("md5").update(data).digest("hex");
+}
+
+/**
+ * Load SB3 with ZIP-declared size checks before inflate to bound peak memory.
+ */
 export async function loadSb3(
   bytes: Uint8Array,
-  limits: Sb3SafetyLimits = DEFAULT_LIMITS,
+  partialLimits: Partial<Sb3SafetyLimits> = {},
 ): Promise<LoadResult> {
+  const limits: Sb3SafetyLimits = { ...DEFAULT_LIMITS, ...partialLimits };
   const issues: LoadIssue[] = [];
   const warnings: string[] = [];
 
@@ -168,37 +228,94 @@ export async function loadSb3(
 
   const entries = Object.keys(zip.files);
   if (entries.length > limits.maxEntries) {
-    issues.push({
-      code: "TOO_MANY_ENTRIES",
-      message: `Too many zip entries: ${entries.length}`,
-    });
+    return {
+      ok: false,
+      warnings,
+      issues: [
+        {
+          code: "TOO_MANY_ENTRIES",
+          message: `Too many zip entries: ${entries.length}`,
+        },
+      ],
+    };
   }
 
   let uncompressed = 0;
+  const assets = new Map<string, Uint8Array>();
+
   for (const name of entries) {
-    const unsafe = isUnsafePath(name);
-    if (unsafe) issues.push(unsafe);
-    const f = zip.files[name];
-    if (f && !f.dir) {
-      const data = await f.async("uint8array");
-      uncompressed += data.byteLength;
+    const unsafe = isUnsafePath(name, limits);
+    if (unsafe) {
+      issues.push(unsafe);
+      continue;
     }
-  }
+    const f = zip.files[name];
+    if (!f || f.dir) continue;
 
-  if (uncompressed > limits.maxUncompressedBytes) {
-    issues.push({
-      code: "TOO_LARGE",
-      message: `Uncompressed size ${uncompressed} exceeds limit`,
-    });
-  }
+    const remaining = limits.maxUncompressedBytes - uncompressed;
+    if (remaining <= 0) {
+      return {
+        ok: false,
+        warnings,
+        issues: [
+          {
+            code: "TOO_LARGE",
+            message: `Uncompressed size exceeded ${limits.maxUncompressedBytes}`,
+          },
+        ],
+      };
+    }
 
-  const ratio =
-    bytes.byteLength > 0 ? uncompressed / bytes.byteLength : Infinity;
-  if (ratio > limits.maxCompressionRatio) {
-    issues.push({
-      code: "RATIO_EXCEEDED",
-      message: `Compression ratio ${ratio.toFixed(1)} exceeds limit`,
-    });
+    // Reject using ZIP-declared size before inflate (blocks STORE/huge entries).
+    const declared = declaredUncompressedSize(f);
+    if (declared !== null && declared > remaining) {
+      return {
+        ok: false,
+        warnings,
+        issues: [
+          {
+            code: "TOO_LARGE",
+            message: `Entry ${name} declared uncompressed ${declared} exceeds remaining budget ${remaining}`,
+          },
+        ],
+      };
+    }
+
+    const extracted = await extractEntryCapped(f, remaining);
+    if (!extracted.ok) {
+      return {
+        ok: false,
+        warnings,
+        issues: [
+          {
+            code: "TOO_LARGE",
+            message:
+              extracted.read > remaining
+                ? `Entry ${name} declared uncompressed ${extracted.read} exceeds remaining budget ${remaining}`
+                : `Entry ${name} rejected (missing size metadata or oversize after inflate)`,
+          },
+        ],
+      };
+    }
+    const data = extracted.data;
+    uncompressed += data.byteLength;
+    const ratio =
+      bytes.byteLength > 0 ? uncompressed / bytes.byteLength : Infinity;
+    if (ratio > limits.maxCompressionRatio) {
+      return {
+        ok: false,
+        warnings,
+        issues: [
+          {
+            code: "RATIO_EXCEEDED",
+            message: `Compression ratio exceeded ${limits.maxCompressionRatio} during extract`,
+          },
+        ],
+      };
+    }
+    if (name !== "project.json") {
+      assets.set(name, data);
+    }
   }
 
   if (issues.length) return { ok: false, warnings, issues };
@@ -230,12 +347,28 @@ export async function loadSb3(
     };
   }
 
-  const document = projectJsonToDocument(raw);
+  let document: ProjectDocument;
+  try {
+    document = projectJsonToDocument(raw);
+  } catch (e) {
+    return {
+      ok: false,
+      warnings,
+      issues: [
+        {
+          code: "INVALID_JSON",
+          message: e instanceof Error ? e.message : String(e),
+        },
+      ],
+    };
+  }
+
   const schema = validateProject(document);
   if (!schema.ok) {
     return {
       ok: false,
       document,
+      projectJson: raw,
       warnings,
       issues: schema.issues.map((i) => ({
         code: "SCHEMA_INVALID" as const,
@@ -244,11 +377,47 @@ export async function loadSb3(
     };
   }
 
-  return { ok: true, document, warnings, issues: [] };
+  // Costume/sound md5ext vs file content hash (basename without extension)
+  const pj = raw as {
+    targets?: Array<{
+      costumes?: Array<{ md5ext?: string; assetId?: string }>;
+      sounds?: Array<{ md5ext?: string; assetId?: string }>;
+    }>;
+  };
+  for (const t of pj.targets ?? []) {
+    for (const c of [...(t.costumes ?? []), ...(t.sounds ?? [])]) {
+      const md5ext = c.md5ext;
+      if (!md5ext) continue;
+      const file = assets.get(md5ext);
+      if (!file) {
+        warnings.push(`Missing asset file ${md5ext}`);
+        continue;
+      }
+      const digest = md5Hex(file);
+      const assetId = c.assetId ?? md5ext.replace(/\.[^.]+$/, "");
+      if (digest !== assetId) {
+        issues.push({
+          code: "ASSET_HASH_MISMATCH",
+          message: `Asset ${md5ext} md5 ${digest} != assetId ${assetId}`,
+        });
+      }
+    }
+  }
+  if (issues.length) {
+    return { ok: false, document, projectJson: raw, warnings, issues, assets };
+  }
+
+  return { ok: true, document, projectJson: raw, warnings, issues: [], assets };
 }
 
 export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> {
   const zip = new JSZip();
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#ccc"/></svg>';
+  const svgBytes = new TextEncoder().encode(svg);
+  const assetId = md5Hex(svgBytes);
+  const md5ext = `${assetId}.svg`;
+
   const targets = document.targets.map((t) => ({
     isStage: t.isStage,
     name: t.name,
@@ -274,19 +443,24 @@ export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> 
     currentCostume: 0,
     costumes: [
       {
-        name: "costume1",
+        name: t.isStage ? "backdrop1" : "costume1",
         dataFormat: "svg",
-        assetId: "cd21514d0531fdffb22204e0ec5ed84a",
-        md5ext: "cd21514d0531fdffb22204e0ec5ed84a.svg",
-        rotationCenterX: 240,
-        rotationCenterY: 180,
+        assetId,
+        md5ext,
+        rotationCenterX: t.isStage ? 240 : 48,
+        rotationCenterY: t.isStage ? 180 : 50,
       },
     ],
     sounds: [],
     volume: 100,
     layerOrder: t.isStage ? 0 : 1,
     ...(t.isStage
-      ? { tempo: 60, videoTransparency: 50, videoState: "on", textToSpeechLanguage: null }
+      ? {
+          tempo: 60,
+          videoTransparency: 50,
+          videoState: "on",
+          textToSpeechLanguage: null,
+        }
       : {
           visible: true,
           x: 0,
@@ -298,9 +472,6 @@ export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> 
         }),
   }));
 
-  // Minimal empty SVG asset (original for this corpus; not Scratch brand assets)
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#ccc"/></svg>';
   zip.file(
     "project.json",
     JSON.stringify({
@@ -315,31 +486,128 @@ export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> 
       },
     }),
   );
-  zip.file("cd21514d0531fdffb22204e0ec5ed84a.svg", svg);
-  const out = await zip.generateAsync({ type: "uint8array" });
-  return out;
+  zip.file(md5ext, svg);
+  return zip.generateAsync({ type: "uint8array" });
 }
 
+/** Semantic fingerprint including lists, broadcasts, extensions, costume refs. */
 export function semanticFingerprint(doc: ProjectDocument): string {
   const norm = {
+    extensions: [...(doc.extensions ?? [])].sort(),
     targets: doc.targets.map((t) => ({
       name: t.name,
       isStage: t.isStage,
       variables: t.variables ?? {},
+      lists: t.lists ?? {},
+      broadcasts: t.broadcasts ?? {},
       blocks: Object.fromEntries(
-        Object.entries(t.blocks).map(([id, b]) => [
-          id,
-          {
-            opcode: b.opcode,
-            next: b.next,
-            parent: b.parent,
-            inputs: b.inputs,
-            fields: b.fields,
-            topLevel: b.topLevel ?? false,
-          },
-        ]),
+        Object.entries(t.blocks)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, b]) => [
+            id,
+            {
+              opcode: b.opcode,
+              next: b.next,
+              parent: b.parent,
+              inputs: b.inputs,
+              fields: b.fields,
+              topLevel: b.topLevel ?? false,
+            },
+          ]),
       ),
     })),
   };
   return JSON.stringify(norm);
+}
+
+/**
+ * Run loadSb3 in a child process. `--max-old-space-size` limits the V8 old-space
+ * heap suggestion for the child (not a process-wide RSS/Buffer hard cap).
+ * Complements ZIP-declared size checks. Always applies a wall-clock timeout.
+ */
+export function loadSb3Isolated(
+  bytes: Uint8Array,
+  partialLimits: Partial<Sb3SafetyLimits> = {},
+  heapMb = 64,
+  timeoutMs = 15_000,
+): Promise<LoadResult> {
+  const worker = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "load-sb3-worker.mjs",
+  );
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result: LoadResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const child = spawn(
+      process.execPath,
+      [`--max-old-space-size=${heapMb}`, "--import", "tsx", worker],
+      {
+        env: {
+          ...process.env,
+          GATE0_SB3_LIMITS: JSON.stringify({
+            ...DEFAULT_LIMITS,
+            ...partialLimits,
+          }),
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    const timer = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      finish({
+        ok: false,
+        warnings: [],
+        issues: [
+          {
+            code: "TOO_LARGE",
+            message: `isolate timed out after ${timeoutMs}ms`,
+          },
+        ],
+      });
+    }, timeoutMs);
+    const out: Buffer[] = [];
+    const err: Buffer[] = [];
+    child.stdout.on("data", (d) => out.push(d));
+    child.stderr.on("data", (d) => err.push(d));
+    child.on("error", (e) => {
+      finish({
+        ok: false,
+        warnings: [],
+        issues: [
+          {
+            code: "TOO_LARGE",
+            message: `isolate spawn failed: ${e.message}`,
+          },
+        ],
+      });
+    });
+    child.on("close", (code, signal) => {
+      const text = Buffer.concat(out).toString("utf8");
+      try {
+        finish(JSON.parse(text) as LoadResult);
+      } catch {
+        finish({
+          ok: false,
+          warnings: [],
+          issues: [
+            {
+              code: "TOO_LARGE",
+              message: `isolate exited code=${code} signal=${signal}: ${Buffer.concat(err).toString("utf8") || text}`,
+            },
+          ],
+        });
+      }
+    });
+    child.stdin.write(Buffer.from(bytes));
+    child.stdin.end();
+  });
 }

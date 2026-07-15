@@ -7,7 +7,7 @@ import {
   validateProject,
 } from "./client.js";
 
-describe("gate0 WebSocket collab (two processes / two clients)", () => {
+describe("gate0 WebSocket collab (in-process server + two clients)", () => {
   it("syncs different sprites over WebSocket and preserves invariants", async () => {
     const server = await startCollabServer({ port: 0, host: "127.0.0.1" });
     const room = "gate0-room";

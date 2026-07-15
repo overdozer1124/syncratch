@@ -38,6 +38,8 @@ export interface ProjectDocument {
 
 export type ValidationCode =
   | "DUPLICATE_BLOCK_ID"
+  | "DUPLICATE_TARGET_ID"
+  | "BLOCK_ID_MISMATCH"
   | "PARENT_NEXT_MISMATCH"
   | "CYCLE_DETECTED"
   | "TOPLEVEL_HAS_PARENT"
@@ -48,7 +50,8 @@ export type ValidationCode =
   | "MISSING_TARGET_REF"
   | "UNKNOWN_BLOCK_REF"
   | "ORPHAN_NON_TOPLEVEL"
-  | "EXTENSION_NOT_ALLOWED";
+  | "EXTENSION_NOT_ALLOWED"
+  | "INVALID_DOCUMENT";
 
 export interface ValidationIssue {
   code: ValidationCode;
@@ -62,7 +65,7 @@ export interface ValidationResult {
 }
 
 export interface ValidateOptions {
-  /** If set, opcodes starting with these prefixes require the extension id present. */
+  /** Explicit allow-list of extension ids (e.g. "music", "pen"). */
   allowedExtensions?: string[];
 }
 
@@ -74,16 +77,33 @@ function issue(
   return { code, message, path };
 }
 
-function allVariableIds(doc: ProjectDocument): Set<string> {
+/** Collect block ids referenced from an input value (primary + optional shadow). */
+export function extractBlockRefsFromInput(value: unknown): BlockId[] {
+  if (!Array.isArray(value) || value.length < 2) return [];
+  const refs: BlockId[] = [];
+  // Scratch: [type, blockId] | [type, blockId, shadowId] | [type, [shadowPrimitive]]
+  if (typeof value[1] === "string") refs.push(value[1]);
+  if (typeof value[2] === "string") refs.push(value[2]);
+  return refs;
+}
+
+function variableIds(doc: ProjectDocument): Set<string> {
   const ids = new Set<string>();
   for (const t of doc.targets) {
     for (const id of Object.keys(t.variables ?? {})) ids.add(id);
+  }
+  return ids;
+}
+
+function listIds(doc: ProjectDocument): Set<string> {
+  const ids = new Set<string>();
+  for (const t of doc.targets) {
     for (const id of Object.keys(t.lists ?? {})) ids.add(id);
   }
   return ids;
 }
 
-function allBroadcastIds(doc: ProjectDocument): Set<string> {
+function broadcastIds(doc: ProjectDocument): Set<string> {
   const ids = new Set<string>();
   for (const t of doc.targets) {
     for (const id of Object.keys(t.broadcasts ?? {})) ids.add(id);
@@ -91,31 +111,69 @@ function allBroadcastIds(doc: ProjectDocument): Set<string> {
   return ids;
 }
 
-function extractBlockRefFromInput(value: unknown): BlockId | null {
-  // Scratch input formats: [1, blockId] | [1, blockId, shadowId] | [3, blockId, shadow]
-  if (!Array.isArray(value)) return null;
-  if (value.length >= 2 && typeof value[1] === "string") return value[1];
-  return null;
-}
+/** next + input edges for cycle detection within a target. */
+function hasDirectedCycle(blocks: Record<BlockId, ScratchBlock>): boolean {
+  const visiting = new Set<BlockId>();
+  const visited = new Set<BlockId>();
 
-function hasCycle(
-  blocks: Record<BlockId, ScratchBlock>,
-  start: BlockId,
-): boolean {
-  const seen = new Set<BlockId>();
-  let cur: BlockId | null = start;
-  while (cur) {
-    if (seen.has(cur)) return true;
-    seen.add(cur);
-    const b = blocks[cur];
-    if (!b) return false;
-    cur = b.next;
+  const neighbors = (id: BlockId): BlockId[] => {
+    const b = blocks[id];
+    if (!b) return [];
+    const out: BlockId[] = [];
+    if (b.next && blocks[b.next]) out.push(b.next);
+    for (const inp of Object.values(b.inputs ?? {})) {
+      for (const ref of extractBlockRefsFromInput(inp)) {
+        if (blocks[ref]) out.push(ref);
+      }
+    }
+    return out;
+  };
+
+  const dfs = (id: BlockId): boolean => {
+    if (visited.has(id)) return false;
+    if (visiting.has(id)) return true;
+    visiting.add(id);
+    for (const n of neighbors(id)) {
+      if (dfs(n)) return true;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+
+  for (const id of Object.keys(blocks)) {
+    if (dfs(id)) return true;
   }
   return false;
 }
 
 /**
- * Validates structural invariants (spec §16 subset for Gate 0).
+ * Scratch extension opcodes are typically `extensionId_blockName` (underscore)
+ * and the extension id is listed in project.extensions.
+ */
+export function extensionIdFromOpcode(opcode: string): string | null {
+  if (!opcode || opcode.startsWith("event_")) return null;
+  // Built-in categories use prefixes that are not extensions
+  const builtins = [
+    "motion_",
+    "looks_",
+    "sound_",
+    "event_",
+    "control_",
+    "sensing_",
+    "operator_",
+    "data_",
+    "procedures_",
+    "argument_",
+  ];
+  if (builtins.some((p) => opcode.startsWith(p))) return null;
+  const idx = opcode.indexOf("_");
+  if (idx <= 0) return null;
+  return opcode.slice(0, idx);
+}
+
+/**
+ * Validates structural invariants (spec §16).
  * Rejects entirely — callers must not partially apply.
  */
 export function validateProject(
@@ -127,35 +185,90 @@ export function validateProject(
   if (!doc || !Array.isArray(doc.targets)) {
     return {
       ok: false,
-      issues: [issue("UNKNOWN_BLOCK_REF", "targets must be an array")],
+      issues: [
+        issue("INVALID_DOCUMENT", "targets must be an array"),
+      ],
     };
   }
 
   const globalBlockIds = new Set<BlockId>();
-  const targetIds = new Set(doc.targets.map((t) => t.id));
-  const varIds = allVariableIds(doc);
-  const broadcastIds = allBroadcastIds(doc);
-  const allowedExt = new Set(options.allowedExtensions ?? doc.extensions ?? []);
+  const targetIds = new Set<string>();
+  const varIds = variableIds(doc);
+  const listIdSet = listIds(doc);
+  const broadcastIdSet = broadcastIds(doc);
+  const allowedExt = new Set(
+    options.allowedExtensions ?? doc.extensions ?? [],
+  );
 
   for (const target of doc.targets) {
-    const blocks = target.blocks ?? {};
-    const localIds = Object.keys(blocks);
+    if (!target || typeof target.id !== "string" || !target.id) {
+      issues.push(issue("INVALID_DOCUMENT", "target.id is required"));
+      continue;
+    }
+    if (targetIds.has(target.id)) {
+      issues.push(
+        issue(
+          "DUPLICATE_TARGET_ID",
+          `Target id ${target.id} is duplicated`,
+          `targets.${target.id}`,
+        ),
+      );
+    }
+    targetIds.add(target.id);
 
-    for (const id of localIds) {
-      if (globalBlockIds.has(id)) {
+    if (!target.blocks || typeof target.blocks !== "object") {
+      issues.push(
+        issue(
+          "INVALID_DOCUMENT",
+          "target.blocks must be an object",
+          `targets.${target.id}`,
+        ),
+      );
+      continue;
+    }
+
+    const blocks = target.blocks;
+    const pathBase = `targets.${target.id}`;
+
+    for (const [mapKey, block] of Object.entries(blocks)) {
+      const path = `${pathBase}.blocks.${mapKey}`;
+      if (!block || typeof block !== "object") {
+        issues.push(issue("INVALID_DOCUMENT", "invalid block object", path));
+        continue;
+      }
+      if (block.id !== mapKey) {
         issues.push(
           issue(
-            "DUPLICATE_BLOCK_ID",
-            `Block id ${id} is not unique in project`,
-            `targets.${target.id}.blocks.${id}`,
+            "BLOCK_ID_MISMATCH",
+            `Map key ${mapKey} !== block.id ${String(block.id)}`,
+            path,
           ),
         );
       }
-      globalBlockIds.add(id);
+      if (globalBlockIds.has(mapKey)) {
+        issues.push(
+          issue(
+            "DUPLICATE_BLOCK_ID",
+            `Block id ${mapKey} is not unique in project`,
+            path,
+          ),
+        );
+      }
+      globalBlockIds.add(mapKey);
+    }
+
+    if (hasDirectedCycle(blocks)) {
+      issues.push(
+        issue(
+          "CYCLE_DETECTED",
+          `Cycle in next/input graph of target ${target.id}`,
+          pathBase,
+        ),
+      );
     }
 
     for (const [id, block] of Object.entries(blocks)) {
-      const path = `targets.${target.id}.blocks.${id}`;
+      const path = `${pathBase}.blocks.${id}`;
 
       if (block.topLevel && block.parent) {
         issues.push(
@@ -165,11 +278,6 @@ export function validateProject(
             path,
           ),
         );
-      }
-
-      if (!block.topLevel && block.parent === null && block.next === null) {
-        // Isolated non-top-level reporter shadows may be parented via inputs only;
-        // if completely detached with no incoming ref, flag orphan later.
       }
 
       if (block.parent) {
@@ -182,14 +290,13 @@ export function validateProject(
               path,
             ),
           );
-        } else if (parent.next === id) {
-          // parent.next points here — OK for stack
         } else {
-          // parent should reference this block via an input
-          const referenced = Object.values(parent.inputs ?? {}).some(
-            (inp) => extractBlockRefFromInput(inp) === id,
-          );
-          if (!referenced && parent.next !== id) {
+          const referenced =
+            parent.next === id ||
+            Object.values(parent.inputs ?? {}).some((inp) =>
+              extractBlockRefsFromInput(inp).includes(id),
+            );
+          if (!referenced) {
             issues.push(
               issue(
                 "PARENT_NEXT_MISMATCH",
@@ -218,40 +325,68 @@ export function validateProject(
         }
       }
 
-      if (hasCycle(blocks, id)) {
-        issues.push(
-          issue("CYCLE_DETECTED", `Cycle involving block ${id}`, path),
-        );
-      }
-
-      // Single occupant per input slot
+      // Single occupant per input slot: type 2/3 blocks may list primary + shadow,
+      // but two distinct non-shadow block ids in one slot is invalid.
       for (const [inputName, inputVal] of Object.entries(block.inputs ?? {})) {
         if (!Array.isArray(inputVal)) continue;
-        const refs = inputVal.filter((x) => typeof x === "string") as string[];
-        // Format [type, primary, shadow?] — at most one primary block id at [1]
-        const primary = typeof inputVal[1] === "string" ? inputVal[1] : null;
-        if (primary && !blocks[primary] && !isPrimitiveShadow(inputVal)) {
-          // may be shadow primitive encoded differently — only flag if looks like uid
-          if (primary.length >= 16) {
+        const refs = extractBlockRefsFromInput(inputVal).filter(
+          (ref) => blocks[ref] && !blocks[ref]!.shadow,
+        );
+        const unique = new Set(refs);
+        if (unique.size > 1) {
+          issues.push(
+            issue(
+              "INPUT_MULTI_OCCUPANT",
+              `input ${inputName} has multiple non-shadow occupants`,
+              `${path}.inputs.${inputName}`,
+            ),
+          );
+        }
+        for (const ref of extractBlockRefsFromInput(inputVal)) {
+          if (!blocks[ref] && typeof ref === "string" && ref.length >= 8) {
+            // Primitive shadows use nested arrays, not long uid strings
             issues.push(
               issue(
                 "UNKNOWN_BLOCK_REF",
-                `input ${inputName} references missing block ${primary}`,
+                `input ${inputName} references missing block ${ref}`,
                 `${path}.inputs.${inputName}`,
               ),
             );
           }
         }
-        void refs;
       }
 
-      // Field variable / broadcast refs
       for (const [fieldName, fieldVal] of Object.entries(block.fields ?? {})) {
         if (!Array.isArray(fieldVal)) continue;
         const refId = fieldVal[1];
+        // Clone / go-to target name fields store [name, null] or [name, id]
+        if (
+          (fieldName === "TO" ||
+            fieldName === "TOWARDS" ||
+            fieldName === "CLONE_OPTION") &&
+          typeof fieldVal[0] === "string" &&
+          fieldVal[0] !== "_myself_" &&
+          fieldVal[0] !== "_random_" &&
+          fieldVal[0] !== "_mouse_"
+        ) {
+          const name = fieldVal[0];
+          const byName = doc.targets.some((t) => t.name === name);
+          const byId =
+            typeof refId === "string" && refId.length > 0
+              ? targetIds.has(refId)
+              : false;
+          if (!byName && !byId) {
+            issues.push(
+              issue(
+                "MISSING_TARGET_REF",
+                `Target reference ${name} not found`,
+                `${path}.fields.${fieldName}`,
+              ),
+            );
+          }
+        }
         if (typeof refId !== "string") continue;
         if (fieldName === "VARIABLE" && !varIds.has(refId)) {
-          // Stage + sprite vars are both in varIds; missing => error
           issues.push(
             issue(
               "MISSING_VARIABLE_REF",
@@ -260,7 +395,7 @@ export function validateProject(
             ),
           );
         }
-        if (fieldName === "LIST" && !varIds.has(refId)) {
+        if (fieldName === "LIST" && !listIdSet.has(refId)) {
           issues.push(
             issue(
               "MISSING_LIST_REF",
@@ -269,7 +404,7 @@ export function validateProject(
             ),
           );
         }
-        if (fieldName === "BROADCAST_OPTION" && !broadcastIds.has(refId)) {
+        if (fieldName === "BROADCAST_OPTION" && !broadcastIdSet.has(refId)) {
           issues.push(
             issue(
               "MISSING_BROADCAST_REF",
@@ -280,34 +415,37 @@ export function validateProject(
         }
       }
 
+      const ext = extensionIdFromOpcode(block.opcode ?? "");
+      if (ext && options.allowedExtensions !== undefined && !allowedExt.has(ext)) {
+        issues.push(
+          issue(
+            "EXTENSION_NOT_ALLOWED",
+            `Extension ${ext} not allowed for opcode ${block.opcode}`,
+            path,
+          ),
+        );
+      }
       if (
-        block.opcode.includes("_") &&
-        options.allowedExtensions &&
-        block.opcode.includes(".")
+        ext &&
+        options.allowedExtensions === undefined &&
+        doc.extensions &&
+        !doc.extensions.includes(ext)
       ) {
-        const ext = block.opcode.split(".")[0];
-        if (ext && !allowedExt.has(ext)) {
-          issues.push(
-            issue(
-              "EXTENSION_NOT_ALLOWED",
-              `Extension ${ext} not allowed`,
-              path,
-            ),
-          );
-        }
+        issues.push(
+          issue(
+            "EXTENSION_NOT_ALLOWED",
+            `Extension ${ext} not listed in project.extensions`,
+            path,
+          ),
+        );
       }
     }
 
-    // Orphans: non-topLevel with parent null and never referenced
     const referenced = new Set<BlockId>();
     for (const b of Object.values(blocks)) {
       if (b.next) referenced.add(b.next);
       for (const inp of Object.values(b.inputs ?? {})) {
-        const ref = extractBlockRefFromInput(inp);
-        if (ref) referenced.add(ref);
-        if (Array.isArray(inp) && typeof inp[2] === "string") {
-          referenced.add(inp[2]);
-        }
+        for (const ref of extractBlockRefsFromInput(inp)) referenced.add(ref);
       }
     }
     for (const [id, b] of Object.entries(blocks)) {
@@ -317,29 +455,20 @@ export function validateProject(
           issue(
             "ORPHAN_NON_TOPLEVEL",
             `Block ${id} is not top-level and not referenced`,
-            `targets.${target.id}.blocks.${id}`,
+            `${pathBase}.blocks.${id}`,
           ),
         );
       }
     }
-
-    void targetIds;
   }
 
-  // Deduplicate cycle reports (same cycle flagged many times)
   const dedup = new Map<string, ValidationIssue>();
   for (const i of issues) {
     const key = `${i.code}:${i.path ?? ""}:${i.message}`;
     if (!dedup.has(key)) dedup.set(key, i);
   }
   const unique = [...dedup.values()];
-
   return { ok: unique.length === 0, issues: unique };
-}
-
-function isPrimitiveShadow(inputVal: unknown[]): boolean {
-  // [1, [10, "text"]] style
-  return Array.isArray(inputVal[1]);
 }
 
 export function emptyProject(): ProjectDocument {

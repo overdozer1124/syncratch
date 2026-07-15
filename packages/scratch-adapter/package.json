@@ -3,12 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "EXPERIMENTAL Gate 0 Scratch VM observe/step/parity adapter. No R1 API stability.",
+  "description": "EXPERIMENTAL Gate 0 Scratch VM adapter over vendor-built v14.1.0.",
   "exports": {
     ".": "./src/index.ts"
-  },
-  "dependencies": {
-    "scratch-vm": "5.0.300"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

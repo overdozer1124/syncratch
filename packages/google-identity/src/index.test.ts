@@ -198,6 +198,72 @@ describe("verifyGoogleIdToken", () => {
     if (!result.ok) expect(result.code).toBe("HD_MISMATCH");
   });
 
+  it("rejects missing exp", async () => {
+    const { publicKey, privateKey } = await makeKeyPair();
+    const token = await new jose.SignJWT({
+      iss: "https://accounts.google.com",
+      aud: audience,
+      sub: "user-1",
+      email_verified: true,
+      iat: now(),
+      // no exp
+    })
+      .setProtectedHeader({ alg: "RS256", kid: "test-kid" })
+      .sign(privateKey);
+    const result = await verifyGoogleIdToken(token, {
+      audience,
+      allowTestHooks: true,
+      now,
+      jwksProvider: async () => publicKey,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(["MISSING_EXP", "INVALID_TOKEN", "EXPIRED"]).toContain(result.code);
+    }
+  });
+
+  it("rejects future iat", async () => {
+    const { publicKey, privateKey } = await makeKeyPair();
+    const token = await signToken(privateKey, {
+      iss: "https://accounts.google.com",
+      aud: audience,
+      sub: "user-1",
+      email_verified: true,
+      iat: now() + 3600,
+      exp: now() + 7200,
+    });
+    const result = await verifyGoogleIdToken(token, {
+      audience,
+      allowTestHooks: true,
+      now,
+      jwksProvider: async () => publicKey,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("BAD_IAT");
+  });
+
+  it("rejects non-RS256 alg", async () => {
+    const { privateKey, publicKey } = await jose.generateKeyPair("PS256");
+    const token = await new jose.SignJWT({
+      iss: "https://accounts.google.com",
+      aud: audience,
+      sub: "user-1",
+      email_verified: true,
+      iat: now(),
+      exp: now() + 3600,
+    })
+      .setProtectedHeader({ alg: "PS256", kid: "test-kid" })
+      .sign(privateKey);
+    const result = await verifyGoogleIdToken(token, {
+      audience,
+      allowTestHooks: true,
+      now,
+      jwksProvider: async () => publicKey,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("BAD_ALG");
+  });
+
   it("forbids custom JWKS outside test hooks", async () => {
     const { publicKey, privateKey } = await makeKeyPair();
     const token = await signToken(privateKey, {

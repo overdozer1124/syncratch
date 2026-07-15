@@ -12,3 +12,6 @@ vendor/scratch-editor/node_modules/
 vendor/scratch-editor/**/node_modules/
 vendor/scratch-editor/**/dist/
 .pnpm-store/
+.tmp-vm-dist/
+vendor/scratch-editor-bak*/
+*.zip.bomb

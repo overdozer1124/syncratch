@@ -6,7 +6,7 @@
   "description": "EXPERIMENTAL Gate 0 two-process WebSocket collab test client.",
   "scripts": {
     "test": "vitest run",
-    "test:collab": "vitest run src/collab.integration.test.ts"
+    "test:collab": "vitest run src/collab.multiprocess.test.ts src/collab.integration.test.ts"
   },
   "dependencies": {
     "@blocksync/collaboration-domain": "workspace:*",
@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

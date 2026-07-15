@@ -1,6 +1,5 @@
 /**
  * @experimental Gate 0 Google ID token verification (authentication only).
- * Does not implement authorization, sessions, or CSRF.
  */
 
 import * as jose from "jose";
@@ -9,6 +8,8 @@ export const GOOGLE_ISSUERS = [
   "https://accounts.google.com",
   "accounts.google.com",
 ] as const;
+
+export const ALLOWED_ALGS = ["RS256"] as const;
 
 export interface GoogleIdentityClaims {
   sub: string;
@@ -32,6 +33,8 @@ export type VerifyFailureCode =
   | "BAD_AZP"
   | "EXPIRED"
   | "BAD_IAT"
+  | "MISSING_EXP"
+  | "BAD_ALG"
   | "MISSING_SUB"
   | "EMAIL_NOT_VERIFIED"
   | "HD_MISSING"
@@ -48,24 +51,26 @@ export type JwksProvider = (
 
 export interface VerifyGoogleIdTokenOptions {
   audience: string | string[];
-  /** When set, azp must equal one of these (or equal aud when Google sends azp). */
   authorizedParties?: string[];
-  /** School-restricted mode: hd must be present and exact-match one of these. */
   allowedHostedDomains?: string[];
   requireEmailVerified?: boolean;
-  clockToleranceSec?: number;
-  now?: () => number;
   /**
-   * Custom JWKS / key resolver. Only honored when test hooks are enabled.
-   * Production must use Google JWKS via `jwksUrl` (default).
+   * Test-only. Ignored unless test hooks are enabled.
+   * Production always uses real wall clock and default clockTolerance (60s).
    */
+  clockToleranceSec?: number;
+  /** Test-only. Ignored unless test hooks are enabled. */
+  now?: () => number;
+  /** Test-only JWKS resolver. */
   jwksProvider?: JwksProvider;
+  /** Test-only JWKS URL override. */
   jwksUrl?: string;
-  /** Must be true together with NODE_ENV=test or GATE0_TEST_HOOKS=1 to inject JWKS. */
   allowTestHooks?: boolean;
 }
 
 const DEFAULT_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs";
+const DEFAULT_CLOCK_TOLERANCE_SEC = 60;
+const MAX_IAT_FUTURE_SKEW_SEC = 60;
 
 function testHooksEnabled(allowTestHooks?: boolean): boolean {
   if (!allowTestHooks) return false;
@@ -80,36 +85,42 @@ function asStringAud(aud: unknown): string[] {
   return [];
 }
 
+function wallNowSec(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 export async function verifyGoogleIdToken(
   token: string,
   options: VerifyGoogleIdTokenOptions,
 ): Promise<VerifyResult> {
   const hooksOk = testHooksEnabled(options.allowTestHooks);
 
-  if (options.jwksProvider && !hooksOk) {
-    return {
-      ok: false,
-      code: "HOOKS_FORBIDDEN",
-      message:
-        "Custom JWKS provider is only allowed when allowTestHooks=true and NODE_ENV=test or GATE0_TEST_HOOKS=1",
-    };
+  if ((options.jwksProvider || options.jwksUrl || options.now || options.clockToleranceSec !== undefined) && !hooksOk) {
+    if (options.jwksProvider || (options.jwksUrl && options.jwksUrl !== DEFAULT_JWKS_URL) || options.now || options.clockToleranceSec !== undefined) {
+      return {
+        ok: false,
+        code: "HOOKS_FORBIDDEN",
+        message:
+          "now/clockTolerance/custom JWKS only allowed when allowTestHooks=true and NODE_ENV=test or GATE0_TEST_HOOKS=1",
+      };
+    }
   }
 
   let getKey: JwksProvider;
   if (options.jwksProvider && hooksOk) {
     getKey = options.jwksProvider;
   } else {
-    const url = options.jwksUrl ?? DEFAULT_JWKS_URL;
-    if (options.jwksUrl && options.jwksUrl !== DEFAULT_JWKS_URL && !hooksOk) {
-      return {
-        ok: false,
-        code: "HOOKS_FORBIDDEN",
-        message: "Custom jwksUrl is only allowed under test hooks",
-      };
-    }
+    const url =
+      hooksOk && options.jwksUrl ? options.jwksUrl : DEFAULT_JWKS_URL;
     const remote = jose.createRemoteJWKSet(new URL(url));
     getKey = async (header) => remote(header);
   }
+
+  const nowSec = hooksOk && options.now ? options.now() : wallNowSec();
+  const clockTolerance =
+    hooksOk && options.clockToleranceSec !== undefined
+      ? options.clockToleranceSec
+      : DEFAULT_CLOCK_TOLERANCE_SEC;
 
   let payload: jose.JWTPayload;
   let protectedHeader: jose.JWTHeaderParameters;
@@ -117,13 +128,17 @@ export async function verifyGoogleIdToken(
     const verified = await jose.jwtVerify(token, getKey, {
       issuer: [...GOOGLE_ISSUERS],
       audience: options.audience,
-      clockTolerance: options.clockToleranceSec ?? 60,
-      currentDate: options.now ? new Date(options.now() * 1000) : undefined,
+      algorithms: [...ALLOWED_ALGS],
+      clockTolerance,
+      currentDate: new Date(nowSec * 1000),
     });
     payload = verified.payload;
     protectedHeader = verified.protectedHeader;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (/alg|algorithm/i.test(msg)) {
+      return { ok: false, code: "BAD_ALG", message: msg };
+    }
     if (/JWKS|fetch|network|ENOENT|ECONN/i.test(msg)) {
       return { ok: false, code: "JWKS_FETCH_FAILED", message: msg };
     }
@@ -145,14 +160,34 @@ export async function verifyGoogleIdToken(
     return { ok: false, code: "INVALID_TOKEN", message: msg };
   }
 
-  void protectedHeader;
+  if (protectedHeader.alg !== "RS256") {
+    return {
+      ok: false,
+      code: "BAD_ALG",
+      message: `alg ${String(protectedHeader.alg)} is not RS256`,
+    };
+  }
+
+  if (payload.exp === undefined || typeof payload.exp !== "number") {
+    return { ok: false, code: "MISSING_EXP", message: "exp is required" };
+  }
+  if (payload.exp < nowSec - clockTolerance) {
+    return { ok: false, code: "EXPIRED", message: "token expired" };
+  }
+
+  if (payload.iat === undefined || typeof payload.iat !== "number") {
+    return { ok: false, code: "BAD_IAT", message: "iat is required" };
+  }
+  if (payload.iat > nowSec + MAX_IAT_FUTURE_SKEW_SEC) {
+    return {
+      ok: false,
+      code: "BAD_IAT",
+      message: "iat is unacceptably in the future",
+    };
+  }
 
   if (!payload.sub || typeof payload.sub !== "string") {
     return { ok: false, code: "MISSING_SUB", message: "sub is required" };
-  }
-
-  if (payload.iat === undefined) {
-    return { ok: false, code: "BAD_IAT", message: "iat is required" };
   }
 
   const requireEmail = options.requireEmailVerified !== false;
@@ -202,12 +237,13 @@ export async function verifyGoogleIdToken(
         : undefined,
     hd: typeof payload.hd === "string" ? payload.hd : undefined,
     azp,
-    aud: asStringAud(payload.aud).length === 1
-      ? asStringAud(payload.aud)[0]!
-      : asStringAud(payload.aud),
+    aud:
+      asStringAud(payload.aud).length === 1
+        ? asStringAud(payload.aud)[0]!
+        : asStringAud(payload.aud),
     iss: String(payload.iss),
-    exp: Number(payload.exp),
-    iat: Number(payload.iat),
+    exp: payload.exp,
+    iat: payload.iat,
   };
 
   return { ok: true, claims };

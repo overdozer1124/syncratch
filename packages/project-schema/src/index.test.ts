@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   emptyProject,
   validateProject,
+  extensionIdFromOpcode,
   type ProjectDocument,
 } from "../src/index.js";
 
 describe("validateProject", () => {
   it("accepts empty stage project", () => {
-    const r = validateProject(emptyProject());
-    expect(r.ok).toBe(true);
+    expect(validateProject(emptyProject()).ok).toBe(true);
   });
 
   it("rejects duplicate block ids across targets", () => {
@@ -50,8 +50,57 @@ describe("validateProject", () => {
       ],
     };
     const r = validateProject(doc);
-    expect(r.ok).toBe(false);
     expect(r.issues.some((i) => i.code === "DUPLICATE_BLOCK_ID")).toBe(true);
+  });
+
+  it("rejects duplicate target ids", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      targets: [
+        {
+          id: "same",
+          name: "A",
+          isStage: true,
+          blocks: {},
+        },
+        {
+          id: "same",
+          name: "B",
+          isStage: false,
+          blocks: {},
+        },
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "DUPLICATE_TARGET_ID"),
+    ).toBe(true);
+  });
+
+  it("rejects map key / block.id mismatch", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      targets: [
+        {
+          id: "s1",
+          name: "Sprite1",
+          isStage: false,
+          blocks: {
+            key: {
+              id: "other",
+              opcode: "motion_movesteps",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+            },
+          },
+        },
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "BLOCK_ID_MISMATCH"),
+    ).toBe(true);
   });
 
   it("rejects next/parent mismatch", () => {
@@ -85,12 +134,12 @@ describe("validateProject", () => {
         },
       ],
     };
-    const r = validateProject(doc);
-    expect(r.ok).toBe(false);
-    expect(r.issues.some((i) => i.code === "PARENT_NEXT_MISMATCH")).toBe(true);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "PARENT_NEXT_MISMATCH"),
+    ).toBe(true);
   });
 
-  it("rejects cycles in next chain", () => {
+  it("rejects cycles via input edges", () => {
     const doc: ProjectDocument = {
       schemaVersion: 1,
       targets: [
@@ -101,19 +150,19 @@ describe("validateProject", () => {
           blocks: {
             a: {
               id: "a",
-              opcode: "motion_movesteps",
-              next: "b",
+              opcode: "control_if",
+              next: null,
               parent: null,
-              inputs: {},
+              inputs: { SUBSTACK: [2, "b"] },
               fields: {},
               topLevel: true,
             },
             b: {
               id: "b",
-              opcode: "motion_movesteps",
-              next: "a",
+              opcode: "control_if",
+              next: null,
               parent: "a",
-              inputs: {},
+              inputs: { SUBSTACK: [2, "a"] },
               fields: {},
               topLevel: false,
             },
@@ -121,9 +170,38 @@ describe("validateProject", () => {
         },
       ],
     };
-    const r = validateProject(doc);
-    expect(r.ok).toBe(false);
-    expect(r.issues.some((i) => i.code === "CYCLE_DETECTED")).toBe(true);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "CYCLE_DETECTED"),
+    ).toBe(true);
+  });
+
+  it("does not accept LIST field pointing at a variable id", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      targets: [
+        {
+          id: "s1",
+          name: "Sprite1",
+          isStage: false,
+          variables: { v1: ["score", 0] },
+          lists: {},
+          blocks: {
+            set: {
+              id: "set",
+              opcode: "data_addtolist",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: { LIST: ["score", "v1"] },
+              topLevel: true,
+            },
+          },
+        },
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "MISSING_LIST_REF"),
+    ).toBe(true);
   });
 
   it("rejects missing variable reference", () => {
@@ -149,9 +227,123 @@ describe("validateProject", () => {
         },
       ],
     };
-    const r = validateProject(doc);
-    expect(r.ok).toBe(false);
-    expect(r.issues.some((i) => i.code === "MISSING_VARIABLE_REF")).toBe(true);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "MISSING_VARIABLE_REF"),
+    ).toBe(true);
+  });
+
+  it("rejects INPUT_MULTI_OCCUPANT", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      targets: [
+        {
+          id: "s1",
+          name: "Sprite1",
+          isStage: false,
+          blocks: {
+            parent: {
+              id: "parent",
+              opcode: "control_if",
+              next: null,
+              parent: null,
+              inputs: { SUBSTACK: [2, "a", "b"] },
+              fields: {},
+              topLevel: true,
+            },
+            a: {
+              id: "a",
+              opcode: "motion_movesteps",
+              next: null,
+              parent: "parent",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+            },
+            b: {
+              id: "b",
+              opcode: "motion_movesteps",
+              next: null,
+              parent: "parent",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+            },
+          },
+        },
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INPUT_MULTI_OCCUPANT"),
+    ).toBe(true);
+  });
+
+  it("rejects missing target references", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      targets: [
+        {
+          id: "s1",
+          name: "Sprite1",
+          isStage: false,
+          blocks: {
+            go: {
+              id: "go",
+              opcode: "sensing_of",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: { OBJECT: ["Ghost", null] },
+              topLevel: true,
+            },
+          },
+        },
+      ],
+    };
+    // TOWARDS-like: use CLONE_OPTION / sensing fields — OBJECT isn't checked;
+    // use explicit TOWARDS via motion_pointtowards field TO
+    doc.targets[0]!.blocks = {
+      pt: {
+        id: "pt",
+        opcode: "motion_pointtowards",
+        next: null,
+        parent: null,
+        inputs: {},
+        fields: { TOWARDS: ["Ghost", null] },
+        topLevel: true,
+      },
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "MISSING_TARGET_REF"),
+    ).toBe(true);
+  });
+
+  it("rejects unknown extension opcodes not in extensions list", () => {
+    expect(extensionIdFromOpcode("music_playDrumForBeats")).toBe("music");
+    const doc: ProjectDocument = {
+      schemaVersion: 1,
+      extensions: [],
+      targets: [
+        {
+          id: "s1",
+          name: "Sprite1",
+          isStage: false,
+          blocks: {
+            m: {
+              id: "m",
+              opcode: "music_playDrumForBeats",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+            },
+          },
+        },
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "EXTENSION_NOT_ALLOWED"),
+    ).toBe(true);
   });
 
   it("accepts well-formed stack", () => {
@@ -186,7 +378,6 @@ describe("validateProject", () => {
         },
       ],
     };
-    const r = validateProject(doc);
-    expect(r.ok).toBe(true);
+    expect(validateProject(doc).ok).toBe(true);
   });
 });

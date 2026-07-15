@@ -9,9 +9,11 @@
   },
   "scripts": {
     "start": "tsx src/server.ts",
-    "test": "vitest run --passWithNoTests"
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@blocksync/project-schema": "workspace:*",
     "lib0": "^0.2.114",
     "ws": "^8.18.2",
     "yjs": "^13.6.27"
