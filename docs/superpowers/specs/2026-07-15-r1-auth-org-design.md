@@ -1,8 +1,9 @@
 # Release 1 Slice — Google Auth, Session & Organization Foundation Design
 
 > **Date:** 2026-07-15  
-> **Status:** Draft for review (do not implement until approved)  
-> **Baselines:** Gate 0 Technical Go @ `4a14e05`; R1 persistence Technical Go @ `3d6053b` (HTTP 422 harden @ `7cb76cd`)  
+> **Status:** Revised draft for re-review (do not implement until approved)  
+> **Revision:** CSRF cookie supply + Origin rules; immutable `(sub→org)` bind (post-`efc4a24`)  
+> **Baselines:** Gate 0 Technical Go @ `4a14e05`; R1 persistence Technical Go @ `3d6053b`  
 > **Spec anchors:** §6–8, §44–45, §46, §55  
 > **Next after Go:** Scratch editor + safe SB3 I/O wired to persistence APIs
 
@@ -13,332 +14,329 @@ Replace stub header identity (`x-user-id` / `x-organization-id`) on the **produc
 1. Google GIS ID token verification (reuse Gate 0 `@blocksync/google-identity`)
 2. Durable organizations / users / external identities / sessions in SQLite
 3. Opaque server-side sessions via `HttpOnly` Cookie
-4. Cookie-resolving `AuthContext` plugged into existing project APIs
-5. Process-restart survival for orgs, users, and sessions
+4. CSRF via **non-HttpOnly** double-submit Cookie + DB hash (restart-/reload-safe)
+5. Cookie-resolving `AuthContext` plugged into existing project APIs
+6. Process-restart survival for orgs, users, and sessions
 
-**Final Go** for this slice requires: fixture suite green **and** evidence of real Google GIS + allowed Workspace `hd` success. Without credentials: label verdict **Technical Go — real GIS conditional**.
+**Final Go** requires fixture suite green **and** real Google GIS + allowed Workspace `hd` evidence. Without credentials: **Technical Go — real GIS conditional**.
 
-Out of scope: teacher/student roles UI, admin console, multi-IdP, Classroom, invites, passwords, AI, Scratch edit UI, WebSocket session fan-out (§8.2 WS items deferred to collab slice).
+Out of scope: teacher/student roles UI, admin console, multi-IdP, Classroom, invites, passwords, AI, Scratch edit UI, WebSocket revoke fan-out, **organization transfer / reassignment admin APIs**.
 
 ## 2. Current state (survey)
 
 ```text
-Gate 0:  verifyGoogleIdToken(iss/aud/exp/iat/alg/sub/email_verified/hd)  ──┐
-                                                                           │ unconnected
+Gate 0:  verifyGoogleIdToken  ──┐
+                                │ unconnected
 R1:      StubAuthContext(x-user-id) → ProjectService → Durable ACL (SQLite)
 ```
 
-| Area | Finding |
-|---|---|
-| `auth-context` | Identity-only `resolve`; stub principals `user-a`/`user-b` @ `org-demo` |
-| `google-identity` | Production-ready verifier + test hooks gated |
-| R1 SQLite | `projects` / `project_members` only — **no** users/sessions/org tables |
-| `r1-persist-server` | Always wires `StubAuthContext`; `CreateServerDeps.auth` unused in Hono layer |
-| Auth smoke | `gate0-auth-smoke` skips without `GOOGLE_CLIENT_ID`; no automated browser GIS |
+`GoogleIdentityClaims` today has **no `name`**. This slice does **not** extend that type for display-name sync (see §9.5).
 
 ## 3. Approaches
 
-| Approach | Idea | Pros | Cons |
-|---|---|---|---|
-| **A. Opaque session cookie + SQLite session store (recommended)** | Verify Google ID token once; issue random session id; store **hash only**; Cookie carries opaque id; `SessionAuthContext.resolve` loads session→user→org | Matches §8.2; revoke/logout/expiry are server-forced; no Google token retention; fits current SQLite ports | Requires CSRF design for cookie mutations |
-| **B. Signed app JWT as session** | After Google verify, mint HS256/RS256 JWT in Cookie | Stateless scale-out | Logout/revoke harder; larger cookie; risk of putting PII in JWT; worse fit for “server-forced invalidation” |
-| **C. Session store in Redis / separate auth service** | Same as A but external store | Multi-node ready | Ops weight; premature for single-process R1 |
-
-**Recommendation: A.** Keep ports (`SessionRepository`) so Postgres/Redis can replace SQLite later without changing HTTP contracts.
+| Approach | Idea | Verdict |
+|---|---|---|
+| **A. Opaque session cookie + SQLite session store** | Verify Google once; Cookie holds raw session id; DB stores hash; CSRF Cookie holds raw csrf; DB stores csrf hash | **Recommended (approved direction)** |
+| B. App JWT session | Stateless cookie JWT | Rejected — revoke/logout weaker |
+| C. Redis session service | A + external store | Deferred — ops weight |
 
 ## 4. Architecture
 
 ```text
-Browser (GIS)
-   │ credential (ID token)  -- once, never stored
+POST /v1/auth/google   (no CSRF; strict Origin + JSON CT + CORS)
+   → verifyGoogleIdToken(+ authorizedParties when configured)
+   → single sync TX: org/user/identity/membership/session (first login)
+   → Set-Cookie: blocksync_session (HttpOnly) + blocksync_csrf (NOT HttpOnly)
    ▼
-POST /v1/auth/google
-   → verifyGoogleIdToken
-   → upsert org(domain←hd) + user + external_identity(google,sub)
-   → create session (raw id → Cookie; hash → DB)
+Mutating APIs (logout, project write, snapshot, restore)
+   → Origin required + allow-listed
+   → Session cookie + X-CSRF-Token (or csrf cookie value) matches sessions.csrf_hash
    ▼
-Cookie: blocksync_session=<opaque>  (HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age)
-   + CSRF: see §7
-   ▼
-SessionAuthContext.resolve({ cookies, headers })
-   → load session by hash; check expiry/revoked; load user+primary org membership
-   → AuthPrincipal { userId, organizationId, displayName? }
-   ▼
-Existing ProjectService (unchanged ACL contract)
-   resolve OUTSIDE TX → DurableProjectAccessPolicy INSIDE TX
+SessionAuthContext.resolve
+   → session hash OK + not expired/revoked
+   → user.status + org.status active
+   → membership(organization_id, user_id) EXISTS (else 401)
+   → AuthPrincipal
 ```
 
-### Packages / apps
+### Connection ownership (fixed)
 
-| Unit | Role |
-|---|---|
-| `@blocksync/auth-context` | Keep `AuthContext` / `AuthPrincipal`; extend `AuthRequestHints` with `cookies`; keep `StubAuthContext` **test-only** |
-| `@blocksync/google-identity` | Unchanged (dependency) |
-| `@blocksync/session-service` | Login / logout / me / session lifecycle use-cases + ports |
-| `@blocksync/auth-store-sqlite` | Migrations + adapters for org/user/session (or extend `project-store-sqlite` with namespaced migrate — prefer **shared DB file**, separate migrate module) |
-| `apps/r1-persist-server` | Auth routes + Cookie jar + CSRF middleware + wire `SessionAuthContext` |
-| `apps/r1-auth-demo` / expand persist tests | Fixture acceptance + optional real GIS smoke |
+- **One SQLite file:** `R1_DATA_DIR/projects.sqlite`
+- **One connection owner:** `@blocksync/project-store-sqlite` opens/`close`s the `better-sqlite3` Database
+- **Migration order:** existing project migrate → auth migrate (`migrateAuth(db)`) in the same boot path
+- **Auth repository** receives the **same `Database` instance** (or a thin wrapper) from bootstrap; it must **not** open a second connection and must **not** call `close()`
+- `bootstrapPersistRuntime` creates repo once, runs migrations, constructs project + auth adapters, then `SessionAuthContext` / services
 
-**Shared data directory:** same `R1_DATA_DIR/projects.sqlite` (or `auth.sqlite` co-located — **prefer one DB** so FK from `projects.owner_user_id` can eventually align; for this slice, introduce users first and **migrate stub string ids** carefully — see §6.3).
+## 5. Stub vs production configuration boundary
 
-## 5. Stub vs production configuration boundary (critical)
-
-| Knob | Production path | Test / local stub path |
+| Knob | Production (`NODE_ENV=production`) | Non-production |
 |---|---|---|
-| `R1_AUTH_MODE` | **`google`** (required when `NODE_ENV=production`) | `stub` allowed only if `NODE_ENV !== "production"` |
-| AuthContext impl | `SessionAuthContext` only | `StubAuthContext` may be constructed |
-| Cookie `Secure` | **must be true** when `R1_AUTH_MODE=google` OR `NODE_ENV=production`; process **refuses to boot** if `R1_COOKIE_SECURE=false` in those modes | May set `R1_COOKIE_SECURE=false` for HTTP localhost when `R1_AUTH_MODE=stub` **or** explicit `R1_ALLOW_INSECURE_COOKIES=1` with `NODE_ENV=test` only |
-| Header spoofing | Ignore `x-user-id` / `x-organization-id` entirely in google mode | Stub mode may read them |
-| Compile/runtime guard | `assertProductionAuthConfig()` in `main` before listen | Vitest sets `R1_AUTH_MODE=stub` |
+| `R1_AUTH_MODE` | **Must be `google`** — refuse stub | `stub` or `google` |
+| AuthContext | `SessionAuthContext` only | Stub allowed when mode=`stub` |
+| Cookie `Secure` | **Must be true** for both session + CSRF cookies; boot refuse if false | Local HTTP: insecure only if mode=`stub` **or** (`NODE_ENV=test` + `R1_ALLOW_INSECURE_COOKIES=1`) |
+| Spoof headers | Ignored | Stub may read `x-user-id` |
 
-```typescript
-// Pseudocode — boot refuse
-if (process.env.NODE_ENV === "production" && process.env.R1_AUTH_MODE !== "google") {
-  throw new Error("R1_AUTH_MODE=google required in production");
-}
-if (authMode === "google" && cookieSecure !== true) {
-  throw new Error("Secure cookies required for google auth mode");
-}
-if (authMode === "stub" && process.env.NODE_ENV === "production") {
-  throw new Error("StubAuthContext forbidden in production");
-}
-```
+## 6. Data model
 
-`StubAuthContext` remains exported for unit/acceptance tests and optional local demos; **production bootstrap never imports it into the live wire**.
-
-## 6. Data model (migration)
-
-SQLite additions (same file as projects recommended):
-
-### 6.1 Tables
+### 6.1 Tables (FK / CHECK required)
 
 ```sql
+PRAGMA foreign_keys = ON;  -- every connection
+
 organizations(
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  status TEXT NOT NULL,           -- active|suspended
+  status TEXT NOT NULL CHECK (status IN ('active','suspended')),
   created_at TEXT NOT NULL
 );
 
 organization_domains(
   organization_id TEXT NOT NULL REFERENCES organizations(id),
-  hosted_domain TEXT NOT NULL,  -- Google hd, lowercased
+  hosted_domain TEXT NOT NULL,  -- lowercased Google hd
   PRIMARY KEY (organization_id, hosted_domain),
-  UNIQUE (hosted_domain)        -- one org per hd in this slice
+  UNIQUE (hosted_domain)
 );
 
 users(
-  id TEXT PRIMARY KEY,            -- server-generated UUID
+  id TEXT PRIMARY KEY,
   primary_organization_id TEXT NOT NULL REFERENCES organizations(id),
-  display_name TEXT,
-  email TEXT,                     -- mutable contact; NOT identity key
-  status TEXT NOT NULL,           -- active|disabled
+  display_name TEXT,              -- optional local field; NOT synced from Google name this slice
+  email TEXT,                     -- mutable contact from claims.email only
+  status TEXT NOT NULL CHECK (status IN ('active','disabled')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
 
 external_identities(
-  provider TEXT NOT NULL,         -- 'google'
+  provider TEXT NOT NULL CHECK (provider IN ('google')),
   subject TEXT NOT NULL,          -- Google sub
   user_id TEXT NOT NULL REFERENCES users(id),
+  organization_id TEXT NOT NULL REFERENCES organizations(id),  -- bind org at first login
   created_at TEXT NOT NULL,
   PRIMARY KEY (provider, subject),
   UNIQUE (provider, subject)
 );
 
 organization_memberships(
-  organization_id TEXT NOT NULL,
-  user_id TEXT NOT NULL,
-  role TEXT NOT NULL,              -- member|admin (no teacher/student UI yet)
+  organization_id TEXT NOT NULL REFERENCES organizations(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  role TEXT NOT NULL CHECK (role IN ('member','admin')),
   PRIMARY KEY (organization_id, user_id)
 );
 
 sessions(
-  id_hash TEXT PRIMARY KEY,       -- sha256(rawSessionId)
-  user_id TEXT NOT NULL REFERENCES users(id),
-  organization_id TEXT NOT NULL REFERENCES organizations(id),
-  csrf_hash TEXT NOT NULL,        -- sha256(rawCsrfToken) for synchronizer
+  id_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  organization_id TEXT NOT NULL,
+  csrf_hash TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
-  revoked_at TEXT,                -- null if active
-  last_seen_at TEXT
+  revoked_at TEXT,
+  last_seen_at TEXT,
+  FOREIGN KEY (organization_id, user_id)
+    REFERENCES organization_memberships(organization_id, user_id)
 );
 ```
 
-**Never store:** Google ID token / access token / refresh token / raw session id / raw CSRF in DB or logs.
+**Never store:** Google ID token, raw session id, raw CSRF token in DB or logs.
 
-### 6.2 Org resolution from `hd`
+### 6.2 Immutable org bind for Google `sub` (invariant)
 
-- Config allow-list: `R1_ALLOWED_HOSTED_DOMAINS` (comma-separated) **and/or** rows in `organization_domains` seeded at boot from that env.
-- Login: after `verifyGoogleIdToken({ allowedHostedDomains })`, resolve org by `claims.hd` → `organization_domains`; if domain allowed in env but org missing → **create org + domain** (slice rule) **or** require pre-seed — **choose: auto-create org for allowed hd** to keep ops light; name = hd.
-- Missing/invalid hd / not allow-listed → auth failure (generic).
+1. **First successful login** permanently binds `(provider='google', subject=sub)` to exactly one `organization_id` (the org resolved from that login’s verified `hd`). Store this on `external_identities.organization_id` and set `users.primary_organization_id` once.
+2. **Re-login:** after token verify, if `claims.hd` resolves to a **different** org than `external_identities.organization_id` → **generic `AUTH_FAILED`**. Do **not** update `primary_organization_id`, do **not** add memberships.
+3. Login **never** performs org transfer or additional memberships beyond the first-login bind.
+4. **Org transfer / multi-org** = future admin scope (out of this slice).
+5. **Session resolve (every request):** require `users.status=active`, `organizations.status=active`, and a current `organization_memberships` row for `(session.organization_id, session.user_id)`. If membership was removed → **401** even if session Cookie still valid / unexpired.
+6. **Concurrent first login** (same `sub`, two parallel `/v1/auth/google`): all org/user/identity/membership/session writes occur in **one sync SQLite transaction** with uniqueness on `(provider, subject)`; exactly one user/identity; second TX observes existing identity (no duplicate users). **Required test.**
 
-### 6.3 Compatibility with existing projects
+### 6.3 Org resolution from `hd` (first login only)
 
-Today `projects.owner_user_id` is `"user-a"` strings and org `"org-demo"`.
+- Allow-list: `R1_ALLOWED_HOSTED_DOMAINS` (+ seed `organization_domains` at boot).
+- First login: auto-create org+domain for allowed hd if missing (`name = hd`).
+- Missing / mismatched / not allow-listed hd → `AUTH_FAILED`.
 
-Migration strategy for this slice:
+### 6.4 Stub project compatibility
 
-1. Seed **demo stub org** only in stub mode.
-2. In google mode: new users get UUID user ids; **existing fixture projects owned by stub users remain for stub-mode tests only**.
-3. Acceptance BOLA under google mode uses two real fixture users/orgs created via login flow (not stub headers).
-4. Optional one-time note in runbook: persistence Go projects under stub ids are not portable into google-mode ACL without remapping (accept for R1).
+Stub-mode projects (`user-a` / `org-demo`) remain stub-only. Google-mode BOLA uses Cookie-created users/orgs.
 
-## 7. Cookie, CSRF, expiry, revocation
+## 7. Cookies, CSRF, Origin, expiry
 
 ### 7.1 Session cookie
 
 | Attribute | Value |
 |---|---|
 | Name | `blocksync_session` |
-| Value | opaque random (≥ 256-bit, base64url) |
+| Value | `randomBytes(32).toString("base64url")` (≥256-bit) |
 | HttpOnly | `true` |
-| Secure | config; guarded (§5) |
+| Secure | guarded (§5) |
 | SameSite | `Lax` |
 | Path | `/` |
-| Max-Age / Expires | e.g. 7 days absolute; sliding `last_seen` optional (slice: absolute expiry only) |
+| Max-Age | e.g. 7 days absolute |
 
-### 7.2 CSRF (§8.2)
+### 7.2 CSRF cookie (chosen supply method)
 
-**Synchronizer token pattern (recommended for SPA + cookie auth):**
+**Double-submit Cookie + DB hash** (restart-/reload-safe; no plaintext CSRF in DB):
 
-1. On login (and session refresh), generate `csrf` random; store `sha256(csrf)` on session row; return csrf **once** in JSON body of `/v1/auth/google` and `/v1/auth/me` (not in HttpOnly cookie).
-2. Mutating requests (`POST`/`PUT`/`PATCH`/`DELETE`) must send header `X-CSRF-Token: <csrf>`.
-3. Middleware compares `sha256(header)` to `sessions.csrf_hash` for the resolved session.
-4. Safe methods (`GET` `/me`, list) do not require CSRF.
-5. Additionally reject mutating requests with foreign `Origin` when `Origin` present and not in `R1_ALLOWED_ORIGINS`.
+| Attribute | Value |
+|---|---|
+| Name | `blocksync_csrf` |
+| Value | raw CSRF (`randomBytes(32).toString("base64url")`) |
+| HttpOnly | **`false`** (JS/SPA may read if needed; primary transport = request header mirrored from cookie) |
+| Secure | **same as session cookie** |
+| SameSite | `Lax` |
+| Path | `/` |
+| Max-Age | aligned with session |
 
-Login response reissues session id (**session fixation** mitigation per §8.2).
+DB stores only `sha256(rawCsrf)`. Clients send `X-CSRF-Token: <raw>` matching the CSRF cookie value. Server checks `sha256(header) === sessions.csrf_hash` **and** (defense in depth) header equals Cookie `blocksync_csrf` when both present.
 
-### 7.3 Expiry & revocation
+`/v1/auth/me` returns user profile + `expiresAt` but **does not** need to reconstruct CSRF from the hash — the browser already has `blocksync_csrf`. Me may omit `csrfToken` JSON (cookie is source of truth after reload).
 
-- Expired (`now >= expires_at`) or `revoked_at != null` → treat as unauthenticated (401).
-- `POST /v1/auth/logout` sets `revoked_at`, clears Cookie (`Max-Age=0`).
-- Replayed Cookie after logout → 401.
-- Disabled user / suspended org → 401 on resolve (generic).
+Login rotates **both** session and CSRF cookies (session fixation).
 
-## 8. AuthContext surface
+### 7.3 Route CSRF / Origin matrix
+
+| Route | Session | CSRF | Origin |
+|---|---|---|---|
+| `POST /v1/auth/google` | no | **no** | **Required**; must be in `R1_ALLOWED_ORIGINS`. Missing / `null` / disallowed → **403** |
+| `GET /v1/auth/me`, `GET` project reads | yes | no | n/a (safe) |
+| `POST /v1/auth/logout` | yes | **yes** | **Required** allow-list; missing/null/disallowed → **403** |
+| Project mutations (`POST/PUT` create/save/snapshot/restore) | yes | **yes** | **Required** allow-list; missing/null/disallowed → **403** |
+
+`/v1/auth/google` additional gates:
+
+- `Content-Type` must be `application/json` (charset optional)
+- CORS: reflect only allow-listed origins; no `*` with credentials
+- Body size limit (reuse server limits)
+
+**Do not** use “validate Origin only if present” for browser mutating APIs or login.
+
+### 7.4 Cookie clearing
+
+Logout (and auth failure clear) must `Set-Cookie` clear with the **same** `Secure`, `SameSite`, and `Path` as issuance (`Max-Age=0` / empty value) for **both** `blocksync_session` and `blocksync_csrf`. **HTTP test required.**
+
+### 7.5 Expiry & revocation
+
+Expired / `revoked_at` set / membership missing / user or org inactive → 401. Logout revokes + clears both cookies.
+
+## 8. AuthContext
 
 ```typescript
 export interface AuthRequestHints {
   headers: Record<string, string | undefined>;
   cookies?: Record<string, string | undefined>;
 }
-
 export interface AuthPrincipal {
   userId: string;
   organizationId: string;
-  displayName?: string;
+  displayName?: string; // may be null/omit when unset; not Google-name-synced this slice
 }
-
 export interface AuthContext {
   resolve(request: AuthRequestHints): Promise<AuthPrincipal>;
 }
 ```
 
-- `SessionAuthContext`: Cookie → session hash → principal; **never** reads spoof headers in google mode.
-- `StubAuthContext`: headers only; test/local stub mode.
-- Project service keeps: `await auth.resolve` **outside** DB TX; ACL inside sync TX.
-
-HTTP layer extracts Cookie header into `cookies` map before calling service.
+`SessionAuthContext` ignores spoof headers; enforces membership on every resolve.
 
 ## 9. API contract
 
 ### 9.1 `POST /v1/auth/google`
 
-Body: `{ "idToken": "<GIS credential>" }` (never log).
+Body: `{ "idToken": "<GIS credential>" }`.
 
 Success `200`:
 
 ```json
 {
-  "user": { "id": "...", "organizationId": "...", "displayName": "...", "email": "..." },
-  "csrfToken": "...",
+  "user": {
+    "id": "...",
+    "organizationId": "...",
+    "email": "..."
+  },
   "expiresAt": "ISO-8601"
 }
 ```
 
-Set-Cookie: session. **Do not** return session raw id in JSON.
+Set-Cookie: session + csrf. No raw session id in JSON. No `csrfToken` JSON field required (cookie carries it).
 
-Failure `401` with opaque `{ "code": "AUTH_FAILED" }` (no VerifyFailureCode leakage to clients). Map internally for metrics only.
+Failure: `401` `{ "code": "AUTH_FAILED" }` or Origin/CT failures `403`/`400` as appropriate — never leak `VerifyFailureCode`.
 
 ### 9.2 `GET /v1/auth/me`
 
-Cookie required. Returns user + `csrfToken` + `expiresAt`. `401` if missing/invalid session.
+Session Cookie required. Returns user + `expiresAt`. `401` if invalid.
 
 ### 9.3 `POST /v1/auth/logout`
 
-Cookie + CSRF. Revoke session; clear Cookie. `204`.
+Session + CSRF + Origin. `204` + clear both cookies with matching attributes.
 
-### 9.4 Existing project routes
+### 9.4 Project routes
 
-Require Cookie session (google mode). CSRF on mutations. Spoofed `x-user-id` / `x-organization-id` **ignored**.
+Google mode: session Cookie; mutations need CSRF + Origin; ignore spoof headers.
 
-## 10. Security / threat model (slice)
+### 9.5 Display name / Google `name` claim
+
+- **Do not** modify `@blocksync/google-identity` claim surface in this slice.
+- **Do not** populate `displayName` from Google ID token (no `name` on `GoogleIdentityClaims`).
+- Optional: persist/update `email` from `claims.email` only; `displayName` remains null/optional local field for later slices.
+
+### 9.6 `authorizedParties` / `azp`
+
+| Env | Behavior |
+|---|---|
+| `R1_GOOGLE_AUTHORIZED_PARTIES` unset / empty | Pass **no** `authorizedParties` to verifier (azp **not** enforced) — acceptable for simple GIS ID-token-only web client where `aud` alone matches Client ID |
+| Set (comma-separated Client IDs) | Pass as `authorizedParties`; verifier enforces `azp` when present |
+
+Document in runbook: if the GIS deployment uses multiple authorized parties, set the env; otherwise leave unset. Boot may warn if google mode and parties empty (non-fatal).
+
+## 10. Entropy
+
+Production generators (not DI):
+
+```typescript
+randomBytes(32).toString("base64url")  // session id and CSRF raw
+```
+
+Tests may DI a deterministic generator; production bootstrap **must not** use a weak `randomId(): string` without 256-bit entropy.
+
+## 11. Threat model (delta)
 
 | Threat | Mitigation |
 |---|---|
-| Header spoofing / privilege theft | Google mode ignores client identity headers |
-| Session fixation | Rotate session id on login |
-| Session theft (XSS) | HttpOnly cookie; no token in localStorage |
-| CSRF | Synchronizer token + Origin allow-list |
-| Google token theft from logs/DB | Never persist; redacted logging |
-| Email as stable id | Identity key = `(google, sub)` only |
-| hd abuse | `allowedHostedDomains` + DB domain table |
-| Unverified email | `email_verified === true` required |
-| Secure=false in prod | Boot guard |
-| Auth error oracle | Generic `AUTH_FAILED` externally |
-| BOLA across orgs | Existing durable ACL + two-org fixture tests |
-| TX misuse | Auth resolve outside TX (preserve R1 persist contract) |
+| CSRF after reload / restart | Non-HttpOnly CSRF Cookie survives; DB stores hash only |
+| CSRF-less login abuse | Strict Origin + JSON CT + CORS on `/auth/google` |
+| Silent Origin skip | Missing/null/bad Origin rejected on browser mutating + login |
+| Cross-tenant via hd change | Immutable sub→org bind; mismatch → AUTH_FAILED |
+| Stale membership | Resolve checks membership every time |
+| Dual first-login race | Single sync TX + UNIQUE(provider,subject) |
+| Cookie clear attr mismatch | Explicit clear test |
+| Weak ids | `randomBytes(32)` fixed |
 
-Logging: forbid printing Cookie, `Authorization`, `idToken`, session raw id, CSRF raw token. Structured logs may include `userId` / `sessionIdHash` prefix only.
+## 12. Verification matrix
 
-## 11. Verification matrix
+### 12.1 Fixture (blocking Technical Go)
 
-### 11.1 Fixture (blocking Technical Go)
+Prior list **plus:**
 
-| Case | Expect |
-|---|---|
-| Valid Google fixture token → login | Cookie Set; `/me` 200 |
-| Bad signature / wrong aud / wrong iss / expired | 401 AUTH_FAILED |
-| Missing hd / hd mismatch / not allow-listed | 401 |
-| `email_verified !== true` | 401 |
-| Same `sub` re-login | Same `user.id` |
-| Email claim changes, same `sub` | Same `user.id`; email field updated |
-| DB has only session **hash** | Assert no raw cookie value in `sessions` |
-| Expired / revoked session | 401 |
-| Logout then reuse Cookie | 401 |
-| Process restart | Valid session still `/me` 200 |
-| Spoof `x-user-id` under google mode | No privilege change |
-| Two users / two orgs BOLA on CRUD/save/snapshot/restore | Non-member 404 |
-| Auth resolve outside TX; ACL uses SQLite membership | Contract test |
-| Logs/errors contain no credential substrings | Unit/integration |
+- CSRF Cookie present after login; after process restart, mutating API succeeds with same cookies (no `/me` plaintext csrf reconstruction)
+- `/v1/auth/google` without Origin → 403; wrong Origin → 403; with CSRF header alone still works without prior CSRF (login has no CSRF)
+- Mutation without Origin → 403 even with valid session+csrf
+- Same `sub` + different allow-listed `hd` on re-login → AUTH_FAILED; user/org unchanged
+- Membership deleted → existing session → 401
+- Concurrent dual first-login → one user/identity
+- Cookie clear uses same Secure/SameSite/Path
+- `email` may update; `displayName` not required from Google
+- azp: with `authorizedParties` set, bad azp rejected (via verifier)
 
-Use `google-identity` test hooks + local JWKS like Gate 0 tests.
+### 12.2 Real GIS
 
-### 11.2 Real GIS (blocking Final Go; conditional Technical Go)
+Unchanged: optional smoke; Final Go needs evidence; else conditional Technical Go.
 
-| Case | When |
-|---|---|
-| Browser GIS → live `/v1/auth/google` → Cookie → `/me` | `GOOGLE_CLIENT_ID` + `R1_ALLOWED_HOSTED_DOMAINS` present |
-| Workspace account with allowed `hd` | Manual/smoke evidence recorded |
+## 13. Review checklist
 
-Script: opt-in Vitest describe skipped unless env set; document evidence in `docs/r1/AUTH_EVIDENCE.md` (filled when run). **Without evidence:** “Technical Go — real GIS conditional”.
-
-## 12. Acceptance criteria (product)
-
-Matches user-required list in the slice brief (login cookie, negative verifications, sub stability, hash storage, expiry/logout, restart, anti-spoof, BOLA, TX boundary, no token leakage) + config Secure guard + CSRF on mutations.
-
-## 13. Non-goals / deferred
-
-Teacher roles, Classroom, invites, password auth, multi-IdP, WS revoke fan-out, admin UI, Scratch editor bind.
-
-## 14. Review checklist
-
-- [ ] Approach A approved  
-- [ ] Stub/production config boundary approved  
-- [ ] Cookie + CSRF + expiry/revoke approved  
-- [ ] Schema / migration approach approved  
-- [ ] API contract approved  
-- [ ] Fixture vs real GIS matrix + conditional Go wording approved  
-- [ ] Ready for implementation plan execution after approval  
+- [x] Approach A direction retained  
+- [ ] CSRF Cookie + route matrix + mandatory Origin  
+- [ ] Immutable sub→org bind + membership-on-resolve  
+- [ ] Single-connection ownership + migrate order  
+- [ ] FK/CHECK/PRAGMA; session→membership composite FK  
+- [ ] `randomBytes(32)` + azp policy + no Google `name` sync  
+- [ ] Cookie clear attribute HTTP test  
+- [ ] Ready for implementation after approval  
