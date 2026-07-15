@@ -2,7 +2,7 @@
 
 > **Date:** 2026-07-16
 > **Status:** Revised draft for re-review (do not implement until approved)
-> **Revision:** comments/monitors empty OK, block mutation pin, GC/quota races, SVG parser pin, equivalence pairing (post-`3d228cd`)
+> **Revision:** enumerated opcode allow-list, global disk reservations, multiset equivalence (post-`49d9630`)
 > **Baselines:** Gate 0 Technical Go @ `4a14e05`; R1 persistence Technical Go @ `3d6053b`; R1 auth Technical Go — real GIS conditional @ `570e237`
 > **Vendor pin:** Scratch Editor `v14.1.0` / `7c172e469eb3c21c1e6326ea6cccea60bc14e3a8` (unchanged)
 > **Spec anchors:** §6, §10–14, §40, §42–43, §55, §62
@@ -49,7 +49,8 @@ After **import → edit/save → restart → export → re-import** (modulo cont
 | Missing asset bytes / md5 or sha mismatch | Hard reject |
 | **Non-empty** `comments` / `monitors` / block `comment` | Hard reject |
 | Legacy SB2 keys, unknown top-level/target keys | Hard reject |
-| Disallowed extensions / opcodes (§6.6) | Hard reject |
+| Opcode not in §6.6 enumerated allow-list (e.g. `motion_unknown`) | Hard reject |
+| Disallowed extension IDs (§6.6) | Hard reject |
 | Reference to `gc_state != 'live'` asset | Hard reject (save/import/GET) |
 | Partial import with user approval | **Out of scope** |
 
@@ -74,10 +75,14 @@ Global `has(sha)` alone is forbidden: a caller who learns another org’s sha co
 
 asset_objects(
   sha256 TEXT PRIMARY KEY
-    CHECK(length(sha256) = 64 AND lower(sha256) NOT GLOB '*[^0-9a-f]*'),
+    CHECK(length(sha256) = 64
+      AND sha256 = lower(sha256)
+      AND sha256 NOT GLOB '*[^0-9a-f]*'),
   byte_length INTEGER NOT NULL CHECK(byte_length >= 0),
   md5_hex TEXT NOT NULL
-    CHECK(length(md5_hex) = 32 AND lower(md5_hex) NOT GLOB '*[^0-9a-f]*'),
+    CHECK(length(md5_hex) = 32
+      AND md5_hex = lower(md5_hex)
+      AND md5_hex NOT GLOB '*[^0-9a-f]*'),
   data_format TEXT NOT NULL
     CHECK(data_format IN ('svg','png','jpg','bmp','gif','wav','mp3')),
   gc_state TEXT NOT NULL DEFAULT 'live'
@@ -98,13 +103,26 @@ asset_import_leases(
   lease_id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL REFERENCES organizations(organization_id),
   sha256 TEXT NOT NULL
-    CHECK(length(sha256) = 64 AND lower(sha256) NOT GLOB '*[^0-9a-f]*'),
+    CHECK(length(sha256) = 64
+      AND sha256 = lower(sha256)
+      AND sha256 NOT GLOB '*[^0-9a-f]*'),
   import_session_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL
 );
 
--- Quota reservation for concurrent imports (distinct sha set + bytes).
+-- Global disk reservation (concurrent import spool/holding/worker/CAS).
+global_disk_reservations(
+  reservation_id TEXT PRIMARY KEY,
+  import_session_id TEXT NOT NULL UNIQUE,
+  reserved_bytes INTEGER NOT NULL CHECK(reserved_bytes >= 0),
+  materialized_bytes INTEGER NOT NULL DEFAULT 0 CHECK(materialized_bytes >= 0),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  CHECK(materialized_bytes <= reserved_bytes)
+);
+
+-- Org quota reservation for concurrent imports (distinct sha set + bytes).
 organization_asset_quota_reservations(
   reservation_id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL REFERENCES organizations(organization_id),
@@ -126,6 +144,7 @@ CREATE INDEX asset_import_leases_expires ON asset_import_leases(expires_at);
 CREATE INDEX asset_import_leases_session ON asset_import_leases(import_session_id);
 CREATE INDEX asset_objects_gc_state ON asset_objects(gc_state);
 CREATE INDEX quota_reservations_expires ON organization_asset_quota_reservations(expires_at);
+CREATE INDEX global_disk_reservations_expires ON global_disk_reservations(expires_at);
 ```
 
 - FS live bytes: `R1_DATA_DIR/assets/{sha256}` (write-once while `gc_state='live'`).
@@ -169,9 +188,10 @@ GET /v1/projects/:projectId/assets/:sha256
 
 | Phase | Where | Transaction |
 |---|---|---|
+| **Global disk reservation** (before spool bytes) | Parent | **`BEGIN IMMEDIATE`** (§4.6.2) |
 | Spool + worker ZIP parse, media limits, SVG safety, extract to holding dir | Worker process | **Outside** SQLite |
 | FS `putIfAbsent` verified bytes → `R1_DATA_DIR/assets/{sha256}` | Parent, pre-TX | **Outside** SQLite |
-| Quota reservation + object/grant/project/revision 0 + lease/reservation release | Parent | **Single synchronous TX** (`BEGIN IMMEDIATE`) |
+| Org quota reservation + object/grant/project/revision 0 + lease/reservation release | Parent | **Single synchronous TX** (`BEGIN IMMEDIATE`) |
 | Worker kill + temp dir cleanup | Parent `finally` | Outside TX |
 
 **Import-only API:**
@@ -185,18 +205,19 @@ importSb3CreateProjectAtomic(input: {
   envelope: ProjectEnvelopeV1 // revision 0
   assetObjects: Array<{ sha256; byteLength; md5Hex; dataFormat }>
   grantShas: string[]
-  releaseImportSessionId: string // leases + quota reservation
+  releaseImportSessionId: string // leases + org quota + global disk reservations
 }): ProjectHead
 ```
 
-**Inside the same TX (order matters):**
+**Inside the import TX (order matters):**
 
-1. Re-check org + global quota using **distinct sha union** (§4.6) including this import’s new shas.
-2. Insert `asset_objects` (if new, `gc_state='live'`) + grants.
-3. Insert project + revision 0.
-4. Delete import leases + quota reservation for session.
+1. Re-check org quota using **distinct sha union** (§4.6.1) including this import’s new shas.
+2. Re-check global disk: `fileBytes + activeGlobalReservations + newCasBytes ≤ 2 GiB` (reservation rows for this session deleted in same TX — see §4.6.2).
+3. Insert `asset_objects` (if new, `gc_state='live'`) + grants.
+4. Insert project + revision 0.
+5. Delete import leases + org quota reservation + **global disk reservation** for session.
 
-**Rollback:** no project/revision/grant/object rows; FS orphan bytes only; reservation released on failure path via lease/reservation TTL.
+**Rollback:** no project/revision/grant/object rows; FS orphan bytes only; all reservation rows for session removed on failure or TTL.
 
 ### 4.5 Path safety (contentSha256 → FS)
 
@@ -218,7 +239,7 @@ Before any read/write:
 |---|---|---|
 | Per-asset byte length | 10 MiB | Worker + `asset_objects.byte_length` |
 | Per-organization referenced asset bytes | **512 MiB** | **Distinct sha union** across all durable revisions in org **plus** active quota reservations (§4.6.1) |
-| Total on-disk under `R1_DATA_DIR` | **2 GiB** | Sum live + quarantine asset bytes **+ spool + holding + temp** (§4.6.2) |
+| Total under `R1_DATA_DIR` | **2 GiB** | **File bytes + active global disk reservations** (§4.6.2) — not measure-then-write |
 | Per-project import ZIP spool | 32 MiB | HTTP stream cap |
 
 #### 4.6.1 Org quota — distinct sha union
@@ -234,15 +255,36 @@ quotaBytes(O) = SUM(byte_length) for sha in UNION(
 
 Same sha referenced by multiple revisions counts **once**. Import/save TX must recompute under `BEGIN IMMEDIATE` before commit.
 
-#### 4.6.2 Global disk guard
+#### 4.6.2 Global disk guard + reservations (closes concurrent write race)
 
-Before accepting spool write, holding write, or `putIfAbsent`:
+**Problem:** measuring FS usage then writing spool/holding/worker temp allows N concurrent uploads to each pass a 2 GiB check and exceed the cap together.
+
+**Pinned:** SQLite **`global_disk_reservations`** with **`BEGIN IMMEDIATE`** before any spool write.
+
+**Accounting rule (no double count):** a byte counts **either** as on-disk file bytes **or** as `(reserved_bytes - materialized_bytes)` for an active reservation — **never both**.
 
 ```text
-diskUsage = bytes(assets/live) + bytes(assets/.quarantine) + bytes(import-spool/) + bytes(import-holding/) + bytes(worker-temp/)
+globalUsed =
+  fileBytes(assets/live + assets/.quarantine + import-spool + import-holding + worker-temp)
+  + SUM(reserved_bytes - materialized_bytes)
+    for global_disk_reservations where expires_at > now
 ```
 
-Reject when `diskUsage + incoming > 2 GiB`.
+**Reservation lifecycle (`import_session_id`):**
+
+| Phase | Action |
+|---|---|
+| **Before first spool byte** | `BEGIN IMMEDIATE`: if `globalUsed + spoolCap > 2GiB` → reject; else `INSERT global_disk_reservation(reserved_bytes = spoolCap + holdingBudget + workerTempBudget + 0)` TTL **15m** |
+| Worker manifest known | `UPDATE reserved_bytes += sum(newCasBytes)` (same session, still under IMMEDIATE or re-check) |
+| Bytes land on disk (spool/holding/CAS) | `UPDATE materialized_bytes += n` (reservation net footprint unchanged) |
+| Import TX success | `DELETE global_disk_reservation` for session (in import TX) |
+| Import fail / HTTP error | `DELETE` reservation in error handler |
+| Worker timeout | Parent `finally` deletes reservation |
+| Process crash | Startup reconcile deletes expired reservations (§9.7); orphan files remain |
+
+**Budgets (R1 pinned):** `spoolCap = 32 MiB`; `holdingBudget = 32 MiB`; `workerTempBudget = 64 MiB` per session (included in initial reservation; tightened when manifest known).
+
+**Required tests:** two parallel **32 MiB** spool starts where only one succeeds; timeout releases reservation; simulated crash + TTL expiry; reservation + materialized bytes never double-count toward 2 GiB.
 
 ## 5. Envelope / contentHash compatibility (P1)
 
@@ -400,31 +442,74 @@ Pin golden graphs derived from vendor `test/unit/serialization_procedures.js`:
 
 Import → export → re-import must preserve **mutation** bytes-equivalent after canonicalization (custom blocks runnable).
 
-### 6.6 R1 opcode / extension allow-list
+### 6.6 R1 opcode allow-list — complete enumeration (v14.1.0)
 
-**Built-in opcode prefixes** (no `project.extensions` entry required — includes standard **procedures**):
+**Prefix matching is forbidden.** An opcode is allowed **only if it appears in the pinned set** below (or generated artifact with identical contents).
 
-`argument_`, `colour_`, `control_`, `data_`, `event_`, `looks_`, `math_`, `motion_`, `operator_`, `procedures_`, `sensing_`, `sound_`
+#### 6.6.1 Generation contract
 
-Plus menu/shadow opcodes: `math_number`, `math_positive_number`, `math_whole_number`, `math_integer`, `math_angle`, `colour_picker`, `text`, `event_broadcast_menu`, `data_variable`, `data_listcontents`.
-
-**Allowed extension IDs** (`project.extensions` must be a subset; opcode `extId_*` requires `extId` listed):
-
-| Extension ID | Notes |
+| Item | Value |
 |---|---|
-| `music` | |
-| `pen` | |
-| `videoSensing` | |
-| `text2speech` | |
-| `translate` | |
+| Vendor tag | `v14.1.0` / `7c172e469eb3c21c1e6326ea6cccea60bc14e3a8` |
+| Generator script | `scripts/generate-scratch-opcodes.mjs` |
+| Generated artifact | `packages/sb3-tools/vendor/scratch-opcodes-v14.1.0.json` |
+| CI gate | `pnpm sb3:opcodes:check` — regenerates and diffs artifact |
 
-**Explicit reject** (non-exhaustive): `wedo2`, `ev3`, `microbit`, `makeymakey`, `gdxfor`, `boost`, any URL-shaped extension id, any unknown id.
+**Generator inputs (must all be scanned):**
+
+1. `vendor/scratch-editor/packages/scratch-vm/src/blocks/scratch3_*.js` — keys from `getPrimitives()` / `getHats()`
+2. `vendor/scratch-editor/packages/scratch-vm/src/serialization/sb3.js` — `primitiveOpcodeInfoMap` keys
+3. `vendor/scratch-editor/packages/scratch-gui/src/lib/make-toolbox-xml.js` — shadow/menu block `type="…"` values
+4. `vendor/scratch-editor/packages/scratch-vm/src/extensions/scratch3_{music,pen,video_sensing,text2speech,translate}/index.js` — block `opcode` + menu keys as `{id}_menu_{key}` per `runtime.js`
+5. **SB3-only blocks** present in vendor fixtures but not VM primitives: `procedures_prototype` (required for custom blocks)
+
+**Validation contract:**
+
+- Every block `opcode` in import/save must satisfy `opcode ∈ ALLOWED_OPCODES` (exact string).
+- Every `project.extensions[]` entry must satisfy `id ∈ ALLOWED_EXTENSION_IDS`.
+- Extension block opcodes require their extension id listed in `project.extensions`.
+- **Negative test required:** `motion_unknown` → hard reject even though `motion_` prefix matches a family.
+
+#### 6.6.2 Allowed extension IDs
+
+`music`, `pen`, `videoSensing`, `text2speech`, `translate`
+
+**Reject:** `wedo2`, `ev3`, `microbit`, `makeymakey`, `gdxfor`, `boost`, URL-shaped ids, any id not listed.
 
 Empty `extensions: []` is valid for core-only + custom procedure projects.
 
-### 6.7 Equivalence — target pairing + block graph (export → re-import)
+#### 6.6.3 Pinned opcode set (208 opcodes)
 
-Scratch regenerates target ids and often block ids on re-import. Production equivalence (**Task 7 `equivalenceProduction`**, same rules as Task 0 spike) uses:
+**Core VM opcodes (146)** — from `scratch3_*.js` `getPrimitives`/`getHats`:
+
+- **control (17):** `control_all_at_once`, `control_clear_counter`, `control_create_clone_of`, `control_delete_this_clone`, `control_for_each`, `control_forever`, `control_get_counter`, `control_if`, `control_if_else`, `control_incr_counter`, `control_repeat`, `control_repeat_until`, `control_start_as_clone`, `control_stop`, `control_wait`, `control_wait_until`, `control_while`
+- **data (17):** `data_addtolist`, `data_changevariableby`, `data_deletealloflist`, `data_deleteoflist`, `data_hidelist`, `data_hidevariable`, `data_insertatlist`, `data_itemnumoflist`, `data_itemoflist`, `data_lengthoflist`, `data_listcontainsitem`, `data_listcontents`, `data_replaceitemoflist`, `data_setvariableto`, `data_showlist`, `data_showvariable`, `data_variable`
+- **event (10):** `event_broadcast`, `event_broadcastandwait`, `event_whenbackdropswitchesto`, `event_whenbroadcastreceived`, `event_whenflagclicked`, `event_whengreaterthan`, `event_whenkeypressed`, `event_whenstageclicked`, `event_whenthisspriteclicked`, `event_whentouchingobject`
+- **looks (24):** `looks_backdropnumbername`, `looks_changeeffectby`, `looks_changesizeby`, `looks_changestretchby`, `looks_cleargraphiceffects`, `looks_costumenumbername`, `looks_goforwardbackwardlayers`, `looks_gotofrontback`, `looks_hide`, `looks_hideallsprites`, `looks_nextbackdrop`, `looks_nextcostume`, `looks_say`, `looks_sayforsecs`, `looks_seteffectto`, `looks_setsizeto`, `looks_setstretchto`, `looks_show`, `looks_size`, `looks_switchbackdropto`, `looks_switchbackdroptoandwait`, `looks_switchcostumeto`, `looks_think`, `looks_thinkforsecs`
+- **motion (23):** `motion_align_scene`, `motion_changexby`, `motion_changeyby`, `motion_direction`, `motion_glidesecstoxy`, `motion_glideto`, `motion_goto`, `motion_gotoxy`, `motion_ifonedgebounce`, `motion_movesteps`, `motion_pointindirection`, `motion_pointtowards`, `motion_scroll_right`, `motion_scroll_up`, `motion_setrotationstyle`, `motion_setx`, `motion_sety`, `motion_turnleft`, `motion_turnright`, `motion_xposition`, `motion_xscroll`, `motion_yposition`, `motion_yscroll`
+- **operators (18):** `operator_add`, `operator_and`, `operator_contains`, `operator_divide`, `operator_equals`, `operator_gt`, `operator_join`, `operator_length`, `operator_letter_of`, `operator_lt`, `operator_mathop`, `operator_mod`, `operator_multiply`, `operator_not`, `operator_or`, `operator_random`, `operator_round`, `operator_subtract`
+- **procedures (5):** `procedures_definition`, `procedures_call`, `procedures_prototype`, `argument_reporter_string_number`, `argument_reporter_boolean`
+- **sensing (21):** `sensing_answer`, `sensing_askandwait`, `sensing_coloristouchingcolor`, `sensing_current`, `sensing_dayssince2000`, `sensing_distanceto`, `sensing_keypressed`, `sensing_loud`, `sensing_loudness`, `sensing_mousedown`, `sensing_mousex`, `sensing_mousey`, `sensing_of`, `sensing_online`, `sensing_resettimer`, `sensing_setdragmode`, `sensing_timer`, `sensing_touchingcolor`, `sensing_touchingobject`, `sensing_userid`, `sensing_username`
+- **sound (12):** `sound_beats_menu`, `sound_changeeffectby`, `sound_changevolumeby`, `sound_cleareffects`, `sound_effects_menu`, `sound_play`, `sound_playuntildone`, `sound_seteffectto`, `sound_setvolumeto`, `sound_sounds_menu`, `sound_stopallsounds`, `sound_volume`
+
+**Menu / shadow opcodes (23):**
+
+- **SB3 primitives (10):** `math_number`, `math_positive_number`, `math_whole_number`, `math_integer`, `math_angle`, `colour_picker`, `text`, `event_broadcast_menu`, `data_variable`, `data_listcontents`
+- **Toolbox shadows (13):** `note`, `matrix`, `boolean`, `motion_goto_menu`, `motion_glideto_menu`, `motion_pointtowards_menu`, `control_create_clone_of_menu`, `looks_costume`, `looks_backdrops`, `sensing_touchingobjectmenu`, `sensing_distancetomenu`, `sensing_keyoptions`, `sensing_of_object_menu`
+
+**Extension opcodes (40):**
+
+- **music (11):** `music_playDrumForBeats`, `music_midiPlayDrumForBeats`, `music_restForBeats`, `music_playNoteForBeats`, `music_setInstrument`, `music_midiSetInstrument`, `music_setTempo`, `music_changeTempo`, `music_getTempo`, `music_menu_DRUM`, `music_menu_INSTRUMENT`
+- **pen (14):** `pen_clear`, `pen_stamp`, `pen_penDown`, `pen_penUp`, `pen_setPenColorToColor`, `pen_changePenColorParamBy`, `pen_setPenColorParamTo`, `pen_changePenSizeBy`, `pen_setPenSizeTo`, `pen_setPenShadeToNumber`, `pen_changePenShadeBy`, `pen_setPenHueToNumber`, `pen_changePenHueBy`, `pen_menu_colorParam`
+- **videoSensing (7):** `videoSensing_whenMotionGreaterThan`, `videoSensing_videoOn`, `videoSensing_videoToggle`, `videoSensing_setVideoTransparency`, `videoSensing_menu_ATTRIBUTE`, `videoSensing_menu_SUBJECT`, `videoSensing_menu_VIDEO_STATE`
+- **text2speech (5):** `text2speech_speakAndWait`, `text2speech_setVoice`, `text2speech_setLanguage`, `text2speech_menu_voices`, `text2speech_menu_languages`
+- **translate (3):** `translate_getTranslate`, `translate_getViewerLanguage`, `translate_menu_languages`
+
+**Total:** 208 opcodes. Implementation must load `scratch-opcodes-v14.1.0.json` and reject any other opcode string.
+
+### 6.7 Equivalence — target pairing + block graph multiset (export → re-import)
+
+Scratch regenerates target ids and block ids on re-import. Production equivalence (**Task 7 `equivalenceProduction`**, same rules as Task 0 spike) uses:
 
 **Target pairing:**
 
@@ -432,12 +517,13 @@ Scratch regenerates target ids and often block ids on re-import. Production equi
 2. Sprites: match by **`name`** (reject duplicate sprite names on import).
 3. Compare paired targets on all §6.4 **保持** fields except `id`.
 
-**Block graph comparison:**
+**Block graph comparison (multiset — not positional pairing):**
 
-1. Normalize each target’s blocks to a **structure-only fingerprint** independent of Scratch UIDs:
-   - Top-level blocks identified by `(opcode, x, y)` ordering tie-break.
-   - Walk `next` / `inputs` / `parent` preserving opcode, serialized inputs/fields, and **`mutation` canonical JSON**.
-2. Compare normalized graphs for equality.
+1. For each paired target, compute **`canonicalBlockGraphFingerprint(blocks)`**:
+   - Walk each **top-level** script chain independently.
+   - Fingerprint each block as stable JSON: `{ opcode, fields, inputs (with primitive values), mutation (canonical key order), shadow, topLevel }` plus **child linkage by opcode/input slot**, not Scratch uid.
+   - Do **not** pair top-level scripts by `(opcode, x, y)` — duplicate stacks must compare as **multisets** of fingerprints.
+2. Compare **sorted multisets** of script-root fingerprints for equality between paired targets.
 3. Custom procedure fixtures (§6.5.3) must pass after export → re-import.
 
 **Asset refs:** compare by `(assetId, contentSha256, canonical dataFormat, md5ext, …)` not by target id.
@@ -448,7 +534,9 @@ Scratch regenerates target ids and often block ids on re-import. Production equi
 
 | Item | Pinned choice |
 |---|---|
-| XML/SVG parser | **`@xmldom/xmldom@0.8.10`** — explicit **product** dependency in `packages/sb3-tools` (not present in vendor lockfile; pin in package.json) |
+| XML/SVG parser | **`@xmldom/xmldom@0.8.10`** — parse-only helper in `packages/sb3-tools` |
+| Parser trust | **Do not treat xmldom as a sanitizer.** Upstream documents 0.x incomplete spec coverage. **Authoritative gate = explicit DOM walk + element/attribute allow-list + css-tree url/@import scan + byte/node limits.** xmldom is used to build the tree for that walk only. |
+| Fuzz fixtures | Maintain worker fuzz corpus under `packages/sb3-tools/test/fixtures/svg/`; regressions required on change |
 | CSS scan | **`css-tree@3.2.1`** (vendor `scratch-svg-renderer` pin) |
 | Regex-only gate | **Forbidden** as sole inspection |
 | `data:` URIs | **R1: full reject** — no `data:` in href/xlink/style/url() |
@@ -477,7 +565,22 @@ ZIP + media parse + SVG inspect under heap/time-limited worker; kill + temp clea
 
 ## 8. Import / export isolation boundary (P1)
 
-(Unchanged flow; quota reservation created before FS put, committed/released in import TX §4.4.)
+```text
+HTTP multipart
+  → BEGIN IMMEDIATE: global_disk_reservation (§4.6.2) BEFORE first spool byte
+  → stream to capped temp file (reject before full RAM ZIP)
+  → spawn worker (max-old-space-size + wall clock)
+       - zip parse, limits, extract entries to worker temp dir
+       - md5/sha, format allow-list, opcode allow-list (§6.6), SVG safety (§7)
+       - write verified assets to holding dir; UPDATE materialized_bytes
+  → parent receives: ImportManifest (JSON) + paths
+  → parent: createImportLeases + org quota reservation
+  → parent: FS putIfAbsent (materialized_bytes +=)
+  → parent: importSb3CreateProjectAtomic TX (§4.4) — deletes all reservations
+  → always: kill worker; delete temps; DELETE reservation on failure paths
+```
+
+Export similarly: output caps; worker or bounded assembler; timeout kill + cleanup tests.
 
 ## 9. Grant / lease / GC lifecycle + race closure (P1)
 
@@ -540,6 +643,7 @@ On persist-server boot:
 | `gc_state='quarantined'` but file only in live path | Move to quarantine or reset state per fs truth |
 | Orphan live file, no DB row | GC candidate |
 | Expired reservations/leases | Delete rows |
+| Expired `global_disk_reservations` | Delete rows (orphan spool/holding files → GC / manual cleanup) |
 
 ## 10. Scratch host — Task 0 spike (P1)
 
@@ -582,7 +686,11 @@ Prior items **plus**:
 - Non-empty comments/monitors/block comment → reject
 - Custom procedure SB3 survives export → re-import (`mutation` preserved)
 - GC concurrent with import/save does not quarantine referenced sha
-- Quota concurrent imports cannot exceed org/global caps
+- Quota concurrent imports cannot exceed org cap **or** global 2 GiB (reservation race test)
+- **`motion_unknown`** opcode → reject (prefix trap negative test)
+- Every allowed opcode in corpus ∈ §6.6.3 set
+- Global disk: parallel 32 MiB uploads — only one succeeds near cap; timeout/crash/TTL releases reservation
+- Block equivalence uses **multiset** fingerprints (duplicate top-level `(opcode,x,y)` stacks)
 - `gc_state='quarantining'` asset rejected on save
 - Startup reconcile recovers crashed GC mid-flight
 - MP3 equivalence uses fixture corpus `(rate, sampleCount)` — not frame-derived ±1
@@ -596,8 +704,11 @@ Prior items **plus**:
 - [x] `@xmldom/xmldom@0.8.10` pinned; `data:` rejected (§7)
 - [x] Hex CHECK fixed; path lstat/realpath (§4.1, §4.5)
 - [x] WAV sample ceiling corrected; MP3 corpus semantics (§6.3)
-- [x] Extension allow-list (§6.6)
-- [x] equivalenceProduction target pairing (§6.7)
+- [x] Enumerated opcode allow-list + generator (§6.6) — not prefix
+- [x] Global disk reservations + no double-count (§4.6.2)
+- [x] Multiset block graph equivalence (§6.7)
+- [x] xmldom parse-only; explicit DOM walk authoritative (§7.1)
+- [x] `sha256 = lower(sha256)` CHECK (§4.1)
 
 ## 15. Next after Go
 
