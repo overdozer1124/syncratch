@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "packages/auth-context/**"
+      - "packages/session-service/**"
+      - "packages/google-identity/**"
       - "packages/project-envelope/**"
       - "packages/project-service/**"
       - "packages/project-autosave/**"
@@ -11,8 +13,10 @@ on:
       - "packages/project-snapshots-fs/**"
       - "apps/r1-persist-server/**"
       - "apps/r1-persist-demo/**"
+      - "apps/r1-auth-smoke/**"
       - "docs/r1/**"
       - "docs/superpowers/**/2026-07-15-r1-project-persistence-*"
+      - "docs/superpowers/**/2026-07-15-r1-auth-org-*"
       - ".github/workflows/r1-persist.yml"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -20,6 +24,8 @@ on:
   pull_request:
     paths:
       - "packages/auth-context/**"
+      - "packages/session-service/**"
+      - "packages/google-identity/**"
       - "packages/project-envelope/**"
       - "packages/project-service/**"
       - "packages/project-autosave/**"
@@ -27,8 +33,10 @@ on:
       - "packages/project-snapshots-fs/**"
       - "apps/r1-persist-server/**"
       - "apps/r1-persist-demo/**"
+      - "apps/r1-auth-smoke/**"
       - "docs/r1/**"
       - "docs/superpowers/**/2026-07-15-r1-project-persistence-*"
+      - "docs/superpowers/**/2026-07-15-r1-auth-org-*"
       - ".github/workflows/r1-persist.yml"
       - "package.json"
       - "pnpm-lock.yaml"
@@ -60,3 +68,5 @@ jobs:
           pnpm --filter @blocksync/project-store-sqlite test
           pnpm --filter @blocksync/r1-persist-server test
           pnpm --filter @blocksync/r1-persist-demo test
+      - name: R1 auth fixture tests
+        run: pnpm r1:auth:test

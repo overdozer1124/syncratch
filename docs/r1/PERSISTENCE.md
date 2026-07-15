@@ -6,9 +6,9 @@ Experimental slice behind repository ports. Not Gate 0-gated.
 
 ## Stack
 
-- **Identity:** `@blocksync/auth-context` (`StubAuthContext`, `x-user-id`)
+- **Identity:** `@blocksync/auth-context` (`StubAuthContext` in stub mode); google mode uses `@blocksync/session-service` (`SessionAuthContext`) — see `docs/r1/AUTH.md`
 - **ACL:** durable SQLite `projects` / `project_members` via `ProjectAccessPolicy`
-- **SQLite:** `better-sqlite3` **^12.11.1+** (Node 24 prebuilds). Transaction callbacks are **synchronous only**.
+- **SQLite:** `better-sqlite3` **^12.11.1+** via `openSqliteStore` (project + auth tables). Transaction callbacks are **synchronous only**.
 - **HTTP:** Hono on `@hono/node-server`
 - **Snapshots:** filesystem under `R1_DATA_DIR/snapshots`, unique `*.tmp` then atomic rename
 
