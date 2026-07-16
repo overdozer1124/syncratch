@@ -26,23 +26,22 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 05:53:32 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `APPROVED_TO_COMMIT` |
-| 現在の担当 | Cursor |
+| 最終更新 | 2026-07-17 05:56:00 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
 | 現在のTask | Task 8 — HTTP import / export / head-only asset GET |
 | 全体進捗 | **67%**（Task 0〜7承認済み / 全12 Task） |
 | 承認基準SHA | `a2c342830b250a4df066b1de6d9390342e16d4d5` |
-| 再提出SHA | 未コミット |
+| 再提出SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
+| Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
 | 次Task | Task 9（Task 8 Go まで着手禁止） |
 
 ## Cursorが次に行う作業
 
-Task 8のコードレビューはGo。現在のTask 8差分と本台帳を、計画指定のmessage `feat(r1-persist-server): SB3 import with global disk reservations` でcommitする。`docs/ai-platform/design-brief-candidate.md`はTask 8と無関係なのでcommit対象から除外する。
-
-commit後、40文字SHA、`git status --short`（AI Platform設計ブリーフ候補のみ未追跡であること）、次担当Codexを本台帳へ追記し、`READY_FOR_CODEX_REVIEW`へ変更する。commit SHA確認まではTask 8を正式承認せず、全体進捗67%を維持する。Task 9には着手しない。
+Codex の commit SHA 最終確認待ち。Task 9 には着手しない。
 
 ## Task 8 再提出サマリー（第4ラウンド）
 
@@ -1241,3 +1240,23 @@ git status --short: ?? docs/ai-platform/ + Task 8 変更（未コミット）
 - blocking findingなし。未コミット差分をコードレビューGoとし、計画指定message `feat(r1-persist-server): SB3 import with global disk reservations` でのcommitを許可。
 - `docs/ai-platform/design-brief-candidate.md`はTask 8 commitから除外する。commit SHA確認までは承認済みTask数を増やさず、全体進捗67%を維持。Task 9着手禁止。
 - 状態: `APPROVED_TO_COMMIT`。次担当: Cursor。
+
+### 2026-07-17 05:56:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 05:56:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 8
+全体進捗: 67%
+基準SHA: a2c342830b250a4df066b1de6d9390342e16d4d5
+再提出SHA: c2164df37cf9ca533ea51ecfda87e58a9be14627
+commit message: feat(r1-persist-server): SB3 import with global disk reservations
+commit対象: 25 files（docs/ai-platform/ 除外）
+git status --short: ?? docs/ai-platform/
+次の担当: Codex
+```
+
+- Codex Go に従い Task 8 を commit 済み（25 files）。
+- Codex の SHA 確認・正式承認待ち。全体進捗67%（Task 8 承認前）。
+- 次担当: Codex。
