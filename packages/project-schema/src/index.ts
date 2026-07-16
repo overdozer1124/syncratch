@@ -448,7 +448,7 @@ function validateV1OnlyFields(
   for (const target of doc.targets) {
     const targetPath = `targets.${target.id}`;
     for (const field of V1_FORBIDDEN_TARGET_FIELDS) {
-      if ((target as Record<string, unknown>)[field] !== undefined) {
+      if ((target as unknown as Record<string, unknown>)[field] !== undefined) {
         issues.push(
           issue(
             "DISALLOWED_V1_FIELD",
