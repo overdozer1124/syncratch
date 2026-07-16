@@ -1,5 +1,5 @@
 /**
- * @experimental Gate 0 SB3 helpers — streaming size guards + schema validation.
+ * @experimental Gate 0 / R1 SB3 helpers — streaming size guards, canonical I/O, media verify.
  */
 
 import JSZip from "jszip";
@@ -9,10 +9,63 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   validateProject,
+  canonicalAssetDataFormat,
   type ProjectDocument,
   type ScratchTarget,
   type ScratchBlock,
 } from "@blocksync/project-schema";
+import {
+  attachAssetSha256,
+  CanonicalImportError,
+  documentToProjectJson,
+  projectJsonToDocument,
+  sha256Hex,
+} from "./canonical-io.js";
+import { equivalenceProduction } from "./equivalence-production.js";
+import { assertSafeSvgBytes, SvgSafetyError } from "./svg-sanitize.js";
+import {
+  MediaVerifyError,
+  verifyMp3RefAgainstBytes,
+  verifyWavRefAgainstBytes,
+} from "./verify-media-bytes.js";
+import {
+  assertValidRasterBytes,
+  RasterVerifyError,
+} from "./verify-raster-bytes.js";
+
+export {
+  equivalenceProduction,
+  EquivalenceGraphError,
+  scriptFingerprint,
+  scriptRootFingerprints,
+  stableJson,
+  topLevelPrimitiveFingerprint,
+} from "./equivalence-production.js";
+export {
+  attachAssetSha256,
+  CanonicalImportError,
+  canonicalDataFormat,
+  documentToProjectJson,
+  projectJsonToDocument,
+  sha256Hex,
+  stableTargetId,
+} from "./canonical-io.js";
+export { assertSafeSvgBytes, SvgSafetyError } from "./svg-sanitize.js";
+export {
+  assertValidMp3Bytes,
+  MediaVerifyError,
+  parseWavBytes,
+  verifyMp3RefAgainstBytes,
+  verifyWavRefAgainstBytes,
+} from "./verify-media-bytes.js";
+export {
+  assertValidRasterBytes,
+  RasterVerifyError,
+  parseBmpDimensions,
+  parseGifDimensions,
+  parseJpegDimensions,
+  parsePngDimensions,
+} from "./verify-raster-bytes.js";
 
 export interface Sb3SafetyLimits {
   maxBytes: number;
@@ -40,7 +93,12 @@ export type LoadIssueCode =
   | "INVALID_JSON"
   | "SCHEMA_INVALID"
   | "RATIO_EXCEEDED"
-  | "ASSET_HASH_MISMATCH";
+  | "ASSET_HASH_MISMATCH"
+  | "ASSET_REF_MISMATCH"
+  | "MISSING_ASSET"
+  | "UNKNOWN_FIELD"
+  | "SVG_UNSAFE"
+  | "MEDIA_INVALID";
 
 export interface LoadIssue {
   code: LoadIssueCode;
@@ -84,8 +142,6 @@ export function declaredUncompressedSize(file: JSZip.JSZipObject): number | null
 
 /**
  * Inflate one zip entry only after ZIP-declared size fits the remaining budget.
- * Oversized declarations are rejected without calling into inflate (peak memory
- * stayed at the compressed zip buffer). Unknown/missing declarations refuse extract.
  */
 export async function extractEntryCapped(
   file: JSZip.JSZipObject,
@@ -96,10 +152,8 @@ export async function extractEntryCapped(
     return { ok: false, read: declared };
   }
   if (declared === null) {
-    // Do not inflate blindly when the archive omits size metadata.
     return { ok: false, read: 0 };
   }
-  // Declared size is within budget — inflate. Re-check actual length afterwards.
   const data = new Uint8Array(await file.async("uint8array"));
   if (data.byteLength > maxBytes) {
     return { ok: false, read: data.byteLength };
@@ -128,62 +182,74 @@ export function isUnsafePath(
   return null;
 }
 
-export function projectJsonToDocument(raw: unknown): ProjectDocument {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("project.json root must be an object");
-  }
-  const pj = raw as {
-    targets?: unknown;
-    extensions?: string[];
-    meta?: Record<string, unknown>;
-  };
-  if (!Array.isArray(pj.targets)) {
-    throw new Error("project.json targets must be an array");
-  }
-  const targets: ScratchTarget[] = pj.targets.map((tRaw, i) => {
-    if (!tRaw || typeof tRaw !== "object") {
-      throw new Error(`targets[${i}] must be an object`);
-    }
-    const t = tRaw as Record<string, unknown>;
-    const blocksIn =
-      t.blocks && typeof t.blocks === "object"
-        ? (t.blocks as Record<string, Record<string, unknown>>)
-        : {};
-    const blocks: Record<string, ScratchBlock> = {};
-    for (const [id, b] of Object.entries(blocksIn)) {
-      blocks[id] = {
-        id,
-        opcode: String(b.opcode ?? ""),
-        next: (b.next as string | null) ?? null,
-        parent: (b.parent as string | null) ?? null,
-        inputs: (b.inputs as Record<string, unknown>) ?? {},
-        fields: (b.fields as Record<string, unknown>) ?? {},
-        shadow: Boolean(b.shadow),
-        topLevel: Boolean(b.topLevel),
-        x: typeof b.x === "number" ? b.x : undefined,
-        y: typeof b.y === "number" ? b.y : undefined,
-      };
-    }
-    return {
-      id: String(t.id ?? (t.isStage ? "stage" : `target-${i}`)),
-      name: String(t.name ?? `Target${i}`),
-      isStage: Boolean(t.isStage),
-      blocks,
-      variables: (t.variables as ScratchTarget["variables"]) ?? {},
-      lists: (t.lists as ScratchTarget["lists"]) ?? {},
-      broadcasts: (t.broadcasts as ScratchTarget["broadcasts"]) ?? {},
-    };
-  });
-  return {
-    schemaVersion: 1,
-    targets,
-    extensions: pj.extensions ?? [],
-    meta: pj.meta,
-  };
-}
-
 function md5Hex(data: Uint8Array): string {
   return createHash("md5").update(data).digest("hex");
+}
+
+/** Map jpeg zip entry names to canonical jpg md5ext keys after import normalization. */
+function registerAssetMd5extAliases(assets: Map<string, Uint8Array>): void {
+  for (const [md5ext, data] of assets) {
+    const dot = md5ext.lastIndexOf(".");
+    if (dot <= 0) continue;
+    if (md5ext.slice(dot + 1).toLowerCase() !== "jpeg") continue;
+    const canonical = `${md5ext.slice(0, dot)}.jpg`;
+    if (!assets.has(canonical)) {
+      assets.set(canonical, data);
+    }
+  }
+}
+
+function verifyMediaAssets(
+  document: ProjectDocument,
+  assets: Map<string, Uint8Array>,
+  issues: LoadIssue[],
+): void {
+  for (const target of document.targets) {
+    for (const costume of target.costumes ?? []) {
+      const file = assets.get(costume.md5ext);
+      if (!file) continue;
+      const fmt = costume.dataFormat;
+      try {
+        if (fmt === "svg") {
+          assertSafeSvgBytes(file);
+        } else if (["png", "jpg", "jpeg", "gif", "bmp"].includes(fmt)) {
+          assertValidRasterBytes(file, fmt);
+        }
+      } catch (e) {
+        issues.push({
+          code:
+            e instanceof SvgSafetyError
+              ? "SVG_UNSAFE"
+              : "MEDIA_INVALID",
+          message:
+            e instanceof SvgSafetyError
+              ? `SVG ${costume.md5ext}: ${e.message}`
+              : e instanceof RasterVerifyError
+                ? `Costume ${costume.md5ext}: ${e.code}`
+                : `Costume ${costume.md5ext}: ${String(e)}`,
+        });
+      }
+    }
+    for (const sound of target.sounds ?? []) {
+      const file = assets.get(sound.md5ext);
+      if (!file) continue;
+      try {
+        if (sound.dataFormat === "wav") {
+          verifyWavRefAgainstBytes(file, sound.rate, sound.sampleCount);
+        } else if (sound.dataFormat === "mp3") {
+          verifyMp3RefAgainstBytes(file, sound.rate, sound.sampleCount);
+        }
+      } catch (e) {
+        issues.push({
+          code: "MEDIA_INVALID",
+          message:
+            e instanceof MediaVerifyError
+              ? `Sound ${sound.md5ext}: ${e.code}`
+              : `Sound ${sound.md5ext}: ${String(e)}`,
+        });
+      }
+    }
+  }
 }
 
 /**
@@ -266,7 +332,6 @@ export async function loadSb3(
       };
     }
 
-    // Reject using ZIP-declared size before inflate (blocks STORE/huge entries).
     const declared = declaredUncompressedSize(f);
     if (declared !== null && declared > remaining) {
       return {
@@ -320,6 +385,8 @@ export async function loadSb3(
 
   if (issues.length) return { ok: false, warnings, issues };
 
+  registerAssetMd5extAliases(assets);
+
   const projectFile = zip.file("project.json");
   if (!projectFile) {
     return {
@@ -347,10 +414,28 @@ export async function loadSb3(
     };
   }
 
+  const assetShaByMd5ext = new Map<string, string>();
+  for (const [md5ext, data] of assets) {
+    assetShaByMd5ext.set(md5ext, sha256Hex(data));
+  }
+
   let document: ProjectDocument;
   try {
-    document = projectJsonToDocument(raw);
+    document = projectJsonToDocument(raw, assetShaByMd5ext);
+    document = attachAssetSha256(document, assets);
   } catch (e) {
+    if (e instanceof CanonicalImportError) {
+      return {
+        ok: false,
+        warnings,
+        issues: [
+          {
+            code: "UNKNOWN_FIELD",
+            message: e.path ? `${e.path}: ${e.message}` : e.message,
+          },
+        ],
+      };
+    }
     return {
       ok: false,
       warnings,
@@ -377,7 +462,6 @@ export async function loadSb3(
     };
   }
 
-  // Costume/sound md5ext vs file content hash (basename without extension)
   const pj = raw as {
     targets?: Array<{
       costumes?: Array<{ md5ext?: string; assetId?: string }>;
@@ -388,13 +472,45 @@ export async function loadSb3(
     for (const c of [...(t.costumes ?? []), ...(t.sounds ?? [])]) {
       const md5ext = c.md5ext;
       if (!md5ext) continue;
+      const dot = md5ext.lastIndexOf(".");
+      const assetId = c.assetId ?? (dot > 0 ? md5ext.slice(0, dot) : md5ext);
+      if (dot <= 0) {
+        issues.push({
+          code: "ASSET_REF_MISMATCH",
+          message: `Asset ${md5ext} md5ext must include extension`,
+        });
+      } else {
+        const stem = md5ext.slice(0, dot);
+        const suffix = md5ext.slice(dot + 1);
+        if (stem !== assetId) {
+          issues.push({
+            code: "ASSET_REF_MISMATCH",
+            message: `Asset ${md5ext} stem ${stem} != assetId ${assetId}`,
+          });
+        }
+        const dataFormat =
+          "dataFormat" in c && typeof c.dataFormat === "string"
+            ? c.dataFormat
+            : suffix;
+        if (
+          canonicalAssetDataFormat(dataFormat) !==
+          canonicalAssetDataFormat(suffix)
+        ) {
+          issues.push({
+            code: "ASSET_REF_MISMATCH",
+            message: `Asset ${md5ext} dataFormat ${dataFormat} != suffix ${suffix}`,
+          });
+        }
+      }
       const file = assets.get(md5ext);
       if (!file) {
-        warnings.push(`Missing asset file ${md5ext}`);
+        issues.push({
+          code: "MISSING_ASSET",
+          message: `Missing asset file ${md5ext}`,
+        });
         continue;
       }
       const digest = md5Hex(file);
-      const assetId = c.assetId ?? md5ext.replace(/\.[^.]+$/, "");
       if (digest !== assetId) {
         issues.push({
           code: "ASSET_HASH_MISMATCH",
@@ -403,6 +519,9 @@ export async function loadSb3(
       }
     }
   }
+
+  verifyMediaAssets(document, assets, issues);
+
   if (issues.length) {
     return { ok: false, document, projectJson: raw, warnings, issues, assets };
   }
@@ -410,8 +529,31 @@ export async function loadSb3(
   return { ok: true, document, projectJson: raw, warnings, issues: [], assets };
 }
 
-export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> {
+export async function exportSb3(
+  document: ProjectDocument,
+  assetBytes: Map<string, Uint8Array> = new Map(),
+): Promise<Uint8Array> {
   const zip = new JSZip();
+
+  if (document.schemaVersion >= 2) {
+    const projectJson = documentToProjectJson(document);
+    zip.file("project.json", JSON.stringify(projectJson));
+    const needed = new Set<string>();
+    for (const t of document.targets) {
+      for (const c of t.costumes ?? []) needed.add(c.md5ext);
+      for (const s of t.sounds ?? []) needed.add(s.md5ext);
+    }
+    for (const md5ext of needed) {
+      const bytes = assetBytes.get(md5ext);
+      if (!bytes) {
+        throw new Error(`Missing asset bytes for ${md5ext}`);
+      }
+      zip.file(md5ext, bytes);
+    }
+    return zip.generateAsync({ type: "uint8array" });
+  }
+
+  // schemaVersion 1 legacy export (Gate 0 compatibility)
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="#ccc"/></svg>';
   const svgBytes = new TextEncoder().encode(svg);
@@ -425,20 +567,23 @@ export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> 
     lists: t.lists ?? {},
     broadcasts: t.broadcasts ?? {},
     blocks: Object.fromEntries(
-      Object.entries(t.blocks).map(([id, b]) => [
-        id,
-        {
-          opcode: b.opcode,
-          next: b.next,
-          parent: b.parent,
-          inputs: b.inputs,
-          fields: b.fields,
-          shadow: b.shadow ?? false,
-          topLevel: b.topLevel ?? false,
-          x: b.x ?? 0,
-          y: b.y ?? 0,
-        },
-      ]),
+      Object.entries(t.blocks).map(([id, b]) => {
+        if (Array.isArray(b)) return [id, b];
+        return [
+          id,
+          {
+            opcode: b.opcode,
+            next: b.next,
+            parent: b.parent,
+            inputs: b.inputs,
+            fields: b.fields,
+            shadow: b.shadow ?? false,
+            topLevel: b.topLevel ?? false,
+            x: b.x ?? 0,
+            y: b.y ?? 0,
+          },
+        ];
+      }),
     ),
     currentCostume: 0,
     costumes: [
@@ -486,11 +631,11 @@ export async function exportSb3(document: ProjectDocument): Promise<Uint8Array> 
       },
     }),
   );
-  zip.file(md5ext, svg);
+  zip.file(md5ext, svgBytes);
   return zip.generateAsync({ type: "uint8array" });
 }
 
-/** Semantic fingerprint including lists, broadcasts, extensions, costume refs. */
+/** @deprecated Use equivalenceProduction for §6.7 UID-independent comparison. */
 export function semanticFingerprint(doc: ProjectDocument): string {
   const norm = {
     extensions: [...(doc.extensions ?? [])].sort(),
@@ -503,17 +648,20 @@ export function semanticFingerprint(doc: ProjectDocument): string {
       blocks: Object.fromEntries(
         Object.entries(t.blocks)
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([id, b]) => [
-            id,
-            {
-              opcode: b.opcode,
-              next: b.next,
-              parent: b.parent,
-              inputs: b.inputs,
-              fields: b.fields,
-              topLevel: b.topLevel ?? false,
-            },
-          ]),
+          .map(([id, b]) => {
+            if (Array.isArray(b)) return [id, b];
+            return [
+              id,
+              {
+                opcode: b.opcode,
+                next: b.next,
+                parent: b.parent,
+                inputs: b.inputs,
+                fields: b.fields,
+                topLevel: b.topLevel ?? false,
+              },
+            ];
+          }),
       ),
     })),
   };
@@ -523,10 +671,6 @@ export function semanticFingerprint(doc: ProjectDocument): string {
 export interface LoadSb3IsolatedOptions {
   heapMb?: number;
   timeoutMs?: number;
-  /**
-   * Test-only: asks the worker to sleep this many ms before loadSb3.
-   * Honoured only when NODE_ENV=test or GATE0_TEST_HOOKS=1 (also enforced in worker).
-   */
   workerHoldMs?: number;
 }
 
@@ -538,12 +682,6 @@ export interface LoadSb3IsolatedOutcome extends LoadResult {
   signal: NodeJS.Signals | string | null;
 }
 
-/**
- * Run loadSb3 in a child process. `--max-old-space-size` limits the V8 old-space
- * heap suggestion for the child (not a process-wide RSS/Buffer hard cap).
- * Wall-clock timeout kills the child; the promise resolves only after the child
- * has exited (no lingering process for the normal path).
- */
 export function loadSb3Isolated(
   bytes: Uint8Array,
   partialLimits: Partial<Sb3SafetyLimits> = {},

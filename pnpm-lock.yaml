@@ -338,10 +338,19 @@ importers:
       '@blocksync/project-schema':
         specifier: workspace:*
         version: link:../project-schema
+      '@xmldom/xmldom':
+        specifier: 0.8.10
+        version: 0.8.10
+      css-tree:
+        specifier: 3.2.1
+        version: 3.2.1
       jszip:
         specifier: ^3.10.1
         version: 3.10.1
     devDependencies:
+      '@blocksync/project-envelope':
+        specifier: workspace:*
+        version: link:../project-envelope
       '@blocksync/scratch-adapter':
         specifier: workspace:*
         version: link:../scratch-adapter
@@ -799,6 +808,11 @@ packages:
 
   '@vitest/utils@3.2.7':
     resolution: {integrity: sha512-x6BDOd7dyo3PFLY3I9/HJ25X/6OurhGXk2/B9gOZNPF7XDVjeBK4k01lQE5uvDpbuheErh91qYuE1E2OEjK3Rw==}
+
+  '@xmldom/xmldom@0.8.10':
+    resolution: {integrity: sha512-2WALfTl4xo2SkGCYRt6rDTFfk9R1czmBvUQy12gK2KuRKIpWEhcbbzy8EZXtz/jkRqHX8bFEc6FC1HjX4TUWYw==}
+    engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -1644,6 +1658,8 @@ snapshots:
       loupe: 3.2.1
       tinyrainbow: 2.0.0
 
+  '@xmldom/xmldom@0.8.10': {}
+
   agent-base@7.1.4:
     optional: true
 
@@ -1696,7 +1712,6 @@ snapshots:
     dependencies:
       mdn-data: 2.27.1
       source-map-js: 1.2.1
-    optional: true
 
   cssstyle@6.2.0:
     dependencies:
@@ -1891,8 +1906,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  mdn-data@2.27.1:
-    optional: true
+  mdn-data@2.27.1: {}
 
   mimic-response@3.1.0: {}
 

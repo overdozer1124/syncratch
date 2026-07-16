@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { validateProject, type ProjectDocument } from "@blocksync/project-schema";
+import { validateProject, isScratchBlock, type ProjectDocument } from "@blocksync/project-schema";
 import {
   PROJECT_FORMAT,
   assertEnvelope,
@@ -158,6 +158,7 @@ describe("project-envelope", () => {
     const doc = richFixtureDocument();
     const withMutation = structuredClone(doc);
     const block = withMutation.targets[1]!.blocks.hat!;
+    if (!isScratchBlock(block)) throw new Error("expected object block");
     block.mutation = { proccode: "ignored on v1 canonicalize" };
     expect(contentHash(withMutation)).toBe(contentHash(doc));
     expect(validateProject(withMutation).ok).toBe(false);
@@ -239,8 +240,9 @@ describe("project-envelope", () => {
     const doc = customProcedureFixtureDocument();
     const a = canonicalizeDocument(doc);
     const reordered = structuredClone(doc);
-    const proto = reordered.targets[1]!.blocks.proto_id!;
-    proto.mutation = {
+    const protoEntry = reordered.targets[1]!.blocks.proto_id!;
+    if (!isScratchBlock(protoEntry)) throw new Error("expected object block");
+    protoEntry.mutation = {
       warp: "false",
       proccode: "my block %s",
       tagName: "mutation",
@@ -257,7 +259,9 @@ describe("project-envelope", () => {
     const base = customProcedureFixtureDocument();
     const baseHash = contentHash(base);
     const changed = structuredClone(base);
-    changed.targets[1]!.blocks.proto_id!.mutation!.proccode = "other block %s";
+    const protoEntry = changed.targets[1]!.blocks.proto_id!;
+    if (!isScratchBlock(protoEntry)) throw new Error("expected object block");
+    protoEntry.mutation!.proccode = "other block %s";
     expect(contentHash(changed)).not.toBe(baseHash);
   });
 
@@ -268,15 +272,43 @@ describe("project-envelope", () => {
   it("rejects unknown fields that would otherwise share contentHash", () => {
     const base = customProcedureFixtureDocument();
     const baseHash = contentHash(base);
-    const altered = structuredClone(base);
-    (altered as Record<string, unknown>).surpriseField = "hidden";
-    expect(contentHash(altered)).toBe(baseHash);
-    expect(validateProject(altered).ok).toBe(false);
+    const altered = structuredClone(base) as unknown as Record<string, unknown>;
+    altered.surpriseField = "hidden";
+    const alteredDoc = altered as unknown as ProjectDocument;
+    expect(contentHash(alteredDoc)).toBe(baseHash);
+    expect(validateProject(alteredDoc).ok).toBe(false);
     expect(
-      validateProject(altered).issues.some(
+      validateProject(alteredDoc).issues.some(
         (i) => i.code === "UNKNOWN_DOCUMENT_FIELD",
       ),
     ).toBe(true);
+  });
+
+  it("V1 schema rejects primitive block entries that canonicalize would skip", () => {
+    const doc = richFixtureDocument();
+    const baseHash = contentHash(doc);
+    const withPrimitive = structuredClone(doc);
+    withPrimitive.targets[1]!.blocks.shadow = [4, "10"];
+    expect(contentHash(withPrimitive)).toBe(baseHash);
+    expect(validateProject(withPrimitive).ok).toBe(false);
+    expect(
+      validateProject(withPrimitive).issues.some(
+        (i) => i.code === "DISALLOWED_V1_FIELD",
+      ),
+    ).toBe(true);
+  });
+
+  it("V2 canonicalize includes primitive block map entries", () => {
+    const doc = customProcedureFixtureDocument();
+    const baseHash = contentHash(doc);
+    const withPrimitive = structuredClone(doc);
+    withPrimitive.targets[1]!.blocks.var_top = [12, "score", "var-id", 10, 20];
+    expect(contentHash(withPrimitive)).not.toBe(baseHash);
+    const moved = structuredClone(withPrimitive);
+    moved.targets[1]!.blocks.var_top = [12, "score", "var-id", 99, 88];
+    expect(contentHash(moved)).not.toBe(contentHash(withPrimitive));
+    moved.targets[1]!.blocks.var_top = [12, "other", "var-id", 10, 20];
+    expect(contentHash(moved)).not.toBe(contentHash(withPrimitive));
   });
 
   it("requestHash changes when schemaVersion or op changes", () => {

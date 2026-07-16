@@ -13,9 +13,12 @@
   },
   "dependencies": {
     "@blocksync/project-schema": "workspace:*",
+    "@xmldom/xmldom": "0.8.10",
+    "css-tree": "3.2.1",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
+    "@blocksync/project-envelope": "workspace:*",
     "@blocksync/scratch-adapter": "workspace:*",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

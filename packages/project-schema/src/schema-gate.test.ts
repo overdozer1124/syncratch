@@ -118,6 +118,500 @@ describe("schemaVersion 1 field gate", () => {
     ).toBe(true);
   });
 
+  it("rejects primitive block entry on schemaVersion 1", () => {
+    const doc = v1Base();
+    doc.targets[0]!.blocks = { shadow: [4, "10"] };
+    const result = validateProject(doc);
+    expect(result.ok).toBe(false);
+    expect(
+      result.issues.some(
+        (i) =>
+          i.code === "DISALLOWED_V1_FIELD" &&
+          i.path === "targets.stage.blocks.shadow",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects invalid SB3 input mode", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            b1: {
+              id: "b1",
+              opcode: "event_whenflagclicked",
+              next: null,
+              parent: null,
+              inputs: { BAD: [99, "x"] },
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_INPUT_ENCODING"),
+    ).toBe(true);
+  });
+
+  it("rejects procedures_prototype without required mutation", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            proto: {
+              id: "proto",
+              opcode: "procedures_prototype",
+              next: null,
+              parent: "def",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "MISSING_MUTATION"),
+    ).toBe(true);
+  });
+
+  it("rejects procedures_prototype with invalid mutation types", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            proto: {
+              id: "proto",
+              opcode: "procedures_prototype",
+              next: null,
+              parent: "def",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: 1,
+                argumentids: [],
+                argumentnames: null,
+                argumentdefaults: {},
+                warp: false,
+              },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_MUTATION"),
+    ).toBe(true);
+  });
+
+  it("rejects SB3 input mode 1 scalar literal", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            b1: {
+              id: "b1",
+              opcode: "motion_movesteps",
+              next: null,
+              parent: null,
+              inputs: { STEPS: [1, 10] },
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_INPUT_ENCODING"),
+    ).toBe(true);
+  });
+
+  it("rejects SB3 input mode 2 with extra elements", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            b1: {
+              id: "b1",
+              opcode: "event_whenflagclicked",
+              next: null,
+              parent: null,
+              inputs: { FLAG: [2, "x", "extra"] },
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_INPUT_ENCODING"),
+    ).toBe(true);
+  });
+
+  it("rejects SB3 input mode 3 with missing shadow id", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            b1: {
+              id: "b1",
+              opcode: "event_whenflagclicked",
+              next: null,
+              parent: null,
+              inputs: { FLAG: [3, "x"] },
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_INPUT_ENCODING"),
+    ).toBe(true);
+  });
+
+  it("rejects short missing block id references in inputs", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            b1: {
+              id: "b1",
+              opcode: "event_whenflagclicked",
+              next: null,
+              parent: null,
+              inputs: { FLAG: [2, "missing"] },
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "UNKNOWN_BLOCK_REF"),
+    ).toBe(true);
+  });
+
+  it("rejects jpeg md5ext suffix even when dataFormat is jpg", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Stage({
+          costumes: [
+            {
+              ...minimalCostume(),
+              dataFormat: "jpg",
+              md5ext: `${minimalCostume().assetId}.jpeg`,
+            },
+          ],
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_ASSET_REF"),
+    ).toBe(true);
+  });
+
+  it("accepts mode 3 primitive shadow descriptors (vendor compressInputTree)", () => {
+    const varId = "var-score";
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            set: {
+              id: "set",
+              opcode: "data_setvariableto",
+              next: null,
+              parent: null,
+              inputs: { VALUE: [3, "add", [10, "0"]] },
+              fields: { VARIABLE: ["score", varId] },
+              topLevel: true,
+            },
+            add: {
+              id: "add",
+              opcode: "operator_add",
+              next: null,
+              parent: "set",
+              inputs: {
+                NUM1: [3, "var", [4, "0"]],
+                NUM2: [1, [4, "3"]],
+              },
+              fields: {},
+              topLevel: false,
+            },
+            var: {
+              id: "var",
+              opcode: "data_variable",
+              next: null,
+              parent: "add",
+              inputs: {},
+              fields: { VARIABLE: ["score", varId] },
+              topLevel: false,
+            },
+          },
+          variables: { [varId]: ["score", 0] },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(true);
+  });
+
+  it("accepts vendor-style procedures_call mutation with warp null", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            call: {
+              id: "call",
+              opcode: "procedures_call",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: "clear color",
+                argumentids: "[]",
+                warp: "null",
+              },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(true);
+  });
+
+  it("rejects procedures_call with proccode-only mutation", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            call: {
+              id: "call",
+              opcode: "procedures_call",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+              mutation: { proccode: "x" },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "MISSING_MUTATION"),
+    ).toBe(true);
+  });
+
+  it("rejects procedures_call when proccode placeholders disagree with argumentids", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            call: {
+              id: "call",
+              opcode: "procedures_call",
+              next: null,
+              parent: null,
+              inputs: { input0: [1, [4, "10"]] },
+              fields: {},
+              topLevel: true,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: "no args here",
+                argumentids: '["input0"]',
+                warp: "null",
+              },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_MUTATION"),
+    ).toBe(true);
+  });
+
+  it("rejects duplicate procedure argument ids", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            proto: {
+              id: "proto",
+              opcode: "procedures_prototype",
+              next: null,
+              parent: "def",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: "dup %s %s",
+                argumentids: '["input0","input0"]',
+                argumentnames: '["a","b"]',
+                argumentdefaults: '["",""]',
+                warp: "false",
+              },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_MUTATION"),
+    ).toBe(true);
+  });
+
+  it("accepts multi-argument procedure prototype and call with matching placeholders", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            define_id: {
+              id: "define_id",
+              opcode: "procedures_definition",
+              next: null,
+              parent: null,
+              inputs: { custom_block: [2, "proto"] },
+              fields: {},
+              topLevel: true,
+            },
+            call: {
+              id: "call",
+              opcode: "procedures_call",
+              next: null,
+              parent: null,
+              inputs: {
+                input0: [1, [4, "1"]],
+                input1: [1, [10, "hi"]],
+              },
+              fields: {},
+              topLevel: true,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: "foo %n %s",
+                argumentids: '["input0","input1"]',
+                warp: "false",
+              },
+            },
+            proto: {
+              id: "proto",
+              opcode: "procedures_prototype",
+              next: null,
+              parent: "define_id",
+              inputs: {},
+              fields: {},
+              topLevel: false,
+              mutation: {
+                tagName: "mutation",
+                children: [],
+                proccode: "foo %n %s",
+                argumentids: '["input0","input1"]',
+                argumentnames: '["num","msg"]',
+                argumentdefaults: '["0",""]',
+                warp: "false",
+              },
+            },
+          },
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(true);
+  });
+
+  it("rejects costume assetId that does not match md5ext stem", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Stage({
+          costumes: [
+            {
+              ...minimalCostume(),
+              assetId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            },
+          ],
+        }),
+      ],
+    };
+    expect(validateProject(doc).ok).toBe(false);
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "INVALID_ASSET_REF"),
+    ).toBe(true);
+  });
+
   it("rejects invalid monitors type", () => {
     const doc: ProjectDocument = {
       schemaVersion: 2,

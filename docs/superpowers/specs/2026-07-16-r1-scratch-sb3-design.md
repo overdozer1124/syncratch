@@ -356,7 +356,7 @@ interface SoundRef { /* unchanged from prior revision */ }
 
 | Format | Rule |
 |---|---|
-| **WAV** | `rate` == `fmt.sampleRate`; `sampleCount` == PCM sample frames in `data` (exact, channels per Scratch SB3 convention) |
+| **WAV** | `rate` / `sampleCount` are **Scratch SB3 metadata** (post AudioEngine decode/resample, per vendor `load-sound.js`) — **preserve on round-trip**; import verifies valid RIFF PCM structure + raw duration ceiling (§6.3) + `rate > 0` + `sampleCount > 0` + `sampleCount/rate ≤ 60s`; **do not reject** solely because raw `fmt.sampleRate` / `data` frame count differ from metadata. |
 | **MP3** | `sampleCount` is **Scratch SB3 metadata** (same semantics Scratch stores in `project.json`) — **preserve on round-trip**; import verifies valid MP3 + `rate > 0` + `sampleCount > 0` + implied duration `sampleCount/rate ≤ 60s`; **do not reject** solely because MPEG frame scan yields a different sample count (encoder delay/padding). |
 
 **Golden corpus (Task 7 tests):** record `(assetId, rate, sampleCount, md5ext)` from vendor fixtures:

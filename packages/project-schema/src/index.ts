@@ -46,11 +46,620 @@ export interface ScratchBlock {
   mutation?: Record<string, unknown>;
 }
 
+/** SB3 blocks map entry: object block or primitive shadow array (§6.5). */
+export type BlockMapEntry = ScratchBlock | unknown[];
+
+export function isScratchBlock(entry: BlockMapEntry): entry is ScratchBlock {
+  return !Array.isArray(entry);
+}
+
+function isPrimitiveFieldValue(value: unknown): boolean {
+  return typeof value === "string" || typeof value === "number";
+}
+
+export function isPrimitiveBlockEntry(value: unknown): value is unknown[] {
+  if (!Array.isArray(value) || value.length < 2) return false;
+  const tag = value[0];
+  if (typeof tag !== "number" || tag < 4 || tag > 13) return false;
+  if (!isPrimitiveFieldValue(value[1])) return false;
+
+  if (tag >= 4 && tag <= 10) {
+    return value.length === 2;
+  }
+  if (tag === 11) {
+    return value.length === 3 && typeof value[2] === "string";
+  }
+  if (tag === 12 || tag === 13) {
+    if (value.length === 3) {
+      return typeof value[2] === "string";
+    }
+    if (value.length === 5) {
+      return (
+        typeof value[2] === "string" &&
+        typeof value[3] === "number" &&
+        typeof value[4] === "number"
+      );
+    }
+    return false;
+  }
+  return false;
+}
+
+export function canonicalAssetDataFormat(format: string): string {
+  return format === "jpeg" ? "jpg" : format.toLowerCase();
+}
+
+const MUTATION_REQUIRED_KEYS: Record<string, readonly string[]> = {
+  procedures_prototype: [
+    "tagName",
+    "children",
+    "proccode",
+    "argumentids",
+    "argumentnames",
+    "argumentdefaults",
+    "warp",
+  ],
+  procedures_call: [
+    "tagName",
+    "children",
+    "proccode",
+    "argumentids",
+    "warp",
+  ],
+};
+
+function validateAssetRefIntegrity(
+  ref: { assetId?: string; md5ext?: string; dataFormat?: string },
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  const md5ext = ref.md5ext;
+  if (typeof md5ext !== "string" || !md5ext) {
+    issues.push(
+      issue("INVALID_ASSET_REF", "md5ext is required", `${path}.md5ext`),
+    );
+    return;
+  }
+  const dot = md5ext.lastIndexOf(".");
+  if (dot <= 0) {
+    issues.push(
+      issue(
+        "INVALID_ASSET_REF",
+        "md5ext must include an extension suffix",
+        `${path}.md5ext`,
+      ),
+    );
+    return;
+  }
+  const stem = md5ext.slice(0, dot);
+  const suffix = md5ext.slice(dot + 1);
+  if (typeof ref.assetId !== "string" || !ref.assetId) {
+    issues.push(
+      issue("INVALID_ASSET_REF", "assetId is required", `${path}.assetId`),
+    );
+    return;
+  }
+  if (stem !== ref.assetId) {
+    issues.push(
+      issue(
+        "INVALID_ASSET_REF",
+        "md5ext stem must equal assetId",
+        `${path}.md5ext`,
+      ),
+    );
+  }
+  if (typeof ref.dataFormat !== "string" || !ref.dataFormat) {
+    issues.push(
+      issue("INVALID_ASSET_REF", "dataFormat is required", `${path}.dataFormat`),
+    );
+    return;
+  }
+  const suffixLower = suffix.toLowerCase();
+  if (suffixLower === "jpeg") {
+    issues.push(
+      issue(
+        "INVALID_ASSET_REF",
+        "md5ext suffix must use canonical jpg not jpeg",
+        `${path}.md5ext`,
+      ),
+    );
+    return;
+  }
+  const canonicalFormat = canonicalAssetDataFormat(ref.dataFormat);
+  if (canonicalFormat !== suffixLower) {
+    issues.push(
+      issue(
+        "INVALID_ASSET_REF",
+        "dataFormat must match md5ext extension",
+        `${path}.dataFormat`,
+      ),
+    );
+  }
+}
+
+function validateSb3InputBlockRef(
+  ref: string,
+  path: string,
+  blocks: Record<BlockId, BlockMapEntry>,
+  issues: ValidationIssue[],
+): void {
+  if (!(ref in blocks)) {
+    issues.push(
+      issue(
+        "UNKNOWN_BLOCK_REF",
+        `input references missing block ${ref}`,
+        path,
+      ),
+    );
+  }
+}
+
+function validateSb3InputDescriptor(
+  descriptor: unknown,
+  path: string,
+  blocks: Record<BlockId, BlockMapEntry>,
+  issues: ValidationIssue[],
+): void {
+  if (typeof descriptor === "string") {
+    validateSb3InputBlockRef(descriptor, path, blocks, issues);
+    return;
+  }
+  if (Array.isArray(descriptor)) {
+    if (!isPrimitiveBlockEntry(descriptor)) {
+      issues.push(
+        issue(
+          "INVALID_INPUT_ENCODING",
+          "invalid inline primitive in input",
+          path,
+        ),
+      );
+    }
+    return;
+  }
+  issues.push(
+    issue(
+      "INVALID_INPUT_ENCODING",
+      "input descriptor must be block id or primitive array",
+      path,
+    ),
+  );
+}
+
+function validateSb3InputEncoding(
+  inputVal: unknown,
+  path: string,
+  blocks: Record<BlockId, BlockMapEntry>,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(inputVal) || inputVal.length < 2) {
+    issues.push(
+      issue(
+        "INVALID_INPUT_ENCODING",
+        "input must be a non-empty SB3 array",
+        path,
+      ),
+    );
+    return;
+  }
+  const mode = inputVal[0];
+  if (mode === 1) {
+    if (inputVal.length !== 2) {
+      issues.push(
+        issue(
+          "INVALID_INPUT_ENCODING",
+          "input mode 1 must have length 2",
+          path,
+        ),
+      );
+      return;
+    }
+    validateSb3InputDescriptor(inputVal[1], path, blocks, issues);
+    return;
+  }
+  if (mode === 2) {
+    if (inputVal.length !== 2) {
+      issues.push(
+        issue(
+          "INVALID_INPUT_ENCODING",
+          "input mode 2 must have length 2",
+          path,
+        ),
+      );
+      return;
+    }
+    validateSb3InputDescriptor(inputVal[1], path, blocks, issues);
+    return;
+  }
+  if (mode === 3) {
+    if (inputVal.length !== 3) {
+      issues.push(
+        issue(
+          "INVALID_INPUT_ENCODING",
+          "input mode 3 must have length 3",
+          path,
+        ),
+      );
+      return;
+    }
+    validateSb3InputDescriptor(inputVal[1], `${path}[1]`, blocks, issues);
+    validateSb3InputDescriptor(inputVal[2], `${path}[2]`, blocks, issues);
+    return;
+  }
+  issues.push(
+    issue(
+      "INVALID_INPUT_ENCODING",
+      `unknown input mode ${String(mode)}`,
+      path,
+    ),
+  );
+}
+
+function validateSb3FieldEncoding(
+  fieldVal: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(fieldVal)) {
+    issues.push(
+      issue("INVALID_FIELD_ENCODING", "field must be an SB3 array", path),
+    );
+    return;
+  }
+  if (fieldVal.length !== 1 && fieldVal.length !== 2) {
+    issues.push(
+      issue(
+        "INVALID_FIELD_ENCODING",
+        "field array must have length 1 or 2",
+        path,
+      ),
+    );
+    return;
+  }
+  const value = fieldVal[0];
+  if (typeof value !== "string" && typeof value !== "number") {
+    issues.push(
+      issue(
+        "INVALID_FIELD_ENCODING",
+        "field value must be string or number",
+        path,
+      ),
+    );
+  }
+  if (
+    fieldVal.length === 2 &&
+    fieldVal[1] !== null &&
+    typeof fieldVal[1] !== "string"
+  ) {
+    issues.push(
+      issue(
+        "INVALID_FIELD_ENCODING",
+        "field id must be string or null",
+        path,
+      ),
+    );
+  }
+}
+
+function parseMutationJsonStringArray(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): string[] | null {
+  if (typeof value !== "string") {
+    issues.push(
+      issue("INVALID_MUTATION", "expected JSON string array", path),
+    );
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      !Array.isArray(parsed) ||
+      !parsed.every((entry) => typeof entry === "string")
+    ) {
+      issues.push(
+        issue("INVALID_MUTATION", "expected JSON array of strings", path),
+      );
+      return null;
+    }
+    return parsed;
+  } catch {
+    issues.push(issue("INVALID_MUTATION", "invalid JSON string", path));
+    return null;
+  }
+}
+
+function parseMutationJsonArray(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): unknown[] | null {
+  if (typeof value !== "string") {
+    issues.push(issue("INVALID_MUTATION", "expected JSON string array", path));
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      issues.push(issue("INVALID_MUTATION", "expected JSON array", path));
+      return null;
+    }
+    return parsed;
+  } catch {
+    issues.push(issue("INVALID_MUTATION", "invalid JSON string", path));
+    return null;
+  }
+}
+
+/** Count %s / %b / %n placeholders in a Scratch procedure proccode (vendor sb2.js). */
+export function countProcedurePlaceholders(proccode: string): number {
+  const parts = proccode.split(/(?=[^\\]%[nbs])/);
+  let count = 0;
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (
+      trimmed.startsWith("%") &&
+      (trimmed[1] === "n" || trimmed[1] === "b" || trimmed[1] === "s")
+    ) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function validateProcedureArgumentIds(
+  proccode: string,
+  ids: string[] | null,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (!ids) return;
+  const placeholders = countProcedurePlaceholders(proccode);
+  if (placeholders !== ids.length) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "proccode placeholder count must match argumentids length",
+        path,
+      ),
+    );
+  }
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) {
+      issues.push(
+        issue(
+          "INVALID_MUTATION",
+          `duplicate argument id ${id}`,
+          path,
+        ),
+      );
+    }
+    seen.add(id);
+  }
+}
+
+function validatePrototypeWarpField(
+  warp: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (warp !== "true" && warp !== "false") {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        'warp must be string "true" or "false"',
+        path,
+      ),
+    );
+  }
+}
+
+function validateCallWarpField(
+  warp: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (warp !== "true" && warp !== "false" && warp !== "null") {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        'warp must be string "true", "false", or "null"',
+        path,
+      ),
+    );
+  }
+}
+
+function validatePrototypeMutationShape(
+  mutation: Record<string, unknown>,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (mutation.tagName !== "mutation") {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "tagName must be mutation",
+        `${path}.tagName`,
+      ),
+    );
+  }
+  if (!Array.isArray(mutation.children)) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "children must be an array",
+        `${path}.children`,
+      ),
+    );
+  }
+  if (typeof mutation.proccode !== "string" || !mutation.proccode) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "proccode must be a non-empty string",
+        `${path}.proccode`,
+      ),
+    );
+  }
+  const ids = parseMutationJsonStringArray(
+    mutation.argumentids,
+    `${path}.argumentids`,
+    issues,
+  );
+  const names = parseMutationJsonStringArray(
+    mutation.argumentnames,
+    `${path}.argumentnames`,
+    issues,
+  );
+  const defaults = parseMutationJsonArray(
+    mutation.argumentdefaults,
+    `${path}.argumentdefaults`,
+    issues,
+  );
+  if (ids && names && ids.length !== names.length) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "argumentids and argumentnames length mismatch",
+        path,
+      ),
+    );
+  }
+  if (ids && defaults && ids.length !== defaults.length) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "argumentids and argumentdefaults length mismatch",
+        path,
+      ),
+    );
+  }
+  if (typeof mutation.proccode === "string") {
+    validateProcedureArgumentIds(
+      mutation.proccode,
+      ids,
+      `${path}.argumentids`,
+      issues,
+    );
+  }
+  validatePrototypeWarpField(mutation.warp, `${path}.warp`, issues);
+}
+
+function validateCallMutationShape(
+  block: ScratchBlock,
+  mutation: Record<string, unknown>,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (mutation.tagName !== "mutation") {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "tagName must be mutation",
+        `${path}.tagName`,
+      ),
+    );
+  }
+  if (!Array.isArray(mutation.children)) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "children must be an array",
+        `${path}.children`,
+      ),
+    );
+  }
+  if (typeof mutation.proccode !== "string" || !mutation.proccode) {
+    issues.push(
+      issue(
+        "INVALID_MUTATION",
+        "proccode must be a non-empty string",
+        `${path}.proccode`,
+      ),
+    );
+  }
+  const ids = parseMutationJsonStringArray(
+    mutation.argumentids,
+    `${path}.argumentids`,
+    issues,
+  );
+  validateCallWarpField(mutation.warp, `${path}.warp`, issues);
+  if (typeof mutation.proccode === "string") {
+    validateProcedureArgumentIds(
+      mutation.proccode,
+      ids,
+      `${path}.argumentids`,
+      issues,
+    );
+  }
+  if (ids) {
+    const inputKeys = Object.keys(block.inputs ?? {});
+    if (ids.length !== inputKeys.length) {
+      issues.push(
+        issue(
+          "INVALID_MUTATION",
+          "argumentids length must match procedures_call input count",
+          `${path}.argumentids`,
+        ),
+      );
+    }
+    for (const id of ids) {
+      if (!inputKeys.includes(id)) {
+        issues.push(
+          issue(
+            "INVALID_MUTATION",
+            `argument id ${id} missing from procedures_call inputs`,
+            `${path}.argumentids`,
+          ),
+        );
+      }
+    }
+  }
+}
+
+function validateRequiredMutation(
+  block: ScratchBlock,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  const required = MUTATION_REQUIRED_KEYS[block.opcode];
+  if (!required) return;
+  if (!block.mutation || typeof block.mutation !== "object") {
+    issues.push(
+      issue(
+        "MISSING_MUTATION",
+        `${block.opcode} requires mutation`,
+        `${path}.mutation`,
+      ),
+    );
+    return;
+  }
+  const mutation = block.mutation as Record<string, unknown>;
+  for (const key of required) {
+    if (!(key in mutation)) {
+      issues.push(
+        issue(
+          "MISSING_MUTATION",
+          `mutation.${key} is required for ${block.opcode}`,
+          `${path}.mutation.${key}`,
+        ),
+      );
+    }
+  }
+  if (block.opcode === "procedures_prototype") {
+    validatePrototypeMutationShape(mutation, `${path}.mutation`, issues);
+  } else if (block.opcode === "procedures_call") {
+    validateCallMutationShape(block, mutation, `${path}.mutation`, issues);
+  }
+}
+
 export interface ScratchTarget {
   id: TargetId;
   name: string;
   isStage: boolean;
-  blocks: Record<BlockId, ScratchBlock>;
+  blocks: Record<BlockId, BlockMapEntry>;
   variables?: Record<string, [string, string | number]>;
   lists?: Record<string, [string, unknown[]]>;
   broadcasts?: Record<string, string>;
@@ -107,6 +716,11 @@ export type ValidationCode =
   | "DISALLOWED_BLOCK_FIELD"
   | "DISALLOWED_V1_FIELD"
   | "INVALID_CURRENT_COSTUME"
+  | "INVALID_INPUT_ENCODING"
+  | "INVALID_FIELD_ENCODING"
+  | "INVALID_ASSET_REF"
+  | "MISSING_MUTATION"
+  | "INVALID_MUTATION"
   | "UNKNOWN_DOCUMENT_FIELD"
   | "INVALID_DOCUMENT";
 
@@ -137,6 +751,14 @@ export {
   loadOpcodeArtifact,
 } from "./scratch-opcodes.js";
 export type { OpcodeArtifact } from "./scratch-opcodes.js";
+export {
+  assertValidMp3Bytes,
+  MAX_MP3_SECONDS,
+  Mp3ParseError,
+  parseMp3Audio,
+  verifyMp3RefAgainstBytes,
+} from "./mp3-bytes.js";
+export type { ParsedMp3Audio } from "./mp3-bytes.js";
 
 function issue(
   code: ValidationCode,
@@ -181,13 +803,13 @@ function broadcastIds(doc: ProjectDocument): Set<string> {
 }
 
 /** next + input edges for cycle detection within a target. */
-function hasDirectedCycle(blocks: Record<BlockId, ScratchBlock>): boolean {
+function hasDirectedCycle(blocks: Record<BlockId, BlockMapEntry>): boolean {
   const visiting = new Set<BlockId>();
   const visited = new Set<BlockId>();
 
   const neighbors = (id: BlockId): BlockId[] => {
     const b = blocks[id];
-    if (!b) return [];
+    if (!b || Array.isArray(b)) return [];
     const out: BlockId[] = [];
     if (b.next && blocks[b.next]) out.push(b.next);
     for (const inp of Object.values(b.inputs ?? {})) {
@@ -359,6 +981,7 @@ function validateDocumentFieldAllowList(
       doc.schemaVersion >= 2 ? BLOCK_FIELDS_V2 : BLOCK_FIELDS_V1;
     for (const [blockId, block] of Object.entries(target.blocks ?? {})) {
       if (!block || typeof block !== "object") continue;
+      if (Array.isArray(block)) continue;
       rejectUnknownKeys(
         block as unknown as Record<string, unknown>,
         blockAllowed,
@@ -386,6 +1009,24 @@ function validateV2TargetAssets(
         `${path}.costumes`,
       ),
     );
+  } else {
+    for (let i = 0; i < target.costumes.length; i++) {
+      validateAssetRefIntegrity(
+        target.costumes[i]!,
+        `${path}.costumes[${i}]`,
+        issues,
+      );
+    }
+  }
+
+  if (Array.isArray(target.sounds)) {
+    for (let i = 0; i < target.sounds.length; i++) {
+      validateAssetRefIntegrity(
+        target.sounds[i]!,
+        `${path}.sounds[${i}]`,
+        issues,
+      );
+    }
   }
 
   if (target.currentCostume === undefined) {
@@ -480,6 +1121,16 @@ function validateV1OnlyFields(
     }
 
     for (const [mapKey, block] of Object.entries(target.blocks ?? {})) {
+      if (Array.isArray(block)) {
+        issues.push(
+          issue(
+            "DISALLOWED_V1_FIELD",
+            "primitive block entry is not allowed on schemaVersion 1",
+            `${targetPath}.blocks.${mapKey}`,
+          ),
+        );
+        continue;
+      }
       if (block.mutation !== undefined) {
         issues.push(
           issue(
@@ -639,6 +1290,28 @@ export function validateProject(
 
     for (const [mapKey, block] of Object.entries(blocks)) {
       const path = `${pathBase}.blocks.${mapKey}`;
+      if (Array.isArray(block)) {
+        if (!isPrimitiveBlockEntry(block)) {
+          issues.push(
+            issue(
+              "INVALID_DOCUMENT",
+              "invalid primitive block entry",
+              path,
+            ),
+          );
+        }
+        if (globalBlockIds.has(mapKey)) {
+          issues.push(
+            issue(
+              "DUPLICATE_BLOCK_ID",
+              `Block id ${mapKey} is not unique in project`,
+              path,
+            ),
+          );
+        }
+        globalBlockIds.add(mapKey);
+        continue;
+      }
       if (!block || typeof block !== "object") {
         issues.push(issue("INVALID_DOCUMENT", "invalid block object", path));
         continue;
@@ -676,6 +1349,7 @@ export function validateProject(
 
     for (const [id, block] of Object.entries(blocks)) {
       const path = `${pathBase}.blocks.${id}`;
+      if (Array.isArray(block)) continue;
 
       if (
         enforceSb3 &&
@@ -713,7 +1387,7 @@ export function validateProject(
 
       if (block.parent) {
         const parent = blocks[block.parent];
-        if (!parent) {
+        if (!parent || Array.isArray(parent)) {
           issues.push(
             issue(
               "UNKNOWN_BLOCK_REF",
@@ -745,7 +1419,7 @@ export function validateProject(
           issues.push(
             issue("UNKNOWN_BLOCK_REF", `next ${block.next} missing`, path),
           );
-        } else if (next.parent !== id) {
+        } else if (Array.isArray(next) || next.parent !== id) {
           issues.push(
             issue(
               "PARENT_NEXT_MISMATCH",
@@ -759,10 +1433,19 @@ export function validateProject(
       // Single occupant per input slot: type 2/3 blocks may list primary + shadow,
       // but two distinct non-shadow block ids in one slot is invalid.
       for (const [inputName, inputVal] of Object.entries(block.inputs ?? {})) {
+        if (enforceSb3) {
+          validateSb3InputEncoding(
+            inputVal,
+            `${path}.inputs.${inputName}`,
+            blocks,
+            issues,
+          );
+        }
         if (!Array.isArray(inputVal)) continue;
-        const refs = extractBlockRefsFromInput(inputVal).filter(
-          (ref) => blocks[ref] && !blocks[ref]!.shadow,
-        );
+        const refs = extractBlockRefsFromInput(inputVal).filter((ref) => {
+          const entry = blocks[ref];
+          return entry && !Array.isArray(entry) && !entry.shadow;
+        });
         const unique = new Set(refs);
         if (unique.size > 1) {
           issues.push(
@@ -773,21 +1456,16 @@ export function validateProject(
             ),
           );
         }
-        for (const ref of extractBlockRefsFromInput(inputVal)) {
-          if (!blocks[ref] && typeof ref === "string" && ref.length >= 8) {
-            // Primitive shadows use nested arrays, not long uid strings
-            issues.push(
-              issue(
-                "UNKNOWN_BLOCK_REF",
-                `input ${inputName} references missing block ${ref}`,
-                `${path}.inputs.${inputName}`,
-              ),
-            );
-          }
-        }
       }
 
       for (const [fieldName, fieldVal] of Object.entries(block.fields ?? {})) {
+        if (enforceSb3) {
+          validateSb3FieldEncoding(
+            fieldVal,
+            `${path}.fields.${fieldName}`,
+            issues,
+          );
+        }
         if (!Array.isArray(fieldVal)) continue;
         const refId = fieldVal[1];
         // Clone / go-to target name fields store [name, null] or [name, id]
@@ -846,6 +1524,10 @@ export function validateProject(
         }
       }
 
+      if (enforceSb3) {
+        validateRequiredMutation(block, path, issues);
+      }
+
       const ext = extensionIdFromOpcode(block.opcode ?? "");
       if (ext) {
         const declared = doc.extensions ?? [];
@@ -875,12 +1557,14 @@ export function validateProject(
 
     const referenced = new Set<BlockId>();
     for (const b of Object.values(blocks)) {
+      if (Array.isArray(b)) continue;
       if (b.next) referenced.add(b.next);
       for (const inp of Object.values(b.inputs ?? {})) {
         for (const ref of extractBlockRefsFromInput(inp)) referenced.add(ref);
       }
     }
     for (const [id, b] of Object.entries(blocks)) {
+      if (Array.isArray(b)) continue;
       if (b.topLevel) continue;
       if (b.parent === null && !referenced.has(id)) {
         issues.push(

@@ -1,10 +1,17 @@
+/** Media byte verification for SB3 import (Design §6.3). */
+
 import {
   assertValidMp3Bytes as assertValidMp3Shared,
   Mp3ParseError,
-  parseMp3Audio,
   verifyMp3RefAgainstBytes as verifyMp3Shared,
 } from "@blocksync/project-schema";
-import { AssetRefMismatchError } from "./errors.js";
+
+export class MediaVerifyError extends Error {
+  constructor(public readonly code: string) {
+    super(code);
+    this.name = "MediaVerifyError";
+  }
+}
 
 const MAX_PCM_SAMPLES = 5_292_000;
 const MAX_AUDIO_SECONDS = 60;
@@ -42,19 +49,18 @@ function mapMp3Error<T>(fn: () => T): T {
     return fn();
   } catch (error) {
     if (error instanceof Mp3ParseError) {
-      throw new AssetRefMismatchError(error.code);
+      throw new MediaVerifyError(error.code);
     }
     throw error;
   }
 }
 
-/** Parse RIFF/WAVE fmt+data (Design §6.3). */
 export function parseWavBytes(bytes: Uint8Array): ParsedWav {
   if (bytes.length < 44) {
-    throw new AssetRefMismatchError("WAV_TOO_SHORT");
+    throw new MediaVerifyError("WAV_TOO_SHORT");
   }
   if (readFourCc(bytes, 0) !== "RIFF" || readFourCc(bytes, 8) !== "WAVE") {
-    throw new AssetRefMismatchError("WAV_RIFF");
+    throw new MediaVerifyError("WAV_RIFF");
   }
 
   let offset = 12;
@@ -68,15 +74,15 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
     const chunkSize = readU32LE(bytes, offset + 4);
     const chunkData = offset + 8;
     if (chunkData + chunkSize > bytes.length) {
-      throw new AssetRefMismatchError("WAV_CHUNK_TRUNCATED");
+      throw new MediaVerifyError("WAV_CHUNK_TRUNCATED");
     }
     if (chunkId === "fmt ") {
       if (chunkSize < 16) {
-        throw new AssetRefMismatchError("WAV_FMT");
+        throw new MediaVerifyError("WAV_FMT");
       }
       const audioFormat = readU16LE(bytes, chunkData);
       if (audioFormat !== 1) {
-        throw new AssetRefMismatchError("WAV_PCM_ONLY");
+        throw new MediaVerifyError("WAV_PCM_ONLY");
       }
       channels = readU16LE(bytes, chunkData + 2);
       sampleRate = readU32LE(bytes, chunkData + 4);
@@ -93,33 +99,30 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
     bitsPerSample == null ||
     dataBytes == null
   ) {
-    throw new AssetRefMismatchError("WAV_MISSING_CHUNKS");
+    throw new MediaVerifyError("WAV_MISSING_CHUNKS");
   }
   if (channels <= 0 || bitsPerSample <= 0 || sampleRate <= 0) {
-    throw new AssetRefMismatchError("WAV_FMT_VALUES");
+    throw new MediaVerifyError("WAV_FMT_VALUES");
   }
 
   const blockAlign = (channels * bitsPerSample) / 8;
   if (blockAlign <= 0 || dataBytes % blockAlign !== 0) {
-    throw new AssetRefMismatchError("WAV_DATA_ALIGN");
+    throw new MediaVerifyError("WAV_DATA_ALIGN");
   }
   const sampleFrames = dataBytes / blockAlign;
   if (sampleFrames > MAX_PCM_SAMPLES) {
-    throw new AssetRefMismatchError("WAV_SAMPLE_CEILING");
+    throw new MediaVerifyError("WAV_SAMPLE_CEILING");
   }
   if (sampleFrames / sampleRate > MAX_AUDIO_SECONDS) {
-    throw new AssetRefMismatchError("WAV_DURATION");
+    throw new MediaVerifyError("WAV_DURATION");
   }
 
   return { sampleRate, sampleFrames };
 }
 
-/** Validate full MPEG Layer III frame stream (Design §6.3). */
 export function assertValidMp3Bytes(bytes: Uint8Array): void {
   mapMp3Error(() => assertValidMp3Shared(bytes));
 }
-
-export { parseMp3Audio };
 
 export function verifyWavRefAgainstBytes(
   bytes: Uint8Array,
@@ -128,13 +131,13 @@ export function verifyWavRefAgainstBytes(
 ): void {
   parseWavBytes(bytes);
   if (!Number.isFinite(rate) || rate <= 0) {
-    throw new AssetRefMismatchError("SOUND_RATE");
+    throw new MediaVerifyError("SOUND_RATE");
   }
   if (!Number.isFinite(sampleCount) || sampleCount <= 0) {
-    throw new AssetRefMismatchError("SOUND_SAMPLE_COUNT");
+    throw new MediaVerifyError("SOUND_SAMPLE_COUNT");
   }
   if (sampleCount / rate > MAX_AUDIO_SECONDS) {
-    throw new AssetRefMismatchError("WAV_DURATION");
+    throw new MediaVerifyError("WAV_DURATION");
   }
 }
 

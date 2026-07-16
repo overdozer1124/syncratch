@@ -7,6 +7,7 @@ import {
   emptyDocument,
   richFixtureDocument,
 } from "@blocksync/project-envelope";
+import { isScratchBlock } from "@blocksync/project-schema";
 import {
   SchemaInvalidError,
   SchemaVersionMismatchError,
@@ -288,11 +289,29 @@ describe("project-service", () => {
     ).rejects.toBeInstanceOf(SchemaInvalidError);
   });
 
+  it("save rejects schemaVersion 1 document with primitive block entry", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "V1 primitive" });
+    const doc = richFixtureDocument();
+    doc.targets[1]!.blocks.shadow = [4, "10"];
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-v1-primitive",
+        schemaVersion: 1,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(SchemaInvalidError);
+  });
+
   it("save rejects schemaVersion 1 document with V2-only block mutation", async () => {
     const { service } = makeService();
     const created = await service.createProject(userA, { title: "V1 gate" });
     const doc = richFixtureDocument();
-    doc.targets[1]!.blocks.hat!.mutation = { proccode: "not on v1" };
+    const hat = doc.targets[1]!.blocks.hat!;
+    if (!isScratchBlock(hat)) throw new Error("expected object block");
+    hat.mutation = { proccode: "not on v1" };
     await expect(
       service.saveDocument(userA, {
         projectId: created.projectId,

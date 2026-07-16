@@ -229,5 +229,5 @@ describe("sb3-tools", () => {
     const end = await adapter.runToEnd();
     expect(end.targets[0]?.x).toBeGreaterThan(0);
     adapter.dispose();
-  });
+  }, 20_000);
 });

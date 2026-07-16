@@ -5,6 +5,8 @@
 import { createHash } from "node:crypto";
 import {
   emptyProject,
+  isScratchBlock,
+  type BlockMapEntry,
   type CostumeRef,
   type ProjectDocument,
   type ScratchBlock,
@@ -88,7 +90,10 @@ function canonicalizeTargetV1(target: ScratchTarget): Record<string, unknown> {
   const blockIds = Object.keys(target.blocks).sort();
   const blocks: Record<string, unknown> = {};
   for (const id of blockIds) {
-    blocks[id] = canonicalizeBlockV1(target.blocks[id]!);
+    const entry = target.blocks[id]!;
+    if (isScratchBlock(entry)) {
+      blocks[id] = canonicalizeBlockV1(entry);
+    }
   }
   return {
     id: target.id,
@@ -101,11 +106,18 @@ function canonicalizeTargetV1(target: ScratchTarget): Record<string, unknown> {
   };
 }
 
+function canonicalizeBlockEntryV2(entry: BlockMapEntry): unknown {
+  if (Array.isArray(entry)) {
+    return sortKeysDeep(entry);
+  }
+  return canonicalizeBlockV2(entry);
+}
+
 function canonicalizeTargetV2(target: ScratchTarget): Record<string, unknown> {
   const blockIds = Object.keys(target.blocks).sort();
   const blocks: Record<string, unknown> = {};
   for (const id of blockIds) {
-    blocks[id] = canonicalizeBlockV2(target.blocks[id]!);
+    blocks[id] = canonicalizeBlockEntryV2(target.blocks[id]!);
   }
 
   const costumes = (target.costumes ?? []).map(canonicalizeCostumeRef);
