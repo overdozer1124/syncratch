@@ -26,24 +26,68 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-16 23:58:54 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `APPROVED_TO_COMMIT` |
-| 現在の担当 | Cursor |
+| 最終更新 | 2026-07-17 00:04:54 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
 | 現在のTask | Task 7 — sb3-tools: canonical I/O, SVG explicit walk, equivalenceProduction |
 | 全体進捗 | **58%**（Task 0〜6承認済み / 全12 Task） |
 | 承認基準SHA | `8e59f5aec3609d7d90920cd1b943af236ff53fbe` |
+| Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 8（Task 7 commit SHAの正式承認まで着手禁止） |
+| 次Task | Task 8（Task 7 正式承認まで着手禁止） |
 
 ## Cursorが次に行う作業
 
-Task 7のコードレビューはGo。次を実行する。
+なし（Task 7 commit 済み。Codex の SHA 確認・正式承認待ち。）
 
-1. Task 7の実装・テスト・仕様差分と本台帳を、`feat(sb3-tools): canonical I/O and production equivalence`としてcommitする。
-2. `docs/ai-platform/design-brief-candidate.md`は設計ブリーフ候補であり、Task 7 commitから必ず除外する。
-3. commit後に40文字SHA、`git status --short`、commit対象ファイルを本台帳へ追記し、`READY_FOR_CODEX_REVIEW`へ変更する。
-4. Task 8にはまだ着手しない。
+## Task 7 commit 提出
+
+```text
+最終更新: 2026-07-17 00:04:54 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 7
+全体進捗: 58%
+基準SHA: 8e59f5aec3609d7d90920cd1b943af236ff53fbe
+再提出SHA: 2b9ae11331bc64db6c67175ab6120307f7b1632a
+commit message: feat(sb3-tools): canonical I/O and production equivalence
+commit対象ファイル (31):
+- docs/CURSOR_CODEX_HANDOFF.md
+- docs/superpowers/specs/2026-07-16-r1-scratch-sb3-design.md
+- packages/project-envelope/src/index.test.ts
+- packages/project-envelope/src/index.ts
+- packages/project-schema/src/index.ts
+- packages/project-schema/src/mp3-bytes.ts
+- packages/project-schema/src/mp3-bytes.test.ts
+- packages/project-schema/src/schema-gate.test.ts
+- packages/project-service/src/service.test.ts
+- packages/project-service/src/verify-audio-bytes.test.ts
+- packages/project-service/src/verify-audio-bytes.ts
+- packages/sb3-tools/package.json
+- packages/sb3-tools/src/block-graph-canonical.ts
+- packages/sb3-tools/src/canonical-io.ts
+- packages/sb3-tools/src/equivalence-production.ts
+- packages/sb3-tools/src/index.test.ts
+- packages/sb3-tools/src/index.ts
+- packages/sb3-tools/src/svg-sanitize.ts
+- packages/sb3-tools/src/types/modules.d.ts
+- packages/sb3-tools/src/verify-media-bytes.ts
+- packages/sb3-tools/src/verify-raster-bytes.ts
+- packages/sb3-tools/test/canonical-io.test.ts
+- packages/sb3-tools/test/fixtures/svg/*.svg (6)
+- packages/sb3-tools/test/helpers/assets.ts
+- packages/sb3-tools/tsconfig.json
+- pnpm-lock.yaml
+commit除外:
+- docs/ai-platform/design-brief-candidate.md（未追跡のまま）
+git status --short:
+?? docs/ai-platform/
+テスト結果（commit前最終確認済み）:
+- project-schema 66/66、project-service 49/49、sb3-tools 41/41
+- pnpm build / gate0:test / git diff --check: PASS
+次の担当: Codex
+```
 
 ## Task 7 第8ラウンド Codex指摘（対応済み）
 
@@ -814,3 +858,39 @@ git status --short: (clean)
 - `docs/ai-platform/design-brief-candidate.md`はTask 7 commitから除外する。
 - commit SHA確認まではTask 7を正式承認せず、全体進捗58%を維持。Task 8着手禁止。
 - 状態: `APPROVED_TO_COMMIT`。次担当: Cursor。
+
+### 2026-07-17 00:04:54 JST — Cursor
+
+```text
+最終更新: 2026-07-17 00:04:54 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 7
+全体進捗: 58%
+再提出SHA: 2b9ae11331bc64db6c67175ab6120307f7b1632a
+commit message: feat(sb3-tools): canonical I/O and production equivalence
+commit除外: docs/ai-platform/design-brief-candidate.md
+git status --short: ?? docs/ai-platform/
+次の担当: Codex
+```
+
+- Task 7 を指定 message で commit 済み（31 files）。Codex の SHA 確認・正式承認待ち。全体進捗58%。
+- 次担当: Codex。
+
+### 2026-07-17 00:04:54 JST — Cursor
+
+```text
+最終更新: 2026-07-17 00:04:54 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 7
+全体進捗: 58%
+再提出SHA: 2b9ae11331bc64db6c67175ab6120307f7b1632a
+commit message: feat(sb3-tools): canonical I/O and production equivalence
+commit除外: docs/ai-platform/design-brief-candidate.md
+git status --short: ?? docs/ai-platform/
+次の担当: Codex
+```
+
+- Task 7 を指定 message で commit 済み（31 files）。Codex の SHA 確認・正式承認待ち。全体進捗58%。
+- 次担当: Codex。
