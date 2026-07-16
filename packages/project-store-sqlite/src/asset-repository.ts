@@ -8,6 +8,7 @@ import {
 } from "./constants.js";
 import { withImmediateTransaction } from "./immediate-transaction.js";
 import {
+  collectDocumentShas,
   computeGlobalUsedBytes,
   computeOrgQuotaBytes,
   type ShaByteLength,
@@ -34,6 +35,41 @@ export class ReservationNotFoundError extends Error {
   }
 }
 
+export class ReservationCapacityExceededError extends Error {
+  constructor(importSessionId: string) {
+    super(`RESERVATION_CAPACITY_EXCEEDED:${importSessionId}`);
+    this.name = "ReservationCapacityExceededError";
+  }
+}
+
+export class ImportPreconditionError extends Error {
+  constructor(detail: string) {
+    super(`IMPORT_PRECONDITION:${detail}`);
+    this.name = "ImportPreconditionError";
+  }
+}
+
+export class AssetNotLiveError extends Error {
+  constructor(sha256: string) {
+    super(`ASSET_NOT_LIVE:${sha256}`);
+    this.name = "AssetNotLiveError";
+  }
+}
+
+export class AssetMetadataMismatchError extends Error {
+  constructor(sha256: string) {
+    super(`ASSET_METADATA_MISMATCH:${sha256}`);
+    this.name = "AssetMetadataMismatchError";
+  }
+}
+
+export class StaleFileBytesError extends Error {
+  constructor(fileBytes: number, materializedBytes: number) {
+    super(`STALE_FILE_BYTES:${fileBytes}<${materializedBytes}`);
+    this.name = "StaleFileBytesError";
+  }
+}
+
 export interface AssetObjectInput {
   sha256: string;
   byteLength: number;
@@ -55,10 +91,11 @@ export interface ImportSb3CreateProjectInput {
   assetObjects: AssetObjectInput[];
   grantShas: string[];
   releaseImportSessionId: string;
-  /** Injectable on-disk byte count for global guard (§4.6.2). */
+  /**
+   * Current total on-disk bytes under R1_DATA_DIR, measured after this
+   * session's spool/holding/CAS materialization (§4.6.2).
+   */
   fileBytes: number;
-  /** CAS bytes from this import not yet included in fileBytes. */
-  newCasBytes?: number;
   now?: string;
 }
 
@@ -67,6 +104,15 @@ export interface AssetRepository {
     reservationId: string;
     importSessionId: string;
     reservedBytes: number;
+    /** Current total on-disk bytes under R1_DATA_DIR. */
+    fileBytes: number;
+    now?: string;
+  }): void;
+
+  extendGlobalDiskReservation(args: {
+    importSessionId: string;
+    additionalBytes: number;
+    /** Current total on-disk bytes before the additional CAS write. */
     fileBytes: number;
     now?: string;
   }): void;
@@ -74,6 +120,7 @@ export interface AssetRepository {
   materializeGlobalDiskReservation(args: {
     importSessionId: string;
     deltaBytes: number;
+    now?: string;
   }): void;
 
   releaseGlobalDiskReservation(importSessionId: string): void;
@@ -119,6 +166,12 @@ function reservationExpiresAt(now: string): string {
   return new Date(ms).toISOString();
 }
 
+function assertByteCount(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`${name} must be a non-negative safe integer`);
+  }
+}
+
 export function createSqliteAssetRepository(
   db: Database.Database,
 ): AssetRepository {
@@ -132,13 +185,34 @@ export function createSqliteAssetRepository(
         @expiresAt, @createdAt
       )
     `),
+    getActiveGlobalReservation: db.prepare(`
+      SELECT reservation_id AS reservationId
+      FROM global_disk_reservations
+      WHERE import_session_id = ? AND expires_at > ?
+    `),
+    getActiveMaterializedBytes: db.prepare(`
+      SELECT COALESCE(SUM(materialized_bytes), 0) AS materializedBytes
+      FROM global_disk_reservations
+      WHERE expires_at > ?
+    `),
+    extendGlobalReservation: db.prepare(`
+      UPDATE global_disk_reservations
+      SET reserved_bytes = reserved_bytes + @additionalBytes
+      WHERE import_session_id = @importSessionId AND expires_at > @now
+    `),
     materializeGlobal: db.prepare(`
       UPDATE global_disk_reservations
       SET materialized_bytes = materialized_bytes + @deltaBytes
       WHERE import_session_id = @importSessionId
+        AND expires_at > @now
+        AND materialized_bytes + @deltaBytes <= reserved_bytes
     `),
     deleteGlobalReservation: db.prepare(`
       DELETE FROM global_disk_reservations WHERE import_session_id = ?
+    `),
+    consumeGlobalReservation: db.prepare(`
+      DELETE FROM global_disk_reservations
+      WHERE import_session_id = @importSessionId AND expires_at > @now
     `),
     insertLease: db.prepare(`
       INSERT INTO asset_import_leases (
@@ -161,12 +235,42 @@ export function createSqliteAssetRepository(
         reservation_id, sha256, byte_length
       ) VALUES (@reservationId, @sha256, @byteLength)
     `),
+    getActiveQuotaReservation: db.prepare(`
+      SELECT
+        reservation_id AS reservationId,
+        reserved_bytes AS reservedBytes
+      FROM organization_asset_quota_reservations
+      WHERE import_session_id = ?
+        AND organization_id = ?
+        AND expires_at > ?
+    `),
+    getActiveQuotaShas: db.prepare(`
+      SELECT s.sha256 AS sha256, s.byte_length AS byteLength
+      FROM organization_asset_quota_reservation_shas s
+      INNER JOIN organization_asset_quota_reservations r
+        ON r.reservation_id = s.reservation_id
+      WHERE r.import_session_id = ?
+        AND r.organization_id = ?
+        AND r.expires_at > ?
+    `),
+    getActiveLeases: db.prepare(`
+      SELECT lease_id AS leaseId, sha256 AS sha256
+      FROM asset_import_leases
+      WHERE import_session_id = ?
+        AND organization_id = ?
+        AND expires_at > ?
+    `),
     deleteQuotaReservation: db.prepare(`
       DELETE FROM organization_asset_quota_reservations
-      WHERE import_session_id = ?
+      WHERE import_session_id = @importSessionId
+        AND organization_id = @organizationId
+        AND expires_at > @now
     `),
     deleteLeasesForSession: db.prepare(`
-      DELETE FROM asset_import_leases WHERE import_session_id = ?
+      DELETE FROM asset_import_leases
+      WHERE import_session_id = @importSessionId
+        AND organization_id = @organizationId
+        AND expires_at > @now
     `),
     insertAssetObject: db.prepare(`
       INSERT OR IGNORE INTO asset_objects (
@@ -174,6 +278,15 @@ export function createSqliteAssetRepository(
       ) VALUES (
         @sha256, @byteLength, @md5Hex, @dataFormat, 'live', @createdAt
       )
+    `),
+    getAssetObject: db.prepare(`
+      SELECT
+        byte_length AS byteLength,
+        md5_hex AS md5Hex,
+        data_format AS dataFormat,
+        gc_state AS gcState
+      FROM asset_objects
+      WHERE sha256 = ?
     `),
     insertGrant: db.prepare(`
       INSERT OR IGNORE INTO organization_asset_grants (
@@ -210,10 +323,118 @@ export function createSqliteAssetRepository(
     `),
   };
 
+  function requiredAssetMap(
+    input: ImportSb3CreateProjectInput,
+  ): Map<string, AssetObjectInput> {
+    const assets = new Map<string, AssetObjectInput>();
+    for (const object of input.assetObjects) {
+      const existing = assets.get(object.sha256);
+      if (
+        existing &&
+        (existing.byteLength !== object.byteLength ||
+          existing.md5Hex !== object.md5Hex ||
+          existing.dataFormat !== object.dataFormat)
+      ) {
+        throw new ImportPreconditionError(
+          `DUPLICATE_ASSET_METADATA:${object.sha256}`,
+        );
+      }
+      assets.set(object.sha256, object);
+    }
+
+    const documentShas = collectDocumentShas(input.envelope.document);
+    const grantShas = new Set(input.grantShas);
+    if (
+      documentShas.size !== assets.size ||
+      grantShas.size !== assets.size ||
+      input.grantShas.length !== assets.size
+    ) {
+      throw new ImportPreconditionError("ASSET_SHA_SET_MISMATCH");
+    }
+    for (const sha256 of assets.keys()) {
+      if (!documentShas.has(sha256) || !grantShas.has(sha256)) {
+        throw new ImportPreconditionError(`ASSET_SHA_SET_MISMATCH:${sha256}`);
+      }
+    }
+    return assets;
+  }
+
+  function assertFileBytesCurrent(fileBytes: number, now: string): void {
+    const row = stmts.getActiveMaterializedBytes.get(now) as {
+      materializedBytes: number;
+    };
+    if (fileBytes < row.materializedBytes) {
+      throw new StaleFileBytesError(fileBytes, row.materializedBytes);
+    }
+  }
+
+  function assertActiveImportResources(
+    input: ImportSb3CreateProjectInput,
+    now: string,
+    assets: Map<string, AssetObjectInput>,
+  ): void {
+    const activeGlobal = stmts.getActiveGlobalReservation.get(
+      input.releaseImportSessionId,
+      now,
+    );
+    if (!activeGlobal) {
+      throw new ImportPreconditionError("GLOBAL_RESERVATION_MISSING_OR_EXPIRED");
+    }
+
+    const activeQuota = stmts.getActiveQuotaReservation.get(
+      input.releaseImportSessionId,
+      input.organizationId,
+      now,
+    ) as { reservationId: string; reservedBytes: number } | undefined;
+    if (!activeQuota) {
+      throw new ImportPreconditionError("QUOTA_RESERVATION_MISSING_OR_EXPIRED");
+    }
+
+    const quotaRows = stmts.getActiveQuotaShas.all(
+      input.releaseImportSessionId,
+      input.organizationId,
+      now,
+    ) as Array<{ sha256: string; byteLength: number }>;
+    const quotaShas = new Map(
+      quotaRows.map((row) => [row.sha256, row.byteLength] as const),
+    );
+    let expectedReservedBytes = 0;
+    for (const [sha256, object] of assets) {
+      expectedReservedBytes += object.byteLength;
+      if (quotaShas.get(sha256) !== object.byteLength) {
+        throw new ImportPreconditionError(`QUOTA_SHA_SET_MISMATCH:${sha256}`);
+      }
+    }
+    if (
+      quotaShas.size !== assets.size ||
+      activeQuota.reservedBytes !== expectedReservedBytes
+    ) {
+      throw new ImportPreconditionError("QUOTA_SHA_SET_MISMATCH");
+    }
+
+    const leaseRows = stmts.getActiveLeases.all(
+      input.releaseImportSessionId,
+      input.organizationId,
+      now,
+    ) as Array<{ leaseId: string; sha256: string }>;
+    const leaseShas = new Set(leaseRows.map((row) => row.sha256));
+    if (leaseRows.length !== assets.size || leaseShas.size !== assets.size) {
+      throw new ImportPreconditionError("LEASE_SHA_SET_MISMATCH");
+    }
+    for (const sha256 of assets.keys()) {
+      if (!leaseShas.has(sha256)) {
+        throw new ImportPreconditionError(`LEASE_MISSING:${sha256}`);
+      }
+    }
+  }
+
   return {
     createGlobalDiskReservation(args) {
+      assertByteCount("reservedBytes", args.reservedBytes);
+      assertByteCount("fileBytes", args.fileBytes);
       const now = args.now ?? new Date().toISOString();
       withImmediateTransaction(db, () => {
+        assertFileBytesCurrent(args.fileBytes, now);
         const used = computeGlobalUsedBytes(db, args.fileBytes, now);
         if (used + args.reservedBytes > GLOBAL_DISK_BYTES) {
           throw new GlobalDiskExceededError();
@@ -228,13 +449,51 @@ export function createSqliteAssetRepository(
       });
     },
 
+    extendGlobalDiskReservation(args) {
+      assertByteCount("additionalBytes", args.additionalBytes);
+      assertByteCount("fileBytes", args.fileBytes);
+      const now = args.now ?? new Date().toISOString();
+      withImmediateTransaction(db, () => {
+        const active = stmts.getActiveGlobalReservation.get(
+          args.importSessionId,
+          now,
+        );
+        if (!active) {
+          throw new ReservationNotFoundError(args.importSessionId);
+        }
+        assertFileBytesCurrent(args.fileBytes, now);
+        const used = computeGlobalUsedBytes(db, args.fileBytes, now);
+        if (used + args.additionalBytes > GLOBAL_DISK_BYTES) {
+          throw new GlobalDiskExceededError();
+        }
+        const info = stmts.extendGlobalReservation.run({
+          importSessionId: args.importSessionId,
+          additionalBytes: args.additionalBytes,
+          now,
+        });
+        if (info.changes !== 1) {
+          throw new ReservationNotFoundError(args.importSessionId);
+        }
+      });
+    },
+
     materializeGlobalDiskReservation(args) {
+      assertByteCount("deltaBytes", args.deltaBytes);
+      const now = args.now ?? new Date().toISOString();
       const info = stmts.materializeGlobal.run({
         importSessionId: args.importSessionId,
         deltaBytes: args.deltaBytes,
+        now,
       });
       if (info.changes !== 1) {
-        throw new ReservationNotFoundError(args.importSessionId);
+        const active = stmts.getActiveGlobalReservation.get(
+          args.importSessionId,
+          now,
+        );
+        if (!active) {
+          throw new ReservationNotFoundError(args.importSessionId);
+        }
+        throw new ReservationCapacityExceededError(args.importSessionId);
       }
     },
 
@@ -284,11 +543,15 @@ export function createSqliteAssetRepository(
     },
 
     importSb3CreateProjectAtomic(input) {
+      assertByteCount("fileBytes", input.fileBytes);
       const now = input.now ?? new Date().toISOString();
-      const newCasBytes = input.newCasBytes ?? 0;
 
       return withImmediateTransaction(db, () => {
-        const pendingShas: ShaByteLength[] = input.assetObjects.map((o) => ({
+        const assets = requiredAssetMap(input);
+        assertActiveImportResources(input, now, assets);
+        assertFileBytesCurrent(input.fileBytes, now);
+
+        const pendingShas: ShaByteLength[] = [...assets.values()].map((o) => ({
           sha256: o.sha256,
           byteLength: o.byteLength,
         }));
@@ -303,18 +566,17 @@ export function createSqliteAssetRepository(
           throw new OrgQuotaExceededError();
         }
 
-        const globalUsed =
-          computeGlobalUsedBytes(
-            db,
-            input.fileBytes,
-            now,
-            input.releaseImportSessionId,
-          ) + newCasBytes;
+        const globalUsed = computeGlobalUsedBytes(
+          db,
+          input.fileBytes,
+          now,
+          input.releaseImportSessionId,
+        );
         if (globalUsed > GLOBAL_DISK_BYTES) {
           throw new GlobalDiskExceededError();
         }
 
-        for (const obj of input.assetObjects) {
+        for (const obj of assets.values()) {
           stmts.insertAssetObject.run({
             sha256: obj.sha256,
             byteLength: obj.byteLength,
@@ -322,6 +584,29 @@ export function createSqliteAssetRepository(
             dataFormat: obj.dataFormat,
             createdAt: now,
           });
+          const stored = stmts.getAssetObject.get(obj.sha256) as
+            | {
+                byteLength: number;
+                md5Hex: string;
+                dataFormat: string;
+                gcState: "live" | "quarantining" | "quarantined";
+              }
+            | undefined;
+          if (!stored) {
+            throw new ImportPreconditionError(
+              `ASSET_OBJECT_MISSING:${obj.sha256}`,
+            );
+          }
+          if (stored.gcState !== "live") {
+            throw new AssetNotLiveError(obj.sha256);
+          }
+          if (
+            stored.byteLength !== obj.byteLength ||
+            stored.md5Hex !== obj.md5Hex ||
+            stored.dataFormat !== obj.dataFormat
+          ) {
+            throw new AssetMetadataMismatchError(obj.sha256);
+          }
         }
 
         for (const sha of input.grantShas) {
@@ -354,9 +639,27 @@ export function createSqliteAssetRepository(
           transactionId: null,
         });
 
-        stmts.deleteLeasesForSession.run(input.releaseImportSessionId);
-        stmts.deleteQuotaReservation.run(input.releaseImportSessionId);
-        stmts.deleteGlobalReservation.run(input.releaseImportSessionId);
+        const deletedLeases = stmts.deleteLeasesForSession.run({
+          importSessionId: input.releaseImportSessionId,
+          organizationId: input.organizationId,
+          now,
+        }).changes;
+        const deletedQuota = stmts.deleteQuotaReservation.run({
+          importSessionId: input.releaseImportSessionId,
+          organizationId: input.organizationId,
+          now,
+        }).changes;
+        const deletedGlobal = stmts.consumeGlobalReservation.run({
+          importSessionId: input.releaseImportSessionId,
+          now,
+        }).changes;
+        if (
+          deletedLeases !== assets.size ||
+          deletedQuota !== 1 ||
+          deletedGlobal !== 1
+        ) {
+          throw new ImportPreconditionError("RESOURCE_CONSUME_COUNT_MISMATCH");
+        }
 
         return input.envelope;
       });

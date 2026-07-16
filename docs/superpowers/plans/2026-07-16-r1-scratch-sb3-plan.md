@@ -81,6 +81,7 @@
 
 ```typescript
 createGlobalDiskReservation(importSessionId, reservedBytes): void // BEGIN IMMEDIATE
+extendGlobalDiskReservation(importSessionId, additionalBytes, fileBytes): void // BEGIN IMMEDIATE
 materializeGlobalDiskReservation(importSessionId, deltaBytes): void
 releaseGlobalDiskReservation(importSessionId): void
 createImportLeases(...): void
@@ -89,7 +90,7 @@ importSb3CreateProjectAtomic(...): ProjectHead // releases org + global reservat
 ```
 
 - CHECK: `sha256 = lower(sha256)`, `md5_hex = lower(md5_hex)`
-- Tests: reservation prevents parallel over-cap; materialized_bytes no double-count
+- Tests: create/extend reservations prevent parallel over-cap; materialized_bytes no double-count and never exceeds reserved_bytes
 
 - [ ] **Step 1–3; commit** `feat(project-store): global disk reservations and asset tables`
 

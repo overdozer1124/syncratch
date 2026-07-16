@@ -409,7 +409,7 @@ describe("unknown field allow-list (§6.4 / §6.5)", () => {
 
   it("rejects unknown top-level field on V1", () => {
     const doc = v1Base();
-    (doc as Record<string, unknown>).surprise = 1;
+    (doc as unknown as Record<string, unknown>).surprise = 1;
     expect(
       validateProject(doc).issues.some(
         (i) => i.code === "UNKNOWN_DOCUMENT_FIELD",

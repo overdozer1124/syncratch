@@ -156,7 +156,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
               fields: {},
               topLevel: true,
               comment: "block-comment-id",
-            },
+            } as unknown as ScratchTarget["blocks"][string],
           },
         }),
       ],

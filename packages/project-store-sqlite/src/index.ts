@@ -8,10 +8,15 @@ export { migrate } from "./migrate.js";
 export { migrateAuth } from "./migrate-auth.js";
 export { migrateAssets } from "./migrate-assets.js";
 export {
+  AssetMetadataMismatchError,
+  AssetNotLiveError,
   createSqliteAssetRepository,
   GlobalDiskExceededError,
+  ImportPreconditionError,
   OrgQuotaExceededError,
+  ReservationCapacityExceededError,
   ReservationNotFoundError,
+  StaleFileBytesError,
 } from "./asset-repository.js";
 export type {
   AssetObjectInput,

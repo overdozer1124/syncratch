@@ -190,6 +190,7 @@ GET /v1/projects/:projectId/assets/:sha256
 |---|---|---|
 | **Global disk reservation** (before spool bytes) | Parent | **`BEGIN IMMEDIATE`** (§4.6.2) |
 | Spool + worker ZIP parse, media limits, SVG safety, extract to holding dir | Worker process | **Outside** SQLite |
+| Extend global reservation for manifest `newCasBytes` | Parent, before CAS write | **`BEGIN IMMEDIATE`** (§4.6.2) |
 | FS `putIfAbsent` verified bytes → `R1_DATA_DIR/assets/{sha256}` | Parent, pre-TX | **Outside** SQLite |
 | Org quota reservation + object/grant/project/revision 0 + lease/reservation release | Parent | **Single synchronous TX** (`BEGIN IMMEDIATE`) |
 | Worker kill + temp dir cleanup | Parent `finally` | Outside TX |
@@ -206,13 +207,14 @@ importSb3CreateProjectAtomic(input: {
   assetObjects: Array<{ sha256; byteLength; md5Hex; dataFormat }>
   grantShas: string[]
   releaseImportSessionId: string // leases + org quota + global disk reservations
+  fileBytes: number // post-materialization total under R1_DATA_DIR, including this session's CAS bytes
 }): ProjectHead
 ```
 
 **Inside the import TX (order matters):**
 
 1. Re-check org quota using **distinct sha union** (§4.6.1) including this import’s new shas.
-2. Re-check global disk: `fileBytes + activeGlobalReservations + newCasBytes ≤ 2 GiB` (reservation rows for this session deleted in same TX — see §4.6.2).
+2. Re-check global disk using the current post-materialization `fileBytes` plus active reservation net bytes, excluding this session because its remaining reservation is deleted in the same TX (§4.6.2).
 3. Insert `asset_objects` (if new, `gc_state='live'`) + grants.
 4. Insert project + revision 0.
 5. Delete import leases + org quota reservation + **global disk reservation** for session.
@@ -270,13 +272,17 @@ globalUsed =
     for global_disk_reservations where expires_at > now
 ```
 
+`fileBytes` must be a non-negative safe integer measured from the current
+post-materialization filesystem state. Reject the measurement as stale when it
+is lower than the sum of `materialized_bytes` for active reservations.
+
 **Reservation lifecycle (`import_session_id`):**
 
 | Phase | Action |
 |---|---|
 | **Before first spool byte** | `BEGIN IMMEDIATE`: if `globalUsed + spoolCap > 2GiB` → reject; else `INSERT global_disk_reservation(reserved_bytes = spoolCap + holdingBudget + workerTempBudget + 0)` TTL **15m** |
-| Worker manifest known | `UPDATE reserved_bytes += sum(newCasBytes)` (same session, still under IMMEDIATE or re-check) |
-| Bytes land on disk (spool/holding/CAS) | `UPDATE materialized_bytes += n` (reservation net footprint unchanged) |
+| Worker manifest known | `BEGIN IMMEDIATE`: require an active session reservation; if `globalUsed + sum(newCasBytes) > 2GiB` reject, else atomically `UPDATE reserved_bytes += sum(newCasBytes)` |
+| Bytes land on disk (spool/holding/CAS) | Atomically `UPDATE materialized_bytes += n`; reject expiry or `materialized_bytes + n > reserved_bytes` (reservation net footprint unchanged) |
 | Import TX success | `DELETE global_disk_reservation` for session (in import TX) |
 | Import fail / HTTP error | `DELETE` reservation in error handler |
 | Worker timeout | Parent `finally` deletes reservation |
@@ -284,7 +290,7 @@ globalUsed =
 
 **Budgets (R1 pinned):** `spoolCap = 32 MiB`; `holdingBudget = 32 MiB`; `workerTempBudget = 64 MiB` per session (included in initial reservation; tightened when manifest known).
 
-**Required tests:** two parallel **32 MiB** spool starts where only one succeeds; timeout releases reservation; simulated crash + TTL expiry; reservation + materialized bytes never double-count toward 2 GiB.
+**Required tests:** two parallel **32 MiB** spool starts where only one succeeds; two individually valid concurrent reservation extensions where only one succeeds; timeout releases reservation; simulated crash + TTL expiry; reservation + materialized bytes never double-count toward 2 GiB.
 
 ## 5. Envelope / contentHash compatibility (P1)
 
@@ -584,6 +590,7 @@ HTTP multipart
        - md5/sha, format allow-list, opcode allow-list (§6.6), SVG safety (§7)
        - write verified assets to holding dir; UPDATE materialized_bytes
   → parent receives: ImportManifest (JSON) + paths
+  → parent: BEGIN IMMEDIATE; extend global reservation for manifest new CAS bytes
   → parent: createImportLeases + org quota reservation
   → parent: FS putIfAbsent (materialized_bytes +=)
   → parent: importSb3CreateProjectAtomic TX (§4.4) — deletes all reservations
