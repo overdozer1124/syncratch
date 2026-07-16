@@ -7,8 +7,12 @@ import { bodyLimit } from "hono/body-limit";
 import type { AuthContext } from "@blocksync/auth-context";
 import type { ProjectService } from "@blocksync/project-service";
 import {
+  AssetIntegrityError,
+  AssetNotGrantedError,
+  AssetNotLiveError,
   BadRequestError,
   ForbiddenError,
+  ImportPreconditionError,
   NotFoundError,
   SchemaInvalidError,
   SchemaVersionMismatchError,
@@ -17,6 +21,16 @@ import {
   TransactionPayloadMismatchError,
   UnauthorizedError,
 } from "@blocksync/project-service";
+import type { LiveAssetCatalog } from "@blocksync/project-service";
+import type { AssetFsStore } from "@blocksync/project-assets-fs";
+import {
+  GlobalDiskExceededError,
+  OrgQuotaExceededError,
+  ReservationCapacityExceededError,
+  ReservationNotFoundError,
+  StaleFileBytesError,
+  type AssetRepository,
+} from "@blocksync/project-store-sqlite";
 import {
   AuthFailedError,
   UnauthenticatedError,
@@ -40,11 +54,26 @@ import {
   MAX_BODY_BYTES,
   MAX_PROJECT_ID_LENGTH,
   MAX_REVISION,
+  MAX_SB3_UPLOAD_BYTES,
   MAX_SNAPSHOT_ID_LENGTH,
   MAX_TITLE_LENGTH,
   MAX_TRANSACTION_ID_LENGTH,
+  SHA256_HEX,
 } from "./limits.js";
 import { assertOriginAllowed } from "./origin.js";
+import type { R1DataLayout } from "./data-dir.js";
+import { assertHeadReferencesSha, exportSb3ForProject } from "./export-sb3.js";
+import { importSb3FromHttpRequest } from "./import-sb3.js";
+import type { LoadSb3IsolatedOptions } from "@blocksync/sb3-tools";
+
+export interface Sb3HttpDeps {
+  assetRepo: AssetRepository;
+  assetFs: AssetFsStore;
+  dataLayout: R1DataLayout;
+  liveCatalog: LiveAssetCatalog;
+  idFactory?: () => string;
+  isolatedOptions?: LoadSb3IsolatedOptions;
+}
 
 export interface CreateServerDeps {
   auth: AuthContext;
@@ -59,6 +88,7 @@ export interface CreateServerDeps {
   authRepo?: AuthRepository;
   hash?: (raw: string) => string;
   sessionMaxAgeSec?: number;
+  sb3?: Sb3HttpDeps;
 }
 
 function headersFromRequest(c: {
@@ -123,6 +153,25 @@ function mapError(
     err instanceof SnapshotHashMismatchError
   ) {
     return { status: 422, body: { code: err.code, message: err.message } };
+  }
+  if (
+    err instanceof AssetNotLiveError ||
+    err instanceof AssetNotGrantedError ||
+    err instanceof AssetIntegrityError ||
+    err instanceof ImportPreconditionError
+  ) {
+    return { status: 422, body: { code: err.code, message: err.message } };
+  }
+  if (
+    err instanceof GlobalDiskExceededError ||
+    err instanceof OrgQuotaExceededError ||
+    err instanceof ReservationCapacityExceededError ||
+    err instanceof StaleFileBytesError
+  ) {
+    return { status: 507, body: { code: err.name, message: err.message } };
+  }
+  if (err instanceof ReservationNotFoundError) {
+    return { status: 409, body: { code: err.name, message: err.message } };
   }
   const message = err instanceof Error ? err.message : "INTERNAL";
   return { status: 500, body: { code: "INTERNAL", message } };
@@ -211,21 +260,8 @@ export function createPersistApp(deps: CreateServerDeps): Hono {
     app.use("*", createCorsMiddleware(allowedOrigins));
   }
 
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: MAX_BODY_BYTES,
-      onError: (c) =>
-        c.json(
-          { code: "BAD_REQUEST", message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
-          400,
-        ),
-    }),
-  );
-
   app.onError((err, c) => {
     if (err instanceof UnauthenticatedError || err instanceof AuthFailedError) {
-      // Internal reason only — never echo to clients; no Cookie/credential values.
       console.warn(`auth_reject class=${err.name} reason=${err.message}`);
     }
     const mapped = mapError(err);
@@ -244,6 +280,89 @@ export function createPersistApp(deps: CreateServerDeps): Hono {
       hash: deps.hash!,
     });
   };
+
+  if (deps.sb3) {
+    const sb3 = deps.sb3;
+    app.post("/v1/projects/import", async (c) => {
+      guardMutation(c);
+      const envelope = await importSb3FromHttpRequest(
+        {
+          auth: deps.auth,
+          assetRepo: sb3.assetRepo,
+          assetFs: sb3.assetFs,
+          dataLayout: sb3.dataLayout,
+          service: deps.service,
+          idFactory: sb3.idFactory,
+          isolatedOptions: sb3.isolatedOptions,
+        },
+        headersFromRequest(c),
+        c.req.raw,
+      );
+      return c.json(envelope, 201);
+    });
+
+    app.get("/v1/projects/:id/export.sb3", async (c) => {
+      const projectId = assertId(c.req.param("id"), "projectId", MAX_PROJECT_ID_LENGTH);
+      const zip = await exportSb3ForProject(
+        {
+          service: deps.service,
+          assetFs: sb3.assetFs,
+          liveCatalog: sb3.liveCatalog,
+        },
+        headersFromRequest(c),
+        projectId,
+      );
+      return new Response(Buffer.from(zip), {
+        status: 200,
+        headers: {
+          "content-type": "application/zip",
+          "content-disposition": `attachment; filename="${projectId}.sb3"`,
+          "x-content-type-options": "nosniff",
+        },
+      });
+    });
+
+    app.get("/v1/projects/:id/assets/:sha256", async (c) => {
+      const projectId = assertId(c.req.param("id"), "projectId", MAX_PROJECT_ID_LENGTH);
+      const sha256 = c.req.param("sha256");
+      if (!SHA256_HEX.test(sha256)) {
+        throw new BadRequestError("invalid sha256");
+      }
+      const envelope = await deps.service.getProject(headersFromRequest(c), projectId);
+      assertHeadReferencesSha(envelope.document, sha256);
+      const record = sb3.liveCatalog.getAsset(sha256);
+      if (!record || record.gcState !== "live") {
+        throw new AssetNotLiveError(sha256);
+      }
+      if (!sb3.liveCatalog.hasOrgGrant(envelope.organizationId, sha256)) {
+        throw new AssetNotGrantedError(sha256);
+      }
+      const bytes = sb3.assetFs.getLive(sha256);
+      if (!bytes) {
+        throw new AssetIntegrityError(sha256, "MISSING_BYTES");
+      }
+      return new Response(Buffer.from(bytes), {
+        status: 200,
+        headers: {
+          "content-type": "application/octet-stream",
+          "content-disposition": `attachment; filename="${sha256}"`,
+          "x-content-type-options": "nosniff",
+        },
+      });
+    });
+  }
+
+  app.use(
+    "*",
+    bodyLimit({
+      maxSize: MAX_BODY_BYTES,
+      onError: (c) =>
+        c.json(
+          { code: "BAD_REQUEST", message: `Body exceeds ${MAX_BODY_BYTES} bytes` },
+          400,
+        ),
+    }),
+  );
 
   if (google) {
     const sessionService = deps.sessionService!;

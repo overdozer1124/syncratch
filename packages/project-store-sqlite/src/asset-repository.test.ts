@@ -641,6 +641,106 @@ describe("asset repository", () => {
     db.close();
   });
 
+  it("releaseImportSession removes global, quota, and lease rows immediately", () => {
+    const { db, dir } = tempDb();
+    dirs.push(dir);
+    const now = seedOrg(db);
+    const repo = openRepo(db);
+    const importSessionId = "session-release-all";
+    repo.createGlobalDiskReservation({
+      reservationId: "res-all",
+      importSessionId,
+      reservedBytes: 100,
+      fileBytes: 0,
+      now,
+    });
+    repo.createQuotaReservation({
+      reservationId: "quota-all",
+      organizationId: "org-1",
+      importSessionId,
+      shas: [{ sha256: sha(1), byteLength: 10 }],
+      now,
+    });
+    repo.createImportLeases({
+      organizationId: "org-1",
+      importSessionId,
+      leases: [{ leaseId: "lease-all", sha256: sha(1) }],
+      now,
+    });
+
+    repo.releaseImportSession({
+      organizationId: "org-1",
+      importSessionId,
+      now,
+    });
+
+    expect(
+      db.prepare(`SELECT COUNT(*) AS c FROM global_disk_reservations`).get(),
+    ).toEqual({ c: 0 });
+    expect(
+      db
+        .prepare(`SELECT COUNT(*) AS c FROM organization_asset_quota_reservations`)
+        .get(),
+    ).toEqual({ c: 0 });
+    expect(
+      db.prepare(`SELECT COUNT(*) AS c FROM asset_import_leases`).get(),
+    ).toEqual({ c: 0 });
+    db.close();
+  });
+
+  it("releaseImportSession removes expired quota and lease rows", () => {
+    const { db, dir } = tempDb();
+    dirs.push(dir);
+    const now = seedOrg(db);
+    const repo = openRepo(db);
+    const importSessionId = "session-release-expired";
+    const expiredAt = new Date(Date.parse(now) - 1000).toISOString();
+    repo.createGlobalDiskReservation({
+      reservationId: "res-expired-all",
+      importSessionId,
+      reservedBytes: 100,
+      fileBytes: 0,
+      now,
+    });
+    db.prepare(
+      `UPDATE global_disk_reservations SET expires_at = ? WHERE import_session_id = ?`,
+    ).run(expiredAt, importSessionId);
+    db.prepare(
+      `INSERT INTO organization_asset_quota_reservations (
+        reservation_id, organization_id, import_session_id, reserved_bytes, expires_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("quota-expired", "org-1", importSessionId, 10, expiredAt, now);
+    db.prepare(
+      `INSERT INTO organization_asset_quota_reservation_shas (
+        reservation_id, sha256, byte_length
+      ) VALUES (?, ?, ?)`,
+    ).run("quota-expired", sha(1), 10);
+    db.prepare(
+      `INSERT INTO asset_import_leases (
+        lease_id, organization_id, sha256, import_session_id, created_at, expires_at
+      ) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run("lease-expired", "org-1", sha(1), importSessionId, now, expiredAt);
+
+    repo.releaseImportSession({
+      organizationId: "org-1",
+      importSessionId,
+      now,
+    });
+
+    expect(
+      db.prepare(`SELECT COUNT(*) AS c FROM global_disk_reservations`).get(),
+    ).toEqual({ c: 0 });
+    expect(
+      db
+        .prepare(`SELECT COUNT(*) AS c FROM organization_asset_quota_reservations`)
+        .get(),
+    ).toEqual({ c: 0 });
+    expect(
+      db.prepare(`SELECT COUNT(*) AS c FROM asset_import_leases`).get(),
+    ).toEqual({ c: 0 });
+    db.close();
+  });
+
   it("org quota distinct sha union counts duplicate revision refs once", () => {
     const { db, dir } = tempDb();
     dirs.push(dir);

@@ -30,12 +30,19 @@ import {
 } from "./path-safety.js";
 import { writeAllBytesSync } from "./write-bytes.js";
 
+export { writeAllBytesSync, __setWriteSyncForTests } from "./write-bytes.js";
+
 export {
   InvalidSha256Error,
   PathSafetyError,
   SHA256_HEX_PATTERN,
+  assertPathContained,
   assertSha256Hex,
+  lstatSafe,
+  readFileNoFollow,
+  resolveContainedPath,
   validateAssetsRoot,
+  validateSubdirectory,
 } from "./path-safety.js";
 
 export class AssetBytesHashMismatchError extends Error {

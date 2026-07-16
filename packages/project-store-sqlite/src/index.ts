@@ -26,10 +26,13 @@ export type {
 } from "./asset-repository.js";
 export {
   GLOBAL_DISK_BYTES,
+  IMPORT_SPOOL_CAP_BYTES,
+  IMPORT_HOLDING_BUDGET_BYTES,
   INITIAL_GLOBAL_RESERVATION_BYTES,
   ORG_QUOTA_BYTES,
   RESERVATION_TTL_MS,
 } from "./constants.js";
 export { withImmediateTransaction } from "./immediate-transaction.js";
 export { createSqliteCommitAssetGuard } from "./commit-asset-guard.js";
+export { createSqliteLiveAssetCatalog } from "./live-asset-catalog.js";
 export { computeGlobalUsedBytes, computeOrgQuotaBytes } from "./quota.js";

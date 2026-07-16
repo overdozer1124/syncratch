@@ -125,6 +125,13 @@ export interface AssetRepository {
 
   releaseGlobalDiskReservation(importSessionId: string): void;
 
+  /** Release global + org quota + leases for a failed import session (Design §4.6.2). */
+  releaseImportSession(args: {
+    organizationId: string;
+    importSessionId: string;
+    now?: string;
+  }): void;
+
   createImportLeases(args: {
     organizationId: string;
     importSessionId: string;
@@ -266,11 +273,21 @@ export function createSqliteAssetRepository(
         AND organization_id = @organizationId
         AND expires_at > @now
     `),
+    deleteQuotaReservationForSession: db.prepare(`
+      DELETE FROM organization_asset_quota_reservations
+      WHERE import_session_id = @importSessionId
+        AND organization_id = @organizationId
+    `),
     deleteLeasesForSession: db.prepare(`
       DELETE FROM asset_import_leases
       WHERE import_session_id = @importSessionId
         AND organization_id = @organizationId
         AND expires_at > @now
+    `),
+    deleteLeasesForSessionForce: db.prepare(`
+      DELETE FROM asset_import_leases
+      WHERE import_session_id = @importSessionId
+        AND organization_id = @organizationId
     `),
     insertAssetObject: db.prepare(`
       INSERT OR IGNORE INTO asset_objects (
@@ -521,6 +538,20 @@ export function createSqliteAssetRepository(
 
     releaseGlobalDiskReservation(importSessionId) {
       stmts.deleteGlobalReservation.run(importSessionId);
+    },
+
+    releaseImportSession(args) {
+      withImmediateTransaction(db, () => {
+        stmts.deleteLeasesForSessionForce.run({
+          importSessionId: args.importSessionId,
+          organizationId: args.organizationId,
+        });
+        stmts.deleteQuotaReservationForSession.run({
+          importSessionId: args.importSessionId,
+          organizationId: args.organizationId,
+        });
+        stmts.deleteGlobalReservation.run(args.importSessionId);
+      });
     },
 
     createImportLeases(args) {

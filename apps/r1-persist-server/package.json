@@ -17,14 +17,19 @@
   "dependencies": {
     "@blocksync/auth-context": "workspace:*",
     "@blocksync/google-identity": "workspace:*",
+    "@blocksync/project-assets-fs": "workspace:*",
+    "@blocksync/project-envelope": "workspace:*",
     "@blocksync/project-service": "workspace:*",
     "@blocksync/project-snapshots-fs": "workspace:*",
     "@blocksync/project-store-sqlite": "workspace:*",
+    "@blocksync/sb3-tools": "workspace:*",
     "@blocksync/session-service": "workspace:*",
     "@hono/node-server": "^1.14.4",
+    "busboy": "^1.6.0",
     "hono": "^4.8.3"
   },
   "devDependencies": {
+    "@types/busboy": "^1.5.4",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"

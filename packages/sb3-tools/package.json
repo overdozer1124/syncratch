@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@blocksync/project-assets-fs": "workspace:*",
     "@blocksync/project-schema": "workspace:*",
     "@xmldom/xmldom": "0.8.10",
     "css-tree": "3.2.1",

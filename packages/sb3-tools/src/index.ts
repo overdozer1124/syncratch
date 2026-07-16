@@ -2,6 +2,8 @@
  * @experimental Gate 0 / R1 SB3 helpers — streaming size guards, canonical I/O, media verify.
  */
 
+/// <reference path="./types/modules.d.ts" />
+
 import JSZip from "jszip";
 import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
@@ -672,6 +674,26 @@ export interface LoadSb3IsolatedOptions {
   heapMb?: number;
   timeoutMs?: number;
   workerHoldMs?: number;
+  manifestHoldMs?: number;
+  /** Read ZIP from disk in worker instead of stdin (parent never inflates). */
+  /** Pinned realpath of R1_DATA_DIR for worker path safety (§4.5). */
+  dataRootReal?: string;
+  holdingBudgetBytes?: number;
+  spoolPath?: string;
+  holdingDir?: string;
+  workerTempDir?: string;
+}
+
+export interface Sb3ImportManifestAsset {
+  sha256: string;
+  byteLength: number;
+  md5Hex: string;
+  dataFormat: string;
+}
+
+export interface Sb3ImportManifest {
+  assets: Sb3ImportManifestAsset[];
+  holdingBytesWritten: number;
 }
 
 export interface LoadSb3IsolatedOutcome extends LoadResult {
@@ -680,6 +702,7 @@ export interface LoadSb3IsolatedOutcome extends LoadResult {
   childExited: boolean;
   exitCode: number | null;
   signal: NodeJS.Signals | string | null;
+  manifest?: Sb3ImportManifest;
 }
 
 export function loadSb3Isolated(
@@ -690,6 +713,7 @@ export function loadSb3Isolated(
   const heapMb = options.heapMb ?? 64;
   const timeoutMs = options.timeoutMs ?? 15_000;
   const workerHoldMs = options.workerHoldMs ?? 0;
+  const manifestHoldMs = options.manifestHoldMs ?? 0;
   const worker = join(
     dirname(fileURLToPath(import.meta.url)),
     "load-sb3-worker.mjs",
@@ -725,6 +749,28 @@ export function loadSb3Isolated(
           }),
           ...(workerHoldMs > 0
             ? { GATE0_SB3_WORKER_HOLD_MS: String(workerHoldMs) }
+            : {}),
+          ...(manifestHoldMs > 0
+            ? { GATE0_SB3_MANIFEST_HOLD_MS: String(manifestHoldMs) }
+            : {}),
+          ...(options.dataRootReal
+            ? { GATE0_SB3_DATA_ROOT_REAL: options.dataRootReal }
+            : {}),
+          ...(options.holdingBudgetBytes !== undefined
+            ? {
+                GATE0_SB3_HOLDING_BUDGET_BYTES: String(
+                  options.holdingBudgetBytes,
+                ),
+              }
+            : {}),
+          ...(options.spoolPath
+            ? { GATE0_SB3_SPOOL_PATH: options.spoolPath }
+            : {}),
+          ...(options.holdingDir
+            ? { GATE0_SB3_HOLDING_DIR: options.holdingDir }
+            : {}),
+          ...(options.workerTempDir
+            ? { GATE0_SB3_WORKER_TEMP_DIR: options.workerTempDir }
             : {}),
         },
         stdio: ["pipe", "pipe", "pipe"],
@@ -783,7 +829,9 @@ export function loadSb3Isolated(
       }
       const text = Buffer.concat(out).toString("utf8");
       try {
-        const parsed = JSON.parse(text) as LoadResult;
+        const parsed = JSON.parse(text) as LoadResult & {
+          manifest?: Sb3ImportManifest;
+        };
         finish({
           ...parsed,
           timedOut: false,
@@ -810,7 +858,11 @@ export function loadSb3Isolated(
         });
       }
     });
-    child.stdin.write(Buffer.from(bytes));
-    child.stdin.end();
+    if (options.spoolPath) {
+      child.stdin.end();
+    } else {
+      child.stdin.write(Buffer.from(bytes));
+      child.stdin.end();
+    }
   });
 }
