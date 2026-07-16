@@ -453,7 +453,7 @@ Import → export → re-import must preserve **mutation** bytes-equivalent afte
 | Vendor tag | `v14.1.0` / `7c172e469eb3c21c1e6326ea6cccea60bc14e3a8` |
 | Generator script | `scripts/generate-scratch-opcodes.mjs` |
 | Generated artifact | `packages/sb3-tools/vendor/scratch-opcodes-v14.1.0.json` |
-| CI gate | `pnpm sb3:opcodes:check` — regenerates and diffs artifact |
+| CI gate | `pnpm sb3:opcodes:check` — regenerates, asserts **208 unique** opcodes, diffs artifact |
 
 **Generator inputs (must all be scanned):**
 
@@ -478,9 +478,19 @@ Import → export → re-import must preserve **mutation** bytes-equivalent afte
 
 Empty `extensions: []` is valid for core-only + custom procedure projects.
 
-#### 6.6.3 Pinned opcode set (208 opcodes)
+#### 6.6.3 Pinned opcode set (208 unique opcodes)
 
-**Core VM opcodes (146)** — from `scratch3_*.js` `getPrimitives`/`getHats`:
+**Counting rule:** the authoritative set is the **unique opcode strings** in `scratch-opcodes-v14.1.0.json`, verified by CI (`pnpm sb3:opcodes:check`). Human-readable buckets below are for review only.
+
+```text
+147 core entries
++ 23 menu/shadow entries
++ 40 extension entries
+− 2 overlaps (data_variable, data_listcontents appear in both core and menu)
+= 208 unique opcodes
+```
+
+**Core entries (147)** — vendor VM `getPrimitives`/`getHats` (**146**) **plus** SB3-only **`procedures_prototype`** (**1**):
 
 - **control (17):** `control_all_at_once`, `control_clear_counter`, `control_create_clone_of`, `control_delete_this_clone`, `control_for_each`, `control_forever`, `control_get_counter`, `control_if`, `control_if_else`, `control_incr_counter`, `control_repeat`, `control_repeat_until`, `control_start_as_clone`, `control_stop`, `control_wait`, `control_wait_until`, `control_while`
 - **data (17):** `data_addtolist`, `data_changevariableby`, `data_deletealloflist`, `data_deleteoflist`, `data_hidelist`, `data_hidevariable`, `data_insertatlist`, `data_itemnumoflist`, `data_itemoflist`, `data_lengthoflist`, `data_listcontainsitem`, `data_listcontents`, `data_replaceitemoflist`, `data_setvariableto`, `data_showlist`, `data_showvariable`, `data_variable`
@@ -492,7 +502,7 @@ Empty `extensions: []` is valid for core-only + custom procedure projects.
 - **sensing (21):** `sensing_answer`, `sensing_askandwait`, `sensing_coloristouchingcolor`, `sensing_current`, `sensing_dayssince2000`, `sensing_distanceto`, `sensing_keypressed`, `sensing_loud`, `sensing_loudness`, `sensing_mousedown`, `sensing_mousex`, `sensing_mousey`, `sensing_of`, `sensing_online`, `sensing_resettimer`, `sensing_setdragmode`, `sensing_timer`, `sensing_touchingcolor`, `sensing_touchingobject`, `sensing_userid`, `sensing_username`
 - **sound (12):** `sound_beats_menu`, `sound_changeeffectby`, `sound_changevolumeby`, `sound_cleareffects`, `sound_effects_menu`, `sound_play`, `sound_playuntildone`, `sound_seteffectto`, `sound_setvolumeto`, `sound_sounds_menu`, `sound_stopallsounds`, `sound_volume`
 
-**Menu / shadow opcodes (23):**
+**Menu / shadow opcodes (23)** — includes SB3 primitives (10) and toolbox shadows (13). **`data_variable`** and **`data_listcontents`** also appear under core and are counted once in the 208 total.
 
 - **SB3 primitives (10):** `math_number`, `math_positive_number`, `math_whole_number`, `math_integer`, `math_angle`, `colour_picker`, `text`, `event_broadcast_menu`, `data_variable`, `data_listcontents`
 - **Toolbox shadows (13):** `note`, `matrix`, `boolean`, `motion_goto_menu`, `motion_glideto_menu`, `motion_pointtowards_menu`, `control_create_clone_of_menu`, `looks_costume`, `looks_backdrops`, `sensing_touchingobjectmenu`, `sensing_distancetomenu`, `sensing_keyoptions`, `sensing_of_object_menu`
@@ -505,7 +515,7 @@ Empty `extensions: []` is valid for core-only + custom procedure projects.
 - **text2speech (5):** `text2speech_speakAndWait`, `text2speech_setVoice`, `text2speech_setLanguage`, `text2speech_menu_voices`, `text2speech_menu_languages`
 - **translate (3):** `translate_getTranslate`, `translate_getViewerLanguage`, `translate_menu_languages`
 
-**Total:** 208 opcodes. Implementation must load `scratch-opcodes-v14.1.0.json` and reject any other opcode string.
+**Total:** **208 unique** opcodes. Implementation must load `scratch-opcodes-v14.1.0.json` and reject any other opcode string.
 
 ### 6.7 Equivalence — target pairing + block graph multiset (export → re-import)
 
