@@ -20,26 +20,30 @@
 - 全体を Task 0〜11 の12 Taskとして計算する。
 - Codex承認済みTaskのみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜6 の7 Taskが承認済みなので **58%**。Task 7はコードレビューGoだが、commit SHA確認までは未承認として扱う。
+- 現在は Task 0〜7 の8 Taskが承認済みなので **67%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 00:04:54 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex |
-| 現在のTask | Task 7 — sb3-tools: canonical I/O, SVG explicit walk, equivalenceProduction |
-| 全体進捗 | **58%**（Task 0〜6承認済み / 全12 Task） |
-| 承認基準SHA | `8e59f5aec3609d7d90920cd1b943af236ff53fbe` |
+| 最終更新 | 2026-07-17 00:08:15 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `TASK_8_READY` |
+| 現在の担当 | Cursor |
+| 現在のTask | Task 8 — HTTP import / export / head-only asset GET |
+| 全体進捗 | **67%**（Task 0〜7承認済み / 全12 Task） |
+| 承認基準SHA | `fc7db9b0da127b1ea8e44a62df0d83767bc93aa1` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 8（Task 7 正式承認まで着手禁止） |
+| 次Task | Task 9（Task 8 Go まで着手禁止） |
 
 ## Cursorが次に行う作業
 
-なし（Task 7 commit 済み。Codex の SHA 確認・正式承認待ち。）
+1. この正式承認台帳だけを `docs: record Task 7 Go and Task 8 ready` としてcommitする。`docs/ai-platform/design-brief-candidate.md`は引き続き除外する。
+2. そのclean HEADをTask 8承認基準SHAとして台帳へ記録する。
+3. `docs/superpowers/plans/2026-07-16-r1-scratch-sb3-plan.md` のTask 8に従い、HTTP import / export / head-only asset GETを実装する。
+4. import順序（global reservation → spool/materialize → worker/manifest → lease/quota → CAS → atomic import）と、並行32 MiB・timeout解放・boot reconcile・二重計上防止の必須試験を満たす。
+5. Task 8完了後、未コミットのまま `READY_FOR_CODEX_REVIEW` とし、変更ファイル・ゲート結果・基準SHAを台帳へ追記する。Task 9には着手しない。
 
 ## Task 7 commit 提出
 
@@ -876,6 +880,17 @@ git status --short: ?? docs/ai-platform/
 
 - Task 7 を指定 message で commit 済み（31 files）。Codex の SHA 確認・正式承認待ち。全体進捗58%。
 - 次担当: Codex。
+
+### 2026-07-17 00:08:15 JST — Codex
+
+- Task 7実装commit `2b9ae11331bc64db6c67175ab6120307f7b1632a`を最終確認。
+- 親は承認基準`8e59f5aec3609d7d90920cd1b943af236ff53fbe`、messageは`feat(sb3-tools): canonical I/O and production equivalence`、承認済み31ファイルと一致。
+- 後続の台帳commit `fc7db9b0da127b1ea8e44a62df0d83767bc93aa1`はTask 7 SHA記録のみ。
+- `docs/ai-platform/design-brief-candidate.md`は未追跡で、Task 7 commitに含まれていないことを確認。
+- `git diff 8e59f5a..2b9ae11 --check`はPASS。コードレビュー時の全パッケージ試験・build・opcode check・gate0:testもPASS済み。
+- Task 7を正式承認。Task 0〜7の8/12完了として全体進捗を67%へ更新。
+- Task 8（HTTP import / export / head-only asset GET）を解禁。Task 9はTask 8 Goまで着手禁止。
+- 状態: `TASK_8_READY`。次担当: Cursor。
 
 ### 2026-07-17 00:04:54 JST — Cursor
 
