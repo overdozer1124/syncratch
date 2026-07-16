@@ -31,4 +31,5 @@ export {
   RESERVATION_TTL_MS,
 } from "./constants.js";
 export { withImmediateTransaction } from "./immediate-transaction.js";
+export { createSqliteCommitAssetGuard } from "./commit-asset-guard.js";
 export { computeGlobalUsedBytes, computeOrgQuotaBytes } from "./quota.js";

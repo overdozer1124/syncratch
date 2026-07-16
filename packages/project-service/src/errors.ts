@@ -74,3 +74,43 @@ export class SnapshotHashMismatchError extends Error {
     this.name = "SnapshotHashMismatchError";
   }
 }
+
+export class AssetNotLiveError extends Error {
+  readonly code = "ASSET_NOT_LIVE" as const;
+  constructor(sha256: string) {
+    super(`ASSET_NOT_LIVE:${sha256}`);
+    this.name = "AssetNotLiveError";
+  }
+}
+
+export class AssetNotGrantedError extends Error {
+  readonly code = "ASSET_NOT_GRANTED" as const;
+  constructor(sha256: string) {
+    super(`ASSET_NOT_GRANTED:${sha256}`);
+    this.name = "AssetNotGrantedError";
+  }
+}
+
+export class AssetRefMismatchError extends Error {
+  readonly code = "ASSET_REF_MISMATCH" as const;
+  constructor(detail: string) {
+    super(`ASSET_REF_MISMATCH:${detail}`);
+    this.name = "AssetRefMismatchError";
+  }
+}
+
+export class AssetIntegrityError extends Error {
+  readonly code = "ASSET_INTEGRITY" as const;
+  constructor(sha256: string, detail: string) {
+    super(`ASSET_INTEGRITY:${sha256}:${detail}`);
+    this.name = "AssetIntegrityError";
+  }
+}
+
+export class ImportPreconditionError extends Error {
+  readonly code = "IMPORT_PRECONDITION" as const;
+  constructor(detail: string) {
+    super(`IMPORT_PRECONDITION:${detail}`);
+    this.name = "ImportPreconditionError";
+  }
+}

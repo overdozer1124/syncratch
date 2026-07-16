@@ -14,21 +14,34 @@ import {
   StaleRevisionError,
   TransactionPayloadMismatchError,
   NotFoundError,
+  AssetNotLiveError,
+  BadRequestError,
+  ImportPreconditionError,
   createMemoryProjectRepository,
   createMemorySnapshotStore,
+  createMemoryImportAtomicRepository,
+  createMemoryLiveAssetByteStore,
+  createMemoryLiveAssetCatalog,
   createProjectService,
 } from "./index.js";
 
 const userA = { headers: { "x-user-id": "user-a" } };
 const userB = { headers: { "x-user-id": "user-b" } };
 
-function makeService() {
+function makeService(options?: {
+  commitAssets?: ReturnType<typeof createMemoryLiveAssetCatalog>;
+  assetBytes?: ReturnType<typeof createMemoryLiveAssetByteStore>;
+  importAtomic?: ReturnType<typeof createMemoryImportAtomicRepository>;
+}) {
   const repo = createMemoryProjectRepository();
   const snapshots = createMemorySnapshotStore();
   const service = createProjectService({
     auth: new StubAuthContext(),
     repo,
     snapshots,
+    commitAssets: options?.commitAssets,
+    assetBytes: options?.assetBytes,
+    importAtomic: options?.importAtomic,
     now: () => new Date("2026-07-15T00:00:00.000Z"),
     idFactory: (() => {
       let n = 0;
@@ -37,6 +50,52 @@ function makeService() {
   });
   return { service, repo, snapshots };
 }
+
+function seedDocumentAssets(
+  catalog: ReturnType<typeof createMemoryLiveAssetCatalog>,
+  byteStore: ReturnType<typeof createMemoryLiveAssetByteStore>,
+  organizationId: string,
+  document: ReturnType<typeof customProcedureFixtureDocument>,
+): void {
+  let index = 0;
+  for (const target of document.targets) {
+    for (const costume of target.costumes ?? []) {
+      const bytes = new TextEncoder().encode(`asset-bytes-${index++}`);
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const md5Hex = createHash("md5").update(bytes).digest("hex");
+      const canonical = costume.dataFormat === "jpeg" ? "jpg" : costume.dataFormat;
+      costume.contentSha256 = sha256;
+      costume.assetId = md5Hex;
+      costume.md5ext = `${md5Hex}.${canonical}`;
+      catalog.seedAsset(organizationId, {
+        sha256,
+        byteLength: bytes.length,
+        md5Hex,
+        dataFormat: canonical,
+        gcState: "live",
+      });
+      byteStore.files.set(sha256, bytes);
+    }
+    for (const sound of target.sounds ?? []) {
+      const bytes = new TextEncoder().encode(`asset-bytes-${index++}`);
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const md5Hex = createHash("md5").update(bytes).digest("hex");
+      const canonical = sound.dataFormat === "jpeg" ? "jpg" : sound.dataFormat;
+      sound.contentSha256 = sha256;
+      sound.assetId = md5Hex;
+      sound.md5ext = `${md5Hex}.${canonical}`;
+      catalog.seedAsset(organizationId, {
+        sha256,
+        byteLength: bytes.length,
+        md5Hex,
+        dataFormat: canonical,
+        gcState: "live",
+      });
+      byteStore.files.set(sha256, bytes);
+    }
+  }
+}
+
 
 describe("project-service", () => {
   it("lists only member projects for same-org users", async () => {
@@ -132,11 +191,23 @@ describe("project-service", () => {
 
     // schemaVersion-only change: valid V2 document on replay with same transactionId
     const sv2 = customProcedureFixtureDocument();
+    const assets = createMemoryLiveAssetCatalog();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    seedDocumentAssets(assets, assetBytes, "org-demo", sv2);
+    const { service: svc2 } = makeService({ commitAssets: assets, assetBytes });
+    const created2 = await svc2.createProject(userA, { title: "A2" });
+    await svc2.saveDocument(userA, {
+      projectId: created2.projectId,
+      baseRevision: 0,
+      transactionId: "tx-sv-v2",
+      schemaVersion: 1,
+      document: doc,
+    });
     await expect(
-      service.saveDocument(userA, {
-        projectId: created.projectId,
+      svc2.saveDocument(userA, {
+        projectId: created2.projectId,
         baseRevision: 0,
-        transactionId: "tx-sv",
+        transactionId: "tx-sv-v2",
         schemaVersion: 2,
         document: sv2,
       }),
@@ -237,7 +308,7 @@ describe("project-service", () => {
     const { service } = makeService();
     const created = await service.createProject(userA, { title: "Unknown field" });
     const doc = customProcedureFixtureDocument();
-    (doc as Record<string, unknown>).hidden = true;
+    (doc as unknown as Record<string, unknown>).hidden = true;
     await expect(
       service.saveDocument(userA, {
         projectId: created.projectId,
@@ -477,5 +548,197 @@ describe("project-service", () => {
     ).rejects.toThrow(/FORCED_ROLLBACK/);
     const head = await service.getProject(userA, created.projectId);
     expect(head.revision).toBe(0);
+  });
+
+  it("save rejects a V2 document when commit-time live check fails", async () => {
+    const commitAssets = createMemoryLiveAssetCatalog();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    const { service } = makeService({ commitAssets, assetBytes });
+    const created = await service.createProject(userA, { title: "Assets" });
+    const doc = customProcedureFixtureDocument();
+    seedDocumentAssets(commitAssets, assetBytes, "org-demo", doc);
+    const sha = doc.targets[0]!.costumes![0]!.contentSha256;
+    commitAssets.quarantineOnCommit.add(sha);
+
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-asset-live",
+        schemaVersion: 2,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(AssetNotLiveError);
+
+    const head = await service.getProject(userA, created.projectId);
+    expect(head.revision).toBe(0);
+  });
+
+  it("save returns NotFoundError for non-member before asset verification", async () => {
+    const commitAssets = createMemoryLiveAssetCatalog();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    const { service } = makeService({ commitAssets, assetBytes });
+    const created = await service.createProject(userA, { title: "Secret" });
+    const doc = customProcedureFixtureDocument();
+    seedDocumentAssets(commitAssets, assetBytes, "org-demo", doc);
+    commitAssets.quarantineOnCommit.add(doc.targets[0]!.costumes![0]!.contentSha256);
+
+    await expect(
+      service.saveDocument(userB, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-bola-asset",
+        schemaVersion: 2,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("importSb3Project delegates to importAtomic without using createProject", async () => {
+    const importAtomic = createMemoryImportAtomicRepository();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    const doc = customProcedureFixtureDocument();
+    const catalog = createMemoryLiveAssetCatalog();
+    seedDocumentAssets(catalog, assetBytes, "org-demo", doc);
+    const assetObjects = doc.targets.flatMap((target) => [
+      ...(target.costumes ?? []).map((costume) => ({
+        sha256: costume.contentSha256,
+        byteLength: assetBytes.files.get(costume.contentSha256)!.length,
+        md5Hex: costume.assetId,
+        dataFormat: costume.dataFormat,
+      })),
+      ...(target.sounds ?? []).map((sound) => ({
+        sha256: sound.contentSha256,
+        byteLength: assetBytes.files.get(sound.contentSha256)!.length,
+        md5Hex: sound.assetId,
+        dataFormat: sound.dataFormat,
+      })),
+    ]);
+    const { service, repo } = makeService({ importAtomic, assetBytes });
+    const envelope = {
+      format: "blocksync.project/v1" as const,
+      projectId: "imported-proj",
+      organizationId: "org-demo",
+      title: "Imported SB3",
+      revision: 0,
+      schemaVersion: 2,
+      contentHash: contentHash(doc),
+      updatedAt: "2026-07-15T00:00:00.000Z",
+      updatedByUserId: "user-a",
+      document: doc,
+    };
+
+    const result = await service.importSb3Project(userA, {
+      projectId: "imported-proj",
+      title: "Imported SB3",
+      envelope,
+      assetObjects,
+      releaseImportSessionId: "session-1",
+      fileBytes: 100,
+    });
+
+    expect(result).toEqual(envelope);
+    expect(importAtomic.calls).toHaveLength(1);
+    expect(importAtomic.calls[0]?.grantShas.sort()).toEqual(
+      assetObjects.map((asset) => asset.sha256).sort(),
+    );
+    expect(repo.withTransaction(() => 0)).toBe(0);
+  });
+
+  it("importSb3Project rejects envelope tenant mismatch before atomic import", async () => {
+    const importAtomic = createMemoryImportAtomicRepository();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    const { service } = makeService({ importAtomic, assetBytes });
+    const doc = customProcedureFixtureDocument();
+    const envelope = {
+      format: "blocksync.project/v1" as const,
+      projectId: "imported-proj",
+      organizationId: "other-org",
+      title: "Imported SB3",
+      revision: 0,
+      schemaVersion: 2,
+      contentHash: contentHash(doc),
+      updatedAt: "2026-07-15T00:00:00.000Z",
+      updatedByUserId: "user-a",
+      document: doc,
+    };
+
+    await expect(
+      service.importSb3Project(userA, {
+        projectId: "imported-proj",
+        title: "Imported SB3",
+        envelope,
+        assetObjects: [],
+        releaseImportSessionId: "session-1",
+        fileBytes: 0,
+      }),
+    ).rejects.toBeInstanceOf(ImportPreconditionError);
+    expect(importAtomic.calls).toHaveLength(0);
+  });
+
+  it("importSb3Project rejects asset metadata mismatch before atomic import", async () => {
+    const importAtomic = createMemoryImportAtomicRepository();
+    const assetBytes = createMemoryLiveAssetByteStore();
+    const doc = customProcedureFixtureDocument();
+    const catalog = createMemoryLiveAssetCatalog();
+    seedDocumentAssets(catalog, assetBytes, "org-demo", doc);
+    const assetObjects = doc.targets.flatMap((target) => [
+      ...(target.costumes ?? []).map((costume) => ({
+        sha256: costume.contentSha256,
+        byteLength: assetBytes.files.get(costume.contentSha256)!.length,
+        md5Hex: costume.assetId,
+        dataFormat: costume.dataFormat,
+      })),
+      ...(target.sounds ?? []).map((sound) => ({
+        sha256: sound.contentSha256,
+        byteLength: assetBytes.files.get(sound.contentSha256)!.length,
+        md5Hex: sound.assetId,
+        dataFormat: sound.dataFormat,
+      })),
+    ]);
+    assetObjects[0] = {
+      ...assetObjects[0]!,
+      md5Hex: "f".repeat(32),
+      dataFormat: "png",
+    };
+    const { service } = makeService({ importAtomic, assetBytes });
+    const envelope = {
+      format: "blocksync.project/v1" as const,
+      projectId: "imported-proj",
+      organizationId: "org-demo",
+      title: "Imported SB3",
+      revision: 0,
+      schemaVersion: 2,
+      contentHash: contentHash(doc),
+      updatedAt: "2026-07-15T00:00:00.000Z",
+      updatedByUserId: "user-a",
+      document: doc,
+    };
+
+    await expect(
+      service.importSb3Project(userA, {
+        projectId: "imported-proj",
+        title: "Imported SB3",
+        envelope,
+        assetObjects,
+        releaseImportSessionId: "session-1",
+        fileBytes: 100,
+      }),
+    ).rejects.toBeInstanceOf(ImportPreconditionError);
+    expect(importAtomic.calls).toHaveLength(0);
+  });
+
+  it("save with asset refs requires asset verification deps", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "Need assets" });
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-no-catalog",
+        schemaVersion: 2,
+        document: customProcedureFixtureDocument(),
+      }),
+    ).rejects.toBeInstanceOf(BadRequestError);
   });
 });

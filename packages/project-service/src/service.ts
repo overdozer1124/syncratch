@@ -18,11 +18,17 @@ import {
   SnapshotHashMismatchError,
   TransactionPayloadMismatchError,
   UnauthorizedError,
+  BadRequestError,
+  ImportPreconditionError,
 } from "./errors.js";
 import type {
   AuthHints,
+  CommitAssetGuard,
   CreateProjectInput,
   CreateSnapshotInput,
+  ImportAtomicRepository,
+  ImportSb3ProjectInput,
+  LiveAssetByteStore,
   ProjectAccessPolicy,
   ProjectRepository,
   ProjectSummary,
@@ -31,12 +37,21 @@ import type {
   SnapshotMeta,
   SnapshotStore,
 } from "./ports.js";
+import { verifyImportAssetBundle } from "./verify-import-assets.js";
+import {
+  assertDocumentLiveGrantsInCommit,
+  collectDocumentAssetShas,
+  verifyDocumentAssetPreflight,
+} from "./verify-live-assets.js";
 
 export interface ProjectServiceDeps {
   auth: AuthContext;
   access?: ProjectAccessPolicy;
   repo: ProjectRepository;
   snapshots: SnapshotStore;
+  commitAssets?: CommitAssetGuard;
+  assetBytes?: LiveAssetByteStore;
+  importAtomic?: ImportAtomicRepository;
   now?: () => Date;
   idFactory?: () => string;
 }
@@ -62,6 +77,49 @@ function assertValidDocument(document: ProjectDocument): void {
   const result = validateProject(document);
   if (!result.ok) {
     throw new SchemaInvalidError(result.issues);
+  }
+}
+
+function maybePreflightAssetBytes(
+  document: ProjectDocument,
+  assetBytes: LiveAssetByteStore | undefined,
+): void {
+  if (collectDocumentAssetShas(document).size === 0) {
+    return;
+  }
+  if (!assetBytes) {
+    throw new BadRequestError("ASSET_VERIFICATION_UNAVAILABLE");
+  }
+  verifyDocumentAssetPreflight(document, assetBytes);
+}
+
+function assertImportEnvelopeForPrincipal(
+  principal: AuthPrincipal,
+  projectId: string,
+  title: string,
+  envelope: ProjectEnvelopeV1,
+): void {
+  if (principal.organizationId !== envelope.organizationId) {
+    throw new ImportPreconditionError("ENVELOPE_ORGANIZATION_MISMATCH");
+  }
+  if (projectId !== envelope.projectId) {
+    throw new ImportPreconditionError("ENVELOPE_PROJECT_MISMATCH");
+  }
+  if (title !== envelope.title) {
+    throw new ImportPreconditionError("ENVELOPE_TITLE_MISMATCH");
+  }
+  if (envelope.revision !== 0) {
+    throw new ImportPreconditionError("ENVELOPE_REVISION_NOT_ZERO");
+  }
+  if (principal.userId !== envelope.updatedByUserId) {
+    throw new ImportPreconditionError("ENVELOPE_OWNER_MISMATCH");
+  }
+  if (envelope.schemaVersion !== envelope.document.schemaVersion) {
+    throw new ImportPreconditionError("ENVELOPE_SCHEMA_VERSION_MISMATCH");
+  }
+  const expectedHash = contentHash(envelope.document);
+  if (envelope.contentHash !== expectedHash) {
+    throw new BadRequestError("CONTENT_HASH_MISMATCH");
   }
 }
 
@@ -106,6 +164,10 @@ export interface ProjectService {
     hints: AuthHints,
     input: RestoreSnapshotInput,
   ): Promise<ProjectEnvelopeV1>;
+  importSb3Project(
+    hints: AuthHints,
+    input: ImportSb3ProjectInput,
+  ): Promise<ProjectEnvelopeV1>;
 }
 
 export function createProjectService(deps: ProjectServiceDeps): ProjectService {
@@ -141,6 +203,20 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
 
       const head = tx.getHead(input.projectId);
       if (!head) throw new NotFoundError();
+
+      if (deps.commitAssets) {
+        if (!deps.assetBytes) {
+          throw new BadRequestError("ASSET_VERIFICATION_UNAVAILABLE");
+        }
+        assertDocumentLiveGrantsInCommit(
+          head.organizationId,
+          input.document,
+          deps.commitAssets,
+          deps.assetBytes,
+        );
+      } else if (collectDocumentAssetShas(input.document).size > 0) {
+        throw new BadRequestError("ASSET_VERIFICATION_UNAVAILABLE");
+      }
 
       const envelope = buildEnvelope({
         projectId: input.projectId,
@@ -217,12 +293,35 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
       const principal = await resolveOrThrow(deps.auth, hints);
       assertSchemaMatch(input.schemaVersion, input.document);
       assertValidDocument(input.document);
+
       const docHash = contentHash(input.document);
       const reqHash = requestHash({
         op: "save_document",
         schemaVersion: input.schemaVersion,
         contentHash: docHash,
       });
+
+      const early = deps.repo.withTransaction((tx) => {
+        access.assertCan(principal, input.projectId, "write", tx);
+        const existing = tx.findRevisionByTransactionId(
+          input.projectId,
+          input.transactionId,
+        );
+        if (existing) {
+          if (existing.requestHash !== reqHash) {
+            throw new TransactionPayloadMismatchError();
+          }
+          return { kind: "replay" as const, envelope: existing.envelope };
+        }
+        return { kind: "proceed" as const };
+      });
+
+      if (early.kind === "replay") {
+        return early.envelope;
+      }
+
+      maybePreflightAssetBytes(input.document, deps.assetBytes);
+
       return commitDocument(principal, {
         projectId: input.projectId,
         baseRevision: input.baseRevision,
@@ -277,8 +376,6 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
     async restoreSnapshot(hints, input) {
       const principal = await resolveOrThrow(deps.auth, hints);
 
-      // ACL + snapshot meta + idempotent lookup BEFORE any blob I/O.
-      // requestHash uses durable meta.contentHash so replay works if the blob is gone.
       const early = deps.repo.withTransaction((tx) => {
         access.assertCan(principal, input.projectId, "write", tx);
         const meta = tx.getSnapshotMeta(input.projectId, input.snapshotId);
@@ -324,6 +421,7 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
 
       assertSchemaMatch(input.schemaVersion, document);
       assertValidDocument(document);
+      maybePreflightAssetBytes(document, deps.assetBytes);
       const docHash = contentHash(document);
       if (docHash !== meta.contentHash) {
         throw new SnapshotHashMismatchError();
@@ -338,6 +436,45 @@ export function createProjectService(deps: ProjectServiceDeps): ProjectService {
         revisionMeta: { op: "restore", snapshotId: input.snapshotId },
         reqHash,
         docHash,
+      });
+    },
+
+    async importSb3Project(hints, input) {
+      const principal = await resolveOrThrow(deps.auth, hints);
+      if (!deps.importAtomic) {
+        throw new BadRequestError("IMPORT_ATOMIC_UNAVAILABLE");
+      }
+      if (!deps.assetBytes) {
+        throw new BadRequestError("ASSET_VERIFICATION_UNAVAILABLE");
+      }
+
+      const projectId = input.projectId ?? idFactory();
+      assertSchemaMatch(input.envelope.schemaVersion, input.envelope.document);
+      assertValidDocument(input.envelope.document);
+      assertImportEnvelopeForPrincipal(
+        principal,
+        projectId,
+        input.title,
+        input.envelope,
+      );
+
+      const verifiedObjects = verifyImportAssetBundle(
+        input.envelope.document,
+        input.assetObjects,
+        deps.assetBytes,
+      );
+      const grantShas = verifiedObjects.map((object) => object.sha256);
+
+      return deps.importAtomic.importSb3CreateProjectAtomic({
+        organizationId: principal.organizationId,
+        ownerUserId: principal.userId,
+        projectId,
+        title: input.title,
+        envelope: input.envelope,
+        assetObjects: verifiedObjects,
+        grantShas,
+        releaseImportSessionId: input.releaseImportSessionId,
+        fileBytes: input.fileBytes,
       });
     },
   };

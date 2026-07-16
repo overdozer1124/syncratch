@@ -10,6 +10,7 @@ import {
   type ProjectSummary,
   type SnapshotMeta,
 } from "@blocksync/project-service";
+import { withImmediateTransaction } from "./immediate-transaction.js";
 
 function parseEnvelope(json: string): ProjectEnvelopeV1 {
   return assertEnvelope(JSON.parse(json));
@@ -211,8 +212,7 @@ export function createSqliteProjectRepository(
       return txApi.listAllSnapshotStorageKeys();
     },
     withTransaction<T>(fn: (tx: ProjectRepositoryTx) => T): T {
-      const run = db.transaction(() => fn(txApi));
-      return run();
+      return withImmediateTransaction(db, () => fn(txApi));
     },
   };
 }

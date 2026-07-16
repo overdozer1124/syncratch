@@ -108,6 +108,71 @@ export interface RestoreSnapshotInput {
 
 export type AuthHints = { headers: Record<string, string | undefined> };
 
+export type AssetGcState = "live" | "quarantining" | "quarantined";
+
+export interface LiveAssetRecord {
+  sha256: string;
+  byteLength: number;
+  md5Hex: string;
+  dataFormat: string;
+  gcState: AssetGcState;
+}
+
+/** Preflight-derived metadata re-checked against DB inside the commit transaction. */
+export interface CommitAssetExpectation {
+  sha256: string;
+  md5Hex: string;
+  dataFormat: string;
+  byteLength: number;
+}
+
+/** Re-check live state, org grant, and DB metadata inside the revision write transaction. */
+export interface CommitAssetGuard {
+  assertLiveGrantsInCommit(
+    organizationId: string,
+    expectations: CommitAssetExpectation[],
+  ): void;
+}
+
+export interface LiveAssetCatalog extends CommitAssetGuard {
+  getAsset(sha256: string): LiveAssetRecord | null;
+  hasOrgGrant(organizationId: string, sha256: string): boolean;
+}
+
+export interface LiveAssetByteStore {
+  readLiveBytes(sha256: string): Uint8Array | null;
+}
+
+export interface ImportAssetObjectInput {
+  sha256: string;
+  byteLength: number;
+  md5Hex: string;
+  dataFormat: string;
+}
+
+export interface ImportSb3ProjectInput {
+  title: string;
+  envelope: ProjectEnvelopeV1;
+  assetObjects: ImportAssetObjectInput[];
+  releaseImportSessionId: string;
+  fileBytes: number;
+  projectId?: string;
+}
+
+export interface ImportAtomicRepository {
+  importSb3CreateProjectAtomic(input: {
+    organizationId: string;
+    ownerUserId: string;
+    projectId: string;
+    title: string;
+    envelope: ProjectEnvelopeV1;
+    assetObjects: ImportAssetObjectInput[];
+    grantShas: string[];
+    releaseImportSessionId: string;
+    fileBytes: number;
+  }): ProjectEnvelopeV1;
+}
+
 export interface ProjectAccessPolicy {
   assertCan(
     principal: AuthPrincipal,
