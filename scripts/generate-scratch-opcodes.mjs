@@ -5,7 +5,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const vendorRoot = join(repoRoot, "vendor/scratch-editor/packages");
@@ -76,6 +76,8 @@ function extractMethodReturnKeys(text, methodName) {
 function scanVmBlockFiles() {
   const blocksDir = join(vendorRoot, "scratch-vm/src/blocks");
   const opcodes = new Set();
+  // Explicit allow-list: scratch3_core_example.js is a dev-only sample extension
+  // (see extension-manager coreExample) and is not loaded in production editor SB3.
   const files = [
     "scratch3_control.js",
     "scratch3_data.js",
@@ -171,7 +173,7 @@ function scanExtension(extensionId, dirName) {
   return opcodes;
 }
 
-function generate({ skipCountCheck = false } = {}) {
+export function generate({ skipCountCheck = false } = {}) {
   const opcodes = new Set();
 
   for (const o of scanVmBlockFiles()) opcodes.add(o);
@@ -213,10 +215,23 @@ function generate({ skipCountCheck = false } = {}) {
   return {
     vendorTag: VENDOR_TAG,
     vendorPin: VENDOR_PIN,
-    generatedAt: new Date().toISOString(),
     allowedExtensionIds: ALLOWED_EXTENSION_IDS,
     opcodes: sorted,
   };
+}
+
+/** Stable contract fields compared by --check (excludes non-contract metadata). */
+export function stableArtifact(artifact) {
+  return {
+    vendorTag: artifact.vendorTag,
+    vendorPin: artifact.vendorPin,
+    allowedExtensionIds: artifact.allowedExtensionIds,
+    opcodes: artifact.opcodes,
+  };
+}
+
+export function artifactsEqual(a, b) {
+  return JSON.stringify(stableArtifact(a)) === JSON.stringify(stableArtifact(b));
 }
 
 function main() {
@@ -228,20 +243,25 @@ function main() {
 
 const isCheck = process.argv.includes("--check");
 const isList = process.argv.includes("--list");
+const isMain =
+  process.argv[1] &&
+  pathToFileURL(process.argv[1]).href === import.meta.url;
 
-if (isList) {
+if (isMain && isList) {
   const { opcodes } = generate({ skipCountCheck: true });
   console.log(JSON.stringify(opcodes, null, 2));
   process.exit(0);
 }
 
-if (isCheck) {
+if (isMain && isCheck) {
   const generated = generate();
   const existing = JSON.parse(read(outPath));
-  const genJson = JSON.stringify(generated.opcodes);
-  const existJson = JSON.stringify(existing.opcodes);
-  if (genJson !== existJson) {
-    console.error("Opcode artifact is stale — run: node scripts/generate-scratch-opcodes.mjs");
+  if (!artifactsEqual(generated, existing)) {
+    console.error(
+      "Opcode artifact is stale — run: node scripts/generate-scratch-opcodes.mjs",
+    );
+    console.error("Expected:", JSON.stringify(stableArtifact(generated)));
+    console.error("Actual:  ", JSON.stringify(stableArtifact(existing)));
     process.exit(1);
   }
   if (existing.opcodes.length !== EXPECTED_UNIQUE) {
@@ -249,6 +269,6 @@ if (isCheck) {
     process.exit(1);
   }
   console.log(`scratch-opcodes-v14.1.0.json OK (${EXPECTED_UNIQUE} opcodes)`);
-} else {
+} else if (isMain) {
   main();
 }

@@ -218,6 +218,22 @@ describe("project-service", () => {
     ).rejects.toBeInstanceOf(SchemaInvalidError);
   });
 
+  it("save rejects schemaVersion 1 document with V2-only block mutation", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "V1 gate" });
+    const doc = richFixtureDocument();
+    doc.targets[1]!.blocks.hat!.mutation = { proccode: "not on v1" };
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-v1-mutation",
+        schemaVersion: 1,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(SchemaInvalidError);
+  });
+
   it("snapshot restore creates new revision; BOLA across projects fails", async () => {
     const { service } = makeService();
     const a = await service.createProject(userA, { title: "A", projectId: "proj-a" });

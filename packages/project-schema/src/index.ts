@@ -105,6 +105,8 @@ export type ValidationCode =
   | "INVALID_MONITORS"
   | "INVALID_COMMENTS"
   | "DISALLOWED_BLOCK_FIELD"
+  | "DISALLOWED_V1_FIELD"
+  | "INVALID_CURRENT_COSTUME"
   | "INVALID_DOCUMENT";
 
 export interface ValidationIssue {
@@ -238,6 +240,92 @@ export function extensionIdFromOpcode(opcode: string): string | null {
   return opcode.slice(0, idx);
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const V1_FORBIDDEN_TARGET_FIELDS = [
+  "comments",
+  "currentCostume",
+  "costumes",
+  "sounds",
+  "volume",
+  "layerOrder",
+  "tempo",
+  "videoTransparency",
+  "videoState",
+  "textToSpeechLanguage",
+  "visible",
+  "size",
+  "direction",
+  "draggable",
+  "rotationStyle",
+] as const;
+
+function validateV1OnlyFields(
+  doc: ProjectDocument,
+  issues: ValidationIssue[],
+): void {
+  if (doc.schemaVersion !== 1) return;
+
+  if (doc.monitors !== undefined) {
+    issues.push(
+      issue(
+        "DISALLOWED_V1_FIELD",
+        "monitors is not allowed on schemaVersion 1",
+        "monitors",
+      ),
+    );
+  }
+
+  for (const target of doc.targets) {
+    const targetPath = `targets.${target.id}`;
+    for (const field of V1_FORBIDDEN_TARGET_FIELDS) {
+      if ((target as Record<string, unknown>)[field] !== undefined) {
+        issues.push(
+          issue(
+            "DISALLOWED_V1_FIELD",
+            `${field} is not allowed on schemaVersion 1`,
+            `${targetPath}.${field}`,
+          ),
+        );
+      }
+    }
+    if (!target.isStage) {
+      if (target.x !== undefined) {
+        issues.push(
+          issue(
+            "DISALLOWED_V1_FIELD",
+            "x is not allowed on schemaVersion 1 sprites",
+            `${targetPath}.x`,
+          ),
+        );
+      }
+      if (target.y !== undefined) {
+        issues.push(
+          issue(
+            "DISALLOWED_V1_FIELD",
+            "y is not allowed on schemaVersion 1 sprites",
+            `${targetPath}.y`,
+          ),
+        );
+      }
+    }
+
+    for (const [mapKey, block] of Object.entries(target.blocks ?? {})) {
+      if (block.mutation !== undefined) {
+        issues.push(
+          issue(
+            "DISALLOWED_V1_FIELD",
+            "mutation is not allowed on schemaVersion 1 blocks",
+            `${targetPath}.blocks.${mapKey}.mutation`,
+          ),
+        );
+      }
+    }
+  }
+}
+
 /**
  * Validates structural invariants (spec §16).
  * Rejects entirely — callers must not partially apply.
@@ -262,18 +350,26 @@ export function validateProject(
     options.allowedOpcodes ?? (enforceSb3 ? allowedOpcodeSet() : null);
   const extensionIdAllow = enforceSb3 ? allowedExtensionIdSet() : null;
 
-  if (
-    enforceSb3 &&
-    Array.isArray(doc.monitors) &&
-    doc.monitors.length > 0
-  ) {
-    issues.push(
-      issue(
-        "INVALID_MONITORS",
-        "monitors must be empty (normalized to [] on export)",
-        "monitors",
-      ),
-    );
+  validateV1OnlyFields(doc, issues);
+
+  if (doc.monitors !== undefined) {
+    if (!Array.isArray(doc.monitors)) {
+      issues.push(
+        issue(
+          "INVALID_MONITORS",
+          "monitors must be an array",
+          "monitors",
+        ),
+      );
+    } else if (enforceSb3 && doc.monitors.length > 0) {
+      issues.push(
+        issue(
+          "INVALID_MONITORS",
+          "monitors must be empty (normalized to [] on export)",
+          "monitors",
+        ),
+      );
+    }
   }
 
   if (enforceSb3 && doc.extensions) {
@@ -316,18 +412,49 @@ export function validateProject(
     }
     targetIds.add(target.id);
 
+    if (target.comments !== undefined) {
+      if (!isPlainRecord(target.comments)) {
+        issues.push(
+          issue(
+            "INVALID_COMMENTS",
+            "comments must be a plain object",
+            `targets.${target.id}.comments`,
+          ),
+        );
+      } else if (
+        enforceSb3 &&
+        Object.keys(target.comments).length > 0
+      ) {
+        issues.push(
+          issue(
+            "INVALID_COMMENTS",
+            "target comments must be empty (normalized to {} on export)",
+            `targets.${target.id}.comments`,
+          ),
+        );
+      }
+    }
+
     if (
       enforceSb3 &&
-      target.comments &&
-      Object.keys(target.comments).length > 0
+      doc.schemaVersion >= 2 &&
+      target.currentCostume !== undefined &&
+      Array.isArray(target.costumes)
     ) {
-      issues.push(
-        issue(
-          "INVALID_COMMENTS",
-          "target comments must be empty (normalized to {} on export)",
-          `targets.${target.id}.comments`,
-        ),
-      );
+      const idx = target.currentCostume;
+      if (
+        !Number.isInteger(idx) ||
+        idx < 0 ||
+        idx >= target.costumes.length
+      ) {
+        issues.push(
+          issue(
+            "INVALID_CURRENT_COSTUME",
+            `currentCostume ${idx} is out of range for ${target.costumes.length} costumes`,
+            `targets.${target.id}.currentCostume`,
+          ),
+        );
+      }
     }
 
     if (enforceSb3 && !target.isStage) {
@@ -578,19 +705,17 @@ export function validateProject(
           ),
         );
       }
-      if (
-        ext &&
-        options.allowedExtensions === undefined &&
-        doc.extensions &&
-        !doc.extensions.includes(ext)
-      ) {
-        issues.push(
-          issue(
-            "EXTENSION_NOT_ALLOWED",
-            `Extension ${ext} not listed in project.extensions`,
-            path,
-          ),
-        );
+      if (ext && options.allowedExtensions === undefined) {
+        const declared = doc.extensions ?? [];
+        if (!declared.includes(ext)) {
+          issues.push(
+            issue(
+              "EXTENSION_NOT_ALLOWED",
+              `Extension ${ext} must be listed in project.extensions for opcode ${block.opcode}`,
+              path,
+            ),
+          );
+        }
       }
     }
 

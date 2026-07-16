@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 export interface OpcodeArtifact {
   vendorTag: string;
   vendorPin: string;
-  generatedAt: string;
   allowedExtensionIds: string[];
   opcodes: string[];
 }

@@ -154,12 +154,85 @@ describe("project-envelope", () => {
     expect(contentHash(richFixtureDocument())).toBe(V1_RICH_HASH);
   });
 
-  it("V1 canonicalize ignores block mutation", () => {
+  it("V1 canonicalize ignores block mutation but schema rejects it", () => {
     const doc = richFixtureDocument();
     const withMutation = structuredClone(doc);
     const block = withMutation.targets[1]!.blocks.hat!;
-    block.mutation = { proccode: "ignored on v1" };
+    block.mutation = { proccode: "ignored on v1 canonicalize" };
     expect(contentHash(withMutation)).toBe(contentHash(doc));
+    expect(validateProject(withMutation).ok).toBe(false);
+    expect(
+      validateProject(withMutation).issues.some(
+        (i) => i.code === "DISALLOWED_V1_FIELD",
+      ),
+    ).toBe(true);
+  });
+
+  it("V2 contentHash changes when costume array order changes", () => {
+    const base = customProcedureFixtureDocument();
+    const baseHash = contentHash(base);
+    const swapped = structuredClone(base);
+    const sprite = swapped.targets[1]!;
+    const [first, second] = sprite.costumes!;
+    sprite.costumes = [second!, first!];
+    expect(contentHash(swapped)).not.toBe(baseHash);
+  });
+
+  it("V2 contentHash changes when sound array order changes", () => {
+    const doc = customProcedureFixtureDocument();
+    const soundA = {
+      kind: "sound" as const,
+      name: "pop",
+      assetId: "11111111111111111111111111111111",
+      md5ext: "11111111111111111111111111111111.wav",
+      dataFormat: "wav",
+      contentSha256: "d".repeat(64),
+      rate: 44100,
+      sampleCount: 1000,
+      format: "",
+    };
+    const soundB = {
+      ...soundA,
+      name: "meow",
+      assetId: "22222222222222222222222222222222",
+      md5ext: "22222222222222222222222222222222.wav",
+    };
+    doc.targets[1]!.sounds = [soundA, soundB];
+    const hashA = contentHash(doc);
+    doc.targets[1]!.sounds = [soundB, soundA];
+    expect(contentHash(doc)).not.toBe(hashA);
+  });
+
+  it("V2 costume reorder with same currentCostume index changes hash", () => {
+    const doc = customProcedureFixtureDocument();
+    const sprite = doc.targets[1]!;
+    sprite.currentCostume = 0;
+    sprite.costumes = [
+      {
+        kind: "costume",
+        name: "first",
+        assetId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        md5ext: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.svg",
+        dataFormat: "svg",
+        contentSha256: "e".repeat(64),
+        rotationCenterX: 0,
+        rotationCenterY: 0,
+      },
+      {
+        kind: "costume",
+        name: "second",
+        assetId: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        md5ext: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.svg",
+        dataFormat: "svg",
+        contentSha256: "f".repeat(64),
+        rotationCenterX: 0,
+        rotationCenterY: 0,
+      },
+    ];
+    const hashFirst = contentHash(doc);
+    sprite.costumes = [sprite.costumes[1]!, sprite.costumes[0]!];
+    expect(sprite.currentCostume).toBe(0);
+    expect(contentHash(doc)).not.toBe(hashFirst);
   });
 
   it("V2 canonicalize includes mutation with stable key order", () => {

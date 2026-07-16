@@ -108,12 +108,8 @@ function canonicalizeTargetV2(target: ScratchTarget): Record<string, unknown> {
     blocks[id] = canonicalizeBlockV2(target.blocks[id]!);
   }
 
-  const costumes = [...(target.costumes ?? [])]
-    .sort((a, b) => a.assetId.localeCompare(b.assetId))
-    .map(canonicalizeCostumeRef);
-  const sounds = [...(target.sounds ?? [])]
-    .sort((a, b) => a.assetId.localeCompare(b.assetId))
-    .map(canonicalizeSoundRef);
+  const costumes = (target.costumes ?? []).map(canonicalizeCostumeRef);
+  const sounds = (target.sounds ?? []).map(canonicalizeSoundRef);
 
   const common: Record<string, unknown> = {
     id: target.id,
