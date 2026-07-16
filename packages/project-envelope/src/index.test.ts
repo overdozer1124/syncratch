@@ -6,10 +6,17 @@ import {
   assertEnvelope,
   canonicalizeDocument,
   contentHash,
+  customProcedureFixtureDocument,
   emptyDocument,
   requestHash,
   richFixtureDocument,
 } from "./index.js";
+
+/** Pinned V1 golden hashes (Design §5.2 — must not change). */
+const V1_EMPTY_HASH =
+  "0cc517f62f40c66b669ccb7c6c3bf49ec257a12cfc3eea4d74a82315181a5475";
+const V1_RICH_HASH =
+  "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128";
 
 describe("project-envelope", () => {
   it("emptyDocument validates", () => {
@@ -140,6 +147,49 @@ describe("project-envelope", () => {
       document: doc,
     });
     expect(env.format).toBe(PROJECT_FORMAT);
+  });
+
+  it("preserves V1 golden content hashes (§5.2)", () => {
+    expect(contentHash(emptyDocument())).toBe(V1_EMPTY_HASH);
+    expect(contentHash(richFixtureDocument())).toBe(V1_RICH_HASH);
+  });
+
+  it("V1 canonicalize ignores block mutation", () => {
+    const doc = richFixtureDocument();
+    const withMutation = structuredClone(doc);
+    const block = withMutation.targets[1]!.blocks.hat!;
+    block.mutation = { proccode: "ignored on v1" };
+    expect(contentHash(withMutation)).toBe(contentHash(doc));
+  });
+
+  it("V2 canonicalize includes mutation with stable key order", () => {
+    const doc = customProcedureFixtureDocument();
+    const a = canonicalizeDocument(doc);
+    const reordered = structuredClone(doc);
+    const proto = reordered.targets[1]!.blocks.proto_id!;
+    proto.mutation = {
+      warp: "false",
+      proccode: "my block %s",
+      tagName: "mutation",
+      children: [],
+      argumentdefaults: '[""]',
+      argumentids: '["arg_id"]',
+      argumentnames: '["x"]',
+    };
+    expect(canonicalizeDocument(reordered)).toBe(a);
+    expect(contentHash(reordered)).toBe(contentHash(doc));
+  });
+
+  it("V2 contentHash changes when mutation value changes", () => {
+    const base = customProcedureFixtureDocument();
+    const baseHash = contentHash(base);
+    const changed = structuredClone(base);
+    changed.targets[1]!.blocks.proto_id!.mutation!.proccode = "other block %s";
+    expect(contentHash(changed)).not.toBe(baseHash);
+  });
+
+  it("customProcedureFixtureDocument validates under SB3 policy", () => {
+    expect(validateProject(customProcedureFixtureDocument()).ok).toBe(true);
   });
 
   it("requestHash changes when schemaVersion or op changes", () => {

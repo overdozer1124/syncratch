@@ -8,6 +8,30 @@ import { allowedExtensionIdSet, allowedOpcodeSet } from "./scratch-opcodes.js";
 export type BlockId = string;
 export type TargetId = string;
 
+export interface CostumeRef {
+  kind: "costume";
+  name: string;
+  assetId: string;
+  md5ext: string;
+  dataFormat: string;
+  contentSha256: string;
+  rotationCenterX: number;
+  rotationCenterY: number;
+  bitmapResolution?: number;
+}
+
+export interface SoundRef {
+  kind: "sound";
+  name: string;
+  assetId: string;
+  md5ext: string;
+  dataFormat: string;
+  contentSha256: string;
+  rate: number;
+  sampleCount: number;
+  format: string;
+}
+
 export interface ScratchBlock {
   id: BlockId;
   opcode: string;
@@ -32,6 +56,23 @@ export interface ScratchTarget {
   broadcasts?: Record<string, string>;
   /** SB3: normalized to {} on import/export (§6.4). */
   comments?: Record<string, unknown>;
+  /** schemaVersion ≥ 2 (§6.4). */
+  currentCostume?: number;
+  costumes?: CostumeRef[];
+  sounds?: SoundRef[];
+  volume?: number;
+  layerOrder?: number;
+  tempo?: number;
+  videoTransparency?: number;
+  videoState?: string;
+  textToSpeechLanguage?: string | null;
+  visible?: boolean;
+  x?: number;
+  y?: number;
+  size?: number;
+  direction?: number;
+  draggable?: boolean;
+  rotationStyle?: string;
 }
 
 export interface ProjectDocument {

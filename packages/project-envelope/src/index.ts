@@ -5,9 +5,11 @@
 import { createHash } from "node:crypto";
 import {
   emptyProject,
+  type CostumeRef,
   type ProjectDocument,
   type ScratchBlock,
   type ScratchTarget,
+  type SoundRef,
 } from "@blocksync/project-schema";
 
 export const PROJECT_FORMAT = "blocksync.project/v1" as const;
@@ -48,7 +50,7 @@ function sortKeysDeep(value: unknown): unknown {
   return value;
 }
 
-function canonicalizeBlock(block: ScratchBlock): Record<string, unknown> {
+function canonicalizeBlockV1(block: ScratchBlock): Record<string, unknown> {
   return sortKeysDeep({
     id: block.id,
     opcode: block.opcode,
@@ -63,11 +65,30 @@ function canonicalizeBlock(block: ScratchBlock): Record<string, unknown> {
   }) as Record<string, unknown>;
 }
 
-function canonicalizeTarget(target: ScratchTarget): Record<string, unknown> {
+function canonicalizeBlockV2(block: ScratchBlock): Record<string, unknown> {
+  const base = canonicalizeBlockV1(block);
+  if (block.mutation === undefined) {
+    return base;
+  }
+  return sortKeysDeep({
+    ...base,
+    mutation: block.mutation,
+  }) as Record<string, unknown>;
+}
+
+function canonicalizeCostumeRef(ref: CostumeRef): Record<string, unknown> {
+  return sortKeysDeep(ref) as Record<string, unknown>;
+}
+
+function canonicalizeSoundRef(ref: SoundRef): Record<string, unknown> {
+  return sortKeysDeep(ref) as Record<string, unknown>;
+}
+
+function canonicalizeTargetV1(target: ScratchTarget): Record<string, unknown> {
   const blockIds = Object.keys(target.blocks).sort();
   const blocks: Record<string, unknown> = {};
   for (const id of blockIds) {
-    blocks[id] = canonicalizeBlock(target.blocks[id]!);
+    blocks[id] = canonicalizeBlockV1(target.blocks[id]!);
   }
   return {
     id: target.id,
@@ -80,13 +101,78 @@ function canonicalizeTarget(target: ScratchTarget): Record<string, unknown> {
   };
 }
 
+function canonicalizeTargetV2(target: ScratchTarget): Record<string, unknown> {
+  const blockIds = Object.keys(target.blocks).sort();
+  const blocks: Record<string, unknown> = {};
+  for (const id of blockIds) {
+    blocks[id] = canonicalizeBlockV2(target.blocks[id]!);
+  }
+
+  const costumes = [...(target.costumes ?? [])]
+    .sort((a, b) => a.assetId.localeCompare(b.assetId))
+    .map(canonicalizeCostumeRef);
+  const sounds = [...(target.sounds ?? [])]
+    .sort((a, b) => a.assetId.localeCompare(b.assetId))
+    .map(canonicalizeSoundRef);
+
+  const common: Record<string, unknown> = {
+    id: target.id,
+    name: target.name,
+    isStage: target.isStage,
+    blocks,
+    variables: sortKeysDeep(target.variables ?? {}),
+    lists: sortKeysDeep(target.lists ?? {}),
+    broadcasts: sortKeysDeep(target.broadcasts ?? {}),
+    comments: sortKeysDeep(target.comments ?? {}),
+    currentCostume: target.currentCostume ?? 0,
+    costumes,
+    sounds,
+    volume: target.volume ?? 100,
+    layerOrder: target.layerOrder ?? 0,
+  };
+
+  if (target.isStage) {
+    return {
+      ...common,
+      tempo: target.tempo ?? 60,
+      videoTransparency: target.videoTransparency ?? 50,
+      videoState: target.videoState ?? "on",
+      textToSpeechLanguage: target.textToSpeechLanguage ?? null,
+    };
+  }
+
+  return {
+    ...common,
+    visible: target.visible ?? true,
+    x: target.x ?? 0,
+    y: target.y ?? 0,
+    size: target.size ?? 100,
+    direction: target.direction ?? 90,
+    draggable: target.draggable ?? false,
+    rotationStyle: target.rotationStyle ?? "all around",
+  };
+}
+
 /** Deterministic UTF-8 JSON covering the entire ProjectDocument. */
 export function canonicalizeDocument(doc: ProjectDocument): string {
+  const canonicalizeTarget =
+    doc.schemaVersion >= 2 ? canonicalizeTargetV2 : canonicalizeTargetV1;
   const targets = [...doc.targets]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map(canonicalizeTarget);
   const extensions = [...(doc.extensions ?? [])].sort();
   const meta = sortKeysDeep(doc.meta ?? {}) as Record<string, unknown>;
+
+  if (doc.schemaVersion >= 2) {
+    return JSON.stringify({
+      schemaVersion: doc.schemaVersion,
+      extensions,
+      meta,
+      monitors: doc.monitors ?? [],
+      targets,
+    });
+  }
+
   return JSON.stringify({
     schemaVersion: doc.schemaVersion,
     extensions,
@@ -174,6 +260,123 @@ export function richFixtureDocument(): ProjectDocument {
             topLevel: false,
           },
         },
+      },
+    ],
+  };
+}
+
+/** §6.5.3 custom procedure fixture (schemaVersion 2). */
+export function customProcedureFixtureDocument(): ProjectDocument {
+  return {
+    schemaVersion: 2,
+    extensions: [],
+    monitors: [],
+    targets: [
+      {
+        id: "stage",
+        name: "Stage",
+        isStage: true,
+        blocks: {},
+        variables: {},
+        lists: {},
+        broadcasts: {},
+        comments: {},
+        currentCostume: 0,
+        costumes: [
+          {
+            kind: "costume",
+            name: "backdrop1",
+            assetId: "4f38e8130ecd3815fae7c1250bcae067",
+            md5ext: "4f38e8130ecd3815fae7c1250bcae067.svg",
+            dataFormat: "svg",
+            contentSha256:
+              "0ca3ec604daf58513d2c372eeda9a72b5cc12b2fbd4e7ea9218711b6c0cbd878",
+            rotationCenterX: 240,
+            rotationCenterY: 180,
+          },
+        ],
+        sounds: [],
+        volume: 100,
+        layerOrder: 0,
+        tempo: 60,
+        videoTransparency: 50,
+        videoState: "on",
+        textToSpeechLanguage: null,
+      },
+      {
+        id: "sprite1",
+        name: "Sprite1",
+        isStage: false,
+        blocks: {
+          define_id: {
+            id: "define_id",
+            opcode: "procedures_definition",
+            next: "attached_id",
+            parent: null,
+            inputs: { custom_block: [2, "proto_id"] },
+            fields: {},
+            shadow: false,
+            topLevel: true,
+            x: 0,
+            y: 0,
+          },
+          proto_id: {
+            id: "proto_id",
+            opcode: "procedures_prototype",
+            next: null,
+            parent: "define_id",
+            inputs: {},
+            fields: {},
+            shadow: false,
+            topLevel: false,
+            mutation: {
+              tagName: "mutation",
+              children: [],
+              proccode: "my block %s",
+              argumentids: '["arg_id"]',
+              argumentnames: '["x"]',
+              argumentdefaults: '[""]',
+              warp: "false",
+            },
+          },
+          attached_id: {
+            id: "attached_id",
+            opcode: "motion_movesteps",
+            next: null,
+            parent: "define_id",
+            inputs: { STEPS: [1, [4, "10"]] },
+            fields: {},
+            topLevel: false,
+          },
+        },
+        variables: {},
+        lists: {},
+        broadcasts: {},
+        comments: {},
+        currentCostume: 0,
+        costumes: [
+          {
+            kind: "costume",
+            name: "costume1",
+            assetId: "cd21514d053fa7b8d9cb0a8f9c1543c4",
+            md5ext: "cd21514d053fa7b8d9cb0a8f9c1543c4.svg",
+            dataFormat: "svg",
+            contentSha256:
+              "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456",
+            rotationCenterX: 48,
+            rotationCenterY: 50,
+          },
+        ],
+        sounds: [],
+        volume: 100,
+        layerOrder: 1,
+        visible: true,
+        x: 0,
+        y: 0,
+        size: 100,
+        direction: 90,
+        draggable: false,
+        rotationStyle: "all around",
       },
     ],
   };
