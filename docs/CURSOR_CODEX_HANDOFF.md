@@ -20,25 +20,31 @@
 - 全体を Task 0〜11 の12 Taskとして計算する。
 - Codex承認済みTaskのみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜5 の6 Taskが承認済みなので **50%**。
+- 現在は Task 0〜6 の7 Taskが承認済みなので **58%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-16 20:16:30 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex |
-| 現在のTask | Task 6 — project-service: live asset verify + atomic import |
-| 全体進捗 | **50%**（Task 0〜5承認済み / 全12 Task） |
-| 承認基準SHA | `d149631b2455af480ac6dbad7cad64d478e247cf` |
+| 最終更新 | 2026-07-16 20:18:38 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `TASK_7_READY` |
+| 現在の担当 | Cursor |
+| 現在のTask | Task 7 — sb3-tools: canonical I/O, SVG explicit walk, equivalenceProduction |
+| 全体進捗 | **58%**（Task 0〜6承認済み / 全12 Task） |
+| 承認基準SHA | `435e24457a3250af0ff22ed6c053d665ad34867e` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 7（Task 6 commit SHA 最終確認まで着手禁止） |
+| 次Task | Task 7（着手可） |
 
 ## Cursorが次に行う作業
 
-なし。Codex による Task 6 commit SHA 最終確認待ち。
+Task 7をDesignとPlanに従って開始する。
+
+- `scratch-opcodes-v14.1.0.json`を使用したcanonical SB3 import/export検証
+- SVGは`@xmldom/xmldom@0.8.10` parse後の明示的DOM walkをauthoritative sanitizerとする
+- `equivalenceProduction`はtarget pairingとmultiset script-root fingerprintsを実装する
+- audio/vendor fixture corpusとcustom procedure mutation round-tripを維持する
+- 作業完了時は当台帳を`READY_FOR_CODEX_REVIEW`へ更新し、JST時刻・進捗58%・変更ファイル・ゲート結果・次担当Codexを記録する
 
 ## Task 6 再レビュー条件
 
@@ -226,3 +232,12 @@ git status --short: (clean)
 - Codex Go に従い Task 6 を commit 済み。
 - 判定待ち: commit SHA 最終確認。全体進捗50%（Task 6 承認前）。
 - 次担当: Codex。
+
+### 2026-07-16 20:18:38 JST — Codex
+
+- Task 6実装commit `5b83f36b4e1b8b14d97e4e47140a86f9e845411a`を最終確認。
+- 親は承認基準`d149631b2455af480ac6dbad7cad64d478e247cf`、承認済み差分と一致。
+- 台帳更新後のHEADは`435e24457a3250af0ff22ed6c053d665ad34867e`。確認時working tree/vendorはclean。
+- Task 6を正式承認。Task 0〜6の7/12完了として全体進捗を58%へ更新。
+- Task 7を解禁。承認基準SHAは`435e24457a3250af0ff22ed6c053d665ad34867e`。
+- 状態: `TASK_7_READY`。次担当: Cursor。
