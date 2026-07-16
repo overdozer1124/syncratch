@@ -323,6 +323,28 @@ export function createSqliteAssetRepository(
     `),
   };
 
+  function assertImportEnvelopeConsistency(input: ImportSb3CreateProjectInput): void {
+    const { envelope } = input;
+    if (input.organizationId !== envelope.organizationId) {
+      throw new ImportPreconditionError("ENVELOPE_ORGANIZATION_MISMATCH");
+    }
+    if (input.projectId !== envelope.projectId) {
+      throw new ImportPreconditionError("ENVELOPE_PROJECT_MISMATCH");
+    }
+    if (input.title !== envelope.title) {
+      throw new ImportPreconditionError("ENVELOPE_TITLE_MISMATCH");
+    }
+    if (envelope.revision !== 0) {
+      throw new ImportPreconditionError("ENVELOPE_REVISION_NOT_ZERO");
+    }
+    if (input.ownerUserId !== envelope.updatedByUserId) {
+      throw new ImportPreconditionError("ENVELOPE_OWNER_MISMATCH");
+    }
+    if (envelope.schemaVersion !== envelope.document.schemaVersion) {
+      throw new ImportPreconditionError("ENVELOPE_SCHEMA_VERSION_MISMATCH");
+    }
+  }
+
   function requiredAssetMap(
     input: ImportSb3CreateProjectInput,
   ): Map<string, AssetObjectInput> {
@@ -504,16 +526,18 @@ export function createSqliteAssetRepository(
     createImportLeases(args) {
       const now = args.now ?? new Date().toISOString();
       const expiresAt = reservationExpiresAt(now);
-      for (const lease of args.leases) {
-        stmts.insertLease.run({
-          leaseId: lease.leaseId,
-          organizationId: args.organizationId,
-          sha256: lease.sha256,
-          importSessionId: args.importSessionId,
-          createdAt: now,
-          expiresAt,
-        });
-      }
+      withImmediateTransaction(db, () => {
+        for (const lease of args.leases) {
+          stmts.insertLease.run({
+            leaseId: lease.leaseId,
+            organizationId: args.organizationId,
+            sha256: lease.sha256,
+            importSessionId: args.importSessionId,
+            createdAt: now,
+            expiresAt,
+          });
+        }
+      });
     },
 
     createQuotaReservation(args) {
@@ -547,6 +571,7 @@ export function createSqliteAssetRepository(
       const now = input.now ?? new Date().toISOString();
 
       return withImmediateTransaction(db, () => {
+        assertImportEnvelopeConsistency(input);
         const assets = requiredAssetMap(input);
         assertActiveImportResources(input, now, assets);
         assertFileBytesCurrent(input.fileBytes, now);
@@ -623,14 +648,14 @@ export function createSqliteAssetRepository(
           organizationId: input.organizationId,
           ownerUserId: input.ownerUserId,
           title: input.title,
-          headRevision: input.envelope.revision,
+          headRevision: 0,
           createdAt,
           updatedAt: createdAt,
         });
         stmts.insertMember.run(input.projectId, input.ownerUserId, "owner");
         stmts.insertRevision.run({
           projectId: input.projectId,
-          revision: input.envelope.revision,
+          revision: 0,
           envelopeJson: JSON.stringify(input.envelope),
           contentHash: input.envelope.contentHash,
           requestHash: "",

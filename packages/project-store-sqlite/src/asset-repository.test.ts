@@ -15,6 +15,7 @@ import {
   RESERVATION_TTL_MS,
   createSqliteAssetRepository,
   GlobalDiskExceededError,
+  ImportPreconditionError,
   migrate,
   migrateAssets,
   migrateAuth,
@@ -122,6 +123,52 @@ function createActiveImportResources(
       leaseId: `lease-${args.importSessionId}-${index}`,
       sha256: asset.sha256,
     })),
+    now: args.now,
+  });
+}
+
+function assertImportFullyRolledBack(db: Database.Database): void {
+  expect(db.prepare(`SELECT COUNT(*) AS c FROM projects`).get()).toEqual({ c: 0 });
+  expect(
+    db.prepare(`SELECT COUNT(*) AS c FROM project_revisions`).get(),
+  ).toEqual({ c: 0 });
+  expect(db.prepare(`SELECT COUNT(*) AS c FROM asset_objects`).get()).toEqual({
+    c: 0,
+  });
+  expect(
+    db.prepare(`SELECT COUNT(*) AS c FROM organization_asset_grants`).get(),
+  ).toEqual({ c: 0 });
+}
+
+function runImportAtomic(
+  repo: AssetRepository,
+  args: {
+    now: string;
+    projectId: string;
+    title: string;
+    ownerUserId: string;
+    envelope: ProjectEnvelopeV1;
+    assetSha: string;
+    importSessionId: string;
+  },
+): void {
+  repo.importSb3CreateProjectAtomic({
+    organizationId: "org-1",
+    ownerUserId: args.ownerUserId,
+    projectId: args.projectId,
+    title: args.title,
+    envelope: args.envelope,
+    assetObjects: [
+      {
+        sha256: args.assetSha,
+        byteLength: 1024,
+        md5Hex: md5(0),
+        dataFormat: "png",
+      },
+    ],
+    grantShas: [args.assetSha],
+    releaseImportSessionId: args.importSessionId,
+    fileBytes: 1024,
     now: args.now,
   });
 }
@@ -806,7 +853,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-no-resources",
-        title: "No resources",
+        title: "Imported",
         envelope,
         assetObjects: [
           {
@@ -835,6 +882,148 @@ describe("asset repository", () => {
     db.close();
   });
 
+  it.each([
+    {
+      case: "organizationId",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        organizationId: "different-org",
+      }),
+      detail: "ENVELOPE_ORGANIZATION_MISMATCH",
+    },
+    {
+      case: "projectId",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        projectId: "different-project",
+      }),
+      detail: "ENVELOPE_PROJECT_MISMATCH",
+    },
+    {
+      case: "title",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        title: "Different",
+      }),
+      detail: "ENVELOPE_TITLE_MISMATCH",
+    },
+    {
+      case: "revision",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        revision: 7,
+      }),
+      detail: "ENVELOPE_REVISION_NOT_ZERO",
+    },
+    {
+      case: "ownerUserId",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        updatedByUserId: "other-user",
+      }),
+      detail: "ENVELOPE_OWNER_MISMATCH",
+    },
+    {
+      case: "schemaVersion",
+      mutate: (envelope: ProjectEnvelopeV1) => ({
+        ...envelope,
+        schemaVersion: 3,
+      }),
+      detail: "ENVELOPE_SCHEMA_VERSION_MISMATCH",
+    },
+  ])(
+    "importSb3CreateProjectAtomic rejects envelope %s mismatch",
+    ({ mutate, detail }) => {
+      const { db, dir } = tempDb();
+      dirs.push(dir);
+      const now = seedOrg(db);
+      const repo = openRepo(db);
+      const assetSha = sha(40);
+      const importSessionId = `envelope-${detail}`;
+      createActiveImportResources(repo, {
+        importSessionId,
+        assetObjects: [{ sha256: assetSha, byteLength: 1024 }],
+        now,
+      });
+      const envelope = mutate(importEnvelope(now, "stored-project", [assetSha]));
+
+      expect(() =>
+        runImportAtomic(repo, {
+          now,
+          projectId: "stored-project",
+          title: "Imported",
+          ownerUserId: "user-1",
+          envelope,
+          assetSha,
+          importSessionId,
+        }),
+      ).toThrow(new ImportPreconditionError(detail));
+
+      assertImportFullyRolledBack(db);
+      db.close();
+    },
+  );
+
+  it("importSb3CreateProjectAtomic rejects a cross-tenant envelope with non-zero revision", () => {
+    const { db, dir } = tempDb();
+    dirs.push(dir);
+    const now = seedOrg(db);
+    const repo = openRepo(db);
+    const assetSha = sha(41);
+    const importSessionId = "envelope-cross-tenant";
+    createActiveImportResources(repo, {
+      importSessionId,
+      assetObjects: [{ sha256: assetSha, byteLength: 1024 }],
+      now,
+    });
+    const envelope = {
+      ...importEnvelope(now, "different-project", [assetSha]),
+      organizationId: "different-org",
+      title: "Different",
+      revision: 7,
+      updatedByUserId: "other-user",
+    };
+
+    expect(() =>
+      runImportAtomic(repo, {
+        now,
+        projectId: "stored-project",
+        title: "Stored",
+        ownerUserId: "user-1",
+        envelope,
+        assetSha,
+        importSessionId,
+      }),
+    ).toThrow(ImportPreconditionError);
+
+    assertImportFullyRolledBack(db);
+    db.close();
+  });
+
+  it("createImportLeases rolls back all rows when a duplicate lease id is inserted", () => {
+    const { db, dir } = tempDb();
+    dirs.push(dir);
+    const now = seedOrg(db);
+    const repo = openRepo(db);
+
+    expect(() =>
+      repo.createImportLeases({
+        organizationId: "org-1",
+        importSessionId: "lease-partial",
+        leases: [
+          { leaseId: "dup-lease", sha256: sha(50) },
+          { leaseId: "dup-lease", sha256: sha(51) },
+        ],
+        now,
+      }),
+    ).toThrow();
+
+    expect(
+      db.prepare(`SELECT COUNT(*) AS c FROM asset_import_leases`).get(),
+    ).toEqual({ c: 0 });
+    db.close();
+  });
+
   it("importSb3CreateProjectAtomic rejects a non-finite fileBytes measurement", () => {
     const { db, dir } = tempDb();
     dirs.push(dir);
@@ -853,7 +1042,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-invalid-file-bytes",
-        title: "Invalid fileBytes",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-invalid-file-bytes", [assetSha]),
         assetObjects: [
           {
@@ -902,7 +1091,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-stale-file-bytes",
-        title: "Stale fileBytes",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-stale-file-bytes", [assetSha]),
         assetObjects: [
           {
@@ -950,7 +1139,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-missing-grant",
-        title: "Missing grant",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-missing-grant", [assetSha]),
         assetObjects: [
           {
@@ -997,7 +1186,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-expired-global",
-        title: "Expired",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-expired-global", [assetSha]),
         assetObjects: [
           {
@@ -1053,7 +1242,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-wrong-quota-org",
-        title: "Wrong quota org",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-wrong-quota-org", [assetSha]),
         assetObjects: [
           {
@@ -1108,7 +1297,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-wrong-quota-sha",
-        title: "Wrong quota SHA",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-wrong-quota-sha", [assetSha]),
         assetObjects: [
           {
@@ -1154,7 +1343,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-missing-lease",
-        title: "Missing lease",
+        title: "Imported",
         envelope: importEnvelope(now, "proj-missing-lease", assetShas),
         assetObjects: assetShas.map((sha256, index) => ({
           sha256,
@@ -1199,7 +1388,7 @@ describe("asset repository", () => {
           organizationId: "org-1",
           ownerUserId: "user-1",
           projectId: `proj-${gcState}`,
-          title: gcState,
+          title: "Imported",
           envelope: importEnvelope(now, `proj-${gcState}`, [assetSha]),
           assetObjects: [
             {
@@ -1255,7 +1444,7 @@ describe("asset repository", () => {
           organizationId: "org-1",
           ownerUserId: "user-1",
           projectId: `proj-${_field}`,
-          title: _field,
+          title: "Imported",
           envelope: importEnvelope(now, `proj-${_field}`, [assetSha]),
           assetObjects: [
             {
@@ -1335,7 +1524,7 @@ describe("asset repository", () => {
         organizationId: "org-1",
         ownerUserId: "user-1",
         projectId: "proj-over",
-        title: "Over",
+        title: "Imported",
         envelope,
         assetObjects: [
           {
