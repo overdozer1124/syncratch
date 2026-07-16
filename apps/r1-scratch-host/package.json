@@ -6,9 +6,10 @@
   "description": "R1 narrow Scratch host (Task 0 spike + future editor shell).",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts",
-    "test:spike": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts",
+    "test": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts",
+    "test:spike": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts",
     "test:browser": "playwright install chromium && playwright test",
+    "fixtures:check": "vitest run spike/fixtures-check.test.ts",
     "write-fixtures": "vitest run spike/write-fixtures.test.ts"
   },
   "dependencies": {

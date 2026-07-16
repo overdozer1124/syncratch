@@ -16,9 +16,7 @@ import {
 import { vmToDocumentSpikeV0 } from "./vm-to-document-spike-v0.js";
 import {
   equivalenceSpikeV0,
-  buildExpectedCustomProcedureDocument,
 } from "./equivalence-spike-v0.js";
-import { loadFixtureJson } from "./project-fixtures.js";
 import {
   roundTripDocument,
   documentAfterFirstLoad,
@@ -140,22 +138,6 @@ describe("Task 0 Scratch integration spike", () => {
     expect(() =>
       assertFullProcedureMutation(proto?.mutation, EXPECTED_PROCEDURE_MUTATION),
     ).not.toThrow();
-  });
-
-  it("committed fixture JSON matches VM first-load baseline", async () => {
-    const assets = spikeAssetBundle();
-    expect(
-      equivalenceSpikeV0(
-        loadFixtureJson("cat-with-sound.expected.json"),
-        await documentAfterFirstLoad(buildCatWithSoundSb3(), assets),
-      ),
-    ).toBe(true);
-    expect(
-      equivalenceSpikeV0(
-        loadFixtureJson("custom-procedure.expected.json"),
-        await documentAfterFirstLoad(buildCustomProcedureSb3(), assets),
-      ),
-    ).toBe(true);
   });
 
   it("runs green flag with a sound block when assets are loaded", async () => {

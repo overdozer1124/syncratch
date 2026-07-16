@@ -102,7 +102,7 @@ function canonicalInput(
     return {
       mode: 2,
       slot,
-      child: blockInputSubtree(blocks, ref, new Set(visiting)),
+      chain: blockScriptChain(blocks, ref, new Set(visiting)),
     };
   }
 

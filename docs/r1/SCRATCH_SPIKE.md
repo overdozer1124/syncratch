@@ -34,9 +34,9 @@ pnpm r1:scratch:test
 Expected:
 
 - `pnpm r1:scratch:typecheck` — PASS  
-- Vitest — **19/19** (`spike.test.ts` 9 + `equivalence-spike-v0.test.ts` 10)  
+- Vitest — **28/28** (`spike.test.ts` 8 + `equivalence-spike-v0.test.ts` 17 + `fixtures-check.test.ts` 3)  
 - Playwright — **1/1** (`browser-smoke.spec.ts`)  
-- `write-fixtures` — regenerates committed JSON + browser fixtures from VM first-load baseline  
+- Golden fixture update: `pnpm --filter @blocksync/r1-scratch-host write-fixtures` (maintenance only; not in gate)  
 
 ## Artifacts
 

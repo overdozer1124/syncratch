@@ -20,7 +20,7 @@
     "r1:auth:typecheck": "pnpm --filter @blocksync/session-service --filter @blocksync/r1-persist-server typecheck",
     "r1:auth:test": "pnpm r1:auth:typecheck && pnpm --filter @blocksync/session-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server test",
     "r1:scratch:typecheck": "pnpm --filter @blocksync/r1-scratch-host typecheck",
-    "r1:scratch:test": "pnpm r1:scratch:typecheck && pnpm gate0:build-vendor-vm && pnpm gate0:build-vendor-gui-spike && pnpm --filter @blocksync/r1-scratch-host write-fixtures && pnpm --filter @blocksync/r1-scratch-host test && pnpm --filter @blocksync/r1-scratch-host test:browser"
+    "r1:scratch:test": "pnpm r1:scratch:typecheck && pnpm gate0:build-vendor-vm && pnpm gate0:build-vendor-gui-spike && pnpm --filter @blocksync/r1-scratch-host test && pnpm --filter @blocksync/r1-scratch-host test:browser"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
