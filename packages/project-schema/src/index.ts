@@ -3,6 +3,8 @@
  * Pure domain model: no Scratch VM, Yjs, or React dependencies.
  */
 
+import { allowedExtensionIdSet, allowedOpcodeSet } from "./scratch-opcodes.js";
+
 export type BlockId = string;
 export type TargetId = string;
 
@@ -17,6 +19,7 @@ export interface ScratchBlock {
   topLevel?: boolean;
   x?: number;
   y?: number;
+  mutation?: Record<string, unknown>;
 }
 
 export interface ScratchTarget {
@@ -27,6 +30,8 @@ export interface ScratchTarget {
   variables?: Record<string, [string, string | number]>;
   lists?: Record<string, [string, unknown[]]>;
   broadcasts?: Record<string, string>;
+  /** SB3: normalized to {} on import/export (§6.4). */
+  comments?: Record<string, unknown>;
 }
 
 export interface ProjectDocument {
@@ -34,11 +39,14 @@ export interface ProjectDocument {
   targets: ScratchTarget[];
   extensions?: string[];
   meta?: Record<string, unknown>;
+  /** SB3: normalized to [] on import/export (§6.4). */
+  monitors?: unknown[];
 }
 
 export type ValidationCode =
   | "DUPLICATE_BLOCK_ID"
   | "DUPLICATE_TARGET_ID"
+  | "DUPLICATE_SPRITE_NAME"
   | "BLOCK_ID_MISMATCH"
   | "PARENT_NEXT_MISMATCH"
   | "CYCLE_DETECTED"
@@ -49,8 +57,13 @@ export type ValidationCode =
   | "MISSING_BROADCAST_REF"
   | "MISSING_TARGET_REF"
   | "UNKNOWN_BLOCK_REF"
+  | "UNKNOWN_OPCODE"
   | "ORPHAN_NON_TOPLEVEL"
   | "EXTENSION_NOT_ALLOWED"
+  | "DISALLOWED_EXTENSION_ID"
+  | "INVALID_MONITORS"
+  | "INVALID_COMMENTS"
+  | "DISALLOWED_BLOCK_FIELD"
   | "INVALID_DOCUMENT";
 
 export interface ValidationIssue {
@@ -67,7 +80,19 @@ export interface ValidationResult {
 export interface ValidateOptions {
   /** Explicit allow-list of extension ids (e.g. "music", "pen"). */
   allowedExtensions?: string[];
+  /** Exact opcode allow-list; defaults to scratch-opcodes-v14.1.0.json. */
+  allowedOpcodes?: ReadonlySet<string>;
+  /** Enforce §6.4 comments/monitors policy and §6.6 opcode set. Default true. */
+  enforceSb3Policy?: boolean;
 }
+
+export {
+  allowedExtensionIdSet,
+  allowedOpcodeSet,
+  CORPUS_OPCODES,
+  loadOpcodeArtifact,
+} from "./scratch-opcodes.js";
+export type { OpcodeArtifact } from "./scratch-opcodes.js";
 
 function issue(
   code: ValidationCode,
@@ -191,8 +216,42 @@ export function validateProject(
     };
   }
 
+  const enforceSb3 = options.enforceSb3Policy !== false;
+  const opcodeAllow =
+    options.allowedOpcodes ?? (enforceSb3 ? allowedOpcodeSet() : null);
+  const extensionIdAllow = enforceSb3 ? allowedExtensionIdSet() : null;
+
+  if (
+    enforceSb3 &&
+    Array.isArray(doc.monitors) &&
+    doc.monitors.length > 0
+  ) {
+    issues.push(
+      issue(
+        "INVALID_MONITORS",
+        "monitors must be empty (normalized to [] on export)",
+        "monitors",
+      ),
+    );
+  }
+
+  if (enforceSb3 && doc.extensions) {
+    for (const extId of doc.extensions) {
+      if (extensionIdAllow && !extensionIdAllow.has(extId)) {
+        issues.push(
+          issue(
+            "DISALLOWED_EXTENSION_ID",
+            `Extension id ${extId} is not in §6.6.2 allow-list`,
+            `extensions.${extId}`,
+          ),
+        );
+      }
+    }
+  }
+
   const globalBlockIds = new Set<BlockId>();
   const targetIds = new Set<string>();
+  const spriteNames = new Map<string, string>();
   const varIds = variableIds(doc);
   const listIdSet = listIds(doc);
   const broadcastIdSet = broadcastIds(doc);
@@ -215,6 +274,35 @@ export function validateProject(
       );
     }
     targetIds.add(target.id);
+
+    if (
+      enforceSb3 &&
+      target.comments &&
+      Object.keys(target.comments).length > 0
+    ) {
+      issues.push(
+        issue(
+          "INVALID_COMMENTS",
+          "target comments must be empty (normalized to {} on export)",
+          `targets.${target.id}.comments`,
+        ),
+      );
+    }
+
+    if (enforceSb3 && !target.isStage) {
+      const prev = spriteNames.get(target.name);
+      if (prev) {
+        issues.push(
+          issue(
+            "DUPLICATE_SPRITE_NAME",
+            `Sprite name ${target.name} is duplicated`,
+            `targets.${target.id}.name`,
+          ),
+        );
+      } else {
+        spriteNames.set(target.name, target.id);
+      }
+    }
 
     if (!target.blocks || typeof target.blocks !== "object") {
       issues.push(
@@ -269,6 +357,30 @@ export function validateProject(
 
     for (const [id, block] of Object.entries(blocks)) {
       const path = `${pathBase}.blocks.${id}`;
+
+      if (
+        enforceSb3 &&
+        "comment" in block &&
+        (block as Record<string, unknown>).comment !== undefined
+      ) {
+        issues.push(
+          issue(
+            "DISALLOWED_BLOCK_FIELD",
+            "block comment field is not allowed",
+            path,
+          ),
+        );
+      }
+
+      if (opcodeAllow && !opcodeAllow.has(block.opcode ?? "")) {
+        issues.push(
+          issue(
+            "UNKNOWN_OPCODE",
+            `opcode ${block.opcode} is not in allow-list`,
+            path,
+          ),
+        );
+      }
 
       if (block.topLevel && block.parent) {
         issues.push(
