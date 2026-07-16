@@ -1,6 +1,69 @@
 import { describe, expect, it } from "vitest";
 import { allowedOpcodeSet, CORPUS_OPCODES } from "./scratch-opcodes.js";
-import { validateProject, type ProjectDocument } from "./index.js";
+import {
+  validateProject,
+  type CostumeRef,
+  type ProjectDocument,
+  type ScratchTarget,
+} from "./index.js";
+
+function minimalCostume(
+  assetId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+): CostumeRef {
+  return {
+    kind: "costume",
+    name: "c1",
+    assetId,
+    md5ext: `${assetId}.svg`,
+    dataFormat: "svg",
+    contentSha256: "b".repeat(64),
+    rotationCenterX: 0,
+    rotationCenterY: 0,
+  };
+}
+
+function v2Stage(overrides: Partial<ScratchTarget> = {}): ScratchTarget {
+  return {
+    id: "stage",
+    name: "Stage",
+    isStage: true,
+    blocks: {},
+    comments: {},
+    currentCostume: 0,
+    costumes: [minimalCostume("cccccccccccccccccccccccccccccccc")],
+    sounds: [],
+    volume: 100,
+    layerOrder: 0,
+    tempo: 60,
+    videoTransparency: 50,
+    videoState: "on",
+    textToSpeechLanguage: null,
+    ...overrides,
+  };
+}
+
+function v2Sprite(overrides: Partial<ScratchTarget> = {}): ScratchTarget {
+  return {
+    id: "s1",
+    name: "Sprite1",
+    isStage: false,
+    blocks: {},
+    comments: {},
+    currentCostume: 0,
+    costumes: [minimalCostume()],
+    sounds: [],
+    volume: 100,
+    layerOrder: 1,
+    visible: true,
+    x: 0,
+    y: 0,
+    size: 100,
+    direction: 90,
+    draggable: false,
+    rotationStyle: "all around",
+    ...overrides,
+  };
+}
 
 describe("Scratch opcode allow-list (§6.6)", () => {
   it("includes corpus opcodes from §6.6.3", () => {
@@ -16,10 +79,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
       extensions: [],
       monitors: [],
       targets: [
-        {
-          id: "s1",
-          name: "Sprite1",
-          isStage: false,
+        v2Sprite({
           blocks: {
             b: {
               id: "b",
@@ -31,8 +91,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
               topLevel: true,
             },
           },
-          comments: {},
-        },
+        }),
       ],
     };
     const result = validateProject(doc);
@@ -46,27 +105,9 @@ describe("Scratch opcode allow-list (§6.6)", () => {
       extensions: [],
       monitors: [],
       targets: [
-        {
-          id: "stage",
-          name: "Stage",
-          isStage: true,
-          blocks: {},
-          comments: {},
-        },
-        {
-          id: "s1",
-          name: "Twin",
-          isStage: false,
-          blocks: {},
-          comments: {},
-        },
-        {
-          id: "s2",
-          name: "Twin",
-          isStage: false,
-          blocks: {},
-          comments: {},
-        },
+        v2Stage(),
+        v2Sprite({ id: "s1", name: "Twin" }),
+        v2Sprite({ id: "s2", name: "Twin", layerOrder: 2 }),
       ],
     };
     expect(
@@ -79,15 +120,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
       schemaVersion: 2,
       extensions: [],
       monitors: [{ id: "m1" }],
-      targets: [
-        {
-          id: "stage",
-          name: "Stage",
-          isStage: true,
-          blocks: {},
-          comments: {},
-        },
-      ],
+      targets: [v2Stage()],
     };
     expect(
       validateProject(doc).issues.some((i) => i.code === "INVALID_MONITORS"),
@@ -99,15 +132,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
       schemaVersion: 2,
       extensions: [],
       monitors: [],
-      targets: [
-        {
-          id: "stage",
-          name: "Stage",
-          isStage: true,
-          blocks: {},
-          comments: { c1: { text: "nope" } },
-        },
-      ],
+      targets: [v2Stage({ comments: { c1: { text: "nope" } } })],
     };
     expect(
       validateProject(doc).issues.some((i) => i.code === "INVALID_COMMENTS"),
@@ -120,10 +145,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
       extensions: [],
       monitors: [],
       targets: [
-        {
-          id: "s1",
-          name: "Sprite1",
-          isStage: false,
+        v2Sprite({
           blocks: {
             b: {
               id: "b",
@@ -136,8 +158,7 @@ describe("Scratch opcode allow-list (§6.6)", () => {
               comment: "block-comment-id",
             },
           },
-          comments: {},
-        },
+        }),
       ],
     };
     expect(

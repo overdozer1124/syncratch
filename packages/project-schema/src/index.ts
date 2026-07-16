@@ -107,6 +107,7 @@ export type ValidationCode =
   | "DISALLOWED_BLOCK_FIELD"
   | "DISALLOWED_V1_FIELD"
   | "INVALID_CURRENT_COSTUME"
+  | "UNKNOWN_DOCUMENT_FIELD"
   | "INVALID_DOCUMENT";
 
 export interface ValidationIssue {
@@ -244,6 +245,172 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+const DOCUMENT_FIELDS_V1 = [
+  "schemaVersion",
+  "targets",
+  "extensions",
+  "meta",
+] as const;
+
+const DOCUMENT_FIELDS_V2 = [...DOCUMENT_FIELDS_V1, "monitors"] as const;
+
+const TARGET_FIELDS_V1 = [
+  "id",
+  "name",
+  "isStage",
+  "blocks",
+  "variables",
+  "lists",
+  "broadcasts",
+] as const;
+
+const TARGET_FIELDS_V2_COMMON = [
+  ...TARGET_FIELDS_V1,
+  "comments",
+  "currentCostume",
+  "costumes",
+  "sounds",
+  "volume",
+  "layerOrder",
+] as const;
+
+const TARGET_FIELDS_V2_STAGE = [
+  ...TARGET_FIELDS_V2_COMMON,
+  "tempo",
+  "videoTransparency",
+  "videoState",
+  "textToSpeechLanguage",
+] as const;
+
+const TARGET_FIELDS_V2_SPRITE = [
+  ...TARGET_FIELDS_V2_COMMON,
+  "visible",
+  "x",
+  "y",
+  "size",
+  "direction",
+  "draggable",
+  "rotationStyle",
+] as const;
+
+const BLOCK_FIELDS_V1 = [
+  "id",
+  "opcode",
+  "next",
+  "parent",
+  "inputs",
+  "fields",
+  "shadow",
+  "topLevel",
+  "x",
+  "y",
+] as const;
+
+const BLOCK_FIELDS_V2 = [...BLOCK_FIELDS_V1, "mutation"] as const;
+
+function rejectUnknownKeys(
+  obj: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.includes(key)) {
+      issues.push(
+        issue(
+          "UNKNOWN_DOCUMENT_FIELD",
+          `unknown field ${key}`,
+          path ? `${path}.${key}` : key,
+        ),
+      );
+    }
+  }
+}
+
+function validateDocumentFieldAllowList(
+  doc: ProjectDocument,
+  issues: ValidationIssue[],
+): void {
+  const docAllowed =
+    doc.schemaVersion >= 2 ? DOCUMENT_FIELDS_V2 : DOCUMENT_FIELDS_V1;
+  rejectUnknownKeys(
+    doc as unknown as Record<string, unknown>,
+    docAllowed,
+    "",
+    issues,
+  );
+
+  for (const target of doc.targets) {
+    if (!target || typeof target.id !== "string") continue;
+    const targetAllowed =
+      doc.schemaVersion >= 2
+        ? target.isStage
+          ? TARGET_FIELDS_V2_STAGE
+          : TARGET_FIELDS_V2_SPRITE
+        : TARGET_FIELDS_V1;
+    rejectUnknownKeys(
+      target as unknown as Record<string, unknown>,
+      targetAllowed,
+      `targets.${target.id}`,
+      issues,
+    );
+
+    const blockAllowed =
+      doc.schemaVersion >= 2 ? BLOCK_FIELDS_V2 : BLOCK_FIELDS_V1;
+    for (const [blockId, block] of Object.entries(target.blocks ?? {})) {
+      if (!block || typeof block !== "object") continue;
+      rejectUnknownKeys(
+        block as unknown as Record<string, unknown>,
+        blockAllowed,
+        `targets.${target.id}.blocks.${blockId}`,
+        issues,
+      );
+    }
+  }
+}
+
+function validateV2TargetAssets(
+  target: ScratchTarget,
+  issues: ValidationIssue[],
+): void {
+  const path = `targets.${target.id}`;
+  const costumeCount = Array.isArray(target.costumes)
+    ? target.costumes.length
+    : 0;
+
+  if (!Array.isArray(target.costumes) || costumeCount === 0) {
+    issues.push(
+      issue(
+        "INVALID_DOCUMENT",
+        "costumes must be a non-empty array on schemaVersion 2",
+        `${path}.costumes`,
+      ),
+    );
+  }
+
+  if (target.currentCostume === undefined) {
+    issues.push(
+      issue(
+        "INVALID_CURRENT_COSTUME",
+        "currentCostume is required on schemaVersion 2",
+        `${path}.currentCostume`,
+      ),
+    );
+    return;
+  }
+
+  const idx = target.currentCostume;
+  if (!Number.isInteger(idx) || idx < 0 || idx >= costumeCount) {
+    issues.push(
+      issue(
+        "INVALID_CURRENT_COSTUME",
+        `currentCostume ${String(idx)} is out of range for ${costumeCount} costumes`,
+        `${path}.currentCostume`,
+      ),
+    );
+  }
+}
+
 const V1_FORBIDDEN_TARGET_FIELDS = [
   "comments",
   "currentCostume",
@@ -352,6 +519,10 @@ export function validateProject(
 
   validateV1OnlyFields(doc, issues);
 
+  if (enforceSb3) {
+    validateDocumentFieldAllowList(doc, issues);
+  }
+
   if (doc.monitors !== undefined) {
     if (!Array.isArray(doc.monitors)) {
       issues.push(
@@ -392,9 +563,7 @@ export function validateProject(
   const varIds = variableIds(doc);
   const listIdSet = listIds(doc);
   const broadcastIdSet = broadcastIds(doc);
-  const allowedExt = new Set(
-    options.allowedExtensions ?? doc.extensions ?? [],
-  );
+  const serverAllowedExt = new Set(options.allowedExtensions ?? []);
 
   for (const target of doc.targets) {
     if (!target || typeof target.id !== "string" || !target.id) {
@@ -435,26 +604,8 @@ export function validateProject(
       }
     }
 
-    if (
-      enforceSb3 &&
-      doc.schemaVersion >= 2 &&
-      target.currentCostume !== undefined &&
-      Array.isArray(target.costumes)
-    ) {
-      const idx = target.currentCostume;
-      if (
-        !Number.isInteger(idx) ||
-        idx < 0 ||
-        idx >= target.costumes.length
-      ) {
-        issues.push(
-          issue(
-            "INVALID_CURRENT_COSTUME",
-            `currentCostume ${idx} is out of range for ${target.costumes.length} costumes`,
-            `targets.${target.id}.currentCostume`,
-          ),
-        );
-      }
+    if (enforceSb3 && doc.schemaVersion >= 2) {
+      validateV2TargetAssets(target, issues);
     }
 
     if (enforceSb3 && !target.isStage) {
@@ -696,22 +847,25 @@ export function validateProject(
       }
 
       const ext = extensionIdFromOpcode(block.opcode ?? "");
-      if (ext && options.allowedExtensions !== undefined && !allowedExt.has(ext)) {
-        issues.push(
-          issue(
-            "EXTENSION_NOT_ALLOWED",
-            `Extension ${ext} not allowed for opcode ${block.opcode}`,
-            path,
-          ),
-        );
-      }
-      if (ext && options.allowedExtensions === undefined) {
+      if (ext) {
         const declared = doc.extensions ?? [];
         if (!declared.includes(ext)) {
           issues.push(
             issue(
               "EXTENSION_NOT_ALLOWED",
               `Extension ${ext} must be listed in project.extensions for opcode ${block.opcode}`,
+              path,
+            ),
+          );
+        }
+        if (
+          options.allowedExtensions !== undefined &&
+          !serverAllowedExt.has(ext)
+        ) {
+          issues.push(
+            issue(
+              "EXTENSION_NOT_ALLOWED",
+              `Extension ${ext} is not in server allow-list for opcode ${block.opcode}`,
               path,
             ),
           );

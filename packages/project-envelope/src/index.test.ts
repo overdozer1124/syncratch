@@ -265,6 +265,20 @@ describe("project-envelope", () => {
     expect(validateProject(customProcedureFixtureDocument()).ok).toBe(true);
   });
 
+  it("rejects unknown fields that would otherwise share contentHash", () => {
+    const base = customProcedureFixtureDocument();
+    const baseHash = contentHash(base);
+    const altered = structuredClone(base);
+    (altered as Record<string, unknown>).surpriseField = "hidden";
+    expect(contentHash(altered)).toBe(baseHash);
+    expect(validateProject(altered).ok).toBe(false);
+    expect(
+      validateProject(altered).issues.some(
+        (i) => i.code === "UNKNOWN_DOCUMENT_FIELD",
+      ),
+    ).toBe(true);
+  });
+
   it("requestHash changes when schemaVersion or op changes", () => {
     const ch = contentHash(emptyDocument());
     const a = requestHash({

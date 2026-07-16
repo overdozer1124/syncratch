@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { StubAuthContext } from "@blocksync/auth-context";
 import {
   contentHash,
+  customProcedureFixtureDocument,
   emptyDocument,
   richFixtureDocument,
 } from "@blocksync/project-envelope";
@@ -129,10 +130,8 @@ describe("project-service", () => {
       }),
     ).rejects.toBeInstanceOf(TransactionPayloadMismatchError);
 
-    // schemaVersion-only change: same content fields but different schemaVersion on document
-    // changes contentHash AND request schemaVersion → mismatch
-    const sv2 = structuredClone(doc);
-    sv2.schemaVersion = 2;
+    // schemaVersion-only change: valid V2 document on replay with same transactionId
+    const sv2 = customProcedureFixtureDocument();
     await expect(
       service.saveDocument(userA, {
         projectId: created.projectId,
@@ -229,6 +228,38 @@ describe("project-service", () => {
         baseRevision: 0,
         transactionId: "tx-v1-mutation",
         schemaVersion: 1,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(SchemaInvalidError);
+  });
+
+  it("save rejects V2 document with unknown top-level field", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "Unknown field" });
+    const doc = customProcedureFixtureDocument();
+    (doc as Record<string, unknown>).hidden = true;
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-unknown",
+        schemaVersion: 2,
+        document: doc,
+      }),
+    ).rejects.toBeInstanceOf(SchemaInvalidError);
+  });
+
+  it("save rejects V2 document with currentCostume but no costumes", async () => {
+    const { service } = makeService();
+    const created = await service.createProject(userA, { title: "Incomplete V2" });
+    const doc = customProcedureFixtureDocument();
+    delete doc.targets[1]!.costumes;
+    await expect(
+      service.saveDocument(userA, {
+        projectId: created.projectId,
+        baseRevision: 0,
+        transactionId: "tx-no-costumes",
+        schemaVersion: 2,
         document: doc,
       }),
     ).rejects.toBeInstanceOf(SchemaInvalidError);
