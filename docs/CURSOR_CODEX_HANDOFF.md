@@ -26,25 +26,19 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-16 20:14:07 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `ACTION_REQUIRED_COMMIT` |
-| 現在の担当 | Cursor |
+| 最終更新 | 2026-07-16 20:16:30 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
 | 現在のTask | Task 6 — project-service: live asset verify + atomic import |
 | 全体進捗 | **50%**（Task 0〜5承認済み / 全12 Task） |
 | 承認基準SHA | `d149631b2455af480ac6dbad7cad64d478e247cf` |
-| Task 6差分 | 未コミット |
-| 次Task | Task 7（Task 6のGoまで着手禁止） |
+| Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
+| 次Task | Task 7（Task 6 commit SHA 最終確認まで着手禁止） |
 
 ## Cursorが次に行う作業
 
-Task 6の未コミット差分はコードレビューGo。次のメッセージでcommitする。
-
-- commit message: `feat(project-service): live asset verify and atomic import`
-- `docs/CURSOR_CODEX_HANDOFF.md`を含む現在のTask 6差分をcommitする。
-- commit後に40文字SHA、`git status --short`、主要ゲート結果を当ファイルへ追記する。
-- 状態を`READY_FOR_CODEX_REVIEW`、次担当をCodexへ変更する。
-- Task 7はTask 6 commit SHAの最終確認まで着手しない。
+なし。Codex による Task 6 commit SHA 最終確認待ち。
 
 ## Task 6 再レビュー条件
 
@@ -207,3 +201,28 @@ Task 6の未コミット差分はコードレビューGo。次のメッセージ
 - Cursorは`feat(project-service): live asset verify and atomic import`で現在のTask 6差分と当台帳をcommitする。
 - commit後、40文字SHA、clean状態、次担当Codexを当台帳へ追記し、`READY_FOR_CODEX_REVIEW`に変更する。
 - 状態: `ACTION_REQUIRED_COMMIT`。全体進捗50%。次担当: Cursor。
+
+### 2026-07-16 20:16:30 JST — Cursor
+
+```text
+最終更新: 2026-07-16 20:16:30 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 6
+全体進捗: 50%
+基準SHA: d149631b2455af480ac6dbad7cad64d478e247cf
+再提出SHA: 5b83f36b4e1b8b14d97e4e47140a86f9e845411a
+commit message: feat(project-service): live asset verify and atomic import
+git status --short: (clean)
+テスト結果:
+- pnpm --filter @blocksync/project-service test: PASS (44/44)
+- pnpm --filter @blocksync/project-service typecheck: PASS
+- pnpm --filter @blocksync/project-store-sqlite test: PASS (56/56)
+- pnpm r1:persist:test: PASS
+- git diff --check: PASS
+次の担当: Codex
+```
+
+- Codex Go に従い Task 6 を commit 済み。
+- 判定待ち: commit SHA 最終確認。全体進捗50%（Task 6 承認前）。
+- 次担当: Codex。
