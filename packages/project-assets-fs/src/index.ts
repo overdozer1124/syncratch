@@ -28,6 +28,7 @@ import {
   validateAssetsRoot,
   validateSubdirectory,
 } from "./path-safety.js";
+import { writeAllBytesSync } from "./write-bytes.js";
 
 export {
   InvalidSha256Error,
@@ -48,6 +49,13 @@ export class AssetFinalHashMismatchError extends Error {
   constructor() {
     super("ASSET_FINAL_HASH_MISMATCH");
     this.name = "AssetFinalHashMismatchError";
+  }
+}
+
+export class AssetTmpHashMismatchError extends Error {
+  constructor() {
+    super("ASSET_TMP_HASH_MISMATCH");
+    this.name = "AssetTmpHashMismatchError";
   }
 }
 
@@ -142,6 +150,23 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
     return { wrote: false };
   }
 
+  function verifyTmpBeforePublish(
+    rootReal: string,
+    tmpPath: string,
+    sha256: string,
+  ): void {
+    const st = lstatSafe(tmpPath);
+    assertPathContained(rootReal, tmpPath);
+    if (!st.isFile()) {
+      throw new PathSafetyError(`NOT_A_FILE:${tmpPath}`);
+    }
+    const size = Number(st.size);
+    const onDisk = new Uint8Array(readFileNoFollow(rootReal, tmpPath, size));
+    if (contentSha256(onDisk) !== sha256) {
+      throw new AssetTmpHashMismatchError();
+    }
+  }
+
   function publishTmpToFinal(
     ctx: SessionContext,
     tmpPath: string,
@@ -152,6 +177,7 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
     lstatSafe(tmpPath);
     assertPathContained(ctx.rootReal, tmpPath);
     assertPathContained(ctx.rootReal, finalPath);
+    verifyTmpBeforePublish(ctx.rootReal, tmpPath, sha256);
 
     try {
       linkSync(tmpPath, finalPath);
@@ -207,7 +233,7 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
         );
         tmpPathWritten = true;
         try {
-          writeSync(fd, bytes);
+          writeAllBytesSync(fd, bytes);
           fsyncSync(fd);
         } finally {
           closeSync(fd);

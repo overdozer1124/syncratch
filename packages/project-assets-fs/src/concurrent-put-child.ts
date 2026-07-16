@@ -1,4 +1,4 @@
-import { createAssetFsStore } from "./index.ts";
+import { createAssetFsStore } from "./index.js";
 
 const [root, sha256, bytesJson] = process.argv.slice(2);
 if (!root || !sha256 || !bytesJson) {

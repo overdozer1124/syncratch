@@ -12,10 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import {
   AssetBytesHashMismatchError,
   AssetFinalHashMismatchError,
+  AssetTmpHashMismatchError,
   InvalidSha256Error,
   PathSafetyError,
   assertSha256Hex,
@@ -25,6 +26,8 @@ import {
   validateAssetsRoot,
   writeRawLiveAsset,
 } from "./index.js";
+import { __setWriteSyncForTests } from "./write-bytes.js";
+import { writeSync as nodeWriteSync } from "node:fs";
 
 function tempAssetsRoot(prefix: string): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -334,5 +337,96 @@ describe("createAssetFsStore", () => {
       0,
     );
     expect(existsSync(join(root, sha256))).toBe(true);
+  });
+});
+
+describe("putIfAbsent short-write fault injection", () => {
+  afterEach(() => {
+    __setWriteSyncForTests(null);
+  });
+
+  it("publishes when writeSync returns partial progress repeatedly", () => {
+    const root = tempAssetsRoot("assets-partial-ok-");
+    const store = createAssetFsStore(root);
+    const bytes = randomBytes(16);
+    const sha256 = contentSha256(bytes);
+
+    __setWriteSyncForTests((fd, buf, offset, length) => {
+      const chunk = Math.min(4, length);
+      return nodeWriteSync(fd, buf, offset, chunk);
+    });
+
+    const result = store.putIfAbsent(sha256, bytes);
+    expect(result.wrote).toBe(true);
+    expect(store.getLive(sha256)).toEqual(new Uint8Array(bytes));
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(0);
+  });
+
+  it("rejects zero-byte write progress without creating final", () => {
+    const root = tempAssetsRoot("assets-zero-write-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("zero-write-fail");
+
+    __setWriteSyncForTests(() => 0);
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(/SHORT_WRITE/);
+    expect(existsSync(join(root, sha256))).toBe(false);
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(0);
+  });
+
+  it("rejects stalled partial write without creating final", () => {
+    const root = tempAssetsRoot("assets-stall-write-");
+    const store = createAssetFsStore(root);
+    const bytes = randomBytes(16);
+    const sha256 = contentSha256(bytes);
+    let calls = 0;
+
+    __setWriteSyncForTests((fd, buf, offset, length) => {
+      calls += 1;
+      if (calls === 1) {
+        return nodeWriteSync(fd, buf, offset, 8);
+      }
+      return 0;
+    });
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(/SHORT_WRITE/);
+    expect(existsSync(join(root, sha256))).toBe(false);
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(0);
+  });
+
+  it("rejects mid-write exception and cleans up tmp", () => {
+    const root = tempAssetsRoot("assets-write-exc-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("write-exception");
+    let calls = 0;
+
+    __setWriteSyncForTests((fd, buf, offset, length) => {
+      calls += 1;
+      if (calls === 1) {
+        return nodeWriteSync(fd, buf, offset, Math.min(4, length));
+      }
+      throw new Error("SIMULATED_WRITE_FAULT");
+    });
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(/SIMULATED_WRITE_FAULT/);
+    expect(existsSync(join(root, sha256))).toBe(false);
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(0);
+  });
+
+  it("rejects tmp hash mismatch before publish without creating final", () => {
+    const root = tempAssetsRoot("assets-tmp-hash-");
+    const store = createAssetFsStore(root);
+    const bytes = randomBytes(16);
+    const sha256 = contentSha256(bytes);
+
+    __setWriteSyncForTests((fd, _buf, _offset, length) => {
+      return nodeWriteSync(fd, Buffer.alloc(length, 0), 0, length);
+    });
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(
+      AssetTmpHashMismatchError,
+    );
+    expect(existsSync(join(root, sha256))).toBe(false);
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(0);
   });
 });
