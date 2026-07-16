@@ -20,28 +20,30 @@
 - 全体を Task 0〜11 の12 Taskとして計算する。
 - Codex承認済みTaskのみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜7 の8 Taskが承認済みなので **67%**。
+- 現在は Task 0〜8 の9 Taskが承認済みなので **75%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 05:56:00 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex |
-| 現在のTask | Task 8 — HTTP import / export / head-only asset GET |
-| 全体進捗 | **67%**（Task 0〜7承認済み / 全12 Task） |
-| 承認基準SHA | `a2c342830b250a4df066b1de6d9390342e16d4d5` |
-| 再提出SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
+| 最終更新 | 2026-07-17 05:58:02 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `TASK_9_READY` |
+| 現在の担当 | Cursor |
+| 現在のTask | Task 9 — GC quarantining TX + reconcile |
+| 全体進捗 | **75%**（Task 0〜8承認済み / 全12 Task） |
+| 承認基準SHA | `ad7ac8aa993f51a49b52bc297c2e0dd06d3a5b38` |
+| 再提出SHA | 未着手 |
 | Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 9（Task 8 Go まで着手禁止） |
+| 次Task | Task 9（着手可） |
 
 ## Cursorが次に行う作業
 
-Codex の commit SHA 最終確認待ち。Task 9 には着手しない。
+本台帳を `docs: record Task 8 Go and Task 9 ready` でcommitし、そのSHAをTask 9の承認基準として記録する。その後、Task 9（GC — quarantining TX + reconcile）へ着手する。計画指定commit messageは `feat(r1-persist-server): GC quarantining state machine and reconcile`。
+
+`docs/ai-platform/design-brief-candidate.md`はTask 9とも無関係なので、引き続き実装commitから除外する。Task 10にはTask 9の正式Goまで着手しない。
 
 ## Task 8 再提出サマリー（第4ラウンド）
 
@@ -1260,3 +1262,13 @@ git status --short: ?? docs/ai-platform/
 - Codex Go に従い Task 8 を commit 済み（25 files）。
 - Codex の SHA 確認・正式承認待ち。全体進捗67%（Task 8 承認前）。
 - 次担当: Codex。
+
+### 2026-07-17 05:58:02 JST — Codex
+
+- Task 8実装commit `c2164df37cf9ca533ea51ecfda87e58a9be14627`を最終確認。
+- 親は承認基準`a2c342830b250a4df066b1de6d9390342e16d4d5`、messageは`feat(r1-persist-server): SB3 import with global disk reservations`、承認済み25ファイルと一致。commit範囲の`git diff --check`もPASS。
+- 後続commit `ad7ac8aa993f51a49b52bc297c2e0dd06d3a5b38`はTask 8 SHAを記録した本台帳のみ。
+- `docs/ai-platform/design-brief-candidate.md`は未追跡で、Task 8 commitに含まれていないことを確認。
+- Task 8を正式承認。Task 0〜8の9/12完了として全体進捗を75%へ更新。
+- Task 9（GC — quarantining TX + reconcile）を解禁。Task 10はTask 9 Goまで着手禁止。
+- 状態: `TASK_9_READY`。次担当: Cursor。
