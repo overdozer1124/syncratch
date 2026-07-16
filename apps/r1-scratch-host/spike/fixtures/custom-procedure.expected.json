@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 0,
+  "targets": [
+    {
+      "name": "Stage",
+      "isStage": true,
+      "blocks": {},
+      "variables": {},
+      "lists": {},
+      "broadcasts": {},
+      "currentCostume": 0,
+      "costumes": [
+        {
+          "kind": "costume",
+          "name": "backdrop1",
+          "assetId": "4f38e8130ecd3815fae7c1250bcae067",
+          "md5ext": "4f38e8130ecd3815fae7c1250bcae067.svg",
+          "dataFormat": "svg",
+          "contentSha256": "0ca3ec604daf58513d2c372eeda9a72b5cc12b2fbd4e7ea9218711b6c0cbd878",
+          "rotationCenterX": 240,
+          "rotationCenterY": 180
+        }
+      ],
+      "sounds": [],
+      "volume": 100,
+      "layerOrder": 0,
+      "tempo": 60,
+      "videoTransparency": 50,
+      "videoState": "on",
+      "textToSpeechLanguage": null
+    },
+    {
+      "name": "Sprite1",
+      "isStage": false,
+      "blocks": {
+        "define_id": {
+          "opcode": "procedures_definition",
+          "next": "attached_id",
+          "parent": null,
+          "inputs": {
+            "custom_block": [
+              2,
+              "proto_id"
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": true,
+          "x": 0,
+          "y": 0
+        },
+        "proto_id": {
+          "opcode": "procedures_prototype",
+          "next": null,
+          "parent": "define_id",
+          "inputs": {},
+          "fields": {},
+          "shadow": false,
+          "topLevel": false,
+          "mutation": {
+            "tagName": "mutation",
+            "children": [],
+            "proccode": "my block %s",
+            "argumentids": "[\"arg_id\"]",
+            "argumentnames": "[\"x\"]",
+            "argumentdefaults": "[\"\"]",
+            "warp": "false"
+          }
+        },
+        "attached_id": {
+          "opcode": "motion_movesteps",
+          "next": null,
+          "parent": "define_id",
+          "inputs": {
+            "STEPS": [
+              1,
+              [
+                4,
+                "10"
+              ]
+            ]
+          },
+          "fields": {},
+          "shadow": false,
+          "topLevel": false
+        }
+      },
+      "variables": {},
+      "lists": {},
+      "broadcasts": {},
+      "currentCostume": 0,
+      "costumes": [
+        {
+          "kind": "costume",
+          "name": "costume1",
+          "assetId": "4f38e8130ecd3815fae7c1250bcae067",
+          "md5ext": "4f38e8130ecd3815fae7c1250bcae067.svg",
+          "dataFormat": "svg",
+          "contentSha256": "0ca3ec604daf58513d2c372eeda9a72b5cc12b2fbd4e7ea9218711b6c0cbd878",
+          "rotationCenterX": 48,
+          "rotationCenterY": 50
+        }
+      ],
+      "sounds": [],
+      "volume": 100,
+      "layerOrder": 0,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "size": 100,
+      "direction": 90,
+      "draggable": false,
+      "rotationStyle": "all around"
+    }
+  ],
+  "extensions": [],
+  "meta": {
+    "semver": "3.0.0",
+    "vm": "14.1.0",
+    "agent": "Node.js/24"
+  }
+}

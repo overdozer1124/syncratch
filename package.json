@@ -9,6 +9,7 @@
     "gate0:check-pin": "node scripts/check-submodule-pin.mjs",
     "gate0:check-licenses": "node scripts/check-licenses.mjs",
     "gate0:build-vendor-vm": "node scripts/build-vendor-scratch-vm.mjs",
+    "gate0:build-vendor-gui-spike": "node scripts/build-vendor-scratch-gui-spike.mjs",
     "gate0:test": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" --filter \"./apps/gate0-collab-demo\" test",
     "gate0:collab": "pnpm --filter @blocksync/gate0-collab-demo test:collab",
     "gate0:summary": "node scripts/gate0-summary.mjs",
@@ -17,7 +18,9 @@
     "r1:persist:typecheck": "pnpm --filter @blocksync/r1-persist-server --filter @blocksync/r1-persist-demo typecheck",
     "r1:persist:test": "pnpm r1:persist:typecheck && pnpm --filter @blocksync/auth-context --filter @blocksync/project-envelope --filter @blocksync/project-service --filter @blocksync/project-autosave --filter @blocksync/project-snapshots-fs --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server --filter @blocksync/r1-persist-demo test",
     "r1:auth:typecheck": "pnpm --filter @blocksync/session-service --filter @blocksync/r1-persist-server typecheck",
-    "r1:auth:test": "pnpm r1:auth:typecheck && pnpm --filter @blocksync/session-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server test"
+    "r1:auth:test": "pnpm r1:auth:typecheck && pnpm --filter @blocksync/session-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server test",
+    "r1:scratch:typecheck": "pnpm --filter @blocksync/r1-scratch-host typecheck",
+    "r1:scratch:test": "pnpm r1:scratch:typecheck && pnpm gate0:build-vendor-vm && pnpm gate0:build-vendor-gui-spike && pnpm --filter @blocksync/r1-scratch-host write-fixtures && pnpm --filter @blocksync/r1-scratch-host test && pnpm --filter @blocksync/r1-scratch-host test:browser"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

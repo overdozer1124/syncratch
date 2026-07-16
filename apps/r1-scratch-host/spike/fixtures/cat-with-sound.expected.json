@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 0,
+  "targets": [
+    {
+      "name": "Stage",
+      "isStage": true,
+      "blocks": {},
+      "variables": {
+        "var:my variable": [
+          "my variable",
+          0
+        ]
+      },
+      "lists": {},
+      "broadcasts": {},
+      "currentCostume": 0,
+      "costumes": [
+        {
+          "kind": "costume",
+          "name": "backdrop1",
+          "assetId": "4a4caaa0972c7eee6824f0f899149cfe",
+          "md5ext": "4a4caaa0972c7eee6824f0f899149cfe.svg",
+          "dataFormat": "svg",
+          "contentSha256": "ce5bb95ba7aba8a2545493b13ef7bce33ba75b449bb0067f6ea966ff015082ad",
+          "rotationCenterX": 240,
+          "rotationCenterY": 180
+        }
+      ],
+      "sounds": [
+        {
+          "kind": "sound",
+          "name": "pop",
+          "assetId": "0dfe748c83ef1dbcd9fd495984c2c503",
+          "md5ext": "0dfe748c83ef1dbcd9fd495984c2c503.wav",
+          "dataFormat": "wav",
+          "contentSha256": "75cd027a00795f63d42965fe76e8345455ec0ad843135e36c656f20044f2d303",
+          "rate": 44100,
+          "sampleCount": 1032,
+          "format": ""
+        }
+      ],
+      "volume": 100,
+      "layerOrder": 0,
+      "tempo": 60,
+      "videoTransparency": 50,
+      "videoState": "on",
+      "textToSpeechLanguage": null
+    },
+    {
+      "name": "Sprite1",
+      "isStage": false,
+      "blocks": {},
+      "variables": {},
+      "lists": {},
+      "broadcasts": {},
+      "currentCostume": 0,
+      "costumes": [
+        {
+          "kind": "costume",
+          "name": "costume1",
+          "assetId": "4f38e8130ecd3815fae7c1250bcae067",
+          "md5ext": "4f38e8130ecd3815fae7c1250bcae067.svg",
+          "dataFormat": "svg",
+          "contentSha256": "0ca3ec604daf58513d2c372eeda9a72b5cc12b2fbd4e7ea9218711b6c0cbd878",
+          "rotationCenterX": 48,
+          "rotationCenterY": 50,
+          "bitmapResolution": 1
+        }
+      ],
+      "sounds": [
+        {
+          "kind": "sound",
+          "name": "Meow",
+          "assetId": "a0821a3db5ec46a3890b20495f38e1dd",
+          "md5ext": "a0821a3db5ec46a3890b20495f38e1dd.wav",
+          "dataFormat": "wav",
+          "contentSha256": "c481e531bfc3f9dd215a54660a943dba2d53e3b3b3faceb2643d99d2a37eee31",
+          "rate": 44100,
+          "sampleCount": 37376,
+          "format": ""
+        }
+      ],
+      "volume": 100,
+      "layerOrder": 0,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "size": 100,
+      "direction": 90,
+      "draggable": false,
+      "rotationStyle": "all around"
+    }
+  ],
+  "extensions": [],
+  "meta": {
+    "semver": "3.0.0",
+    "vm": "14.1.0",
+    "agent": "Node.js/24"
+  }
+}

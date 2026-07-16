@@ -1,0 +1,23 @@
+{
+  "name": "@blocksync/r1-scratch-host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "R1 narrow Scratch host (Task 0 spike + future editor shell).",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts",
+    "test:spike": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts",
+    "test:browser": "playwright install chromium && playwright test",
+    "write-fixtures": "vitest run spike/write-fixtures.test.ts"
+  },
+  "dependencies": {
+    "@blocksync/scratch-adapter": "workspace:*",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
