@@ -2,6 +2,7 @@ import {
   constants,
   existsSync,
   lstatSync,
+  mkdirSync,
   openSync,
   readSync,
   realpathSync,
@@ -55,6 +56,8 @@ export function resolveContainedPath(rootReal: string, candidatePath: string): s
   if (!existsSync(parent)) {
     throw new PathSafetyError(`PARENT_MISSING:${candidatePath}`);
   }
+  const parentSt = lstatSync(parent);
+  assertNotSymlink(parentSt, parent);
   const parentReal = realpathSync(parent);
   if (!parentReal.startsWith(rootPrefix(rootReal)) && parentReal !== rootReal) {
     throw new PathSafetyError(`PATH_ESCAPE:${parent}`);
@@ -89,12 +92,19 @@ export function validateAssetsRoot(assetsRoot: string): string {
 }
 
 export function validateSubdirectory(rootReal: string, subdirPath: string): void {
-  if (!existsSync(subdirPath)) return;
+  if (!existsSync(subdirPath)) {
+    throw new PathSafetyError(`SUBDIRECTORY_MISSING:${subdirPath}`);
+  }
   const st = lstatSafe(subdirPath);
   if (!st.isDirectory()) {
     throw new PathSafetyError(`NOT_DIRECTORY:${subdirPath}`);
   }
   resolveContainedPath(rootReal, subdirPath);
+}
+
+/** Assert candidate path (existing or not) resolves under rootReal via its parent chain. */
+export function assertPathContained(rootReal: string, candidatePath: string): void {
+  resolveContainedPath(rootReal, candidatePath);
 }
 
 /** Read file after lstat no-follow checks; uses O_NOFOLLOW when available (POSIX). */
@@ -122,4 +132,15 @@ export function readFileNoFollow(
   } finally {
     closeSync(fd);
   }
+}
+
+/** Create quarantine directory once at startup; fails if path is not a real directory. */
+export function ensureQuarantineDirectory(
+  rootReal: string,
+  quarantinePath: string,
+): void {
+  if (!existsSync(quarantinePath)) {
+    mkdirSync(quarantinePath, { recursive: false });
+  }
+  validateSubdirectory(rootReal, quarantinePath);
 }

@@ -10,6 +10,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   AssetBytesHashMismatchError,
@@ -19,6 +21,7 @@ import {
   assertSha256Hex,
   contentSha256,
   createAssetFsStore,
+  readRawLiveAsset,
   validateAssetsRoot,
   writeRawLiveAsset,
 } from "./index.js";
@@ -30,6 +33,68 @@ function tempAssetsRoot(prefix: string): string {
 function sampleBytes(label = "payload"): { bytes: Uint8Array; sha256: string } {
   const bytes = new TextEncoder().encode(label);
   return { bytes, sha256: contentSha256(bytes) };
+}
+
+function replaceDirWithJunction(dirPath: string, target: string): void {
+  rmSync(dirPath, { recursive: true, force: true });
+  symlinkSync(target, dirPath, "junction");
+}
+
+function replaceDirWithDirectorySymlink(dirPath: string, target: string): void {
+  rmSync(dirPath, { recursive: true, force: true });
+  symlinkSync(target, dirPath, "dir");
+}
+
+const concurrentPutChildPath = fileURLToPath(
+  new URL("./concurrent-put-child.ts", import.meta.url),
+);
+
+function runConcurrentPuts(
+  root: string,
+  sha256: string,
+  bytes: Uint8Array,
+  count: number,
+): Promise<Array<{ wrote: boolean }>> {
+  return Promise.all(
+    Array.from({ length: count }, () =>
+      new Promise<{ wrote: boolean }>((resolve, reject) => {
+        const child = spawn(
+          process.execPath,
+          [
+            "--import",
+            "tsx",
+            concurrentPutChildPath,
+            root,
+            sha256,
+            JSON.stringify([...bytes]),
+          ],
+          { stdio: ["ignore", "pipe", "pipe"] },
+        );
+        let stdout = "";
+        let stderr = "";
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk: string) => {
+          stdout += chunk;
+        });
+        child.stderr.on("data", (chunk: string) => {
+          stderr += chunk;
+        });
+        child.on("error", reject);
+        child.on("close", (code, signal) => {
+          if (code !== 0) {
+            reject(
+              new Error(
+                `concurrent put child failed: code=${code} signal=${signal} stderr=${stderr}`,
+              ),
+            );
+            return;
+          }
+          resolve(JSON.parse(stdout) as { wrote: boolean });
+        });
+      }),
+    ),
+  );
 }
 
 describe("assertSha256Hex", () => {
@@ -169,5 +234,105 @@ describe("createAssetFsStore", () => {
     expect(contentSha256(bytes)).toBe(
       createHash("sha256").update(bytes).digest("hex"),
     );
+  });
+
+  it("rejects putIfAbsent after assetsRoot replaced with junction (no outside tmp)", () => {
+    const realRoot = tempAssetsRoot("assets-hijack-root-");
+    const outside = tempAssetsRoot("assets-outside-root-");
+    const store = createAssetFsStore(realRoot);
+    const { bytes, sha256 } = sampleBytes("root-hijack");
+
+    replaceDirWithJunction(realRoot, outside);
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(PathSafetyError);
+    expect(readdirSync(outside).filter((n) => n.endsWith(".tmp"))).toHaveLength(
+      0,
+    );
+  });
+
+  it("rejects putIfAbsent after assetsRoot replaced with directory symlink when supported", () => {
+    const realRoot = tempAssetsRoot("assets-hijack-root-dir-");
+    const outside = tempAssetsRoot("assets-outside-root-dir-");
+    const store = createAssetFsStore(realRoot);
+    const { bytes, sha256 } = sampleBytes("root-hijack-dir");
+
+    try {
+      replaceDirWithDirectorySymlink(realRoot, outside);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "ENOTSUP") {
+        return;
+      }
+      throw err;
+    }
+
+    expect(() => store.putIfAbsent(sha256, bytes)).toThrow(PathSafetyError);
+    expect(readdirSync(outside).filter((n) => n.endsWith(".tmp"))).toHaveLength(
+      0,
+    );
+  });
+
+  it("rejects moveLiveToQuarantine after .quarantine replaced with junction", () => {
+    const root = tempAssetsRoot("assets-hijack-q-");
+    const outside = tempAssetsRoot("assets-outside-q-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("quarantine-hijack");
+    store.putIfAbsent(sha256, bytes);
+
+    replaceDirWithJunction(join(root, ".quarantine"), outside);
+
+    expect(() => store.moveLiveToQuarantine(sha256)).toThrow(PathSafetyError);
+    expect(existsSync(join(outside, sha256))).toBe(false);
+    expect(readRawLiveAsset(root, sha256)).toEqual(bytes);
+  });
+
+  it("rejects moveLiveToQuarantine after .quarantine replaced with directory symlink when supported", () => {
+    const root = tempAssetsRoot("assets-hijack-q-dir-");
+    const outside = tempAssetsRoot("assets-outside-q-dir-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("quarantine-hijack-dir");
+    store.putIfAbsent(sha256, bytes);
+
+    try {
+      replaceDirWithDirectorySymlink(join(root, ".quarantine"), outside);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "ENOTSUP") {
+        return;
+      }
+      throw err;
+    }
+
+    expect(() => store.moveLiveToQuarantine(sha256)).toThrow(PathSafetyError);
+    expect(existsSync(join(outside, sha256))).toBe(false);
+    expect(readRawLiveAsset(root, sha256)).toEqual(bytes);
+  });
+
+  it("rejects get/delete after .quarantine replaced with junction", () => {
+    const root = tempAssetsRoot("assets-hijack-qops-");
+    const outside = tempAssetsRoot("assets-outside-qops-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("quarantine-ops");
+    store.putIfAbsent(sha256, bytes);
+    store.moveLiveToQuarantine(sha256);
+
+    replaceDirWithJunction(join(root, ".quarantine"), outside);
+
+    expect(() => store.getQuarantined(sha256)).toThrow(PathSafetyError);
+    expect(() => store.deleteQuarantined(sha256)).toThrow(PathSafetyError);
+  });
+
+  it("concurrent putIfAbsent yields exactly one writer and no tmp files", async () => {
+    const root = tempAssetsRoot("assets-race-");
+    createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("concurrent-race");
+
+    const results = await runConcurrentPuts(root, sha256, bytes, 8);
+    expect(results.filter((r) => r.wrote)).toHaveLength(1);
+    expect(results.filter((r) => !r.wrote)).toHaveLength(7);
+    expect(readdirSync(root).filter((n) => n.endsWith(".tmp"))).toHaveLength(
+      0,
+    );
+    expect(existsSync(join(root, sha256))).toBe(true);
   });
 });

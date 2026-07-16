@@ -8,6 +8,7 @@ import {
   constants,
   existsSync,
   fsyncSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -17,7 +18,9 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  assertPathContained,
   assertSha256Hex,
+  ensureQuarantineDirectory,
   lstatSafe,
   PathSafetyError,
   readFileNoFollow,
@@ -86,10 +89,17 @@ function quarantinePath(quarantineDir: string, sha256: string): string {
   return join(quarantineDir, sha256);
 }
 
-function readLiveBytes(
-  rootReal: string,
-  path: string,
-): Uint8Array {
+function safeUnlink(path: string): void {
+  try {
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
+  } catch {
+    // Best-effort cleanup after failed publish.
+  }
+}
+
+function readLiveBytes(rootReal: string, path: string): Uint8Array {
   const st = lstatSafe(path);
   resolveContainedPath(rootReal, path);
   if (!st.isFile()) {
@@ -99,29 +109,66 @@ function readLiveBytes(
   return new Uint8Array(readFileNoFollow(rootReal, path, size));
 }
 
+interface SessionContext {
+  rootReal: string;
+  quarantineDir: string;
+}
+
 export function createAssetFsStore(assetsRoot: string): AssetFsStore {
   mkdirSync(assetsRoot, { recursive: true });
-  const rootReal = validateAssetsRoot(assetsRoot);
+  const pinnedRootReal = validateAssetsRoot(assetsRoot);
   const quarantineDir = join(assetsRoot, ".quarantine");
-  mkdirSync(quarantineDir, { recursive: true });
-  validateSubdirectory(rootReal, quarantineDir);
+  ensureQuarantineDirectory(pinnedRootReal, quarantineDir);
 
-  function assertLivePath(sha256: string): string {
-    const path = livePath(assetsRoot, sha256);
-    if (existsSync(path)) {
-      lstatSafe(path);
-      resolveContainedPath(rootReal, path);
+  function refreshSession(): SessionContext {
+    const rootReal = validateAssetsRoot(assetsRoot);
+    if (rootReal !== pinnedRootReal) {
+      throw new PathSafetyError(`ASSETS_ROOT_REALPATH_CHANGED:${assetsRoot}`);
     }
-    return path;
+    const qDir = join(assetsRoot, ".quarantine");
+    validateSubdirectory(rootReal, qDir);
+    return { rootReal, quarantineDir: qDir };
   }
 
-  function assertQuarantinePath(sha256: string): string {
-    const path = quarantinePath(quarantineDir, sha256);
-    if (existsSync(path)) {
-      lstatSafe(path);
-      resolveContainedPath(rootReal, path);
+  function verifyExistingFinal(
+    rootReal: string,
+    finalPath: string,
+    sha256: string,
+  ): PutIfAbsentResult {
+    const existing = readLiveBytes(rootReal, finalPath);
+    if (contentSha256(existing) !== sha256) {
+      throw new AssetFinalHashMismatchError();
     }
-    return path;
+    return { wrote: false };
+  }
+
+  function publishTmpToFinal(
+    ctx: SessionContext,
+    tmpPath: string,
+    finalPath: string,
+    sha256: string,
+  ): PutIfAbsentResult {
+    refreshSession();
+    lstatSafe(tmpPath);
+    assertPathContained(ctx.rootReal, tmpPath);
+    assertPathContained(ctx.rootReal, finalPath);
+
+    try {
+      linkSync(tmpPath, finalPath);
+      safeUnlink(tmpPath);
+      return { wrote: true };
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      safeUnlink(tmpPath);
+      if (code === "EEXIST" || code === "EPERM") {
+        if (!existsSync(finalPath)) {
+          throw err;
+        }
+        lstatSafe(finalPath);
+        return verifyExistingFinal(ctx.rootReal, finalPath, sha256);
+      }
+      throw err;
+    }
   }
 
   return {
@@ -134,71 +181,82 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
         throw new AssetBytesHashMismatchError();
       }
 
-      const finalPath = assertLivePath(sha256);
+      const ctx = refreshSession();
+      const finalPath = livePath(assetsRoot, sha256);
+
       if (existsSync(finalPath)) {
-        const existing = readLiveBytes(rootReal, finalPath);
-        if (contentSha256(existing) !== sha256) {
-          throw new AssetFinalHashMismatchError();
-        }
-        return { wrote: false };
+        lstatSafe(finalPath);
+        assertPathContained(ctx.rootReal, finalPath);
+        return verifyExistingFinal(ctx.rootReal, finalPath, sha256);
       }
+
+      assertPathContained(ctx.rootReal, finalPath);
 
       const suffix = randomBytes(8).toString("hex");
       const tmpPath = join(assetsRoot, `${sha256}.${suffix}.tmp`);
-      const fd = openSync(tmpPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+      assertPathContained(ctx.rootReal, tmpPath);
+
+      refreshSession();
+
+      let tmpPathWritten = false;
       try {
-        writeSync(fd, bytes);
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-
-      if (existsSync(finalPath)) {
-        unlinkSync(tmpPath);
-        const existing = readLiveBytes(rootReal, finalPath);
-        if (contentSha256(existing) !== sha256) {
-          throw new AssetFinalHashMismatchError();
+        const fd = openSync(
+          tmpPath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+          0o600,
+        );
+        tmpPathWritten = true;
+        try {
+          writeSync(fd, bytes);
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
         }
-        return { wrote: false };
+        return publishTmpToFinal(ctx, tmpPath, finalPath, sha256);
+      } catch (err) {
+        if (tmpPathWritten) {
+          safeUnlink(tmpPath);
+        }
+        throw err;
       }
-
-      lstatSafe(tmpPath);
-      resolveContainedPath(rootReal, tmpPath);
-      renameSync(tmpPath, finalPath);
-      return { wrote: true };
     },
 
     getLive(sha256) {
-      const path = assertLivePath(sha256);
+      const ctx = refreshSession();
+      const path = livePath(assetsRoot, sha256);
       if (!existsSync(path)) return null;
-      return readLiveBytes(rootReal, path);
+      return readLiveBytes(ctx.rootReal, path);
     },
 
     getQuarantined(sha256) {
-      const path = assertQuarantinePath(sha256);
+      const ctx = refreshSession();
+      const path = quarantinePath(ctx.quarantineDir, sha256);
       if (!existsSync(path)) return null;
-      return readLiveBytes(rootReal, path);
+      return readLiveBytes(ctx.rootReal, path);
     },
 
     liveExists(sha256) {
+      const ctx = refreshSession();
       const path = livePath(assetsRoot, sha256);
       if (!existsSync(path)) return false;
       lstatSafe(path);
-      resolveContainedPath(rootReal, path);
+      assertPathContained(ctx.rootReal, path);
       return true;
     },
 
     quarantineExists(sha256) {
-      const path = quarantinePath(quarantineDir, sha256);
+      const ctx = refreshSession();
+      const path = quarantinePath(ctx.quarantineDir, sha256);
       if (!existsSync(path)) return false;
       lstatSafe(path);
-      resolveContainedPath(rootReal, path);
+      assertPathContained(ctx.rootReal, path);
       return true;
     },
 
     moveLiveToQuarantine(sha256) {
-      const from = assertLivePath(sha256);
-      const to = quarantinePath(quarantineDir, sha256);
+      const ctx = refreshSession();
+      const from = livePath(assetsRoot, sha256);
+      const to = quarantinePath(ctx.quarantineDir, sha256);
       const liveHadFile = existsSync(from);
       const quarantineHadFile = existsSync(to);
 
@@ -207,23 +265,25 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
       }
 
       lstatSafe(from);
-      resolveContainedPath(rootReal, from);
+      assertPathContained(ctx.rootReal, from);
       if (quarantineHadFile) {
         lstatSafe(to);
-        resolveContainedPath(rootReal, to);
+        assertPathContained(ctx.rootReal, to);
         throw new PathSafetyError(`QUARANTINE_TARGET_EXISTS:${to}`);
       }
 
-      mkdirSync(quarantineDir, { recursive: true });
+      assertPathContained(ctx.rootReal, to);
+      refreshSession();
       renameSync(from, to);
       return { moved: true, liveHadFile: true, quarantineHadFile: false };
     },
 
     deleteQuarantined(sha256) {
-      const path = assertQuarantinePath(sha256);
+      const ctx = refreshSession();
+      const path = quarantinePath(ctx.quarantineDir, sha256);
       if (!existsSync(path)) return false;
       lstatSafe(path);
-      resolveContainedPath(rootReal, path);
+      assertPathContained(ctx.rootReal, path);
       unlinkSync(path);
       return true;
     },
@@ -247,7 +307,7 @@ export function writeRawLiveAsset(
   }
 }
 
-/** Test helper: corrupt live asset bytes in place. */
+/** Test helper: read live asset bytes without guards. */
 export function readRawLiveAsset(assetsRoot: string, sha256: string): Uint8Array {
   assertSha256Hex(sha256);
   return new Uint8Array(readFileSync(join(assetsRoot, sha256)));
