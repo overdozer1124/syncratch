@@ -41,11 +41,11 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 18:59:59 JST |
+| 最終更新 | 2026-07-17 19:01:41 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `PLAN_REVIEW` |
-| 現在の担当 | User |
-| 現在のTask | R1 Versioned SQLite Migration Ledger 詳細実装計画 |
+| ワークフロー状態 | `TASK_1_IN_PROGRESS` |
+| 現在の担当 | Cursor |
+| 現在のTask | Migration Ledger Task 1 / 6 |
 | 全体進捗 | **100%**（Cursor内正式承認 / 全4 Task） |
 | 承認基準SHA | `bca7840101ed5318c6bc75ad540a690428eb62ff` |
 | 再提出SHA | `6ecadec68e57de1b314fb9260a74ac2421cd11b9` |
@@ -53,12 +53,12 @@
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` |
 | 前スライス | R1 Scratch SB3 Task 0〜11 = 100%（凍結） |
-| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
+| 次Task | Task 1完了後、独立レビューを通してTask 2へ |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの詳細実装計画レビュー待ち。承認前にproduction migration実装へ着手しない。
+Task 1（migration型・error・connection PRAGMA・checksum）をTDD実装し、独立レビューを通す。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2314,3 +2314,10 @@ commit除外:
 - ledgerless legacy fixture生成を維持する専用回帰条件を追加。
 - merge / push / PR作成なし。
 - 次担当: User（計画レビュー・実行方式選択）。
+
+### 2026-07-17 19:01:41 JST — Cursor（Migration Ledger実装開始）
+
+- ユーザーが詳細計画を承認し、実行方式1（Subagent-Driven）を選択。
+- 6 Taskを、各Task TDD実装 → 独立レビュー → Critical/Important修正 → 再レビューの順で連続実行する。
+- 承認済み計画commit: `84c458c0d5b482dfc47abf35174fdf88226a7137`。
+- Task 1開始。次担当: Cursor。
