@@ -1,6 +1,7 @@
 import {createHash} from "node:crypto";
-import {readFileSync} from "node:fs";
-import {join} from "node:path";
+import {cpSync, mkdirSync, readFileSync} from "node:fs";
+import {dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
 import Database from "better-sqlite3";
 
 export interface LegacyR1Manifest {
@@ -47,6 +48,30 @@ export interface LegacyR1Manifest {
 
 export function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+export function copyLegacyR1Fixture(destinationRoot: string): {
+  dbPath: string;
+  snapshotDir: string;
+  manifest: LegacyR1Manifest;
+} {
+  const fixtureDir = dirname(fileURLToPath(import.meta.url));
+  const sourceDbPath = join(fixtureDir, "legacy-r1.sqlite");
+  const sourceSnapshotDir = join(fixtureDir, "legacy-r1-snapshots");
+  const sourceManifestPath = join(fixtureDir, "legacy-r1.manifest.json");
+
+  mkdirSync(destinationRoot, {recursive: true});
+  const dbPath = join(destinationRoot, "projects.sqlite");
+  const snapshotDir = join(destinationRoot, "snapshots");
+
+  cpSync(sourceDbPath, dbPath);
+  cpSync(sourceSnapshotDir, snapshotDir, {recursive: true});
+
+  const manifest = JSON.parse(
+    readFileSync(sourceManifestPath, "utf8"),
+  ) as LegacyR1Manifest;
+
+  return {dbPath, snapshotDir, manifest};
 }
 
 export function readLegacyR1Manifest(
