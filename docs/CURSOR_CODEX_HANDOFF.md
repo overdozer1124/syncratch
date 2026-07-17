@@ -41,16 +41,16 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 23:44:56 JST |
+| 最終更新 | 2026-07-17 23:50:56 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | User / Codex（Cursor内正式レビュー可） |
-| 現在のTask | Workspace Directory Target Schema 実装完了・正式承認待ち |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 実装完了（正式承認待ち） |
+| 現在のTask | Workspace Directory Target Schema（mainローカルmerge済み・正式承認待ち） |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema main統合済み（正式承認待ち） |
 | 承認基準SHA | `76be558eb13ee35835a5aed1845f562deb356318`（Domain Contracts正式承認） |
-| 再提出SHA | `8a27415779721fe9368fa7d117c18154bfa926c4` |
-| 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
+| 再提出SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（main merge commit） |
+| 作業ブランチ | `main` |
+| 作業worktree | `C:\cursor\NewScratchEditor` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md` |
 | 前スライス | Workspace Directory Domain Contracts = 100%（Cursor内正式承認・凍結） |
 | 次Task | Target Schema 正式GO後、legacy organization/user backfill の別設計 |
@@ -58,7 +58,7 @@
 
 ## Cursorが次に行う作業
 
-Target Schema 実装の正式承認待ち。承認前に legacy backfill / Person ID / claim tables / repository cutover へ着手しない。
+Target Schema は main へローカルmerge済み。正式承認待ち。承認前に legacy backfill / Person ID / claim tables / repository cutover へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2587,4 +2587,31 @@ Cursor内レビュー:
 
 - Subagent-DrivenでTarget Schema Tasks 1〜5を実装・レビュー完了。
 - merge / push / PR作成なし。
+- 次担当: User / Codex（正式承認）。
+
+### 2026-07-17 23:50:56 JST — Cursor（Target Schemaをmainへローカルmerge）
+
+```text
+最終更新: 2026-07-17 23:50:56 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Directory Target Schema
+merge commit: 57b1b942c34bc6be2a97948412e148eb37665ccf
+feature tip: 8a27415779721fe9368fa7d117c18154bfa926c4
+対応内容:
+- feat/r1-workspace-migration-fixtures を main へ --no-ff merge
+- docs/CURSOR_CODEX_HANDOFF.md 競合は main（完了ログ含む）側を採用
+- post-merge gates: store 146 / directory 59 / session 15 / r1:persist / r1:auth / git diff --check = PASS
+- worktree削除: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+- feature branch削除: feat/r1-workspace-migration-fixtures
+- docs/ai-platform/ は未追跡のまま未stage
+- remote push / PR なし
+次の作業:
+- 正式GO（Cursor内/Codex）待ち
+- 承認前に legacy backfill 設計へ着手しない
+次の担当: User / Codex
+```
+
+- Target Schema を main へローカルmergeし、worktree/branchを掃除。
+- push / PR なし。
 - 次担当: User / Codex（正式承認）。
