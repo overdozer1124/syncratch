@@ -17,6 +17,7 @@ export interface LegacyR1Manifest {
     userId: string;
     organizationId: string;
   }>;
+  organizationDomains: Array<{organizationId: string; hostedDomain: string}>;
   memberships: Array<{organizationId: string; userId: string; role: string}>;
   sessions: Array<{
     idHash: string;
@@ -30,6 +31,7 @@ export interface LegacyR1Manifest {
     ownerUserId: string;
     headRevision: number;
   }>;
+  projectMembers: Array<{projectId: string; userId: string; role: string}>;
   revisions: Array<{
     projectId: string;
     revision: number;
@@ -37,12 +39,18 @@ export interface LegacyR1Manifest {
     contentHash: string;
     requestHash: string;
     clientTransactionId: string | null;
+    actorUserId: string;
+    createdAt: string;
   }>;
   snapshots: Array<{
     projectId: string;
     snapshotId: string;
+    basedOnRevision: number;
+    reason: string;
     contentHash: string;
     storageKey: string;
+    createdBy: string;
+    createdAt: string;
   }>;
 }
 
@@ -128,6 +136,22 @@ export function readLegacyR1Manifest(
       organizationId: row.organization_id,
     }));
 
+    const organizationDomains = (
+      db
+        .prepare(
+          `SELECT organization_id, hosted_domain
+           FROM organization_domains
+           ORDER BY organization_id, hosted_domain`,
+        )
+        .all() as Array<{
+        organization_id: string;
+        hosted_domain: string;
+      }>
+    ).map(row => ({
+      organizationId: row.organization_id,
+      hostedDomain: row.hosted_domain,
+    }));
+
     const memberships = (
       db
         .prepare(
@@ -186,11 +210,29 @@ export function readLegacyR1Manifest(
       headRevision: row.head_revision,
     }));
 
+    const projectMembers = (
+      db
+        .prepare(
+          `SELECT project_id, user_id, role
+           FROM project_members
+           ORDER BY project_id, user_id`,
+        )
+        .all() as Array<{
+        project_id: string;
+        user_id: string;
+        role: string;
+      }>
+    ).map(row => ({
+      projectId: row.project_id,
+      userId: row.user_id,
+      role: row.role,
+    }));
+
     const revisions = (
       db
         .prepare(
           `SELECT project_id, revision, envelope_json, content_hash, request_hash,
-                  client_transaction_id
+                  client_transaction_id, actor_user_id, created_at
            FROM project_revisions
            ORDER BY project_id, revision`,
         )
@@ -201,6 +243,8 @@ export function readLegacyR1Manifest(
         content_hash: string;
         request_hash: string;
         client_transaction_id: string | null;
+        actor_user_id: string;
+        created_at: string;
       }>
     ).map(row => ({
       projectId: row.project_id,
@@ -209,26 +253,37 @@ export function readLegacyR1Manifest(
       contentHash: row.content_hash,
       requestHash: row.request_hash,
       clientTransactionId: row.client_transaction_id,
+      actorUserId: row.actor_user_id,
+      createdAt: row.created_at,
     }));
 
     const snapshots = (
       db
         .prepare(
-          `SELECT project_id, id, content_hash, storage_key
+          `SELECT project_id, id, based_on_revision, reason, content_hash,
+                  storage_key, created_by, created_at
            FROM project_snapshots
            ORDER BY project_id, id`,
         )
         .all() as Array<{
         project_id: string;
         id: string;
+        based_on_revision: number;
+        reason: string;
         content_hash: string;
         storage_key: string;
+        created_by: string;
+        created_at: string;
       }>
     ).map(row => ({
       projectId: row.project_id,
       snapshotId: row.id,
+      basedOnRevision: row.based_on_revision,
+      reason: row.reason,
       contentHash: row.content_hash,
       storageKey: row.storage_key,
+      createdBy: row.created_by,
+      createdAt: row.created_at,
     }));
 
     const snapshotSha256: Record<string, string> = {};
@@ -246,9 +301,11 @@ export function readLegacyR1Manifest(
       organizations,
       users,
       externalIdentities,
+      organizationDomains,
       memberships,
       sessions,
       projects,
+      projectMembers,
       revisions,
       snapshots,
     };

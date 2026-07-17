@@ -17,35 +17,131 @@
 
 ## 進捗の計算方法
 
-- 全体を Task 0〜11 の12 Taskとして計算する。
-- Cursor 内レビュー GO（または過去の Codex 承認）済み Task のみ完了として数える。
-- `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜11 の12 Taskがすべて承認済みなので **100%**。
+- **前スライス（R1 Scratch SB3）:** Task 0〜11 の12 Taskはすべて承認済み（**100%**）。完了済みとして凍結。
+- **現行スライス（Workspace Migration Fixtures）:** `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` の Task 1〜4 を全体として計算する。
+- Codex 正式承認済み Task のみ完了として数える。
+- `全体進捗率 = 承認済みTask数 / 4 × 100`（整数へ四捨五入）。
+- 現在は Codex 未承認のため **0%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 12:06:00 JST |
+| 最終更新 | 2026-07-17 15:59:32 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `SLICE_COMPLETE` |
-| 現在の担当 | — |
-| 現在のTask | （なし — R1 Scratch SB3 スライス完了） |
-| 全体進捗 | **100%**（Task 0〜11承認済み / 全12 Task） |
-| 承認基準SHA | `357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed` |
-| 再提出SHA | — |
-| Task 11 commit SHA | `357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed` |
-| Task 10 commit SHA | `bfc4ba617efa74686fb4ddf456860751039fcb44` |
-| Task 9 commit SHA | `585e690ea79f06aa12e7255a21fb15220e2ce531` |
-| Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
-| Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
-| Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | —（design §15 以降は別スライス） |
-| レビュー運用 | **Cursor 内**作業者 ↔ 専用 code-reviewer（Codex 正式レビューは回さない） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
+| 現在のTask | Workspace Migration Fixtures（plan Tasks 1〜4） |
+| 全体進捗 | **0%**（Codex 未承認 / 全4 Task） |
+| 承認基準SHA | `bca7840101ed5318c6bc75ad540a690428eb62ff` |
+| 再提出SHA | 未コミット（親 HEAD `8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5`） |
+| 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` |
+| 前スライス | R1 Scratch SB3 Task 0〜11 = 100%（凍結） |
+| 次Task | Codex GO 後に versioned migration ledger / Workspace schema 計画へ |
+| レビュー運用 | **Codex 正式レビュー** |
 
 ## Cursorが次に行う作業
 
-R1 Scratch SB3 実装スライス（Task 0〜11）は完了。追加作業はユーザー指示待ち。
+なし（Codex 再レビュー待ち）。次Taskには着手しない。
+
+## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
+
+```text
+最終更新: 2026-07-17 15:59:32 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+全体進捗: 0%
+基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+再提出SHA: 未コミット（親 HEAD 8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5）
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+変更ファイル:
+- packages/project-store-sqlite/src/fixtures/legacy-r1-manifest.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1-fixture.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1-fixture.test.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1.manifest.json
+- packages/project-store-sqlite/src/fixtures/legacy-r1.sqlite
+- docs/CURSOR_CODEX_HANDOFF.md
+対応内容:
+- P1: manifest snapshots に basedOnRevision / reason / createdBy / createdAt を raw SQL から抽出。builder 試験で固定値を検証。committed fixture を再生成。
+- P2: createLegacyR1Fixture を try/finally で store.close()。
+テスト結果:
+- focused fixture + copy/reopen: PASS (2/2)
+- pnpm --filter @blocksync/project-store-sqlite test: PASS (75/75)
+- pnpm --filter @blocksync/project-store-sqlite typecheck: PASS
+- pnpm --filter @blocksync/session-service test: PASS (15/15)
+- pnpm r1:persist:test: PASS
+- pnpm r1:auth:test: PASS
+- git diff --check: PASS
+- source fixture WAL/SHM: なし
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+## Codexレビュー結果（Workspace Migration Fixtures 第1ラウンド）
+
+判定: **NO_GO / CHANGES_REQUESTED**（第2ラウンドで対応）
+
+1. **P1 — manifest の snapshot metadata が不完全**: `based_on_revision` / `reason` / `created_by` / `created_at` が記録されず、migration による書き換えを検出できない。 → raw SELECT に追加し committed fixture 再生成。
+2. **P2 — fixture 生成中の例外で `store.close()` へ到達しない**: SQLite handle / sidecar が残る可能性がある。`try/finally` で閉じる必要がある。 → `createLegacyR1Fixture` を try/finally 化。
+
+ゲート確認（Codex）: session-service 15/15、project-store-sqlite 75/75 + typecheck、`r1:persist:test`、`r1:auth:test`、`git diff --check` すべて PASS。production schema/migration 変更なし。
+
+## Workspace Migration Fixtures 再提出サマリー
+
+```text
+最終更新: 2026-07-17 15:23:22 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+全体進捗: 0%
+基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+再提出SHA: 8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+変更コミット（基準からの6件）:
+- 600f944 test(store): build legacy workspace migration fixture
+- ae46fc2 test(store): freeze accepted legacy R1 database
+- 827202e test(store): assert legacy migration evidence bytes
+- d2de804 test(store): fix legacy fixture sidecar asserts by db basename
+- b2fe9f1 docs(r1): freeze workspace migration matrix
+- 8430b13 test(sqlite): validate copied migration manifest
+主な変更ファイル:
+- packages/project-store-sqlite/src/fixtures/legacy-r1-fixture.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1-manifest.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1-fixture.test.ts
+- packages/project-store-sqlite/src/fixtures/generate-legacy-r1-fixture.ts
+- packages/project-store-sqlite/src/fixtures/legacy-r1.sqlite
+- packages/project-store-sqlite/src/fixtures/legacy-r1.manifest.json
+- packages/project-store-sqlite/src/fixtures/legacy-r1-snapshots/
+- packages/project-store-sqlite/src/workspace-migration-fixture.test.ts
+- packages/project-store-sqlite/package.json
+- pnpm-lock.yaml
+- docs/r1/WORKSPACE_ROSTER_MIGRATION.md
+- docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md
+実装内容:
+- Task 1: AuthRepository/ProjectService 経由の決定的 legacy fixture builder + raw manifest 抽出
+- Task 2: fixture:legacy-r1 生成スクリプト、WAL checkpoint、committed sqlite/snapshots/manifest 凍結
+- Task 3: copy/reopen raw-byte contract（source DB非オープン、sidecar basename別assert、committed manifest突合）
+- Task 4: WORKSPACE_ROSTER_MIGRATION.md policy matrix + roadmap 更新
+制約遵守:
+- production schema/migration/auth behavior 未変更
+- schemaVersion 1 envelope 非改変・非再hash
+- docs/ai-platform/ 非接触
+最終ゲート（2026-07-17 再実行）:
+- pnpm --filter @blocksync/session-service test: PASS (15/15)
+- pnpm --filter @blocksync/project-store-sqlite typecheck: PASS
+- pnpm --filter @blocksync/project-store-sqlite test: PASS (75/75)
+- pnpm r1:persist:test: PASS
+- pnpm r1:auth:test: PASS
+未解決事項:
+- なし（Codex 指摘待ち）
+次の担当: Codex
+```
 
 ## Task 11 完了サマリー
 
@@ -1916,3 +2012,89 @@ commit message: docs(r1): Scratch SB3 runbook and Go
 
 - Task 11 commit 済み。Cursor review GO を正式承認として全体進捗 100%。
 - R1 Scratch SB3 スライス（Task 0〜11）完了。
+
+### 2026-07-17 15:23:22 JST — Cursor
+
+```text
+最終更新: 2026-07-17 15:23:22 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+全体進捗: 0%
+基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+再提出SHA: 8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+git status --short (worktree): clean
+commit除外: docs/ai-platform/
+テスト結果:
+- session-service 15/15 PASS
+- project-store-sqlite typecheck PASS / 75/75 PASS
+- r1:persist:test PASS
+- r1:auth:test PASS
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+- 「作業完了ルール」を受領。共有台帳を正として運用再開。
+- 台帳は Scratch SB3 `SLICE_COMPLETE` のままだったが、Workspace Migration Fixtures 実装（6 commits, HEAD `8430b13`）が未提出だったため、`READY_FOR_CODEX_REVIEW` として Codex へ引き継ぐ。
+- Codex 指摘（`CHANGES_REQUESTED`）は台帳上に未記録のため、今回の修正作業はなし。
+- 進捗計算を現行スライス（Fixtures Tasks 1〜4）へ切替。Codex 未承認のため 0%。
+- 次担当: Codex。
+
+### 2026-07-17 15:46:16 JST — Cursor
+
+```text
+最終更新: 2026-07-17 15:46:16 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+全体進捗: 0%
+基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+再提出SHA: 8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+未解決事項:
+- Codex の GO / CHANGES_REQUESTED が共有台帳へ未記録
+次の担当: Codex
+```
+
+- ユーザーの「作業完了」を受け、共有台帳・対象worktreeの status / HEAD / branchを再確認。
+- 共有台帳の最新状態は引き続き `READY_FOR_CODEX_REVIEW`、現在の担当は Codex。
+- Codex のレビュー判定・指摘は未記録のため、製品コード修正、commit、次Task着手は行わない。
+- 対象worktree HEAD は `8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5`。台帳のみ未コミット。
+- 次担当: Codex。
+
+### 2026-07-17 15:49:39 JST — Cursor
+
+- ユーザーの「作業完了」を受け、共有台帳と対象worktreeの status / HEAD / branchを再確認。
+- Codex の GO / CHANGES_REQUESTED は依然として共有台帳へ未記録。
+- 状態は `READY_FOR_CODEX_REVIEW`、全体進捗 0%、次担当 Codexを維持。
+- 製品コード修正、commit、次Task着手は行っていない。
+
+### 2026-07-17 15:59:32 JST — Cursor
+
+```text
+最終更新: 2026-07-17 15:59:32 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+全体進捗: 0%
+基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+再提出SHA: 未コミット（親 HEAD 8430b13e3ce57ae19f4a76ea920d6073c4ac0ec5）
+対応内容:
+- P1: snapshot metadata（basedOnRevision/reason/createdBy/createdAt）を manifest へ追加し fixture 再生成
+- P2: createLegacyR1Fixture を try/finally で store.close()
+テスト結果:
+- project-store-sqlite 75/75 + typecheck PASS
+- session-service 15/15 PASS
+- r1:persist:test / r1:auth:test / git diff --check PASS
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+- ユーザー提示の Codex `NO_GO / CHANGES_REQUESTED`（P1/P2）を台帳へ記録し、指摘範囲のみ修正。
+- commit はせず未コミットで再提出。次Task未着手。
+- 次担当: Codex。

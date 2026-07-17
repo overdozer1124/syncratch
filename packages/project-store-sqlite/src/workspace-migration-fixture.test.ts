@@ -65,10 +65,11 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
     store.close();
     const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
 
-    // Reopen/WAL may change page bytes (databaseSha256), while logical evidence stays fixed.
-    expect(after.revisions).toEqual(before.revisions);
-    expect(after.snapshots).toEqual(before.snapshots);
-    expect(after.snapshotSha256).toEqual(before.snapshotSha256);
+    // Reopen/WAL may change page bytes (databaseSha256), while every item of
+    // logical migration evidence must stay fixed.
+    const {databaseSha256: _beforeDatabaseSha256, ...beforeEvidence} = before;
+    const {databaseSha256: _afterDatabaseSha256, ...afterEvidence} = after;
+    expect(afterEvidence).toEqual(beforeEvidence);
     expect(after.revisions.find(row => row.revision === 1)).toMatchObject({
       // Independent sentinel pinned by v1-envelope-hash.regression.test.ts.
       contentHash:

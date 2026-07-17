@@ -40,62 +40,63 @@ export async function createLegacyR1Fixture(
   mkdirSync(paths.rootDir, {recursive: true});
 
   const store = openSqliteStore({dbPath: paths.dbPath});
-
-  const organizationId = store.authRepo.withTransaction(tx => {
-    const id = tx.ensureOrgForHostedDomain(
-      "legacy.school.example",
-      "Legacy School",
-    );
-    tx.createUser({
-      userId: USER_ID,
-      primaryOrganizationId: id,
-      email: "owner@legacy.school.example",
-      displayName: "Legacy Owner",
-      now: NOW.toISOString(),
+  try {
+    const organizationId = store.authRepo.withTransaction(tx => {
+      const id = tx.ensureOrgForHostedDomain(
+        "legacy.school.example",
+        "Legacy School",
+      );
+      tx.createUser({
+        userId: USER_ID,
+        primaryOrganizationId: id,
+        email: "owner@legacy.school.example",
+        displayName: "Legacy Owner",
+        now: NOW.toISOString(),
+      });
+      tx.ensureMembership(id, USER_ID, "admin");
+      tx.insertExternalIdentity({
+        provider: "google",
+        subject: "legacy-google-subject",
+        userId: USER_ID,
+        organizationId: id,
+        createdAt: NOW.toISOString(),
+      });
+      tx.createSession({
+        idHash: SESSION_ID_HASH,
+        userId: USER_ID,
+        organizationId: id,
+        csrfHash: CSRF_HASH,
+        createdAt: NOW.toISOString(),
+        expiresAt: "2026-07-18T00:00:00.000Z",
+      });
+      return id;
     });
-    tx.ensureMembership(id, USER_ID, "admin");
-    tx.insertExternalIdentity({
-      provider: "google",
-      subject: "legacy-google-subject",
-      userId: USER_ID,
-      organizationId: id,
-      createdAt: NOW.toISOString(),
+
+    const auth = new LegacyFixtureAuthContext(organizationId);
+    const hints = {headers: {"x-user-id": USER_ID}};
+    const service = createProjectService({
+      auth,
+      repo: store.projectRepo,
+      snapshots: createFsSnapshotStore(paths.snapshotDir),
+      now: () => NOW,
+      idFactory: () => SNAPSHOT_ID,
     });
-    tx.createSession({
-      idHash: SESSION_ID_HASH,
-      userId: USER_ID,
-      organizationId: id,
-      csrfHash: CSRF_HASH,
-      createdAt: NOW.toISOString(),
-      expiresAt: "2026-07-18T00:00:00.000Z",
+
+    await service.createProject(hints, {
+      projectId: PROJECT_ID,
+      title: "Legacy Rich Fixture",
     });
-    return id;
-  });
-
-  const auth = new LegacyFixtureAuthContext(organizationId);
-  const hints = {headers: {"x-user-id": USER_ID}};
-  const service = createProjectService({
-    auth,
-    repo: store.projectRepo,
-    snapshots: createFsSnapshotStore(paths.snapshotDir),
-    now: () => NOW,
-    idFactory: () => SNAPSHOT_ID,
-  });
-
-  await service.createProject(hints, {
-    projectId: PROJECT_ID,
-    title: "Legacy Rich Fixture",
-  });
-  await service.saveDocument(hints, {
-    projectId: PROJECT_ID,
-    baseRevision: 0,
-    transactionId: "tx-legacy-rich",
-    schemaVersion: 1,
-    document: richFixtureDocument(),
-  });
-  await service.createSnapshot(hints, {projectId: PROJECT_ID});
-
-  store.close();
+    await service.saveDocument(hints, {
+      projectId: PROJECT_ID,
+      baseRevision: 0,
+      transactionId: "tx-legacy-rich",
+      schemaVersion: 1,
+      document: richFixtureDocument(),
+    });
+    await service.createSnapshot(hints, {projectId: PROJECT_ID});
+  } finally {
+    store.close();
+  }
 
   return readLegacyR1Manifest(paths.dbPath, paths.snapshotDir);
 }

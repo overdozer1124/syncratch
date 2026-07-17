@@ -11,12 +11,14 @@ The immutable source evidence is the committed legacy database, manifest, and sn
 | Legacy input | Target rule | Immutable evidence |
 |---|---|---|
 | `organizations.id` | Create `workspaces` row with identical ID; keep physical organization row during R1 | organization ID |
+| `organization_domains` | Rebind hosted domain to the workspace with identical value; never auto-provision new access | `(organization_id, hosted_domain)` |
 | `users` | Create one account and one Person/`PersonAccountLink`; Person ID strategy is fixed by the next schema plan | user ID and status |
 | `organization_memberships` | Create equivalent workspace membership without adding roles | membership set |
 | `external_identities` | Remove workspace binding only when account migration lands | `(provider, subject)` and user ID |
 | `sessions` | Revoke or migrate fail-closed; never grant another workspace | session hash and revocation outcome |
 | `projects.organization_id` | Backfill `workspace_id` with same value | project ID and owner |
-| `project_revisions` | Never update rows | raw envelope JSON, hashes, transaction IDs |
+| `project_members` | Preserve project membership and role unchanged; never widen access | `(project_id, user_id, role)` |
+| `project_revisions` | Never update rows | all row fields, including raw envelope JSON, hashes, transaction IDs, actor and creation time |
 | `project_snapshots` + blobs | Never rewrite | metadata and blob SHA-256 |
 | asset grant/quota rows | Interpret legacy organization ID as workspace ID until explicit FK migration | SHA/grant set |
 

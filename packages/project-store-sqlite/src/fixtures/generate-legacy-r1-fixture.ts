@@ -35,12 +35,22 @@ try {
     snapshotDir: temporarySnapshotDir,
   });
 
+  // Freeze the committed fixture in DELETE journal mode so it is a single
+  // self-contained file. A WAL-mode header spawns -wal/-shm sidecars on every
+  // open (including read-only manifest reads and tests), which would otherwise
+  // require a fragile manual cleanup step and break the source-sidecar contract.
   const checkpointDb = new Database(temporaryDbPath);
   try {
     checkpointDb.pragma("wal_checkpoint(TRUNCATE)");
+    checkpointDb.pragma("journal_mode=DELETE");
   } finally {
     checkpointDb.close();
   }
+
+  const manifest = readLegacyR1Manifest(
+    temporaryDbPath,
+    temporarySnapshotDir,
+  );
 
   const sidecars = [`${temporaryDbPath}-wal`, `${temporaryDbPath}-shm`];
   const temporaryFiles = readdirSync(temporaryRoot).map(name =>
@@ -51,11 +61,6 @@ try {
       throw new Error(`SQLite sidecar remains after checkpoint: ${sidecar}`);
     }
   }
-
-  const manifest = readLegacyR1Manifest(
-    temporaryDbPath,
-    temporarySnapshotDir,
-  );
   const snapshotKeys = Object.keys(manifest.snapshotSha256);
   if (snapshotKeys.length !== 1 || manifest.snapshots.length !== 1) {
     throw new Error("Legacy R1 fixture must contain exactly one snapshot");
