@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 21:07:37 JST |
+| 最終更新 | 2026-07-17 21:19:49 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `PLAN_REVIEW` |
-| 現在の担当 | User |
-| 現在のTask | Workspace Directory Domain Contracts 詳細実装計画 |
-| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 設計・計画完了 |
+| ワークフロー状態 | `TASK_1_IN_PROGRESS` |
+| 現在の担当 | Cursor |
+| 現在のTask | Workspace Directory Domain Contracts Task 1 / 5 |
+| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 実装中 |
 | 承認基準SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08`（Migration Ledger正式承認） |
 | 再提出SHA | `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md` |
 | 前スライス | R1 Versioned SQLite Migration Ledger = 100%（Cursor内正式承認・凍結） |
-| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
+| 次Task | Task 1完了後、独立レビューを通してTask 2へ |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの詳細実装計画レビュー待ち。承認前にproduction domain package実装へ着手しない。
+Task 1（package scaffold・ID/time primitives）をTDD実装し、独立レビューを通す。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2430,3 +2430,10 @@ Cursor内レビュー:
 - 承認済み設計をTDD・5 Taskの詳細計画へ展開しcommit。
 - merge / push / PR作成なし。
 - 次担当: User（計画レビュー・実行方式選択）。
+
+### 2026-07-17 21:19:49 JST — Cursor（Domain Contracts実装開始）
+
+- ユーザーが詳細計画を承認し、実行方式1（Subagent-Driven）を選択。
+- 5 Taskを、各Task TDD実装 → 独立レビュー → Critical/Important修正 → 再レビューの順で連続実行する。
+- 承認済み計画commit: `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a`。
+- Task 1開始。次担当: Cursor。
