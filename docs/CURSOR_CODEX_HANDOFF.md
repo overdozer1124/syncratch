@@ -2543,3 +2543,48 @@ Cursor内レビュー:
 - 承認済み設計をTDD・5 Taskの詳細計画へ展開しcommit。
 - merge / push / PR作成なし。
 - 次担当: User（計画レビュー・実行方式選択）。
+
+### 2026-07-17 23:44:56 JST — Cursor（Target Schema実装完了・正式承認待ち）
+
+```text
+最終更新: 2026-07-17 23:44:56 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Workspace Directory Target Schema（plan Tasks 1〜5）
+全体進捗: Target Schema 実装完了（正式承認待ち）
+基準SHA: b3b49d4f76aa5237d58d3383062e96bede74159e（計画）
+再提出SHA: 8a27415779721fe9368fa7d117c18154bfa926c4
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+実装commits:
+- 93e4f6f feat(store): add identity core schema migration
+- 008fd6f feat(store): add school roster schema migration
+- 38a71c3 feat(store): add access import and audit schema migration
+- f9f53bb feat(store): freeze target schema fingerprint
+- 8a27415 feat(store): register workspace directory target schema
+実行方式: Subagent-Driven（Taskごと実装→独立レビュー→最終whole-branchレビュー）
+ゲート（controller再検証）:
+- project-store-sqlite: 20 files / 146 tests PASS
+- workspace-directory: 59 PASS
+- session-service: 15 PASS
+- r1:persist:test PASS
+- r1:auth:test PASS
+- git diff --check PASS
+不変条件:
+- r1-baseline-fingerprints.json 未変更
+- legacy-r1.sqlite / legacy-r1.manifest.json 未変更
+- docs/ai-platform/ 未stage
+- production registry = [1,2,3,4]、新テーブルは空、legacy backfillなし
+最終レビュー:
+- Ready to merge: Yes
+- Critical/Important: なし
+- Minorのみ（merge後フォロー可）: staff制約テスト追加、JSON it分割、fingerprintのtrigger非捕捉（既存契約）
+次の作業:
+- ユーザー/Codex（またはCursor内正式GO）による正式承認。
+- 承認前に legacy organization/user backfill 設計へ着手しない。
+次の担当: User / Codex
+```
+
+- Subagent-DrivenでTarget Schema Tasks 1〜5を実装・レビュー完了。
+- merge / push / PR作成なし。
+- 次担当: User / Codex（正式承認）。
