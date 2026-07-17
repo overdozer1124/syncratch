@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 22:20:29 JST |
+| 最終更新 | 2026-07-17 22:47:21 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `SLICE_COMPLETE / NEXT_PLAN_READY` |
-| 現在の担当 | User |
-| 現在のTask | Workspace Directory Domain Contracts（Tasks 1〜5） |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%**（Cursor内正式レビューGO） |
-| 承認基準SHA | `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a` |
+| ワークフロー状態 | `DESIGN_REVIEW` |
+| 現在の担当 | Cursor |
+| 現在のTask | Workspace Directory Target Schema 設計 |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 設計中 |
+| 承認基準SHA | `76be558eb13ee35835a5aed1845f562deb356318`（Domain Contracts正式承認） |
 | 再提出SHA | `76be558eb13ee35835a5aed1845f562deb356318` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md` |
-| 前スライス | R1 Versioned SQLite Migration Ledger = 100%（Cursor内正式承認・凍結） |
-| 次Task | Workspace/Person target schema migration の設計 |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md`（完了） |
+| 前スライス | Workspace Directory Domain Contracts = 100%（Cursor内正式承認・凍結） |
+| 次Task | Target Schema 設計書作成 → written spec承認 → TDD実装計画 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザー承認後、Workspace/Person target schema migration の設計を開始する。承認前にmigration 0002へ着手しない。
+Workspace Directory Target Schema（v2〜v4 additive DDL）の設計書を作成し、自己レビュー後にcommitする。legacy backfill・production cutoverには着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2485,4 +2485,27 @@ Cursor内レビュー:
 - 純粋な `@blocksync/workspace-directory` packageをTDD実装。
 - closed Capability、exact-scope deny-by-default、UserAccount主体RoleAssignment、history models、conflict detectors、roster import contractsを凍結。
 - Phase 1 Task 1 roadmap checklistを完了。
+- merge / push / PR作成なし。
+
+### 2026-07-17 22:47:21 JST — Cursor（Target Schema設計開始）
+
+```text
+最終更新: 2026-07-17 22:47:21 JST
+更新者: Cursor
+状態: DESIGN_REVIEW
+対象Task: Workspace Directory Target Schema 設計
+前スライス正式承認SHA: 76be558eb13ee35835a5aed1845f562deb356318
+ユーザー承認済み方針:
+- full additive schema（legacy backfillは後続）
+- migration分割: v2 identity / v3 school roster / v4 access・import・audit
+- claim/setup-secret/rate-limitはPhase 4後のv5以降へ延期
+- attendance numberはactive行へpartial UNIQUE
+- project scopeは既存projects(id)へchild FK
+- 最終v4 fingerprint JSONを凍結
+次の作業:
+- 設計書 docs/superpowers/specs/2026-07-17-r1-workspace-directory-target-schema-design.md を作成
+次の担当: Cursor
+```
+
+- Domain Contracts完了後、target schema設計へ移行。
 - merge / push / PR作成なし。
