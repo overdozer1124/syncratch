@@ -2,7 +2,11 @@ import type Database from "better-sqlite3";
 import {addAssetGcGenerationIfMissing} from "../migrate-assets.js";
 import {classifyLedgerlessDatabase} from "./schema-fingerprint.js";
 import {computeMigrationChecksum} from "./checksum.js";
-import {SchemaMigrationError, type SchemaMigration} from "./types.js";
+import {
+  SchemaMigrationError,
+  type MigrationContext,
+  type SchemaMigration,
+} from "./types.js";
 
 export type MigrationFaultPoint =
   | "after_apply_before_ledger"
@@ -227,38 +231,36 @@ function recordAdoptedMigration(
 function applyAndRecordMigration(
   db: Database.Database,
   migration: SchemaMigration,
-  appliedAt: string,
+  context: MigrationContext,
   fault?: MigrationRunnerTestOptions["fault"],
+  preparation?: unknown,
 ): void {
-  migration.apply(db);
+  migration.apply(db, context, preparation);
   fault?.("after_apply_before_ledger", migration);
   assertNoForeignKeyViolations(db, migration);
-  insertLedgerRow(db, migration, appliedAt);
+  insertLedgerRow(db, migration, context.appliedAt);
   fault?.("after_ledger_before_user_version", migration);
   setUserVersion(db, migration.version);
 }
 
-function initializeOrAdoptBaseline(
+function adoptLedgerlessBaseline(
   db: Database.Database,
   migration: SchemaMigration,
-  appliedAt: string,
-  fault?: MigrationRunnerTestOptions["fault"],
-): void {
+  context: MigrationContext,
+): boolean {
   const classification = classifyLedgerlessDatabase(db);
   switch (classification.kind) {
     case "empty":
-      createLedgerTable(db);
-      applyAndRecordMigration(db, migration, appliedAt, fault);
-      return;
+      return false;
     case "current":
       createLedgerTable(db);
-      recordAdoptedMigration(db, migration, appliedAt);
-      return;
+      recordAdoptedMigration(db, migration, context.appliedAt);
+      return true;
     case "pre_generation": {
       addAssetGcGenerationIfMissing(db);
       createLedgerTable(db);
-      recordAdoptedMigration(db, migration, appliedAt);
-      return;
+      recordAdoptedMigration(db, migration, context.appliedAt);
+      return true;
     }
     case "unknown":
       throw new SchemaMigrationError(
@@ -266,6 +268,41 @@ function initializeOrAdoptBaseline(
         `Legacy schema is not accepted: ${classification.difference}`,
       );
   }
+}
+
+function initializeOrAdoptBaseline(
+  db: Database.Database,
+  migration: SchemaMigration,
+  context: MigrationContext,
+  fault?: MigrationRunnerTestOptions["fault"],
+  preparation?: unknown,
+): void {
+  if (adoptLedgerlessBaseline(db, migration, context)) {
+    return;
+  }
+  createLedgerTable(db);
+  applyAndRecordMigration(db, migration, context, fault, preparation);
+}
+
+function isMigrationPending(
+  db: Database.Database,
+  migrations: readonly SchemaMigration[],
+  migration: SchemaMigration,
+): boolean {
+  const rows = validateLedgerHistory(db, migrations);
+  if (rows.some(row => row.version === migration.version)) {
+    return false;
+  }
+
+  const maxApplied = rows.length === 0 ? 0 : rows[rows.length - 1]!.version;
+  if (migration.version !== maxApplied + 1) {
+    throw new SchemaMigrationError(
+      "SCHEMA_LEDGER_GAP",
+      `Cannot apply migration ${migration.version}; next required version is ${maxApplied + 1}`,
+    );
+  }
+
+  return true;
 }
 
 export function runSchemaMigrationsWithOptions(
@@ -277,28 +314,56 @@ export function runSchemaMigrationsWithOptions(
   const fault = options.fault;
 
   validateRegistry(migrations);
-  const appliedAt = now();
+  const context: MigrationContext = {appliedAt: now()};
 
   for (const migration of migrations) {
-    withMigrationTransaction(db, () => {
-      const rows = validateLedgerHistory(db, migrations);
-      if (rows.some(row => row.version === migration.version)) {
-        return;
-      }
+    if (migration.prepare === undefined) {
+      withMigrationTransaction(db, () => {
+        if (!isMigrationPending(db, migrations, migration)) {
+          return;
+        }
 
-      const maxApplied = rows.length === 0 ? 0 : rows[rows.length - 1]!.version;
-      if (migration.version !== maxApplied + 1) {
-        throw new SchemaMigrationError(
-          "SCHEMA_LEDGER_GAP",
-          `Cannot apply migration ${migration.version}; next required version is ${maxApplied + 1}`,
-        );
+        if (!ledgerTableExists(db)) {
+          initializeOrAdoptBaseline(db, migration, context, fault);
+          return;
+        }
+        applyAndRecordMigration(db, migration, context, fault);
+      });
+      continue;
+    }
+
+    const shouldPrepare = withMigrationTransaction(db, () => {
+      if (!isMigrationPending(db, migrations, migration)) {
+        return false;
       }
 
       if (!ledgerTableExists(db)) {
-        initializeOrAdoptBaseline(db, migration, appliedAt, fault);
+        return !adoptLedgerlessBaseline(db, migration, context);
+      }
+      return true;
+    });
+    if (!shouldPrepare) {
+      continue;
+    }
+
+    const preparation = migration.prepare(db, context);
+
+    withMigrationTransaction(db, () => {
+      if (!isMigrationPending(db, migrations, migration)) {
         return;
       }
-      applyAndRecordMigration(db, migration, appliedAt, fault);
+
+      if (!ledgerTableExists(db)) {
+        initializeOrAdoptBaseline(
+          db,
+          migration,
+          context,
+          fault,
+          preparation,
+        );
+        return;
+      }
+      applyAndRecordMigration(db, migration, context, fault, preparation);
     });
   }
 }
