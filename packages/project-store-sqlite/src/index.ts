@@ -7,6 +7,12 @@ export type { SqliteStore, SqliteStoreOptions } from "./store.js";
 export { migrate } from "./migrate.js";
 export { migrateAuth } from "./migrate-auth.js";
 export { migrateAssets } from "./migrate-assets.js";
+export {runSchemaMigrations} from "./migrations/index.js";
+export {
+  SchemaMigrationError,
+  type SchemaMigration,
+  type SchemaMigrationErrorCode,
+} from "./migrations/types.js";
 export {
   AssetMetadataMismatchError,
   AssetNotLiveError,

@@ -1,0 +1,105 @@
+import {mkdtempSync, readdirSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {basename, dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
+import Database from "better-sqlite3";
+import {afterEach, describe, expect, it} from "vitest";
+import {
+  copyLegacyR1Fixture,
+  readLegacyR1Manifest,
+} from "./fixtures/legacy-r1-manifest.js";
+import {openSqliteStore} from "./store.js";
+
+const roots: string[] = [];
+const sourceDbPath = fileURLToPath(
+  new URL("./fixtures/legacy-r1.sqlite", import.meta.url),
+);
+
+/** Assert no -wal/-shm beside the given DB path (basename-aware). */
+function assertNoSqliteSidecarsForDb(dbPath: string): void {
+  const directory = dirname(dbPath);
+  const dbName = basename(dbPath);
+  const names = new Set(readdirSync(directory));
+  expect(names.has(`${dbName}-wal`)).toBe(false);
+  expect(names.has(`${dbName}-shm`)).toBe(false);
+}
+
+/**
+ * Explicit destination cleanup only: truncate WAL so residual reopen/readonly
+ * sidecars are gone. This does *not* prove reopen naturally leaves no sidecars.
+ */
+function truncateDestinationWalForHygiene(dbPath: string): void {
+  const db = new Database(dbPath);
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } finally {
+    db.close();
+  }
+}
+
+function foreignKeyViolations(dbPath: string): unknown[] {
+  const db = new Database(dbPath, {readonly: true});
+  try {
+    return db.prepare("PRAGMA foreign_key_check").all();
+  } finally {
+    db.close();
+  }
+}
+
+describe("legacy R1 workspace migration fixture copy/reopen", () => {
+  afterEach(() => {
+    for (const root of roots.splice(0)) {
+      rmSync(root, {recursive: true, force: true});
+    }
+  });
+
+  it("copies and reopens the committed fixture without mutating evidence", () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "legacy-r1-copy-"));
+    roots.push(tempDir);
+
+    const copied = copyLegacyR1Fixture(tempDir);
+    const before = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
+    expect(before).toEqual(copied.manifest);
+
+    const store = openSqliteStore({dbPath: copied.dbPath});
+    store.close();
+    const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
+
+    const migrationDb = new Database(copied.dbPath, {readonly: true});
+    try {
+      expect(migrationDb.pragma("user_version", {simple: true})).toBe(4);
+      expect(
+        migrationDb
+          .prepare(
+            "SELECT version FROM schema_migrations ORDER BY version",
+          )
+          .pluck()
+          .all(),
+      ).toEqual([1, 2, 3, 4]);
+    } finally {
+      migrationDb.close();
+    }
+
+    // Reopen/WAL may change page bytes (databaseSha256), while every item of
+    // logical migration evidence must stay fixed.
+    const {databaseSha256: _beforeDatabaseSha256, ...beforeEvidence} = before;
+    const {databaseSha256: _afterDatabaseSha256, ...afterEvidence} = after;
+    expect(afterEvidence).toEqual(beforeEvidence);
+    expect(after.revisions.find(row => row.revision === 1)).toMatchObject({
+      // Independent sentinel pinned by v1-envelope-hash.regression.test.ts.
+      contentHash:
+        "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128",
+      clientTransactionId: "tx-legacy-rich",
+    });
+
+    expect(foreignKeyViolations(copied.dbPath)).toEqual([]);
+
+    // Source must never gain legacy-r1.sqlite sidecars (committed DB unopened).
+    assertNoSqliteSidecarsForDb(sourceDbPath);
+
+    // Destination checkpoint is hygiene cleanup after evidence checks, not a
+    // claim that reopen itself leaves no WAL/SHM.
+    truncateDestinationWalForHygiene(copied.dbPath);
+    assertNoSqliteSidecarsForDb(copied.dbPath);
+  });
+});

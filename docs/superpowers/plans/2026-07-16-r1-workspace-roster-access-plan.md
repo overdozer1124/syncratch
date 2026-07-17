@@ -50,15 +50,17 @@ APIs that do **not** exist and must not be assumed: workspace selection, person 
 
 **Files:** new fixtures under `packages/project-store-sqlite/src/fixtures/`; new migration acceptance test; no production mutation yet.
 
-**Detailed plan:** `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md`
+**Status:** Complete and green. The first RED production-migration test begins in Task 2.
 
-- [ ] Create an actual pre-migration SQLite fixture through the approved persistence/auth APIs.
-- [ ] Record users, external identities, memberships, sessions, projects, revision envelope bytes, content hashes, transaction ids and snapshots.
-- [ ] Add a V1 project hash fixture copied from the accepted persistence/SB3 tests.
-- [ ] Freeze target-state assertions and byte-stable evidence while keeping this fixture-only task green; the first RED production-migration test belongs to Task 2.
-- [ ] Document the migration matrix in `docs/r1/WORKSPACE_ROSTER_MIGRATION.md`.
+**Detailed plan:** [R1 Workspace Migration Fixtures Implementation Plan](2026-07-17-r1-workspace-migration-fixtures-plan.md)
 
-**Verification:** fixture reopens on current HEAD; hashes match committed expected values; test fails only because new migration is absent.
+- [x] Create an actual pre-migration SQLite fixture through the approved persistence/auth APIs.
+- [x] Record users, external identities, memberships, sessions, projects, revision envelope bytes, content hashes, transaction ids and snapshots.
+- [x] Add a V1 project hash fixture copied from the accepted persistence/SB3 tests.
+- [x] Freeze target-state assertions and byte-stable evidence while keeping this fixture-only task green.
+- [x] Document the migration matrix in `docs/r1/WORKSPACE_ROSTER_MIGRATION.md`.
+
+**Verification:** fixture copies and reopens on current HEAD; hashes and raw bytes match committed expected values; all Task 0 tests remain green. No production-migration test is introduced before Task 2.
 
 **Anti-pattern guards:** no hand-authored fake DB schema; no JSON reserialization of frozen envelopes; do not modify the active Scratch/SB3 design.
 
@@ -80,10 +82,10 @@ Define:
 - RosterImport preview/apply types
 - AuditEvent and optimistic directory revision
 
-- [ ] Failing validator and capability matrix tests.
-- [ ] Implement pure types, validation and permission evaluation.
-- [ ] Export only domain contracts; no SQLite or Hono imports.
-- [ ] Commit: `feat(directory): workspace roster and scoped access contracts`.
+- [x] Failing validator and capability matrix tests.
+- [x] Implement pure types, validation and permission evaluation.
+- [x] Export only domain contracts; no SQLite or Hono imports.
+- [x] Commit: `feat(directory): workspace roster and scoped access contracts`.
 
 **Verification:** teacher/student facts never satisfy system capabilities; student + explicit project-host role does; attendance number nullable.
 
@@ -95,18 +97,43 @@ Define:
 
 **Files:** `packages/project-store-sqlite/src/migrations/**`, `store.ts`, migration tests.
 
-Implement a monotonic `schema_migrations` runner. Create tables from Design §§4–5, with explicit FKs, CHECKs and indexes. Preserve the existing shared connection.
+Task 2 is split. The **ledger-only** sub-slice landed first, followed by the
+additive Workspace/Person target schema. Both slices are GO; no legacy rows are
+backfilled by Task 2.
 
-- [ ] Failing fresh/reopen/partial-crash migration tests.
-- [ ] Add ledger and ordered migrations.
-- [ ] Add target tables and constraints.
-- [ ] Change migration order so referenced workspace/account tables exist before new FKs.
-- [ ] Commit: `feat(store): versioned workspace roster schema`.
+**Detailed plan (ledger-only):** [R1 Versioned SQLite Migration Ledger Implementation Plan](2026-07-17-r1-versioned-migration-ledger-plan.md)
+
+That ledger slice adds `schema_migrations`, the ordered synchronous runner,
+accepted-legacy adoption, crash/retry guards, and concurrent-startup proof. It
+does **not** create `workspaces`, `people`, `user_accounts`,
+`person_account_links`, `workspace_memberships`, roster, permission, or audit
+tables.
+
+The target-schema slice creates the tables from Design §§4–5 (explicit FKs,
+CHECKs, indexes) on the shared connection in ordered domain migrations.
+
+**Approved Person ID strategy (record only; no tables in the ledger slice):**
+`user_accounts.id` retains the legacy `users.id`; `people.id` is derived
+deterministically from a fixed namespace and the legacy user ID. Implement that
+mapping only in the later Workspace/Person schema plan.
+
+- [x] Ledger-only sub-slice (detailed plan above): fresh/reopen/partial-crash,
+  adoption, busy/race, and frozen-evidence gates.
+- [x] After ledger GO: add target Workspace/Person tables and constraints.
+- [x] Register migrations in dependency order so referenced workspace/account
+  tables exist before new FKs.
+- [ ] Commit ledger first (`feat(store): …` / `test(store): prove concurrent migration startup`);
+  target schema commit remains `feat(store): versioned workspace roster schema`.
 
 ### Task 3: Migrate accepted single-org databases
 
+**Task 2 target-schema GO is complete. Task 3 remains unstarted and requires its
+own approved backfill slice.** Do not fold legacy row backfill, Person ID
+generation, claim tables, or repository cutover into registry wiring.
+
 - [ ] Convert every organization to a workspace with the same ID.
-- [ ] Create Person + account link for every existing user.
+- [ ] Create Person + account link for every existing user (using the approved
+  deterministic Person ID strategy recorded under Task 2).
 - [ ] Convert memberships and project ownership without broadening access.
 - [ ] Migrate or revoke old org-scoped sessions fail-closed.
 - [ ] Keep project envelope bytes, V1 hashes, snapshots and transaction ids unchanged.
@@ -118,6 +145,8 @@ Implement a monotonic `schema_migrations` runner. Create tables from Design §§
 **Anti-pattern guards:** `CREATE TABLE IF NOT EXISTS` alone is not a migration strategy; no direct rename inside V1 envelope JSON; no second SQLite connection factory.
 
 ## Phase 3 — Repositories and directory services
+
+**Blocked until the Task 2 ledger-only sub-slice is GO.**
 
 ### Task 4: Repository ports and SQLite adapters
 

@@ -1,0 +1,2590 @@
+{
+  "current": {
+    "tables": [
+      {
+        "name": "academic_years",
+        "sql": "CREATE TABLE academic_years (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),school_id TEXT NOT NULL REFERENCES schools(id),label TEXT NOT NULL CHECK (length(trim(label)) > 0),start_date TEXT NOT NULL,end_date TEXT NOT NULL,status TEXT NOT NULL CHECK (status IN ('planned','active','closed')),CHECK (start_date <= end_date),UNIQUE (school_id,label))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "school_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "label",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "start_date",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "end_date",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "schools",
+            "from": "school_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_ay_school",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "school_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "asset_gc_lock",
+        "sql": "CREATE TABLE asset_gc_lock (id INTEGER PRIMARY KEY CHECK (id = 1),owner TEXT NOT NULL,generation INTEGER NOT NULL DEFAULT 1,acquired_at TEXT NOT NULL,expires_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "INTEGER",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "owner",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "generation",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": "1",
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "acquired_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "expires_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      },
+      {
+        "name": "asset_import_leases",
+        "sql": "CREATE TABLE asset_import_leases (lease_id TEXT PRIMARY KEY,organization_id TEXT NOT NULL REFERENCES organizations(id),sha256 TEXT NOT NULL CHECK(length(sha256) = 64 AND sha256 = lower(sha256) AND sha256 NOT GLOB '*[^0-9a-f]*'),import_session_id TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "lease_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "sha256",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "import_session_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "expires_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "asset_import_leases_expires",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "expires_at"
+            ]
+          },
+          {
+            "name": "asset_import_leases_session",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "import_session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "asset_objects",
+        "sql": "CREATE TABLE asset_objects (sha256 TEXT PRIMARY KEY CHECK(length(sha256) = 64 AND sha256 = lower(sha256) AND sha256 NOT GLOB '*[^0-9a-f]*'),byte_length INTEGER NOT NULL CHECK(byte_length >= 0),md5_hex TEXT NOT NULL CHECK(length(md5_hex) = 32 AND md5_hex = lower(md5_hex) AND md5_hex NOT GLOB '*[^0-9a-f]*'),data_format TEXT NOT NULL CHECK(data_format IN ('svg','png','jpg','bmp','gif','wav','mp3')),gc_state TEXT NOT NULL DEFAULT 'live' CHECK(gc_state IN ('live','quarantining','quarantined')),quarantine_started_at TEXT,created_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "sha256",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "byte_length",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "md5_hex",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "data_format",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "gc_state",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": "'live'",
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "quarantine_started_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "name": "asset_objects_gc_state",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "gc_state"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "audit_events",
+        "sql": "CREATE TABLE audit_events (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),workspace_id TEXT REFERENCES workspaces(id),actor_account_id TEXT REFERENCES user_accounts(id),action TEXT NOT NULL CHECK (length(trim(action)) > 0),subject_type TEXT NOT NULL CHECK (length(trim(subject_type)) > 0),subject_id TEXT NOT NULL CHECK (length(trim(subject_id)) > 0),payload_json TEXT NOT NULL CHECK (json_valid(payload_json) AND json_type(payload_json) = 'object'),created_at TEXT NOT NULL,directory_revision INTEGER NOT NULL CHECK (directory_revision >= 0))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "actor_account_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "action",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "subject_type",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "subject_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "payload_json",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 8,
+            "name": "directory_revision",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "user_accounts",
+            "from": "actor_account_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "workspaces",
+            "from": "workspace_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_audit_subject",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "subject_type",
+              "subject_id"
+            ]
+          },
+          {
+            "name": "idx_audit_ws_time",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "workspace_id",
+              "created_at"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "class_groups",
+        "sql": "CREATE TABLE class_groups (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),academic_year_id TEXT NOT NULL REFERENCES academic_years(id),grade_id TEXT NOT NULL,label TEXT NOT NULL CHECK (length(trim(label)) > 0),UNIQUE (academic_year_id,grade_id,label),FOREIGN KEY (grade_id,academic_year_id) REFERENCES grades(id,academic_year_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "academic_year_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "grade_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "label",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "grades",
+            "from": "grade_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 0,
+            "seq": 1,
+            "table": "grades",
+            "from": "academic_year_id",
+            "to": "academic_year_id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "academic_years",
+            "from": "academic_year_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_cg_ay",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "academic_year_id"
+            ]
+          },
+          {
+            "name": "idx_cg_grade",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "grade_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "enrollments",
+        "sql": "CREATE TABLE enrollments (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),person_id TEXT NOT NULL REFERENCES people(id),class_group_id TEXT NOT NULL REFERENCES class_groups(id),status TEXT NOT NULL CHECK (status IN ('active','ended')),start_date TEXT NOT NULL,end_date TEXT,attendance_number TEXT,CHECK (end_date IS NULL OR start_date <= end_date),CHECK ((status = 'active' AND end_date IS NULL) OR (status = 'ended' AND end_date IS NOT NULL)),CHECK (attendance_number IS NULL OR length(trim(attendance_number)) > 0))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "person_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "class_group_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "start_date",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "end_date",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "attendance_number",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "class_groups",
+            "from": "class_group_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "people",
+            "from": "person_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_enroll_class",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "class_group_id"
+            ]
+          },
+          {
+            "name": "idx_enroll_person",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "person_id"
+            ]
+          },
+          {
+            "name": "ux_enroll_active_attendance",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "class_group_id",
+              "attendance_number"
+            ]
+          },
+          {
+            "name": "ux_enroll_active_person_class",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "person_id",
+              "class_group_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "external_identities",
+        "sql": "CREATE TABLE external_identities (provider TEXT NOT NULL CHECK (provider IN ('google')),subject TEXT NOT NULL,user_id TEXT NOT NULL REFERENCES users(id),organization_id TEXT NOT NULL REFERENCES organizations(id),created_at TEXT NOT NULL,PRIMARY KEY (provider,subject),UNIQUE (provider,subject))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "provider",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "subject",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "users",
+            "from": "user_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "global_disk_reservations",
+        "sql": "CREATE TABLE global_disk_reservations (reservation_id TEXT PRIMARY KEY,import_session_id TEXT NOT NULL UNIQUE,reserved_bytes INTEGER NOT NULL CHECK(reserved_bytes >= 0),materialized_bytes INTEGER NOT NULL DEFAULT 0 CHECK(materialized_bytes >= 0),expires_at TEXT NOT NULL,created_at TEXT NOT NULL,CHECK(materialized_bytes <= reserved_bytes))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "reservation_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "import_session_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "reserved_bytes",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "materialized_bytes",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": "0",
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "expires_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": [
+          {
+            "name": "global_disk_reservations_expires",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "expires_at"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "grades",
+        "sql": "CREATE TABLE grades (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),academic_year_id TEXT NOT NULL REFERENCES academic_years(id),code TEXT NOT NULL CHECK (length(trim(code)) > 0),display_label TEXT NOT NULL CHECK (length(trim(display_label)) > 0),sort_order INTEGER NOT NULL CHECK (sort_order >= 0),UNIQUE (academic_year_id,code),UNIQUE (id,academic_year_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "academic_year_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "code",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "display_label",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "sort_order",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "academic_years",
+            "from": "academic_year_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_grades_ay",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "academic_year_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "organization_asset_grants",
+        "sql": "CREATE TABLE organization_asset_grants (organization_id TEXT NOT NULL REFERENCES organizations(id),sha256 TEXT NOT NULL REFERENCES asset_objects(sha256),granted_at TEXT NOT NULL,PRIMARY KEY (organization_id,sha256))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "sha256",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "granted_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "asset_objects",
+            "from": "sha256",
+            "to": "sha256",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "organization_asset_quota_reservation_shas",
+        "sql": "CREATE TABLE organization_asset_quota_reservation_shas (reservation_id TEXT NOT NULL REFERENCES organization_asset_quota_reservations(reservation_id) ON DELETE CASCADE,sha256 TEXT NOT NULL,byte_length INTEGER NOT NULL CHECK(byte_length >= 0),PRIMARY KEY (reservation_id,sha256))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "reservation_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "sha256",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "byte_length",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organization_asset_quota_reservations",
+            "from": "reservation_id",
+            "to": "reservation_id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "organization_asset_quota_reservations",
+        "sql": "CREATE TABLE organization_asset_quota_reservations (reservation_id TEXT PRIMARY KEY,organization_id TEXT NOT NULL REFERENCES organizations(id),import_session_id TEXT NOT NULL UNIQUE,reserved_bytes INTEGER NOT NULL CHECK(reserved_bytes >= 0),expires_at TEXT NOT NULL,created_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "reservation_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "import_session_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "reserved_bytes",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "expires_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "quota_reservations_expires",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "expires_at"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "organization_domains",
+        "sql": "CREATE TABLE organization_domains (organization_id TEXT NOT NULL REFERENCES organizations(id),hosted_domain TEXT NOT NULL,PRIMARY KEY (organization_id,hosted_domain),UNIQUE (hosted_domain))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "hosted_domain",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "organization_memberships",
+        "sql": "CREATE TABLE organization_memberships (organization_id TEXT NOT NULL REFERENCES organizations(id),user_id TEXT NOT NULL REFERENCES users(id),role TEXT NOT NULL CHECK (role IN ('member','admin')),PRIMARY KEY (organization_id,user_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "role",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "users",
+            "from": "user_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "organizations",
+            "from": "organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "organizations",
+        "sql": "CREATE TABLE organizations (id TEXT PRIMARY KEY,name TEXT NOT NULL,status TEXT NOT NULL CHECK (status IN ('active','suspended')),created_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "name",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      },
+      {
+        "name": "people",
+        "sql": "CREATE TABLE people (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),display_name TEXT NOT NULL CHECK (length(trim(display_name)) > 0),status TEXT NOT NULL CHECK (status IN ('active','disabled','archived')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "display_name",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      },
+      {
+        "name": "person_account_links",
+        "sql": "CREATE TABLE person_account_links (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),person_id TEXT NOT NULL REFERENCES people(id),account_id TEXT NOT NULL REFERENCES user_accounts(id),status TEXT NOT NULL CHECK (status IN ('active','unlinked')),linked_at TEXT NOT NULL,unlinked_at TEXT,CHECK ((status = 'active' AND unlinked_at IS NULL) OR (status = 'unlinked' AND unlinked_at IS NOT NULL)))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "person_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "account_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "linked_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "unlinked_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "user_accounts",
+            "from": "account_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "people",
+            "from": "person_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_pal_account",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "account_id"
+            ]
+          },
+          {
+            "name": "idx_pal_person",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "person_id"
+            ]
+          },
+          {
+            "name": "ux_pal_active_account",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "account_id"
+            ]
+          },
+          {
+            "name": "ux_pal_active_person",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "person_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "project_members",
+        "sql": "CREATE TABLE project_members (project_id TEXT NOT NULL REFERENCES projects(id),user_id TEXT NOT NULL,role TEXT NOT NULL,PRIMARY KEY (project_id,user_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "project_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "role",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "projects",
+            "from": "project_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_members_user",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "user_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "project_revisions",
+        "sql": "CREATE TABLE project_revisions (project_id TEXT NOT NULL REFERENCES projects(id),revision INTEGER NOT NULL,envelope_json TEXT NOT NULL,content_hash TEXT NOT NULL,request_hash TEXT NOT NULL,actor_user_id TEXT NOT NULL,created_at TEXT NOT NULL,client_transaction_id TEXT,PRIMARY KEY (project_id,revision),UNIQUE (project_id,client_transaction_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "project_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "revision",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 2,
+            "name": "envelope_json",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "content_hash",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "request_hash",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "actor_user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "client_transaction_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "projects",
+            "from": "project_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "project_snapshots",
+        "sql": "CREATE TABLE project_snapshots (id TEXT NOT NULL,project_id TEXT NOT NULL REFERENCES projects(id),based_on_revision INTEGER NOT NULL,reason TEXT NOT NULL,content_hash TEXT NOT NULL,storage_key TEXT NOT NULL,created_by TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY (project_id,id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 2
+          },
+          {
+            "cid": 1,
+            "name": "project_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 2,
+            "name": "based_on_revision",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "reason",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "content_hash",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "storage_key",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "created_by",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "projects",
+            "from": "project_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "projects",
+        "sql": "CREATE TABLE projects (id TEXT PRIMARY KEY,organization_id TEXT NOT NULL,owner_user_id TEXT NOT NULL,title TEXT NOT NULL,head_revision INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "owner_user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "title",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "head_revision",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      },
+      {
+        "name": "role_assignments",
+        "sql": "CREATE TABLE role_assignments (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),account_id TEXT NOT NULL REFERENCES user_accounts(id),scope_kind TEXT NOT NULL CHECK (scope_kind IN ('system','workspace','school','class','project')),workspace_id TEXT REFERENCES workspaces(id),school_id TEXT REFERENCES schools(id),class_group_id TEXT REFERENCES class_groups(id),project_id TEXT REFERENCES projects(id),role TEXT NOT NULL,status TEXT NOT NULL CHECK (status IN ('active','ended')),started_at TEXT NOT NULL,ended_at TEXT,CHECK ((scope_kind = 'system' AND workspace_id IS NULL AND school_id IS NULL AND class_group_id IS NULL AND project_id IS NULL) OR (scope_kind = 'workspace' AND workspace_id IS NOT NULL AND school_id IS NULL AND class_group_id IS NULL AND project_id IS NULL) OR (scope_kind = 'school' AND school_id IS NOT NULL AND workspace_id IS NULL AND class_group_id IS NULL AND project_id IS NULL) OR (scope_kind = 'class' AND class_group_id IS NOT NULL AND workspace_id IS NULL AND school_id IS NULL AND project_id IS NULL) OR (scope_kind = 'project' AND project_id IS NOT NULL AND workspace_id IS NULL AND school_id IS NULL AND class_group_id IS NULL)),CHECK ((scope_kind = 'system' AND role IN ('owner','operator')) OR (scope_kind = 'workspace' AND role IN ('owner','admin','member','guest')) OR (scope_kind = 'school' AND role IN ('school_admin','staff','student')) OR (scope_kind = 'class' AND role IN ('teacher','assistant','student')) OR (scope_kind = 'project' AND role IN ('owner','host','editor','commenter','viewer'))),CHECK ((status = 'active' AND ended_at IS NULL) OR (status = 'ended' AND ended_at IS NOT NULL)))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "account_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "scope_kind",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "school_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "class_group_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "project_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "role",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 8,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 9,
+            "name": "started_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 10,
+            "name": "ended_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "projects",
+            "from": "project_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "class_groups",
+            "from": "class_group_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 2,
+            "seq": 0,
+            "table": "schools",
+            "from": "school_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 3,
+            "seq": 0,
+            "table": "workspaces",
+            "from": "workspace_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 4,
+            "seq": 0,
+            "table": "user_accounts",
+            "from": "account_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_ra_account_status",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "account_id",
+              "status"
+            ]
+          },
+          {
+            "name": "idx_ra_sys_role",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "scope_kind",
+              "role"
+            ]
+          },
+          {
+            "name": "idx_ra_ws_role",
+            "unique": 0,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "workspace_id",
+              "role"
+            ]
+          },
+          {
+            "name": "ux_ra_active_unique",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "account_id",
+              "scope_kind",
+              "",
+              "",
+              "",
+              "",
+              "role"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "roster_import_rows",
+        "sql": "CREATE TABLE roster_import_rows (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),import_id TEXT NOT NULL REFERENCES roster_imports(id) ON DELETE CASCADE,row_number INTEGER NOT NULL CHECK (row_number >= 0),category TEXT NOT NULL CHECK (category IN ('add_person','update_display_fields','new_enrollment','class_move','end_enrollment','duplicate_candidate','attendance_collision','ambiguous_account_link','rejected_row')),person_id TEXT REFERENCES people(id),proposed_json TEXT NOT NULL CHECK (json_valid(proposed_json) AND json_type(proposed_json) = 'object'),issues_json TEXT NOT NULL CHECK (json_valid(issues_json) AND json_type(issues_json) = 'array'),UNIQUE (import_id,row_number))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "import_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "row_number",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "category",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "person_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "proposed_json",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "issues_json",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "people",
+            "from": "person_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "roster_imports",
+            "from": "import_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "CASCADE",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_rir_import",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "import_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "roster_imports",
+        "sql": "CREATE TABLE roster_imports (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),workspace_id TEXT NOT NULL,school_id TEXT NOT NULL,status TEXT NOT NULL CHECK (status IN ('uploaded','validated','preview_ready','applied','failed','discarded')),uploaded_at TEXT NOT NULL,preview_hash TEXT CHECK (preview_hash IS NULL OR (length(preview_hash) = 64 AND preview_hash = lower(preview_hash) AND preview_hash NOT GLOB '*[^0-9a-f]*')),base_directory_revision INTEGER CHECK (base_directory_revision IS NULL OR base_directory_revision >= 0),applied_at TEXT,CHECK ((status = 'applied' AND applied_at IS NOT NULL) OR (status <> 'applied' AND applied_at IS NULL)),FOREIGN KEY (school_id,workspace_id) REFERENCES schools(id,workspace_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "school_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "uploaded_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "preview_hash",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "base_directory_revision",
+            "type": "INTEGER",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "applied_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "schools",
+            "from": "school_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 0,
+            "seq": 1,
+            "table": "schools",
+            "from": "workspace_id",
+            "to": "workspace_id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_ri_school",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "school_id"
+            ]
+          },
+          {
+            "name": "idx_ri_workspace",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "workspace_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "schools",
+        "sql": "CREATE TABLE schools (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),workspace_id TEXT NOT NULL REFERENCES workspaces(id),name TEXT NOT NULL CHECK (length(trim(name)) > 0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE (id,workspace_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "name",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "workspaces",
+            "from": "workspace_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_schools_workspace",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "workspace_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "sessions",
+        "sql": "CREATE TABLE sessions (id_hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,organization_id TEXT NOT NULL,csrf_hash TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT,last_seen_at TEXT,FOREIGN KEY (organization_id,user_id) REFERENCES organization_memberships(organization_id,user_id))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id_hash",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "user_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "csrf_hash",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "expires_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "revoked_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 7,
+            "name": "last_seen_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organization_memberships",
+            "from": "organization_id",
+            "to": "organization_id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 0,
+            "seq": 1,
+            "table": "organization_memberships",
+            "from": "user_id",
+            "to": "user_id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "staff_assignments",
+        "sql": "CREATE TABLE staff_assignments (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),person_id TEXT NOT NULL REFERENCES people(id),class_group_id TEXT NOT NULL REFERENCES class_groups(id),role TEXT NOT NULL CHECK (role IN ('teacher','assistant')),status TEXT NOT NULL CHECK (status IN ('active','ended')),start_date TEXT NOT NULL,end_date TEXT,CHECK (end_date IS NULL OR start_date <= end_date),CHECK ((status = 'active' AND end_date IS NULL) OR (status = 'ended' AND end_date IS NOT NULL)))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "person_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "class_group_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "role",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "start_date",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "end_date",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "class_groups",
+            "from": "class_group_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "people",
+            "from": "person_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_staff_class",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "class_group_id"
+            ]
+          },
+          {
+            "name": "idx_staff_person",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "person_id"
+            ]
+          },
+          {
+            "name": "ux_staff_active_person_class_role",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "person_id",
+              "class_group_id",
+              "role"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "user_accounts",
+        "sql": "CREATE TABLE user_accounts (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),display_name TEXT,email TEXT,status TEXT NOT NULL CHECK (status IN ('active','disabled')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "display_name",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "email",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      },
+      {
+        "name": "users",
+        "sql": "CREATE TABLE users (id TEXT PRIMARY KEY,primary_organization_id TEXT NOT NULL REFERENCES organizations(id),display_name TEXT,email TEXT,status TEXT NOT NULL CHECK (status IN ('active','disabled')),created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "primary_organization_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "display_name",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "email",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "organizations",
+            "from": "primary_organization_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "workspace_directory_revisions",
+        "sql": "CREATE TABLE workspace_directory_revisions (workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id),revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "revision",
+            "type": "INTEGER",
+            "notNull": 1,
+            "defaultValue": "0",
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "workspaces",
+            "from": "workspace_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": []
+      },
+      {
+        "name": "workspace_memberships",
+        "sql": "CREATE TABLE workspace_memberships (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),workspace_id TEXT NOT NULL REFERENCES workspaces(id),account_id TEXT NOT NULL REFERENCES user_accounts(id),role TEXT NOT NULL CHECK (role IN ('owner','admin','member','guest')),status TEXT NOT NULL CHECK (status IN ('active','ended')),started_at TEXT NOT NULL,ended_at TEXT,CHECK ((status = 'active' AND ended_at IS NULL) OR (status = 'ended' AND ended_at IS NOT NULL)))",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "workspace_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "account_id",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "role",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "status",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 5,
+            "name": "started_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 6,
+            "name": "ended_at",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [
+          {
+            "id": 0,
+            "seq": 0,
+            "table": "user_accounts",
+            "from": "account_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          },
+          {
+            "id": 1,
+            "seq": 0,
+            "table": "workspaces",
+            "from": "workspace_id",
+            "to": "id",
+            "onUpdate": "NO ACTION",
+            "onDelete": "NO ACTION",
+            "match": "NONE"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "idx_wm_account",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "account_id"
+            ]
+          },
+          {
+            "name": "idx_wm_workspace",
+            "unique": 0,
+            "origin": "c",
+            "partial": 0,
+            "columns": [
+              "workspace_id"
+            ]
+          },
+          {
+            "name": "ux_wm_active",
+            "unique": 1,
+            "origin": "c",
+            "partial": 1,
+            "columns": [
+              "workspace_id",
+              "account_id"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "workspaces",
+        "sql": "CREATE TABLE workspaces (id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),kind TEXT NOT NULL CHECK (kind IN ('personal','casual','school')),name TEXT NOT NULL CHECK (length(trim(name)) > 0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL)",
+        "columns": [
+          {
+            "cid": 0,
+            "name": "id",
+            "type": "TEXT",
+            "notNull": 0,
+            "defaultValue": null,
+            "primaryKeyPosition": 1
+          },
+          {
+            "cid": 1,
+            "name": "kind",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 2,
+            "name": "name",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 3,
+            "name": "created_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          },
+          {
+            "cid": 4,
+            "name": "updated_at",
+            "type": "TEXT",
+            "notNull": 1,
+            "defaultValue": null,
+            "primaryKeyPosition": 0
+          }
+        ],
+        "foreignKeys": [],
+        "indexes": []
+      }
+    ]
+  }
+}
