@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 20:07:41 JST |
+| 最終更新 | 2026-07-17 21:05:19 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex |
-| 現在のTask | R1 Versioned SQLite Migration Ledger（Tasks 1〜6） |
-| 全体進捗 | **100%**（実装完了 / Cursor内タスク・最終レビューGO / Codexレビュー待ち） |
-| 承認基準SHA | `84c458c0d5b482dfc47abf35174fdf88226a7137` |
+| ワークフロー状態 | `DESIGN_REVIEW` |
+| 現在の担当 | Cursor |
+| 現在のTask | Workspace Directory Domain Contracts 設計 |
+| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 設計中 |
+| 承認基準SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08`（Migration Ledger正式承認） |
 | 再提出SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-versioned-migration-ledger-plan.md` |
-| 前スライス | Workspace Migration Fixtures = 100%（凍結） |
-| 次Task | Codexレビュー結果に応じて修正、または正式承認後に次スライス設計 |
-| レビュー運用 | Codexレビュー（Cursor内レビューは全Task APPROVED + whole-branch Ready to merge） |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-versioned-migration-ledger-plan.md`（完了） |
+| 前スライス | R1 Versioned SQLite Migration Ledger = 100%（Cursor内正式承認・凍結） |
+| 次Task | Domain Contracts 設計書作成 → written spec承認 → TDD実装計画 |
+| レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Codexレビュー結果を共有台帳から読み、指摘範囲のみ修正する。承認前に次スライス（Workspace target schema）へ着手しない。
+Workspace Directory Domain Contracts の設計書を作成し、自己レビュー後にcommitする。SQLite target schema / migration 0002 には着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2372,3 +2372,27 @@ Cursor内レビュー:
 - frozen fixture evidenceとledgerless generator契約を維持。
 - merge / push / PR作成なし。
 - 次担当: Codex。
+
+### 2026-07-17 21:05:19 JST — Cursor（Migration Ledger Cursor内正式承認 / Domain Contracts設計開始）
+
+```text
+最終更新: 2026-07-17 21:05:19 JST
+更新者: Cursor
+状態: DESIGN_REVIEW
+対象Task: Workspace Directory Domain Contracts 設計
+正式承認:
+- Codexレート制限のため、ユーザーが「１」でCursor内最終レビューGOを正式承認として選択
+- Migration Ledger正式承認SHA: 9b940f35b0b809daf9fa6d7e567da9d8565c0c08
+- 計画基準SHA: 84c458c0d5b482dfc47abf35174fdf88226a7137
+次スライス方針（ユーザー承認済み）:
+- Phase 1 Task 1（workspace-directory ドメイン契約）を先に設計・実装
+- Capabilityは閉じた操作単位union、Role主体はUserAccount
+- SQLite target schema / backfill はドメイン契約確定後
+次の作業:
+- 設計書 docs/superpowers/specs/2026-07-17-r1-workspace-directory-domain-contracts-design.md を作成
+次の担当: Cursor
+```
+
+- Migration LedgerをCursor内正式承認として凍結。
+- 次スライスをdomain contracts優先で開始。
+- merge / push / PR作成なし。
