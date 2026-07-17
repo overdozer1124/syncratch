@@ -1,0 +1,79 @@
+{
+  "format": "blocksync.legacy-r1-fixture/v1",
+  "generatedAt": "2026-07-17T00:00:00.000Z",
+  "databaseSha256": "80e2dfa340df9c66a2a57158093991f6039049ab727c1733782b43766d272d77",
+  "snapshotSha256": {
+    "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128.json": "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128"
+  },
+  "organizations": [
+    {
+      "id": "a80b3302-cffd-4f84-925c-546c557e37b7",
+      "name": "Legacy School",
+      "status": "active"
+    }
+  ],
+  "users": [
+    {
+      "id": "user-legacy-owner",
+      "primaryOrganizationId": "a80b3302-cffd-4f84-925c-546c557e37b7",
+      "status": "active"
+    }
+  ],
+  "externalIdentities": [
+    {
+      "provider": "google",
+      "subject": "legacy-google-subject",
+      "userId": "user-legacy-owner",
+      "organizationId": "a80b3302-cffd-4f84-925c-546c557e37b7"
+    }
+  ],
+  "memberships": [
+    {
+      "organizationId": "a80b3302-cffd-4f84-925c-546c557e37b7",
+      "userId": "user-legacy-owner",
+      "role": "admin"
+    }
+  ],
+  "sessions": [
+    {
+      "idHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "userId": "user-legacy-owner",
+      "organizationId": "a80b3302-cffd-4f84-925c-546c557e37b7",
+      "revokedAt": null
+    }
+  ],
+  "projects": [
+    {
+      "id": "project-legacy-rich",
+      "organizationId": "a80b3302-cffd-4f84-925c-546c557e37b7",
+      "ownerUserId": "user-legacy-owner",
+      "headRevision": 1
+    }
+  ],
+  "revisions": [
+    {
+      "projectId": "project-legacy-rich",
+      "revision": 0,
+      "envelopeJson": "{\"format\":\"blocksync.project/v1\",\"projectId\":\"project-legacy-rich\",\"organizationId\":\"a80b3302-cffd-4f84-925c-546c557e37b7\",\"title\":\"Legacy Rich Fixture\",\"revision\":0,\"schemaVersion\":1,\"contentHash\":\"0cc517f62f40c66b669ccb7c6c3bf49ec257a12cfc3eea4d74a82315181a5475\",\"updatedAt\":\"2026-07-17T00:00:00.000Z\",\"updatedByUserId\":\"user-legacy-owner\",\"document\":{\"schemaVersion\":1,\"targets\":[{\"id\":\"stage\",\"name\":\"Stage\",\"isStage\":true,\"blocks\":{},\"variables\":{},\"lists\":{},\"broadcasts\":{}}],\"extensions\":[]}}",
+      "contentHash": "0cc517f62f40c66b669ccb7c6c3bf49ec257a12cfc3eea4d74a82315181a5475",
+      "requestHash": "",
+      "clientTransactionId": null
+    },
+    {
+      "projectId": "project-legacy-rich",
+      "revision": 1,
+      "envelopeJson": "{\"format\":\"blocksync.project/v1\",\"projectId\":\"project-legacy-rich\",\"organizationId\":\"a80b3302-cffd-4f84-925c-546c557e37b7\",\"title\":\"Legacy Rich Fixture\",\"revision\":1,\"schemaVersion\":1,\"contentHash\":\"082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128\",\"updatedAt\":\"2026-07-17T00:00:00.000Z\",\"updatedByUserId\":\"user-legacy-owner\",\"document\":{\"schemaVersion\":1,\"extensions\":[\"music\"],\"meta\":{\"locale\":\"ja\",\"title\":\"サンプル\"},\"targets\":[{\"id\":\"stage\",\"name\":\"ステージ\",\"isStage\":true,\"blocks\":{},\"variables\":{\"gv1\":[\"全体スコア\",0]},\"lists\":{\"gl1\":[\"一覧\",[\"いち\",\"に\"]]},\"broadcasts\":{\"gb1\":\"開始メッセージ\"}},{\"id\":\"sprite-neko\",\"name\":\"ネコ\",\"isStage\":false,\"variables\":{\"v1\":[\"歩く歩数\",10]},\"lists\":{\"l1\":[\"買い物\",[\"りんご\",\"みかん\"]]},\"broadcasts\":{\"b1\":\"ジャンプした\"},\"blocks\":{\"hat\":{\"id\":\"hat\",\"opcode\":\"event_whenflagclicked\",\"next\":\"say\",\"parent\":null,\"inputs\":{},\"fields\":{},\"topLevel\":true},\"say\":{\"id\":\"say\",\"opcode\":\"looks_say\",\"next\":\"music\",\"parent\":\"hat\",\"inputs\":{\"MESSAGE\":[1,[10,\"こんにちは\"]]},\"fields\":{},\"topLevel\":false},\"music\":{\"id\":\"music\",\"opcode\":\"music_playDrumForBeats\",\"next\":null,\"parent\":\"say\",\"inputs\":{},\"fields\":{},\"topLevel\":false}}}]},\"revisionMeta\":{\"op\":\"save_document\"}}",
+      "contentHash": "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128",
+      "requestHash": "59559c54074ec3e9e92c53e8f46f7628fbeca746b1d735bfca225db06fc6f7b9",
+      "clientTransactionId": "tx-legacy-rich"
+    }
+  ],
+  "snapshots": [
+    {
+      "projectId": "project-legacy-rich",
+      "snapshotId": "snapshot-legacy-rich",
+      "contentHash": "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128",
+      "storageKey": "082c3d00ac85531a4e88689c13d1088137569a4fc5bc591b1797871c9cf13128.json"
+    }
+  ]
+}
