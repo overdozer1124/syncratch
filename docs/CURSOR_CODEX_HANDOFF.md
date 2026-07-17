@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 22:47:21 JST |
+| 最終更新 | 2026-07-17 22:49:46 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `DESIGN_REVIEW` |
-| 現在の担当 | Cursor |
-| 現在のTask | Workspace Directory Target Schema 設計 |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 設計中 |
+| ワークフロー状態 | `PLAN_REVIEW` |
+| 現在の担当 | User |
+| 現在のTask | Workspace Directory Target Schema 詳細実装計画 |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 設計・計画完了 |
 | 承認基準SHA | `76be558eb13ee35835a5aed1845f562deb356318`（Domain Contracts正式承認） |
-| 再提出SHA | `76be558eb13ee35835a5aed1845f562deb356318` |
+| 再提出SHA | `b3b49d4f76aa5237d58d3383062e96bede74159e` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md`（完了） |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md` |
 | 前スライス | Workspace Directory Domain Contracts = 100%（Cursor内正式承認・凍結） |
-| 次Task | Target Schema 設計書作成 → written spec承認 → TDD実装計画 |
+| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Workspace Directory Target Schema（v2〜v4 additive DDL）の設計書を作成し、自己レビュー後にcommitする。legacy backfill・production cutoverには着手しない。
+ユーザーの詳細実装計画レビュー待ち。承認前にmigration 0002〜0004実装へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2509,3 +2509,37 @@ Cursor内レビュー:
 
 - Domain Contracts完了後、target schema設計へ移行。
 - merge / push / PR作成なし。
+
+### 2026-07-17 22:49:46 JST — Cursor（Target Schema設計・計画完了）
+
+```text
+最終更新: 2026-07-17 22:49:46 JST
+更新者: Cursor
+状態: PLAN_REVIEW
+対象Task: Workspace Directory Target Schema
+設計commit SHA: d0cd7e1a05cc2d9510cc65e772cf329088dfdad5
+計画commit SHA: b3b49d4f76aa5237d58d3383062e96bede74159e
+設計:
+- docs/superpowers/specs/2026-07-17-r1-workspace-directory-target-schema-design.md
+詳細計画:
+- docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md
+計画構成:
+- Task 1: migration 0002 identity core
+- Task 2: migration 0003 school roster
+- Task 3: migration 0004 access/import/audit
+- Task 4: final v4 target schema fingerprint
+- Task 5: registry配線・consumer更新・全ゲート
+自己レビュー:
+- placeholder: なし（DDLは設計§5–7を逐語コピー）
+- baseline fingerprint非改変・legacy backfill非対象を明記
+- production未読境界テストをTask 5に割当
+- git diff --check: PASS
+次の作業:
+- ユーザーが詳細計画を承認し、実行方式を選択。
+- 承認前にmigration実装へ着手しない。
+次の担当: User
+```
+
+- 承認済み設計をTDD・5 Taskの詳細計画へ展開しcommit。
+- merge / push / PR作成なし。
+- 次担当: User（計画レビュー・実行方式選択）。
