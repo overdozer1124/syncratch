@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 21:19:49 JST |
+| 最終更新 | 2026-07-17 22:20:29 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `TASK_1_IN_PROGRESS` |
-| 現在の担当 | Cursor |
-| 現在のTask | Workspace Directory Domain Contracts Task 1 / 5 |
-| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 実装中 |
-| 承認基準SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08`（Migration Ledger正式承認） |
-| 再提出SHA | `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a` |
+| ワークフロー状態 | `SLICE_COMPLETE / NEXT_PLAN_READY` |
+| 現在の担当 | User |
+| 現在のTask | Workspace Directory Domain Contracts（Tasks 1〜5） |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%**（Cursor内正式レビューGO） |
+| 承認基準SHA | `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a` |
+| 再提出SHA | `76be558eb13ee35835a5aed1845f562deb356318` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md` |
 | 前スライス | R1 Versioned SQLite Migration Ledger = 100%（Cursor内正式承認・凍結） |
-| 次Task | Task 1完了後、独立レビューを通してTask 2へ |
+| 次Task | Workspace/Person target schema migration の設計 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Task 1（package scaffold・ID/time primitives）をTDD実装し、独立レビューを通す。
+ユーザー承認後、Workspace/Person target schema migration の設計を開始する。承認前にmigration 0002へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2437,3 +2437,52 @@ Cursor内レビュー:
 - 5 Taskを、各Task TDD実装 → 独立レビュー → Critical/Important修正 → 再レビューの順で連続実行する。
 - 承認済み計画commit: `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a`。
 - Task 1開始。次担当: Cursor。
+
+### 2026-07-17 22:20:29 JST — Cursor（Domain Contracts実装完了 / Cursor内GO）
+
+```text
+最終更新: 2026-07-17 22:20:29 JST
+更新者: Cursor
+状態: SLICE_COMPLETE / NEXT_PLAN_READY
+対象Task: Workspace Directory Domain Contracts（Tasks 1〜5）
+全体進捗: 100%
+基準SHA: 7e77c990962c5e03a8a48a73eef2dd718d1a4f9a
+再提出SHA: 76be558eb13ee35835a5aed1845f562deb356318
+実装commits:
+- e61ea69 feat(directory): add workspace directory id primitives
+- b954ab2 feat(directory): validate workspace roster models
+- a32c45b feat(directory): add scoped capability evaluation
+- 4c9184e feat(directory): detect roster and link conflicts
+- 090923a feat(directory): workspace roster and scoped access contracts
+- 76be558 fix(directory): deny unknown capability scopes
+Cursor内レビュー:
+- Task 1〜5: 各Task独立レビュー APPROVED（Critical/Importantなし）
+- whole-branch初回: With fixes（不正scopeKindでthrowするImportant 1件）
+- TDD修正後再レビュー: Ready to merge = Yes
+ゲート結果:
+- workspace-directory test: 59/59 PASS
+- workspace-directory typecheck: PASS
+- project-store-sqlite test: 120/120 PASS
+- session-service test: 15/15 PASS
+- git diff --check: PASS
+追加検証:
+- docs/ai-platform 未変更・未ステージ
+- project-store-sqlite migrations / fixture / fingerprint 未変更
+- legacy-r1.sqlite-wal / -shm なし
+- workspace-directory runtime dependencies なし
+- better-sqlite3 / Hono / React / project-store-sqlite import なし
+- Workspace/Person SQL DDL・deterministic Person ID生成なし
+未解決事項（非ブロッキング）:
+- evaluateAccessのnowはR1契約上reserved/未使用
+- model validatorはtop-level null/非objectをtyped caller前提としている
+- package boundary testのproduction file列挙は手動
+- conflict issueにenrollment pair IDを含めていない
+次の作業:
+- ユーザー承認後、Workspace/Person target schema migration の設計を開始。
+次の担当: User
+```
+
+- 純粋な `@blocksync/workspace-directory` packageをTDD実装。
+- closed Capability、exact-scope deny-by-default、UserAccount主体RoleAssignment、history models、conflict detectors、roster import contractsを凍結。
+- Phase 1 Task 1 roadmap checklistを完了。
+- merge / push / PR作成なし。
