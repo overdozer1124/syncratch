@@ -82,10 +82,10 @@ Define:
 - RosterImport preview/apply types
 - AuditEvent and optimistic directory revision
 
-- [ ] Failing validator and capability matrix tests.
-- [ ] Implement pure types, validation and permission evaluation.
-- [ ] Export only domain contracts; no SQLite or Hono imports.
-- [ ] Commit: `feat(directory): workspace roster and scoped access contracts`.
+- [x] Failing validator and capability matrix tests.
+- [x] Implement pure types, validation and permission evaluation.
+- [x] Export only domain contracts; no SQLite or Hono imports.
+- [x] Commit: `feat(directory): workspace roster and scoped access contracts`.
 
 **Verification:** teacher/student facts never satisfy system capabilities; student + explicit project-host role does; attendance number nullable.
 
