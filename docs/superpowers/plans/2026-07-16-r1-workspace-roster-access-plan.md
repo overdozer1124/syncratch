@@ -1,8 +1,8 @@
 # R1 Workspace, Roster & Scoped Access Implementation Plan
 
-> **Status:** Plan for review — do not implement until approved
+> **Status:** Approved execution roadmap — implement through the linked detailed subplans
 >
-> **Design:** `docs/superpowers/specs/2026-07-16-r1-workspace-roster-access-design.md`
+> **Design:** `docs/superpowers/specs/2026-07-16-r1-workspace-roster-access-design.md` (approved at `3dda2b8`)
 >
 > **Master specification:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md`
 >
@@ -50,10 +50,12 @@ APIs that do **not** exist and must not be assumed: workspace selection, person 
 
 **Files:** new fixtures under `packages/project-store-sqlite/src/fixtures/`; new migration acceptance test; no production mutation yet.
 
+**Detailed plan:** `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md`
+
 - [ ] Create an actual pre-migration SQLite fixture through the approved persistence/auth APIs.
 - [ ] Record users, external identities, memberships, sessions, projects, revision envelope bytes, content hashes, transaction ids and snapshots.
 - [ ] Add a V1 project hash fixture copied from the accepted persistence/SB3 tests.
-- [ ] Add failing acceptance assertions describing the target migrated state and byte-stable legacy data.
+- [ ] Freeze target-state assertions and byte-stable evidence while keeping this fixture-only task green; the first RED production-migration test belongs to Task 2.
 - [ ] Document the migration matrix in `docs/r1/WORKSPACE_ROSTER_MIGRATION.md`.
 
 **Verification:** fixture reopens on current HEAD; hashes match committed expected values; test fails only because new migration is absent.
@@ -71,7 +73,7 @@ Copy validation/result conventions from `packages/project-schema` and port bound
 Define:
 
 - branded IDs and validated inputs
-- Person, UserAccountLink, Workspace and WorkspaceMembership
+- Person, PersonAccountLink, Workspace and WorkspaceMembership
 - School, AcademicYear, Grade, ClassGroup
 - Enrollment, StaffAssignment
 - scoped role/capability matrix
@@ -293,4 +295,4 @@ Fail the release if source outside legacy migrations/fixtures still contains any
 
 ## Execution gate
 
-Implementation starts only after this design and plan are approved and the active Scratch/SB3 worktree is either committed or deliberately separated. Existing dirty files belong to the current implementer and must not be overwritten.
+Implementation starts from the approved design and the Task 0 detailed plan. The Scratch/SB3 slice is complete at `1ad6812`. Existing dirty files belong to the current implementer and must not be overwritten.

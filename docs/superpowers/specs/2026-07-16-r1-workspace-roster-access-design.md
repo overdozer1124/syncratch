@@ -1,6 +1,6 @@
 # Release 1 Slice — Workspace, Roster & Scoped Access Design
 
-> **Status:** Approved in design dialogue — written-spec review pending; implementation not started
+> **Status:** Approved by user on 2026-07-17 — implementation not started
 >
 > **Baselines:** R1 persistence Technical Go @ `3d6053b`; R1 auth Technical Go — real GIS conditional @ `570e237`; Scratch/SB3 Technical Go @ `357bb3f`
 >
