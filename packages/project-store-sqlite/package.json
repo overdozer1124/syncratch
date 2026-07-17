@@ -11,6 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "fixture:legacy-r1": "tsx src/fixtures/generate-legacy-r1-fixture.ts --write",
     "fixture:r1-schema-fingerprints": "tsx src/migrations/generate-r1-baseline-fingerprints.ts --write",
+    "fixture:r1-target-schema-fingerprint": "tsx src/migrations/generate-r1-target-schema-fingerprint.ts --write",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
