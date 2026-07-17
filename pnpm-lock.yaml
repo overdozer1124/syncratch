@@ -167,6 +167,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.4
         version: 1.19.14(hono@4.12.30)
+      better-sqlite3:
+        specifier: ^12.11.1
+        version: 12.11.1
       busboy:
         specifier: ^1.6.0
         version: 1.6.0
@@ -174,6 +177,9 @@ importers:
         specifier: ^4.8.3
         version: 4.12.30
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/busboy':
         specifier: ^1.5.4
         version: 1.5.4
