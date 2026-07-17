@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 23:50:56 JST |
+| 最終更新 | 2026-07-18 00:00:19 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | User / Codex（Cursor内正式レビュー可） |
-| 現在のTask | Workspace Directory Target Schema（mainローカルmerge済み・正式承認待ち） |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema main統合済み（正式承認待ち） |
-| 承認基準SHA | `76be558eb13ee35835a5aed1845f562deb356318`（Domain Contracts正式承認） |
-| 再提出SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（main merge commit） |
-| 作業ブランチ | `main` |
-| 作業worktree | `C:\cursor\NewScratchEditor` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md` |
-| 前スライス | Workspace Directory Domain Contracts = 100%（Cursor内正式承認・凍結） |
-| 次Task | Target Schema 正式GO後、legacy organization/user backfill の別設計 |
+| ワークフロー状態 | `DESIGN_REVIEW` |
+| 現在の担当 | Cursor |
+| 現在のTask | Legacy Organization/User Backfill 設計 |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 設計中 |
+| 承認基準SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（Target Schema main merge・Cursor内正式GO） |
+| 再提出SHA | `db93c600be5c88029cb9acc43e471d1b376fe4b0` |
+| 作業ブランチ | `feat/r1-legacy-backfill` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill` |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md`（完了） |
+| 前スライス | Workspace Directory Target Schema = 100%（Cursor内正式承認・main統合） |
+| 次Task | accepted legacy DB の additive backfill 設計 → written spec承認 → TDD実装計画 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Target Schema は main へローカルmerge済み。正式承認待ち。承認前に legacy backfill / Person ID / claim tables / repository cutover へ着手しない。
+Legacy organization/user backfill（決定的 Person ID・backup gate 含む）の設計を開始する。repository cutover / claim tables / auth APIs には着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2615,3 +2615,26 @@ feature tip: 8a27415779721fe9368fa7d117c18154bfa926c4
 - Target Schema を main へローカルmergeし、worktree/branchを掃除。
 - push / PR なし。
 - 次担当: User / Codex（正式承認）。
+
+### 2026-07-18 00:00:19 JST — Cursor（Target Schema正式GO・Backfill設計開始）
+
+```text
+最終更新: 2026-07-18 00:00:19 JST
+更新者: Cursor
+状態: DESIGN_REVIEW
+対象Task: Legacy Organization/User Backfill 設計
+承認: Target Schema = Cursor内正式GO（ユーザー「次の作業へ進んでください」）
+承認基準SHA: 57b1b942c34bc6be2a97948412e148eb37665ccf
+作業ブランチ: feat/r1-legacy-backfill
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill
+対応内容:
+- Target Schema スライスを正式承認・凍結
+- roadmap Phase 2 Task 3（accepted legacy DB backfill）の設計開始
+- repository cutover / claim tables / auth APIs は対象外
+次の作業:
+- 設計方針の確認質問 → 設計書作成
+次の担当: Cursor
+```
+
+- Target Schema 正式GO後、legacy backfill 設計へ移行。
+- merge / push / PR作成なし。
