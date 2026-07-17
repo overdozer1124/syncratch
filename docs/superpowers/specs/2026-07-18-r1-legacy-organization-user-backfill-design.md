@@ -1,7 +1,7 @@
 # R1 Legacy Organization/User Backfill Design
 
 **Date:** 2026-07-18
-**Status:** Written design for review
+**Status:** Approved design
 **Predecessor:** [R1 Workspace Directory Target Schema](2026-07-17-r1-workspace-directory-target-schema-design.md)
 **Roadmap:** [R1 Workspace Roster Access Plan, Phase 2 Task 3](../plans/2026-07-16-r1-workspace-roster-access-plan.md)
 
@@ -98,14 +98,16 @@ interface SchemaMigration {
   prepare?(db: Database.Database, context: MigrationContext): unknown;
   apply(
     db: Database.Database,
-    context: MigrationContext,
+    context?: MigrationContext,
     preparation?: unknown,
   ): void;
 }
 ```
 
 Existing migrations may continue to implement `apply(db)` and receive no
-behavioral change.
+behavioral change. The optional type preserves direct v1-v4 test and
+maintenance calls; the runner always supplies a context. Version 5 rejects a
+missing context when called directly.
 
 For a migration with `prepare`, the runner executes:
 
