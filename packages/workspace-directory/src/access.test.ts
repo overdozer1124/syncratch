@@ -181,6 +181,13 @@ describe("workspace-directory access", () => {
     expect([...capabilitiesForRole("system", "__proto__")]).toEqual([]);
   });
 
+  it("returns empty sets for unknown scope kinds without throwing", () => {
+    expect([...capabilitiesForRole("nope" as never, "owner")]).toEqual([]);
+    expect([
+      ...capabilitiesForRole("__proto__" as never, "toString"),
+    ]).toEqual([]);
+  });
+
   it("denies empty, ended, wrong-account, and wrong-scope assignments", () => {
     const scope = {kind: "workspace" as const, workspaceId};
     const active: RoleAssignment = {

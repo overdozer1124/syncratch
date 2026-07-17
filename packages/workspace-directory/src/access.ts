@@ -139,8 +139,6 @@ const ROLE_CAPABILITIES: Readonly<
   },
 };
 
-const EMPTY_CAPABILITIES: ReadonlySet<Capability> = new Set();
-
 export function parseCapability(
   value: string,
 ): ValidationResult<Capability> {
@@ -158,11 +156,14 @@ export function capabilitiesForRole(
   scopeKind: AccessScope["kind"],
   role: string,
 ): ReadonlySet<Capability> {
+  if (!Object.prototype.hasOwnProperty.call(ROLE_CAPABILITIES, scopeKind)) {
+    return new Set();
+  }
   const templates = ROLE_CAPABILITIES[scopeKind];
   const capabilities = Object.prototype.hasOwnProperty.call(templates, role)
     ? templates[role]
     : undefined;
-  return capabilities ? new Set(capabilities) : EMPTY_CAPABILITIES;
+  return capabilities ? new Set(capabilities) : new Set();
 }
 
 function scopesEqual(left: AccessScope, right: AccessScope): boolean {
