@@ -19,6 +19,7 @@
     "@blocksync/google-identity": "workspace:*",
     "@blocksync/project-assets-fs": "workspace:*",
     "@blocksync/project-envelope": "workspace:*",
+    "@blocksync/project-schema": "workspace:*",
     "@blocksync/project-service": "workspace:*",
     "@blocksync/project-snapshots-fs": "workspace:*",
     "@blocksync/project-store-sqlite": "workspace:*",

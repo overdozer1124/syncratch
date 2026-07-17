@@ -7,6 +7,7 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -169,6 +170,17 @@ describe("createAssetFsStore", () => {
     expect(store.quarantineExists(sha256)).toBe(false);
   });
 
+  it("deleteLive removes live bytes only", () => {
+    const store = createAssetFsStore(tempAssetsRoot("assets-del-live-"));
+    const { bytes, sha256 } = sampleBytes("delete-live");
+    store.putIfAbsent(sha256, bytes);
+    store.moveLiveToQuarantine(sha256);
+    writeRawLiveAsset(store.assetsRoot, sha256, bytes);
+    expect(store.deleteLive(sha256)).toBe(true);
+    expect(store.liveExists(sha256)).toBe(false);
+    expect(store.quarantineExists(sha256)).toBe(true);
+  });
+
   it("moveLiveToQuarantine is no-op when live file missing", () => {
     const store = createAssetFsStore(tempAssetsRoot("assets-no-live-"));
     const sha256 = "c".repeat(64);
@@ -177,6 +189,23 @@ describe("createAssetFsStore", () => {
       liveHadFile: false,
       quarantineHadFile: false,
     });
+  });
+
+  it("listLiveAssetShas skips symlinks and non-sha256 entries", () => {
+    const root = tempAssetsRoot("assets-list-live-");
+    const store = createAssetFsStore(root);
+    const { bytes, sha256 } = sampleBytes("list-live");
+    store.putIfAbsent(sha256, bytes);
+    writeFileSync(join(root, "not-a-sha256-name"), bytes);
+    expect(store.listLiveAssetShas()).toEqual([sha256]);
+  });
+
+  it("listQuarantinedAssetShas returns quarantined keys safely", () => {
+    const store = createAssetFsStore(tempAssetsRoot("assets-list-q-"));
+    const { bytes, sha256 } = sampleBytes("list-quarantine");
+    store.putIfAbsent(sha256, bytes);
+    store.moveLiveToQuarantine(sha256);
+    expect(store.listQuarantinedAssetShas()).toEqual([sha256]);
   });
 
   it("rejects symlinked assetsRoot at startup", () => {

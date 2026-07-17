@@ -10,6 +10,8 @@ export const INITIAL_GLOBAL_RESERVATION_BYTES =
   IMPORT_HOLDING_BUDGET_BYTES +
   WORKER_TEMP_BUDGET_BYTES; // 128 MiB
 export const RESERVATION_TTL_MS = 15 * 60 * 1000;
+export const QUARANTINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+export const GC_LOCK_LEASE_MS = 15 * 60 * 1000;
 
 export const ASSET_DATA_FORMATS = [
   "svg",

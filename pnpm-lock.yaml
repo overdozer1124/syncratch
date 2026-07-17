@@ -146,6 +146,9 @@ importers:
       '@blocksync/project-envelope':
         specifier: workspace:*
         version: link:../../packages/project-envelope
+      '@blocksync/project-schema':
+        specifier: workspace:*
+        version: link:../../packages/project-schema
       '@blocksync/project-service':
         specifier: workspace:*
         version: link:../../packages/project-service
@@ -322,6 +325,9 @@ importers:
       '@blocksync/auth-context':
         specifier: workspace:*
         version: link:../auth-context
+      '@blocksync/project-assets-fs':
+        specifier: workspace:*
+        version: link:../project-assets-fs
       '@blocksync/project-envelope':
         specifier: workspace:*
         version: link:../project-envelope

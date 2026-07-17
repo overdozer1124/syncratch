@@ -30,9 +30,27 @@ export {
   IMPORT_HOLDING_BUDGET_BYTES,
   INITIAL_GLOBAL_RESERVATION_BYTES,
   ORG_QUOTA_BYTES,
+  QUARANTINE_GRACE_MS,
+  GC_LOCK_LEASE_MS,
   RESERVATION_TTL_MS,
 } from "./constants.js";
+export {
+  createAssetGcLockRepository,
+  AssetGcLockLostError,
+  createAssetGcLockHandle,
+  createAssetGcLockSession,
+  seedActiveAssetGcLock,
+  seedStaleAssetGcLock,
+  withAssetGcLock,
+  type AssetGcLockAcquireResult,
+  type AssetGcLockFence,
+  type AssetGcLockHandle,
+  type AssetGcLockOutcome,
+  type AssetGcLockRepository,
+  type AssetGcLockSession,
+} from "./asset-gc-lock.js";
+export { collectReferencedShas, isShaReferenced } from "./gc-reference.js";
+export { collectDocumentShas, computeGlobalUsedBytes, computeOrgQuotaBytes } from "./quota.js";
 export { withImmediateTransaction } from "./immediate-transaction.js";
 export { createSqliteCommitAssetGuard } from "./commit-asset-guard.js";
 export { createSqliteLiveAssetCatalog } from "./live-asset-catalog.js";
-export { computeGlobalUsedBytes, computeOrgQuotaBytes } from "./quota.js";

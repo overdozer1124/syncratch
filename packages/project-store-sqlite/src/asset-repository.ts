@@ -1,6 +1,14 @@
 import type { ProjectEnvelopeV1 } from "@blocksync/project-envelope";
 import type Database from "better-sqlite3";
 import {
+  createAssetGcRepository,
+  type AssetGcRepository,
+} from "./asset-gc.js";
+import {
+  createAssetGcLockRepository,
+  type AssetGcLockRepository,
+} from "./asset-gc-lock.js";
+import {
   GLOBAL_DISK_BYTES,
   ORG_QUOTA_BYTES,
   RESERVATION_TTL_MS,
@@ -99,7 +107,7 @@ export interface ImportSb3CreateProjectInput {
   now?: string;
 }
 
-export interface AssetRepository {
+export interface AssetRepository extends AssetGcRepository, AssetGcLockRepository {
   createGlobalDiskReservation(args: {
     reservationId: string;
     importSessionId: string;
@@ -182,6 +190,8 @@ function assertByteCount(name: string, value: number): void {
 export function createSqliteAssetRepository(
   db: Database.Database,
 ): AssetRepository {
+  const gc = createAssetGcRepository(db);
+  const gcLock = createAssetGcLockRepository(db);
   const stmts = {
     insertGlobalReservation: db.prepare(`
       INSERT INTO global_disk_reservations (
@@ -740,5 +750,8 @@ export function createSqliteAssetRepository(
         excludeImportSessionId,
       );
     },
+
+    ...gc,
+    ...gcLock,
   };
 }

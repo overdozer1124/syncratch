@@ -26,24 +26,285 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 05:58:02 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `TASK_9_READY` |
-| 現在の担当 | Cursor |
+| 最終更新 | 2026-07-17 11:14:07 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `CURSOR_REVIEW_GO` |
+| 現在の担当 | Cursor（commit 指示待ち） |
 | 現在のTask | Task 9 — GC quarantining TX + reconcile |
 | 全体進捗 | **75%**（Task 0〜8承認済み / 全12 Task） |
-| 承認基準SHA | `ad7ac8aa993f51a49b52bc297c2e0dd06d3a5b38` |
-| 再提出SHA | 未着手 |
+| 承認基準SHA | `c8490fb6bb34dc31609b07c20f2ef998ce6edbc2` |
+| 再提出SHA | 未コミット |
 | Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 9（着手可） |
+| 次Task | Task 10（Task 9 commit/Go まで着手禁止） |
+| レビュー運用 | **Cursor 内**作業者 ↔ 専用 code-reviewer（Codex 正式レビューは回さない） |
 
 ## Cursorが次に行う作業
 
-本台帳を `docs: record Task 8 Go and Task 9 ready` でcommitし、そのSHAをTask 9の承認基準として記録する。その後、Task 9（GC — quarantining TX + reconcile）へ着手する。計画指定commit messageは `feat(r1-persist-server): GC quarantining state machine and reconcile`。
+Task 9 は Cursor 内レビュー **GO**（P0〜P2 なし）。ユーザーの commit 指示を待つ。指示があるまでコミットしない。Task 10 には着手しない。
 
-`docs/ai-platform/design-brief-candidate.md`はTask 9とも無関係なので、引き続き実装commitから除外する。Task 10にはTask 9の正式Goまで着手しない。
+## Task 9 再提出サマリー
+
+```text
+最終更新: 2026-07-17 11:14:07 JST
+更新者: Cursor
+状態: CURSOR_REVIEW_GO
+対象Task: Task 9（第8ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+変更ファイル:
+- packages/project-assets-fs/src/index.ts
+- packages/project-assets-fs/src/index.test.ts
+- packages/project-store-sqlite/src/asset-gc.ts
+- packages/project-store-sqlite/src/asset-gc.test.ts
+- apps/r1-persist-server/src/gc.ts
+- apps/r1-persist-server/src/gc.test.ts
+- docs/CURSOR_CODEX_HANDOFF.md
+実装内容（第8ラウンド — Cursor code-reviewer P0×1 / P1×1 / P2×2 対応）:
+- reconcileQuarantiningRow が outcome を返却（restored-live / kept-quarantining / marked-quarantined / deleted / noop）
+- reconcileAssetGcState は kept-quarantining のときのみ move+finish（参照あり live 復帰直後の誤 quarantine を防止）
+- dual presence: 参照ありは live 正 + quarantine orphan 削除、未参照は quarantined + live duplicate 削除（deleteLive）
+- grant 復元のデッドフォールバック削除
+- reconcileAssetGcState 経路の DB+FS 回帰試験（参照/未参照/dual×2）追加
+テスト結果:
+- project-assets-fs 26/26
+- project-store-sqlite 73/73
+- r1-persist-server 84/84
+Cursor code-reviewer:
+- 第7→8: 初回 CHANGES_REQUESTED → 修正後 GO
+- 第8独立再検証: GO（新規 P0〜P2 なし）
+未解決事項:
+- なし（Minor: 参照出現を伴う極狭い stale FS TOCTOU は将来候補）
+次の担当: Cursor（commit 指示待ち）
+```
+
+## Cursor code-reviewer 結果（Task 9 第8ラウンド独立再検証）
+
+判定: **GO**（P0〜P2 なし。Cursor-internal ready: Yes）
+
+## Cursor code-reviewer 結果（Task 9 第7ラウンド → 第8ラウンド）
+
+初回（読み取り専用）判定: **NO_GO / CHANGES_REQUESTED**
+
+1. **P0 — 参照あり quarantining を reconcile すると live 復帰直後に live ファイルを quarantine へ移動** → outcome ゲートで解消。
+2. **P1 — 回帰試験が `reconcileAssetGcState` オーケストレータ経路を検証していない** → FS assert 付き試験追加。
+3. **P2 — dual presence で quarantining がスタックし得る / grant 復元デッドフォールバック** → 明示処理 + 削除。
+
+再レビュー判定: **GO**（P0〜P2 なし。Round 6 P1 も閉じ済み）
+
+## Codexレビュー結果（Task 9 第6ラウンド — 解決済み）
+
+判定: **NO_GO / CHANGES_REQUESTED**（第7ラウンドで対応）
+
+1. **P1 — in-flight FS move と新 worker reconcile の競合** → 未参照 quarantining は live へ即復帰せず、新 owner が quarantine move を idempotent 完遂。
+
+## Cursorが次に行う作業（参考・第7ラウンド前）
+
+Task 9 第6ラウンドの残存P1×1を修正し、旧workerのFS move中に新workerがtakeoverする回帰試験を追加する。Task 10には着手しない。
+
+## Codexレビュー結果（Task 9 第6ラウンド）
+
+判定: **NO_GO / CHANGES_REQUESTED**
+
+1. **P1 — generation fenceはDB mutationを拒否するが、失効した旧workerのin-flight FS moveと新worker reconcileの競合を閉じていない**: worker Aはrenew成功後に`moveLiveToQuarantine()`を開始でき、その処理中またはpause中にleaseが切れる。worker Bがtakeoverして`reconcileQuarantiningRow()`を実行すると、fenced TX内であってもAのrename前に`liveExists=true`を読み、rowを`live`へ戻してgrantを復元できる。その後Aがrenameを完了し、post-move renewで失効を検出してDB finishを中止すると、再び`gc_state='live'`/grantあり/live fileなし/quarantine fileありになる。追加試験はAのmoveを先に完了してからBがreconcileするため、このinterleavingを再現していない。stale takeover後のreconcileが旧workerのFS操作と重ならない仕組み（安全なdrain期間等）を設けるか、`quarantining`のlive fileを即座に`live`へ戻さず、新ownerがidempotentにquarantine moveを完遂するstate machineへ変更すること。Aのmove開始→lease expiry→B takeover→Bがmove前FS状態を観測→A rename完了を固定した試験で、最終状態が必ず収束することを確認する。
+
+## Task 9 再提出サマリー
+
+```text
+最終更新: 2026-07-17 09:57:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第6ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+変更ファイル:
+- packages/project-store-sqlite/src/asset-gc-lock.ts
+- packages/project-store-sqlite/src/asset-gc-lock.test.ts
+- packages/project-store-sqlite/src/asset-gc.ts
+- packages/project-store-sqlite/src/asset-gc.test.ts
+- packages/project-store-sqlite/src/migrate-assets.ts
+- packages/project-store-sqlite/src/index.ts
+- apps/r1-persist-server/src/gc.ts
+- apps/r1-persist-server/src/gc.test.ts
+- docs/CURSOR_CODEX_HANDOFF.md
+実装内容（第6ラウンド — Codex P1×2 対応）:
+- GC cutoff `now` と lock clock を分離（注入可能な monotonic clock、renew/assert は実時刻）
+- asset_gc_lock に generation fencing token、takeover 時インクリメント
+- 各 GC DB mutation TX 内で owner+generation+expires を検査（assertAssetGcLockFenceInDb）
+- reconcile は FS 状態を fenced TX 内で readFsState 再取得
+テスト結果:
+- project-store-sqlite 71/71
+- r1-persist-server 79/79
+- pnpm build PASS
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+## Codexレビュー結果（Task 9 第5ラウンド — 解決済み）
+
+判定: **NO_GO / CHANGES_REQUESTED**（第6ラウンドで対応）
+
+1. **P1 — 固定 boot `now` による lease 更新** → lock renew/assert は injected clock の実時刻を使用。GC 参照 cutoff は boot `now` のまま。
+2. **P1 — assert と DB mutation が別 TX** → generation fencing + TX 内 fence 検査。reconcile は readFsState を TX 内で実行。
+
+## Cursorが次に行う作業（参考・第6ラウンド前）
+
+Task 9 第5ラウンドの残存P1×2を修正し、実時間経過・takeover中断点の回帰試験を追加する。Task 10には着手しない。
+
+## Codexレビュー結果（Task 9 第5ラウンド）
+
+判定: **NO_GO / CHANGES_REQUESTED**
+
+1. **P1 — lease更新に固定GC基準時刻を使い、実時間に沿って期限が延長されない**: `runPersistBootGc()`以下の全`renewOrAbort(now)`はboot開始時の`now`を繰り返し渡すため、`expires_at`は毎回同じ`now + 15m`になる。15分を超えた後も`assertAssetGcLockHeld(..., now)`は古い時刻で判定して成功し得る一方、別workerは現在時刻でstale takeoverできる。GC参照判定用cutoffとlock clockを分離し、lock renew/assertには毎回実時刻（注入可能な単調clock）を使用すること。時刻を15分超進め、renewで期限が現在時刻から延長されること、旧時刻assertでは失効を隠せないことを試験する。
+2. **P1 — lock確認とGCのDB mutationが別TXで、fencingになっていない**: `assertAssetGcLockHeld()`のSELECT後に`finishAssetQuarantineAfterRename()` / `deleteAssetObjectRow()`等が別の`BEGIN IMMEDIATE`で実行されるため、確認直後のpause→lease expiry→worker B takeover→worker A mutationを拒否できない。またAのFS move中にleaseが切れてBがreconcileすると、Bはmove前のFS状態を基に`quarantining` rowを`live`へ戻し、その後Aがfileだけquarantineへ移す競合が残る。ownerだけでなく世代を持つfencing tokenを採番し、各GC DB mutation TX内でtokenを検査すること。takeover直後の旧tokenによるfinish/reconcile/deleteを拒否し、in-flight FS moveと新worker reconcileのinterleavingでも`live row + quarantine file`にならない回帰試験を追加する。
+
+## Task 9 再提出サマリー
+
+```text
+最終更新: 2026-07-17 09:02:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第5ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+変更ファイル:
+- packages/project-store-sqlite/src/asset-gc-lock.ts
+- packages/project-store-sqlite/src/asset-gc-lock.test.ts
+- packages/project-store-sqlite/src/index.ts
+- apps/r1-persist-server/src/gc.ts
+- apps/r1-persist-server/src/reconcile.ts
+- apps/r1-persist-server/src/gc.test.ts
+- docs/CURSOR_CODEX_HANDOFF.md
+実装内容（第5ラウンド — Codex P1×2 対応）:
+- reconcile / orphan / GC cycle を同一 SQLite GC lock 排他区間に統合
+- lock 取得不可の boot process は GC 系 mutation を一切スキップ
+- renewOrAbort + assertAssetGcLockHeld による lease 失効時 abort（FS move 後の DB mutation 前も検査）
+- 2 DB 接続による lock 直列化試験、in-flight quarantine 介入防止、lease takeover 後 abort 試験
+テスト結果:
+- project-store-sqlite 69/69
+- r1-persist-server 78/78
+- pnpm build PASS
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+## Codexレビュー結果（Task 9 第4ラウンド — 解決済み）
+
+判定: **NO_GO / CHANGES_REQUESTED**（第5ラウンドで対応）
+
+1. **P1 — startup reconcileがGC lockの外で実行** → reconcile / orphan / GC cycle を lock 内に統合。lock 未取得時は mutation スキップ。
+2. **P1 — lease喪失が無視される** → renewOrAbort + assertAssetGcLockHeld。takeover 後は rename/delete を abort。
+
+## Cursorが次に行う作業（参考・第5ラウンド前）
+
+Task 9 第4ラウンドの残存P1×2を修正し、失効・並行workerの回帰試験を追加する。Task 10には着手しない。
+
+## Codexレビュー結果（Task 9 第4ラウンド）
+
+判定: **NO_GO / CHANGES_REQUESTED**
+
+1. **P1 — startup reconcileがGC lockの外で実行され、稼働中workerの状態遷移を破壊できる**: `reconcilePersistBoot()` は `reconcileAssetGcState()` と `quarantineOrphanLiveAssets()` を先に実行し、その後の `runPersistBootGc()` だけがSQLite leaseを取得する。worker Aが`quarantining`をcommitしてFS rename前に、worker Bのstartup reconcileがlive fileを見てrowを`live`へ戻しgrantを復元すると、Aはその後fileをquarantineへ移す一方、`finishAssetQuarantineAfterRename()`はrowが既に`live`なので何もしない。結果は`gc_state='live'`かつgrantあり、live fileなしとなる。reconcile・orphan処理・通常GC cycleを同じ排他区間に入れ、lockを取得できないboot processはGC系mutationを一切行わないこと。2接続/2workerでこのinterleavingを固定した回帰試験を追加する。
+2. **P1 — lease喪失が無視され、旧workerが破壊的処理を継続する**: `renewAssetGcLock()`はowner不一致時に`false`を返すが、`runPersistBootGc()`のrenew callbackは返値を捨てる。15分を超えるscan/FS処理中に別workerがstale takeoverすると、旧workerもrename/deleteを継続でき、serialized worker契約が成立しない。renew失敗時は次のFS/DB mutation前に必ずabortすること。長時間処理の隙間も含めて安全にするため、fencing tokenを各GC mutation TXで検査するか、同等に旧ownerのmutationを拒否できる設計とする。A失効→B takeover→A継続を再現し、Aがrename/reconcile/final deleteできない試験を追加する。現在の`maxConcurrent=1`試験は単一event loop内の同期busy loopであり、lockがなくてもcallbackが直列になるため、この証跡にはならない。
+
+## Task 9 再提出サマリー
+
+```text
+最終更新: 2026-07-17 07:28:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第4ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+変更ファイル:
+- packages/project-store-sqlite/src/asset-gc.ts
+- packages/project-store-sqlite/src/asset-gc-lock.ts
+- packages/project-store-sqlite/src/asset-gc-lock.test.ts
+- packages/project-store-sqlite/src/gc-reference.ts
+- packages/project-store-sqlite/src/migrate-assets.ts
+- packages/project-store-sqlite/src/constants.ts
+- packages/project-store-sqlite/src/asset-repository.ts
+- packages/project-store-sqlite/src/index.ts
+- apps/r1-persist-server/src/gc.ts
+- apps/r1-persist-server/src/gc-scan.ts
+- apps/r1-persist-server/src/gc-types.ts
+- apps/r1-persist-server/src/gc.test.ts
+- apps/r1-persist-server/src/reconcile.ts
+- docs/CURSOR_CODEX_HANDOFF.md
+実装内容（第4ラウンド — Codex P1×2 対応）:
+- beginAssetQuarantine: BEGIN IMMEDIATE 内で revision/snapshot/lease を live 再照会（collectLiveReferencedShas）
+- revision scan: assertEnvelope + contentHash + DB列整合 + validateProject
+- GC lock: file lock 廃止 → SQLite asset_gc_lock（CAS takeover / owner release / renew）
+- GC cycle 中に lock renew、stale/active 競合試験追加
+テスト結果:
+- project-store-sqlite 68/68
+- r1-persist-server 76/76
+- r1:persist:test PASS
+- pnpm build PASS
+追加試験:
+- scan 後 revision commit → quarantine skipped
+- sqlite gc lock 同時 worker maxConcurrent=1
+- stale lock 回収後 GC cycle 実行
+未解決事項:
+- なし
+次の担当: Codex
+```
+
+## Task 9 再提出サマリー（第3ラウンド）
+
+```text
+最終更新: 2026-07-17 07:03:30 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第3ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+変更ファイル:
+- packages/project-store-sqlite/src/gc-reference.ts
+- packages/project-store-sqlite/src/asset-gc.ts
+- packages/project-store-sqlite/src/asset-gc.test.ts
+- packages/project-assets-fs/src/index.ts
+- packages/project-assets-fs/src/index.test.ts
+- apps/r1-persist-server/src/gc.ts
+- apps/r1-persist-server/src/gc-lock.ts
+- apps/r1-persist-server/src/gc-path.ts
+- apps/r1-persist-server/src/gc.test.ts
+- apps/r1-persist-server/src/reconcile.ts
+- apps/r1-persist-server/package.json
+- packages/project-store-sqlite/package.json
+- pnpm-lock.yaml
+- docs/CURSOR_CODEX_HANDOFF.md
+実装内容（第3ラウンド — Codex P1×2 + P2×2 対応）:
+- orphan live: DB `quarantining` 先行 → FS move → finish（既存 state machine）
+- orphan quarantine file（DB row なし）: 即時削除せず `quarantined` row を adopt して grace 開始
+- revision scan: `buildGcScanContext` で全 revision document を validate、fail-closed
+- gc-reference: runtime 参照集合は scan 済み shas + active leases のみ（revision fail-open 削除）
+- GC lock: owner/expiresAt 付き lease + stale 回収、pinned data root + no-follow
+- snapshot: raw bytes SHA-256 照合（SNAPSHOT_RAW_HASH_MISMATCH）
+- quarantining + 両 file なし + referenced: `live` 復帰/grant 復元しない（fail-closed 維持）
+テスト結果:
+- project-assets-fs 25/25
+- project-store-sqlite 66/66
+- r1-persist-server 74/74
+- r1:persist:test PASS
+- pnpm build PASS
+追加試験:
+- orphan quarantine file adopt + grace
+- corrupt revision boot fail-closed
+- stale `.gc.lock` 回収後 GC cycle 実行
+- snapshot raw hash mismatch
+- referenced quarantining + 両 file なしで quarantining 維持
+未解決事項:
+- なし
+次の担当: Codex
+```
 
 ## Task 8 再提出サマリー（第4ラウンド）
 
@@ -1272,3 +1533,264 @@ git status --short: ?? docs/ai-platform/
 - Task 8を正式承認。Task 0〜8の9/12完了として全体進捗を75%へ更新。
 - Task 9（GC — quarantining TX + reconcile）を解禁。Task 10はTask 9 Goまで着手禁止。
 - 状態: `TASK_9_READY`。次担当: Cursor。
+
+### 2026-07-17 06:00:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 06:00:00 JST
+更新者: Cursor
+状態: TASK_9_IN_PROGRESS
+対象Task: Task 9
+全体進捗: 75%
+承認基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+Task 8 commit SHA: c2164df37cf9ca533ea51ecfda87e58a9be14627
+commit message: docs: record Task 8 Go and Task 9 ready
+git status --short: ?? docs/ai-platform/
+次の担当: Cursor（Task 9 実装）
+```
+
+- Codex Task 8 正式承認を反映し、Task 9 承認基準 SHA を記録。Task 9 実装着手。
+- 次担当: Cursor。
+
+### 2026-07-17 06:09:30 JST — Cursor
+
+```text
+最終更新: 2026-07-17 06:09:30 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット）
+次の担当: Codex
+```
+
+- Task 9 GC quarantining TX + boot reconcile 実装完了。Codex レビュー待ち。
+- 次担当: Codex。
+
+### 2026-07-17 06:17:28 JST — Codex
+
+- Task 9未コミット差分をDesign §9.3〜§9.7と照合してレビュー。
+- `smart-explore`は対象TypeScriptのシンボルを抽出できなかったため、通常の差分・ソース確認へ切り替えた。
+- snapshot blobはcanonical `ProjectDocument`そのものだが、GC scannerが`envelope.document`として読むため、正常snapshotのSHAをすべて参照集合から落とすことを確認。blob欠落・document欠落も`continue`するためfail-closed scan契約を満たさない。
+- `runAssetGcCycle()`のproduction呼出がなく、実際のbootstrapはreconcileのみでunreferenced live assetをquarantineしないことを確認。
+- orphan live処理がAssetFsStoreのpinned-root/no-follow保護を迂回してraw `readdirSync` + `unlinkSync`を行い、root差し替え安全性と7日graceの双方を満たさないことを確認。
+- final deleteのfile削除後・DB row削除前crash、およびrename失敗時のfile欠落をstartup reconcileが収束させないことを確認。
+- 独立実行: `project-store-sqlite` 63/63、`r1-persist-server` 63/63、両typecheck、`r1:persist:test`、`pnpm build`、`git diff --check`はすべてPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×3 + P2×1。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 06:39:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 06:39:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第2ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第1ラウンド指摘（P1×3 + P2×1）をすべて修正。Task 9 第2ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 06:44:58 JST — Codex
+
+- Task 9第2ラウンド差分を再レビュー。snapshotをcanonical `ProjectDocument`として検証する修正、boot GC cycle配線、安全なFS列挙、normal orphan grace、DB-first final deleteと両file欠落rowの収束は確認済み。
+- `smart-explore`は対象TypeScriptのシンボルを抽出できなかったため、通常の差分・ソース確認へ切り替えた。
+- orphan liveはFS move後にDB rowをinsertするため、その境界のcrash/DB失敗でDBなしquarantine fileとなり、次回bootが7日graceなしに即時削除する残存P1を確認。
+- revision reference scanは`document`欠落rowを`continue`し、破損revisionが存在してもGCを進める残存P1を確認。
+- `.gc.lock`は`wx`作成とEEXIST skipのみでstale lock回収がなく、process crash後にGCを永久停止することを確認。
+- snapshot raw bytes hash未照合、および参照中の`quarantining` rowで両file欠落時にfileなし`live` state/grantを復元する不変条件違反を確認。
+- 独立実行: `project-assets-fs` 25/25、`project-store-sqlite` 65/65、`r1-persist-server` 70/70、3 package typecheck、`git diff --check`はPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×2 + P2×2。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 06:52:52 JST — Codex
+
+- ユーザーの「作業完了」を受けて台帳、HEAD、working tree、前回指摘箇所を確認。
+- 台帳は`CHANGES_REQUESTED`のままで第3ラウンド再提出記録がなく、HEADも承認基準`c8490fb6bb34dc31609b07c20f2ef998ce6edbc2`のまま。
+- `gc-reference.ts`のrevision `document`欠落`continue`、orphan move後DB insert、stale回収なし`.gc.lock`などは前回レビュー時の実装から未変更。主要sourceの更新時刻も前回Codex指摘より前であり、第3ラウンド修正は未反映と判断。
+- コード再レビューは開始せず、P1×2 + P2×2の`CHANGES_REQUESTED`を維持。Cursorは台帳上部の4項目を修正し、テスト結果とともに`READY_FOR_CODEX_REVIEW`へ更新する。
+- Task 9未承認、全体進捗75%、Task 10着手禁止。次担当: Cursor。
+
+### 2026-07-17 07:03:30 JST — Cursor
+
+```text
+最終更新: 2026-07-17 07:03:30 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第3ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第2ラウンド指摘（P1×2 + P2×2）をすべて修正。Task 9 第3ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 07:20:57 JST — Codex
+
+- Task 9第3ラウンド差分を再レビュー。DB先行orphan quarantine、orphan quarantine adoption + grace、revision document fail-closed、snapshot raw hash、missing-file fail-closed state、stale lock回収の各修正は確認済み。
+- `smart-explore`は対象TypeScriptのシンボルを抽出できなかったため、通常の差分・ソース確認へ切り替えた。
+- `beginAssetQuarantine()`がscan後の新revision/snapshotを同一`BEGIN IMMEDIATE`内で再照会せず、scan済みSetを使うため、Design §9.4が閉じるべきscan→rename raceを再導入していることを確認。revision envelope/hash/DB列の完全整合検査も未実装。
+- file leaseは空/partial payload公開中のstale誤判定、2 workerのstale takeover TOCTOU、単発`writeSync`、active lease未更新により、相互排他を保証しないことを確認。
+- 独立実行: `project-assets-fs` 25/25、`project-store-sqlite` 66/66、`r1-persist-server` 74/74、3 package typecheck、`git diff --check`はPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×2。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 07:28:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 07:28:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第4ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第3ラウンド指摘（P1×2）をすべて修正。Task 9 第4ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 08:12:35 JST — Codex
+
+- Task 9第4ラウンド差分を再レビュー。`BEGIN IMMEDIATE`内のrevision/snapshot/lease再照会、revision envelope/hash/DB列整合検査、SQLite CAS leaseへの移行は確認済み。
+- startup reconcileとorphan処理がGC lock取得前に実行され、稼働中workerの`quarantining → rename`間へ介入して`live` row/grantとquarantine fileを作れる競合を確認。
+- lease renewの`false`が無視され、失効後に別workerがtakeoverしても旧workerがrename/deleteを継続できることを確認。現行の同時worker試験は単一event loop上の同期callbackで排他を実証しない。
+- 独立実行: `project-store-sqlite` 68/68、`r1-persist-server` 76/76、`project-assets-fs` 25/25、3 package typecheckはすべてPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×2。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 09:02:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 09:02:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第5ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第4ラウンド指摘（P1×2）をすべて修正。Task 9 第5ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 09:44:41 JST — Codex
+
+- Task 9第5ラウンド差分を再レビュー。reconcile/orphan/通常GC cycleを単一SQLite lock区間へ統合し、lock未取得processがGC mutationをskipする修正は確認済み。
+- lock renew/assertへboot開始時の固定`now`を渡し続けるため、15分後に期限が延長されず、古い時刻によるassertが実際の失効を隠す残存P1を確認。
+- `assertAssetGcLockHeld()`と各GC DB mutationが別TXであり、確認後のtakeoverに対するfencingになっていないこと、FS move中の失効と新worker reconcileで前回の不整合を再現可能なことを確認。
+- 独立実行: `project-store-sqlite` 69/69、`r1-persist-server` 78/78、`project-assets-fs` 25/25、3 package typecheck、`git diff --check`はすべてPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×2。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 09:57:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 09:57:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第6ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第5ラウンド指摘（P1×2）をすべて修正。Task 9 第6ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 10:11:55 JST — Codex
+
+- Task 9第6ラウンド差分を再レビュー。GC cutoffとlock clockの分離、generation token、GC DB mutation TX内のowner+generation+expiry検査は修正済みと確認。
+- 旧workerのFS move中にleaseが失効し、新workerがmove前のlive状態をfenced reconcile TX内で読む競合は残存。新workerがrowを`live`へ戻した後に旧workerがfileだけquarantineへ移せる。
+- 追加されたinterleave試験はFS move完了後にtakeover/reconcileする順序であり、問題の同時進行を再現していない。
+- 独立実行: `project-store-sqlite` 71/71、`r1-persist-server` 79/79、`project-assets-fs` 25/25、3 package typecheck、`git diff --check`はすべてPASS。
+- 判定: `NO_GO` / `CHANGES_REQUESTED`。P1×1。Task 9未承認、全体進捗75%、Task 10着手禁止を維持。
+- 次担当: Cursor。
+
+### 2026-07-17 10:31:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 10:31:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第7ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第6ラウンド指摘（P1×1）を修正。Task 9 第7ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 09:57:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 09:57:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第6ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- Codex 第5ラウンド指摘（P1×2）をすべて修正。Task 9 第6ラウンド再提出。
+- 次担当: Codex。
+
+### 2026-07-17 11:08:52 JST — Cursor
+
+```text
+最終更新: 2026-07-17 11:08:52 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Task 9（第8ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+git status --short: M docs/CURSOR_CODEX_HANDOFF.md + Task 9 変更（未コミット、docs/ai-platform/ 除外）
+次の担当: Codex
+```
+
+- 専用 code-reviewer で Task 9 第7ラウンドを読み取り専用レビュー。
+- 初回: P0×1（参照あり restore 直後の誤 FS move）/ P1×1（オーケストレータ経路の FS 試験不足）/ P2×2（dual presence・grant フォールバック）。
+- 作業者として修正後、同一 Reviewer 再レビュー: **GO**（P0〜P2 なし）。
+- Task 9 第8ラウンドとして再提出。コミットなし。Task 10 未着手。
+- 次担当: Codex。
+
+### 2026-07-17 11:14:07 JST — Cursor
+
+```text
+最終更新: 2026-07-17 11:14:07 JST
+更新者: Cursor
+状態: CURSOR_REVIEW_GO
+対象Task: Task 9（第8ラウンド）
+全体進捗: 75%
+基準SHA: c8490fb6bb34dc31609b07c20f2ef998ce6edbc2
+再提出SHA: 未コミット
+レビュー運用: Cursor 内（作業者 ↔ 専用 code-reviewer）。Codex 正式レビューは回さない。
+次の担当: Cursor（commit 指示待ち）
+```
+
+- ユーザー指示により Codex 引き継ぎを停止。Cursor 内ループに切替。
+- 同一 code-reviewer で第8ラウンド独立再検証: **GO**（新規 P0〜P2 なし）。
+- コミットなし。Task 10 未着手。commit 指示待ち。

@@ -11,6 +11,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -25,6 +26,7 @@ import {
   PathSafetyError,
   readFileNoFollow,
   resolveContainedPath,
+  SHA256_HEX_PATTERN,
   validateAssetsRoot,
   validateSubdirectory,
 } from "./path-safety.js";
@@ -91,7 +93,12 @@ export interface AssetFsStore {
   quarantineExists(sha256: string): boolean;
   /** Rename live → .quarantine/{sha256} without following symlinks (§9.4). */
   moveLiveToQuarantine(sha256: string): MoveToQuarantineResult;
+  deleteLive(sha256: string): boolean;
   deleteQuarantined(sha256: string): boolean;
+  /** List sha256 keys of regular live files under assetsRoot (§9.4 path safety). */
+  listLiveAssetShas(): string[];
+  /** List sha256 keys of regular files under .quarantine (§9.4 path safety). */
+  listQuarantinedAssetShas(): string[];
 }
 
 function livePath(assetsRoot: string, sha256: string): string {
@@ -311,6 +318,16 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
       return { moved: true, liveHadFile: true, quarantineHadFile: false };
     },
 
+    deleteLive(sha256) {
+      const ctx = refreshSession();
+      const path = livePath(assetsRoot, sha256);
+      if (!existsSync(path)) return false;
+      lstatSafe(path);
+      assertPathContained(ctx.rootReal, path);
+      unlinkSync(path);
+      return true;
+    },
+
     deleteQuarantined(sha256) {
       const ctx = refreshSession();
       const path = quarantinePath(ctx.quarantineDir, sha256);
@@ -319,6 +336,42 @@ export function createAssetFsStore(assetsRoot: string): AssetFsStore {
       assertPathContained(ctx.rootReal, path);
       unlinkSync(path);
       return true;
+    },
+
+    listLiveAssetShas() {
+      const ctx = refreshSession();
+      const shas: string[] = [];
+      for (const name of readdirSync(assetsRoot)) {
+        if (name === ".quarantine" || name.startsWith(".")) continue;
+        if (!SHA256_HEX_PATTERN.test(name)) continue;
+        const path = livePath(assetsRoot, name);
+        try {
+          lstatSafe(path);
+          assertPathContained(ctx.rootReal, path);
+          shas.push(name);
+        } catch {
+          // Skip symlinks, escapes, and other unsafe entries.
+        }
+      }
+      return shas;
+    },
+
+    listQuarantinedAssetShas() {
+      const ctx = refreshSession();
+      const shas: string[] = [];
+      for (const name of readdirSync(ctx.quarantineDir)) {
+        if (name.startsWith(".")) continue;
+        if (!SHA256_HEX_PATTERN.test(name)) continue;
+        const path = quarantinePath(ctx.quarantineDir, name);
+        try {
+          lstatSafe(path);
+          assertPathContained(ctx.rootReal, path);
+          shas.push(name);
+        } catch {
+          // Skip symlinks, escapes, and other unsafe entries.
+        }
+      }
+      return shas;
     },
   };
 }

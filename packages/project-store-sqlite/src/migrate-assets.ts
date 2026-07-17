@@ -79,5 +79,23 @@ export function migrateAssets(db: Database.Database): void {
       ON organization_asset_quota_reservations(expires_at);
     CREATE INDEX IF NOT EXISTS global_disk_reservations_expires
       ON global_disk_reservations(expires_at);
+
+    CREATE TABLE IF NOT EXISTS asset_gc_lock (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      owner TEXT NOT NULL,
+      generation INTEGER NOT NULL DEFAULT 1,
+      acquired_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
   `);
+
+  const lockColumns = db
+    .prepare(`PRAGMA table_info(asset_gc_lock)`)
+    .all() as Array<{ name: string }>;
+  if (!lockColumns.some((column) => column.name === "generation")) {
+    db.exec(`
+      ALTER TABLE asset_gc_lock
+      ADD COLUMN generation INTEGER NOT NULL DEFAULT 1
+    `);
+  }
 }

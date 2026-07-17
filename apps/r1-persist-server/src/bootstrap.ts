@@ -17,7 +17,7 @@ import {
 import { assertAuthBootConfig } from "./auth-config.js";
 import { createR1DataLayout } from "./data-dir.js";
 import { SESSION_MAX_AGE_SEC } from "./cookies.js";
-import { reconcileExpiredReservations } from "./reconcile.js";
+import { reconcilePersistBoot } from "./reconcile.js";
 import { createPersistApp } from "./server.js";
 
 export interface BootstrapOptions {
@@ -37,10 +37,19 @@ function randomToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-function createSb3Runtime(dataDir: string, store: ReturnType<typeof openSqliteStore>) {
+function createSb3Runtime(
+  dataDir: string,
+  store: ReturnType<typeof openSqliteStore>,
+  snapshots: ReturnType<typeof createFsSnapshotStore>,
+) {
   const dataLayout = createR1DataLayout(dataDir);
   const assetFs = createAssetFsStore(dataLayout.assets);
-  reconcileExpiredReservations(store.assetRepo);
+  reconcilePersistBoot({
+    assetRepo: store.assetRepo,
+    assetFs,
+    dbPath: join(dataDir, "projects.sqlite"),
+    snapshotStore: snapshots,
+  });
   const assetBytes = {
     readLiveBytes(sha256: string) {
       return assetFs.getLive(sha256);
@@ -68,7 +77,11 @@ export function bootstrapPersistRuntime(
     console.log(`snapshot orphan GC removed ${removed} file(s)`);
   }
 
-  const { dataLayout, assetFs, assetBytes } = createSb3Runtime(dataDir, store);
+  const { dataLayout, assetFs, assetBytes } = createSb3Runtime(
+    dataDir,
+    store,
+    snapshots,
+  );
   const sb3 = {
     assetRepo: store.assetRepo,
     assetFs,

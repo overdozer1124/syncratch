@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@blocksync/auth-context": "workspace:*",
+    "@blocksync/project-assets-fs": "workspace:*",
     "@blocksync/project-envelope": "workspace:*",
     "@blocksync/project-service": "workspace:*",
     "@blocksync/project-snapshots-fs": "workspace:*",
