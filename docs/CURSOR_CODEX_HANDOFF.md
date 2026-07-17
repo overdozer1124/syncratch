@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 19:01:41 JST |
+| 最終更新 | 2026-07-17 20:07:41 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `TASK_1_IN_PROGRESS` |
-| 現在の担当 | Cursor |
-| 現在のTask | Migration Ledger Task 1 / 6 |
-| 全体進捗 | **100%**（Cursor内正式承認 / 全4 Task） |
-| 承認基準SHA | `bca7840101ed5318c6bc75ad540a690428eb62ff` |
-| 再提出SHA | `6ecadec68e57de1b314fb9260a74ac2421cd11b9` |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
+| 現在のTask | R1 Versioned SQLite Migration Ledger（Tasks 1〜6） |
+| 全体進捗 | **100%**（実装完了 / Cursor内タスク・最終レビューGO / Codexレビュー待ち） |
+| 承認基準SHA | `84c458c0d5b482dfc47abf35174fdf88226a7137` |
+| 再提出SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` |
-| 前スライス | R1 Scratch SB3 Task 0〜11 = 100%（凍結） |
-| 次Task | Task 1完了後、独立レビューを通してTask 2へ |
-| レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-versioned-migration-ledger-plan.md` |
+| 前スライス | Workspace Migration Fixtures = 100%（凍結） |
+| 次Task | Codexレビュー結果に応じて修正、または正式承認後に次スライス設計 |
+| レビュー運用 | Codexレビュー（Cursor内レビューは全Task APPROVED + whole-branch Ready to merge） |
 
 ## Cursorが次に行う作業
 
-Task 1（migration型・error・connection PRAGMA・checksum）をTDD実装し、独立レビューを通す。
+Codexレビュー結果を共有台帳から読み、指摘範囲のみ修正する。承認前に次スライス（Workspace target schema）へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2321,3 +2321,54 @@ commit除外:
 - 6 Taskを、各Task TDD実装 → 独立レビュー → Critical/Important修正 → 再レビューの順で連続実行する。
 - 承認済み計画commit: `84c458c0d5b482dfc47abf35174fdf88226a7137`。
 - Task 1開始。次担当: Cursor。
+
+### 2026-07-17 20:07:41 JST — Cursor（Migration Ledger実装完了 / READY_FOR_CODEX_REVIEW）
+
+```text
+最終更新: 2026-07-17 20:07:41 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: R1 Versioned SQLite Migration Ledger（Tasks 1〜6）
+全体進捗: 100%（実装完了）
+基準SHA: 84c458c0d5b482dfc47abf35174fdf88226a7137
+再提出SHA: 9b940f35b0b809daf9fa6d7e567da9d8565c0c08
+作業ブランチ: feat/r1-workspace-migration-fixtures
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures
+実装commits:
+- 847d5fd feat(store): add migration primitives
+- 16fb5b3 feat(store): freeze legacy schema fingerprints
+- 3da33a3 feat(store): define immutable r1 baseline migration
+- 7d4a4f0 feat(store): add atomic schema migration runner
+- 6d83354 feat(store): adopt legacy schemas through migration ledger
+- 9b940f3 test(store): prove concurrent migration startup
+Cursor内レビュー:
+- Task 1〜6: 各Task独立レビュー APPROVED（Critical/Importantなし）
+- whole-branch敵対的レビュー: Ready to merge = YES
+ゲート結果:
+- project-store-sqlite test: 120/120 PASS
+- project-store-sqlite typecheck: PASS
+- session-service test: 15/15 PASS
+- r1:persist:test: PASS
+- r1:auth:test: PASS
+- git diff --check: PASS
+追加検証:
+- docs/ai-platform 未ステージ
+- legacy-r1.sqlite / manifest / snapshot blob 未変更
+- legacy-r1.sqlite-wal / -shm なし
+- fixture:legacy-r1 は user_version=0 かつ schema_migrations なし
+- Workspace/Person/roster/permission/audit table なし
+未解決事項:
+- Task2 Minor: localeCompare index sort / backtick escape / duplicate diff / JSON runtime validation
+- Task3 Minor: checksumSourceは静的ラベル（DDLドリフトはfingerprint契約で検出）
+- Task5 既知: pre_generation ADD COLUMNによるgeneration列序ドリフト（計画どおりtable recreateせず、採用後はledger権威）
+- Task6 ⚠️: busyTimeout 25ms / tsx loader環境依存（テスト専用、当環境PASS）
+次の作業:
+- Codexが本スライスをレビューし、GO / CHANGES_REQUESTED を共有台帳へ記録する。
+次の担当: Codex
+```
+
+- Subagent-DrivenでTask 1〜6を連続実装・独立レビューし、最終whole-branchレビューGO。
+- production migration ledger（atomic apply/adopt、fail-closed、startup close、cross-process race）を導入。
+- frozen fixture evidenceとledgerless generator契約を維持。
+- merge / push / PR作成なし。
+- 次担当: Codex。
