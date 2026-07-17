@@ -59,10 +59,13 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
 
     const copied = copyLegacyR1Fixture(tempDir);
     const before = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
+    expect(before).toEqual(copied.manifest);
+
     const store = openSqliteStore({dbPath: copied.dbPath});
     store.close();
     const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
 
+    // Reopen/WAL may change page bytes (databaseSha256), while logical evidence stays fixed.
     expect(after.revisions).toEqual(before.revisions);
     expect(after.snapshots).toEqual(before.snapshots);
     expect(after.snapshotSha256).toEqual(before.snapshotSha256);
