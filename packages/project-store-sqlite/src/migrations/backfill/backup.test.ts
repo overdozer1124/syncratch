@@ -1,4 +1,3 @@
-import {computeMigrationChecksum} from "../checksum.js";
 import {
   copyFileSync,
   existsSync,
@@ -30,6 +29,10 @@ import {
 import {SchemaMigrationError} from "../types.js";
 import {prepareLegacyBackfillBackup} from "./backup.js";
 import {captureLegacyDataDigest} from "./legacy-digest.js";
+import {
+  r1LegacyOrganizationUserBackfillChecksum,
+  r1LegacyOrganizationUserBackfillName,
+} from "./v5-descriptor.js";
 
 type BackupPreparationSeams = NonNullable<
   Parameters<typeof prepareLegacyBackfillBackup>[2]
@@ -47,21 +50,6 @@ const v1ThroughV4 = [
   r1SchoolRosterMigration,
   r1AccessImportAuditMigration,
 ] as const;
-const v5Name = "r1-legacy-organization-user-backfill";
-const v5Checksum = computeMigrationChecksum(
-  [
-    "version=5",
-    `name=${v5Name}`,
-    "prepare:verified-vacuum-backup-v1",
-    "validate:legacy-backfill-source-v1",
-    "identity:uuidv5-5382ca4a-3efd-5013-bbff-25dc72876ebf",
-    "insert:workspaces,user_accounts,people,person_account_links",
-    "insert:workspace_memberships,workspace_directory_revisions,role_assignments",
-    "update:sessions-revoke-unrevoked",
-    "guard:locked-legacy-digest",
-  ].join("\n"),
-);
-
 const dbs: Database.Database[] = [];
 const tempDirs: string[] = [];
 
@@ -186,6 +174,13 @@ describe("prepareLegacyBackfillBackup success", () => {
       /\.pre-v5\.20260718T000000000Z\.[0-9a-f]{16}\.sqlite$/,
     );
     expect(result.legacyDigest).toBe(sourceDigest);
+    expect(
+      readdirSync(dirname(result.backupPath)).filter(name =>
+        name.includes(".pre-v5."),
+      ),
+    ).toEqual([result.backupPath.slice(dirname(result.backupPath).length + 1)]);
+    expect(existsSync(`${result.backupPath}-wal`)).toBe(false);
+    expect(existsSync(`${result.backupPath}-shm`)).toBe(false);
 
     const backup = new Database(result.backupPath, {
       readonly: true,
@@ -334,13 +329,13 @@ describe("prepareLegacyBackfillBackup failures", () => {
   });
 
   it("rejects a legacy digest mismatch", () => {
-    const {db} = openCopiedLegacyV4();
+    const {db, tempDir} = openCopiedLegacyV4();
+    const destination = join(tempDir, "digest-mismatch.sqlite");
 
     expectBackupFailure(() =>
-      prepareLegacyBackfillBackup(
-        db,
-        context,
-        mutateBackup(backup => {
+      prepareLegacyBackfillBackup(db, context, {
+        destinationPath: () => destination,
+        ...mutateBackup(backup => {
           backup
             .prepare(
               `UPDATE organizations SET name = name || ' changed'
@@ -348,17 +343,25 @@ describe("prepareLegacyBackfillBackup failures", () => {
             )
             .run();
         }),
-      ),
+      }),
     );
+    expect(existsSync(destination)).toBe(true);
   });
 });
 
 describe("prepareLegacyBackfillBackup v5 race", () => {
-  function completeLiveV5(db: Database.Database, checksum = v5Checksum): void {
+  function completeLiveV5(
+    db: Database.Database,
+    checksum = r1LegacyOrganizationUserBackfillChecksum,
+  ): void {
     db.prepare(
       `INSERT INTO schema_migrations(version, name, checksum, applied_at)
        VALUES (5, ?, ?, ?)`,
-    ).run(v5Name, checksum, context.appliedAt);
+    ).run(
+      r1LegacyOrganizationUserBackfillName,
+      checksum,
+      context.appliedAt,
+    );
     db.pragma("user_version = 5");
   }
 

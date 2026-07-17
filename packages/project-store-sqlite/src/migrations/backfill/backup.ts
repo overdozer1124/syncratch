@@ -8,12 +8,15 @@ import {
   captureSchemaFingerprint,
   fingerprintDifference,
 } from "../schema-fingerprint.js";
-import {computeMigrationChecksum} from "../checksum.js";
 import {
   SchemaMigrationError,
   type MigrationContext,
 } from "../types.js";
 import {captureLegacyDataDigest} from "./legacy-digest.js";
+import {
+  r1LegacyOrganizationUserBackfillChecksum,
+  r1LegacyOrganizationUserBackfillName,
+} from "./v5-descriptor.js";
 
 export type LegacyBackfillPreparation =
   | {kind: "empty"}
@@ -37,21 +40,6 @@ const triggerTables = [
   "projects",
   "project_members",
 ] as const;
-
-const v5Name = "r1-legacy-organization-user-backfill";
-const v5Checksum = computeMigrationChecksum(
-  [
-    "version=5",
-    `name=${v5Name}`,
-    "prepare:verified-vacuum-backup-v1",
-    "validate:legacy-backfill-source-v1",
-    "identity:uuidv5-5382ca4a-3efd-5013-bbff-25dc72876ebf",
-    "insert:workspaces,user_accounts,people,person_account_links",
-    "insert:workspace_memberships,workspace_directory_revisions,role_assignments",
-    "update:sessions-revoke-unrevoked",
-    "guard:locked-legacy-digest",
-  ].join("\n"),
-);
 
 function hasPendingLegacyData(db: Database.Database): boolean {
   const selections = triggerTables
@@ -110,7 +98,10 @@ function liveLedgerHasExactV5(db: Database.Database): boolean {
        WHERE version = 5`,
     )
     .get() as {name: string; checksum: string} | undefined;
-  return row?.name === v5Name && row.checksum === v5Checksum;
+  return (
+    row?.name === r1LegacyOrganizationUserBackfillName &&
+    row.checksum === r1LegacyOrganizationUserBackfillChecksum
+  );
 }
 
 function supersededPath(backupPath: string): string {
