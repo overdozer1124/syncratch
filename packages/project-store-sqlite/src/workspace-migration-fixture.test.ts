@@ -1,6 +1,6 @@
 import {mkdtempSync, readdirSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
-import {dirname, join} from "node:path";
+import {basename, dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import Database from "better-sqlite3";
 import {afterEach, describe, expect, it} from "vitest";
@@ -11,14 +11,30 @@ import {
 import {openSqliteStore} from "./store.js";
 
 const roots: string[] = [];
-const fixtureDir = dirname(
-  fileURLToPath(new URL("./fixtures/legacy-r1.sqlite", import.meta.url)),
+const sourceDbPath = fileURLToPath(
+  new URL("./fixtures/legacy-r1.sqlite", import.meta.url),
 );
 
-function assertNoProjectsSqliteSidecars(directory: string): void {
+/** Assert no -wal/-shm beside the given DB path (basename-aware). */
+function assertNoSqliteSidecarsForDb(dbPath: string): void {
+  const directory = dirname(dbPath);
+  const dbName = basename(dbPath);
   const names = new Set(readdirSync(directory));
-  expect(names.has("projects.sqlite-wal")).toBe(false);
-  expect(names.has("projects.sqlite-shm")).toBe(false);
+  expect(names.has(`${dbName}-wal`)).toBe(false);
+  expect(names.has(`${dbName}-shm`)).toBe(false);
+}
+
+/**
+ * Explicit destination cleanup only: truncate WAL so residual reopen/readonly
+ * sidecars are gone. This does *not* prove reopen naturally leaves no sidecars.
+ */
+function truncateDestinationWalForHygiene(dbPath: string): void {
+  const db = new Database(dbPath);
+  try {
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } finally {
+    db.close();
+  }
 }
 
 function foreignKeyViolations(dbPath: string): unknown[] {
@@ -59,14 +75,12 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
 
     expect(foreignKeyViolations(copied.dbPath)).toEqual([]);
 
-    const checkpoint = new Database(copied.dbPath);
-    try {
-      checkpoint.pragma("wal_checkpoint(TRUNCATE)");
-    } finally {
-      checkpoint.close();
-    }
+    // Source must never gain legacy-r1.sqlite sidecars (committed DB unopened).
+    assertNoSqliteSidecarsForDb(sourceDbPath);
 
-    assertNoProjectsSqliteSidecars(fixtureDir);
-    assertNoProjectsSqliteSidecars(tempDir);
+    // Destination checkpoint is hygiene cleanup after evidence checks, not a
+    // claim that reopen itself leaves no WAL/SHM.
+    truncateDestinationWalForHygiene(copied.dbPath);
+    assertNoSqliteSidecarsForDb(copied.dbPath);
   });
 });
