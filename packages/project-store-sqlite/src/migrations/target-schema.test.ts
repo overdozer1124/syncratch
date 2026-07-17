@@ -13,6 +13,8 @@ import {r1BaselineMigration} from "./0001-r1-baseline.js";
 import {r1IdentityCoreMigration} from "./0002-r1-identity-core.js";
 import {r1SchoolRosterMigration} from "./0003-r1-school-roster.js";
 import {r1AccessImportAuditMigration} from "./0004-r1-access-import-audit.js";
+import {computeLegacyBackfillPlan} from "./backfill/plan.js";
+import {readLegacyBackfillSource} from "./backfill/source.js";
 import {configureSqliteConnection} from "./configure.js";
 import {runSchemaMigrations} from "./index.js";
 import targetFingerprint from "./r1-target-schema-fingerprint.json" with {
@@ -36,23 +38,31 @@ const targetMigrations = [
   r1AccessImportAuditMigration,
 ] as const;
 
-const targetTableNames = [
+const backfilledTableNames = [
   "workspaces",
   "user_accounts",
   "people",
   "person_account_links",
   "workspace_memberships",
   "workspace_directory_revisions",
+  "role_assignments",
+] as const;
+
+const nonBackfilledTargetTableNames = [
   "schools",
   "academic_years",
   "grades",
   "class_groups",
   "enrollments",
   "staff_assignments",
-  "role_assignments",
   "roster_imports",
   "roster_import_rows",
   "audit_events",
+] as const;
+
+const targetTableNames = [
+  ...backfilledTableNames,
+  ...nonBackfilledTargetTableNames,
 ] as const;
 
 afterEach(() => {
@@ -82,21 +92,105 @@ function ledgerVersions(db: Database.Database): number[] {
     .all() as number[];
 }
 
-function expectTargetEndState(db: Database.Database): void {
+function expectProductionEndState(db: Database.Database): void {
+  expect(ledgerVersions(db)).toEqual([1, 2, 3, 4, 5]);
+  expect(db.pragma("user_version", {simple: true})).toBe(5);
+  expect(captureSchemaFingerprint(db)).toEqual(targetFingerprint.current);
+  expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+}
+
+function expectV1ThroughV4EndState(db: Database.Database): void {
   expect(ledgerVersions(db)).toEqual([1, 2, 3, 4]);
   expect(db.pragma("user_version", {simple: true})).toBe(4);
   expect(captureSchemaFingerprint(db)).toEqual(targetFingerprint.current);
   expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
 }
 
+function tableRowCount(db: Database.Database, tableName: string): number {
+  return db.prepare(`SELECT COUNT(*) FROM "${tableName}"`).pluck().get() as number;
+}
+
 function expectTargetTablesEmpty(db: Database.Database): void {
   for (const tableName of targetTableNames) {
-    const rowCount = db
-      .prepare(`SELECT COUNT(*) FROM "${tableName}"`)
-      .pluck()
-      .get();
-    expect(rowCount, tableName).toBe(0);
+    expect(tableRowCount(db, tableName), tableName).toBe(0);
   }
+}
+
+function expectNonBackfilledTablesEmpty(db: Database.Database): void {
+  for (const tableName of nonBackfilledTargetTableNames) {
+    expect(tableRowCount(db, tableName), tableName).toBe(0);
+  }
+}
+
+function sortById<Row extends {id: string}>(rows: readonly Row[]): Row[] {
+  return [...rows].sort((left, right) =>
+    Buffer.compare(Buffer.from(left.id, "utf8"), Buffer.from(right.id, "utf8")),
+  );
+}
+
+function computeExpectedPlan(
+  appliedAt: string,
+): ReturnType<typeof computeLegacyBackfillPlan> {
+  const planCopy = copyLegacyR1Fixture(createTempDir("blocksync-target-plan-"));
+  const planDb = new Database(planCopy.dbPath);
+  dbs.push(planDb);
+  configureSqliteConnection(planDb);
+  runSchemaMigrationsWithOptions(planDb, {
+    migrations: targetMigrations,
+    now: () => appliedAt,
+  });
+  const source = readLegacyBackfillSource(planDb);
+  return computeLegacyBackfillPlan(source, {appliedAt});
+}
+
+function readBackfilledSnapshot(
+  db: Database.Database,
+): Record<string, unknown[]> {
+  return {
+    workspaces: db
+      .prepare(
+        `SELECT id, kind, name, created_at, updated_at
+         FROM workspaces ORDER BY id`,
+      )
+      .all(),
+    user_accounts: db
+      .prepare(
+        `SELECT id, display_name, email, status, created_at, updated_at
+         FROM user_accounts ORDER BY id`,
+      )
+      .all(),
+    people: db
+      .prepare(
+        `SELECT id, display_name, status, created_at, updated_at
+         FROM people ORDER BY id`,
+      )
+      .all(),
+    person_account_links: db
+      .prepare(
+        `SELECT id, person_id, account_id, status, linked_at, unlinked_at
+         FROM person_account_links ORDER BY id`,
+      )
+      .all(),
+    workspace_memberships: db
+      .prepare(
+        `SELECT id, workspace_id, account_id, role, status, started_at, ended_at
+         FROM workspace_memberships ORDER BY id`,
+      )
+      .all(),
+    workspace_directory_revisions: db
+      .prepare(
+        `SELECT workspace_id, revision, updated_at
+         FROM workspace_directory_revisions ORDER BY workspace_id`,
+      )
+      .all(),
+    role_assignments: db
+      .prepare(
+        `SELECT id, account_id, scope_kind, workspace_id, school_id,
+                class_group_id, project_id, role, status, started_at, ended_at
+         FROM role_assignments ORDER BY id`,
+      )
+      .all(),
+  };
 }
 
 function productionSourceFiles(directory: string): string[] {
@@ -114,16 +208,16 @@ function productionSourceFiles(directory: string): string[] {
 }
 
 describe("production target schema", () => {
-  it("migrates a fresh database through v1-v4 to the committed empty target", () => {
+  it("migrates a fresh database through v1-v5 to the committed empty target", () => {
     const db = openMemory();
 
     runSchemaMigrations(db);
 
-    expectTargetEndState(db);
+    expectProductionEndState(db);
     expectTargetTablesEmpty(db);
   });
 
-  it("adopts a copied legacy fixture and advances it without changing logical evidence", () => {
+  it("adopts a copied legacy fixture and backfills the workspace/person schema", () => {
     const copied = copyLegacyR1Fixture(
       createTempDir("blocksync-target-legacy-"),
     );
@@ -134,13 +228,46 @@ describe("production target schema", () => {
 
     const db = new Database(copied.dbPath, {readonly: true});
     dbs.push(db);
-    expectTargetEndState(db);
-    expectTargetTablesEmpty(db);
+    expectProductionEndState(db);
+    expectNonBackfilledTablesEmpty(db);
+
+    const appliedAt = (
+      db
+        .prepare(`SELECT applied_at FROM schema_migrations WHERE version = 5`)
+        .get() as {applied_at: string}
+    ).applied_at;
+    const plan = computeExpectedPlan(appliedAt);
+    const snapshot = readBackfilledSnapshot(db);
+    expect(snapshot.workspaces).toEqual([...plan.workspaces]);
+    expect(snapshot.user_accounts).toEqual([...plan.userAccounts]);
+    expect(snapshot.people).toEqual([...plan.people]);
+    expect(snapshot.person_account_links).toEqual([...plan.personAccountLinks]);
+    expect(snapshot.workspace_memberships).toEqual([
+      ...plan.workspaceMemberships,
+    ]);
+    expect(snapshot.workspace_directory_revisions).toEqual([
+      ...plan.workspaceDirectoryRevisions,
+    ]);
+    expect(snapshot.role_assignments).toEqual(sortById(plan.roleAssignments));
 
     const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
-    const {databaseSha256: _beforeSha, ...beforeEvidence} = before;
-    const {databaseSha256: _afterSha, ...afterEvidence} = after;
+    const {
+      databaseSha256: _beforeSha,
+      sessions: beforeSessions,
+      ...beforeEvidence
+    } = before;
+    const {
+      databaseSha256: _afterSha,
+      sessions: afterSessions,
+      ...afterEvidence
+    } = after;
     expect(afterEvidence).toEqual(beforeEvidence);
+    expect(afterSessions).toEqual(
+      beforeSessions.map(session => ({
+        ...session,
+        revokedAt: session.revokedAt ?? appliedAt,
+      })),
+    );
   });
 
   it.each([
@@ -149,7 +276,7 @@ describe("production target schema", () => {
     [4, "after_apply_before_ledger"],
     [4, "after_ledger_before_user_version"],
   ] as const)(
-    "rolls back only v%i at %s and reaches the target on retry",
+    "rolls back only v%i at %s and reaches the v1-v4 target on retry",
     (faultVersion: 3 | 4, faultPoint: MigrationFaultPoint) => {
       const db = openMemory();
       const marker = new Error(`fault:v${faultVersion}:${faultPoint}`);
@@ -178,7 +305,7 @@ describe("production target schema", () => {
         now: () => "2026-07-17T00:00:00.000Z",
       });
 
-      expectTargetEndState(db);
+      expectV1ThroughV4EndState(db);
       expectTargetTablesEmpty(db);
     },
   );

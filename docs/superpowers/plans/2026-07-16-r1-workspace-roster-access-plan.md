@@ -131,14 +131,14 @@ mapping only in the later Workspace/Person schema plan.
 own approved backfill slice.** Do not fold legacy row backfill, Person ID
 generation, claim tables, or repository cutover into registry wiring.
 
-- [ ] Convert every organization to a workspace with the same ID.
-- [ ] Create Person + account link for every existing user (using the approved
+- [x] Convert every organization to a workspace with the same ID.
+- [x] Create Person + account link for every existing user (using the approved
   deterministic Person ID strategy recorded under Task 2).
-- [ ] Convert memberships and project ownership without broadening access.
-- [ ] Migrate or revoke old org-scoped sessions fail-closed.
-- [ ] Keep project envelope bytes, V1 hashes, snapshots and transaction ids unchanged.
-- [ ] Verify restart halfway through the migration is recoverable.
-- [ ] Commit: `feat(store): migrate legacy organizations without rehash`.
+- [x] Convert memberships and project ownership without broadening access.
+- [x] Migrate or revoke old org-scoped sessions fail-closed.
+- [x] Keep project envelope bytes, V1 hashes, snapshots and transaction ids unchanged.
+- [x] Verify restart halfway through the migration is recoverable.
+- [x] Commit: `feat(store): migrate legacy organizations without rehash`.
 
 **Verification:** Task 0 fixture migrates; old BOLA remains; byte/hash comparisons pass; foreign-key check returns no rows.
 

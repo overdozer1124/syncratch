@@ -65,9 +65,10 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
     store.close();
     const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
 
+    let appliedAt = "";
     const migrationDb = new Database(copied.dbPath, {readonly: true});
     try {
-      expect(migrationDb.pragma("user_version", {simple: true})).toBe(4);
+      expect(migrationDb.pragma("user_version", {simple: true})).toBe(5);
       expect(
         migrationDb
           .prepare(
@@ -75,16 +76,35 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
           )
           .pluck()
           .all(),
-      ).toEqual([1, 2, 3, 4]);
+      ).toEqual([1, 2, 3, 4, 5]);
+      appliedAt = (
+        migrationDb
+          .prepare("SELECT applied_at FROM schema_migrations WHERE version = 5")
+          .get() as {applied_at: string}
+      ).applied_at;
     } finally {
       migrationDb.close();
     }
 
-    // Reopen/WAL may change page bytes (databaseSha256), while every item of
-    // logical migration evidence must stay fixed.
-    const {databaseSha256: _beforeDatabaseSha256, ...beforeEvidence} = before;
-    const {databaseSha256: _afterDatabaseSha256, ...afterEvidence} = after;
+    // Reopen/WAL may change page bytes (databaseSha256); v5 revokes previously
+    // unrevoked sessions. Every other item of logical evidence must stay fixed.
+    const {
+      databaseSha256: _beforeDatabaseSha256,
+      sessions: beforeSessions,
+      ...beforeEvidence
+    } = before;
+    const {
+      databaseSha256: _afterDatabaseSha256,
+      sessions: afterSessions,
+      ...afterEvidence
+    } = after;
     expect(afterEvidence).toEqual(beforeEvidence);
+    expect(afterSessions).toEqual(
+      beforeSessions.map(session => ({
+        ...session,
+        revokedAt: session.revokedAt ?? appliedAt,
+      })),
+    );
     expect(after.revisions.find(row => row.revision === 1)).toMatchObject({
       // Independent sentinel pinned by v1-envelope-hash.regression.test.ts.
       contentHash:

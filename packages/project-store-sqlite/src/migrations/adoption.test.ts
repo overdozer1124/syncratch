@@ -6,6 +6,9 @@ import {afterEach, describe, expect, it} from "vitest";
 import {copyLegacyR1Fixture, readLegacyR1Manifest} from "../fixtures/legacy-r1-manifest.js";
 import {openSqliteStore} from "../store.js";
 import {r1BaselineMigration} from "./0001-r1-baseline.js";
+import {r1IdentityCoreMigration} from "./0002-r1-identity-core.js";
+import {r1SchoolRosterMigration} from "./0003-r1-school-roster.js";
+import {r1AccessImportAuditMigration} from "./0004-r1-access-import-audit.js";
 import {configureSqliteConnection} from "./configure.js";
 import {runSchemaMigrations} from "./index.js";
 import targetFingerprint from "./r1-target-schema-fingerprint.json" with {
@@ -18,6 +21,13 @@ import {
 import {runSchemaMigrationsWithOptions} from "./runner.js";
 
 const roots: string[] = [];
+
+const v1ThroughV4 = [
+  r1BaselineMigration,
+  r1IdentityCoreMigration,
+  r1SchoolRosterMigration,
+  r1AccessImportAuditMigration,
+] as const;
 
 afterEach(() => {
   for (const root of roots.splice(0)) {
@@ -76,7 +86,7 @@ describe("ledgerless R1 adoption", () => {
       const beforeRows = rowEvidence(db);
 
       configureSqliteConnection(db);
-      runSchemaMigrations(db);
+      runSchemaMigrationsWithOptions(db, {migrations: v1ThroughV4});
 
       expect(db.pragma("user_version", {simple: true})).toBe(4);
       expect(
@@ -112,7 +122,7 @@ describe("ledgerless R1 adoption", () => {
       const beforeRows = rowEvidence(db);
 
       configureSqliteConnection(db);
-      runSchemaMigrations(db);
+      runSchemaMigrationsWithOptions(db, {migrations: v1ThroughV4});
 
       expect(rowEvidence(db)).toEqual(expect.arrayContaining(beforeRows));
       expect(
@@ -128,7 +138,7 @@ describe("ledgerless R1 adoption", () => {
       const firstFingerprint = captureSchemaFingerprint(db);
       expect(firstLedger).toHaveLength(4);
 
-      runSchemaMigrations(db);
+      runSchemaMigrationsWithOptions(db, {migrations: v1ThroughV4});
 
       expect(ledgerRows(db)).toEqual(firstLedger);
       expect(captureSchemaFingerprint(db)).toEqual(firstFingerprint);
