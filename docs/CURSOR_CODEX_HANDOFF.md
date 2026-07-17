@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 00:00:19 JST |
+| 最終更新 | 2026-07-18 02:26:58 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `DESIGN_REVIEW` |
-| 現在の担当 | Cursor |
-| 現在のTask | Legacy Organization/User Backfill 設計 |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 設計中 |
+| ワークフロー状態 | `PLAN_REVIEW` |
+| 現在の担当 | User |
+| 現在のTask | Legacy Organization/User Backfill TDD実装計画レビュー |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 設計・計画完成 |
 | 承認基準SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（Target Schema main merge・Cursor内正式GO） |
-| 再提出SHA | `db93c600be5c88029cb9acc43e471d1b376fe4b0` |
+| 再提出SHA | `d9faf4f9f0756094f6ceddae1d2a4a483faecd1b` |
 | 作業ブランチ | `feat/r1-legacy-backfill` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md`（完了） |
+| 計画 | `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` |
 | 前スライス | Workspace Directory Target Schema = 100%（Cursor内正式承認・main統合） |
-| 次Task | accepted legacy DB の additive backfill 設計 → written spec承認 → TDD実装計画 |
+| 次Task | TDD実装計画承認 → Task 1から実装 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Legacy organization/user backfill（決定的 Person ID・backup gate 含む）の設計を開始する。repository cutover / claim tables / auth APIs には着手しない。
+ユーザーのTDD実装計画レビュー待ち。承認前に実装へ進まない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2638,3 +2638,70 @@ feature tip: 8a27415779721fe9368fa7d117c18154bfa926c4
 
 - Target Schema 正式GO後、legacy backfill 設計へ移行。
 - merge / push / PR作成なし。
+
+### 2026-07-18 00:43:33 JST — Cursor（Legacy Backfill設計書完成）
+
+```text
+最終更新: 2026-07-18 00:43:33 JST
+更新者: Cursor
+状態: DESIGN_REVIEW
+対象Task: Legacy Organization/User Backfill
+設計commit SHA: 8a1618ed4ef6f6d0bcd68cf37297a28be1107030
+設計:
+- docs/superpowers/specs/2026-07-18-r1-legacy-organization-user-backfill-design.md
+確定事項:
+- immutable v5 + transaction外VACUUM INTO preparation
+- backup/live full legacy digestをBEGIN IMMEDIATE下で再照合
+- fixed UUIDv5 namespaceによる全target ID決定化
+- same-ID casual workspace、account ID維持、email person merge禁止
+- admin/member exact mapping、workspace/project role作成、権限拡大なし
+- suspended org / disabled userはended、legacy sessionは全revoke
+- V1 envelope/revision/snapshot/asset evidence不変
+自己レビュー:
+- placeholder: なし
+- architecture re-review: APPROVED（Critical/Importantなし）
+- git diff --check: PASS
+次の作業:
+- ユーザーのwritten specレビュー
+- 承認後にTDD implementation planを作成
+次の担当: User
+```
+
+- 設計書を作成・自己レビューしcommit。
+- 実装コード変更なし。
+- 次担当: User（written specレビュー）。
+
+### 2026-07-18 02:26:58 JST — Cursor（Legacy Backfill TDD計画完成）
+
+```text
+最終更新: 2026-07-18 02:26:58 JST
+更新者: Cursor
+状態: PLAN_REVIEW
+対象Task: Legacy Organization/User Backfill
+spec承認: ユーザー承認済み
+設計commit SHA: 8a1618ed4ef6f6d0bcd68cf37297a28be1107030
+計画commit SHA: d9faf4f9f0756094f6ceddae1d2a4a483faecd1b
+詳細計画:
+- docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md
+計画構成:
+- Task 1: prepared migration runner lifecycle
+- Task 2: deterministic UUIDv5 identity/timestamps
+- Task 3: full-column canonical legacy digest
+- Task 4: source validation + pure backfill plan
+- Task 5: verified pre-v5 VACUUM backup gate
+- Task 6: immutable v5 backfill DML
+- Task 7: production registry/integration/race/final gates
+自己レビュー:
+- placeholder: なし
+- planner review: APPROVED（Critical/Importantなし）
+- exact UUID golden vectors / v5 checksum / 17-table columnsを計画へ固定
+- git diff --check: PASS
+次の作業:
+- ユーザーが計画を承認し、実行方式を選択
+- 承認前に実装へ着手しない
+次の担当: User
+```
+
+- 承認済みspecを7 TaskのTDD実装計画へ展開しcommit。
+- 実装コード変更なし。
+- 次担当: User（計画レビュー・実行方式選択）。
