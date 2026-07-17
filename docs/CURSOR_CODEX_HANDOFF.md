@@ -33,33 +33,33 @@
 
 - **前スライス（R1 Scratch SB3 / Migration Fixtures / Domain Contracts / Target Schema）:** 完了済みとして凍結（各100%、Target Schema main `57b1b94`）。
 - **現行スライス（Legacy Organization/User Backfill）:** `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` の Task 1〜7 を全体として計算する。
-- Cursor内正式GO（ユーザー「次の作業へ」）または Codex 正式承認済み Task のみ完了として数える。
+- Cursor内正式GO（ユーザー local merge「1」）または Codex 正式承認済み Task のみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 7 × 100`（整数へ四捨五入）。
-- 現在は正式GO前のため **0%**（実装・敵対的レビューは完了）。
+- 正式GO済みのため **100%**（Task 1〜7 すべて承認）。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 07:16:00 JST |
+| 最終更新 | 2026-07-18 07:35:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | User（Cursor内正式GO） |
-| 現在のTask | Legacy Organization/User Backfill Task 1〜7 実装完了・レビュー提出 |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 正式承認 **0%**（実装7/7・branch Ready） |
-| 承認基準SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（Target Schema main merge） |
-| 再提出SHA | `d2b5d990053ff792b9b1c2a55a9fe5b1d572d185`（実装 tip） |
-| 作業ブランチ | `feat/r1-legacy-backfill` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill` |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | User |
+| 現在のTask | Legacy Organization/User Backfill = **完了（main統合）** |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill **100%** |
+| 承認基準SHA | `d2b5d990053ff792b9b1c2a55a9fe5b1d572d185`（実装 tip・Cursor内正式GO） |
+| 再提出SHA | （なし・スライス完了） |
+| 作業ブランチ | `main`（`feat/r1-legacy-backfill` を local merge） |
+| 作業worktree | `C:\cursor\NewScratchEditor`（feature worktree は削除予定） |
 | 設計 | `docs/superpowers/specs/2026-07-18-r1-legacy-organization-user-backfill-design.md` |
 | 計画 | `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` |
 | 前スライス | Workspace Directory Target Schema = 100%（Cursor内正式承認・main統合） |
-| 次Task | 正式GO後に main 統合 / PR / 保持を選択。次機能スライスは別途 |
+| 次Task | 次機能スライスはユーザー指示待ち（school/roster/import/audit・claim・repos・API/UI は未着手） |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの正式GO待ち。GO後に finishing options（local merge / PR / keep / discard）を実行する。
+なし（Backfill スライス完了）。次スライスの指示を待つ。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2763,3 +2763,20 @@ spec承認: ユーザー承認済み
 - Subagent-Driven で Task 1〜7 を実装・個別レビューし、全branch敵対的レビュー Ready。
 - 正式承認前のため Backfill 進捗は 0% のまま。
 - 次担当: User（正式GO / finishing選択）。
+
+### 2026-07-18 07:35:00 JST — Cursor（Legacy Backfill 正式GO・main統合）
+
+```text
+最終更新: 2026-07-18 07:35:00 JST
+更新者: Cursor
+状態: MERGED
+対象Task: Legacy Organization/User Backfill Task 1〜7
+全体進捗: 100%（ユーザー選択「1」= local merge を正式GOとして扱う）
+実装 tip SHA: d2b5d990053ff792b9b1c2a55a9fe5b1d572d185
+統合先: main（fast-forward / merge）
+判定: GO（Cursor内正式・adversarial Ready）
+次の担当: User（次スライス指示）
+```
+
+- ユーザーが finishing option 1（main へ local merge）を選択。
+- Backfill Task 1〜7 を正式承認 **100%** とし、main へ統合する。
