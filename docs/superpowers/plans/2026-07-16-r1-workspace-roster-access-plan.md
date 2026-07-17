@@ -50,15 +50,17 @@ APIs that do **not** exist and must not be assumed: workspace selection, person 
 
 **Files:** new fixtures under `packages/project-store-sqlite/src/fixtures/`; new migration acceptance test; no production mutation yet.
 
-**Detailed plan:** `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md`
+**Status:** Complete and green. The first RED production-migration test begins in Task 2.
 
-- [ ] Create an actual pre-migration SQLite fixture through the approved persistence/auth APIs.
-- [ ] Record users, external identities, memberships, sessions, projects, revision envelope bytes, content hashes, transaction ids and snapshots.
-- [ ] Add a V1 project hash fixture copied from the accepted persistence/SB3 tests.
-- [ ] Freeze target-state assertions and byte-stable evidence while keeping this fixture-only task green; the first RED production-migration test belongs to Task 2.
-- [ ] Document the migration matrix in `docs/r1/WORKSPACE_ROSTER_MIGRATION.md`.
+**Detailed plan:** [R1 Workspace Migration Fixtures Implementation Plan](2026-07-17-r1-workspace-migration-fixtures-plan.md)
 
-**Verification:** fixture reopens on current HEAD; hashes match committed expected values; test fails only because new migration is absent.
+- [x] Create an actual pre-migration SQLite fixture through the approved persistence/auth APIs.
+- [x] Record users, external identities, memberships, sessions, projects, revision envelope bytes, content hashes, transaction ids and snapshots.
+- [x] Add a V1 project hash fixture copied from the accepted persistence/SB3 tests.
+- [x] Freeze target-state assertions and byte-stable evidence while keeping this fixture-only task green.
+- [x] Document the migration matrix in `docs/r1/WORKSPACE_ROSTER_MIGRATION.md`.
+
+**Verification:** fixture copies and reopens on current HEAD; hashes and raw bytes match committed expected values; all Task 0 tests remain green. No production-migration test is introduced before Task 2.
 
 **Anti-pattern guards:** no hand-authored fake DB schema; no JSON reserialization of frozen envelopes; do not modify the active Scratch/SB3 design.
 
