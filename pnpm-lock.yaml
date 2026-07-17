@@ -452,6 +452,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
 
+  packages/workspace-directory:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+
 packages:
 
   '@acemir/cssom@0.9.31':
