@@ -3,6 +3,7 @@ import {r1BaselineMigration} from "./0001-r1-baseline.js";
 import {r1IdentityCoreMigration} from "./0002-r1-identity-core.js";
 import {r1SchoolRosterMigration} from "./0003-r1-school-roster.js";
 import {r1AccessImportAuditMigration} from "./0004-r1-access-import-audit.js";
+import {r1LegacyOrganizationUserBackfillMigration} from "./0005-r1-legacy-organization-user-backfill.js";
 import {runSchemaMigrationsWithOptions} from "./runner.js";
 
 const migrations = [
@@ -10,6 +11,7 @@ const migrations = [
   r1IdentityCoreMigration,
   r1SchoolRosterMigration,
   r1AccessImportAuditMigration,
+  r1LegacyOrganizationUserBackfillMigration,
 ] as const;
 
 export function runSchemaMigrations(db: Database.Database): void {
