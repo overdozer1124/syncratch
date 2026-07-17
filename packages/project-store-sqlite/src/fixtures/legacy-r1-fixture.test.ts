@@ -1,0 +1,42 @@
+import {mkdtempSync, rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join} from "node:path";
+import {afterEach, describe, expect, it} from "vitest";
+import {createLegacyR1Fixture} from "./legacy-r1-fixture.js";
+
+const roots: string[] = [];
+
+describe("legacy R1 fixture builder", () => {
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, {recursive: true, force: true});
+  });
+
+  it("creates auth, project, revision and snapshot evidence through public APIs", async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), "legacy-r1-fixture-"));
+    roots.push(rootDir);
+    const manifest = await createLegacyR1Fixture({
+      rootDir,
+      dbPath: join(rootDir, "projects.sqlite"),
+      snapshotDir: join(rootDir, "snapshots")
+    });
+
+    expect(manifest.organizations).toHaveLength(1);
+    expect(manifest.organizations[0]).toMatchObject({
+      name: "Legacy School",
+      status: "active"
+    });
+    expect(manifest.users.map(row => row.id)).toEqual(["user-legacy-owner"]);
+    expect(manifest.projects).toEqual([{
+      id: "project-legacy-rich",
+      organizationId: manifest.organizations[0].id,
+      ownerUserId: "user-legacy-owner",
+      headRevision: 1
+    }]);
+    expect(manifest.revisions.map(row => [row.revision, row.clientTransactionId])).toEqual([
+      [0, null],
+      [1, "tx-legacy-rich"]
+    ]);
+    expect(manifest.snapshots).toHaveLength(1);
+    expect(Object.keys(manifest.snapshotSha256)).toHaveLength(1);
+  });
+});
