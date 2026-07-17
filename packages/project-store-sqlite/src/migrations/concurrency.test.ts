@@ -6,9 +6,12 @@ import {fileURLToPath} from "node:url";
 import Database from "better-sqlite3";
 import {afterEach, describe, expect, it} from "vitest";
 import {r1BaselineMigration} from "./0001-r1-baseline.js";
+import {r1IdentityCoreMigration} from "./0002-r1-identity-core.js";
+import {r1SchoolRosterMigration} from "./0003-r1-school-roster.js";
+import {r1AccessImportAuditMigration} from "./0004-r1-access-import-audit.js";
 import {configureSqliteConnection} from "./configure.js";
 import {runSchemaMigrations} from "./index.js";
-import baselineFingerprints from "./r1-baseline-fingerprints.json" with {
+import targetFingerprint from "./r1-target-schema-fingerprint.json" with {
   type: "json",
 };
 import {captureSchemaFingerprint} from "./schema-fingerprint.js";
@@ -113,7 +116,7 @@ describe("concurrent migration startup", () => {
     }
   });
 
-  it("serializes two processes into exactly one v1 ledger row", async () => {
+  it("serializes two processes into one complete v1-v4 ledger", async () => {
     const dbPath = createTempDbPath();
 
     const [first, second] = await Promise.all([
@@ -142,14 +145,29 @@ describe("concurrent migration startup", () => {
           name: "r1-baseline",
           checksum: r1BaselineMigration.checksum,
         },
+        {
+          version: 2,
+          name: "r1-identity-core",
+          checksum: r1IdentityCoreMigration.checksum,
+        },
+        {
+          version: 3,
+          name: "r1-school-roster",
+          checksum: r1SchoolRosterMigration.checksum,
+        },
+        {
+          version: 4,
+          name: "r1-access-import-audit",
+          checksum: r1AccessImportAuditMigration.checksum,
+        },
       ]);
-      expect(db.pragma("user_version", {simple: true})).toBe(1);
+      expect(db.pragma("user_version", {simple: true})).toBe(4);
       expect(captureSchemaFingerprint(db)).toEqual(
-        baselineFingerprints.current,
+        targetFingerprint.current,
       );
       expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
-      expect(userTables(db)).not.toContain("workspaces");
-      expect(userTables(db)).not.toContain("people");
+      expect(userTables(db)).toContain("workspaces");
+      expect(userTables(db)).toContain("people");
     } finally {
       db.close();
       dbs.splice(0, dbs.length);

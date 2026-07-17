@@ -97,8 +97,9 @@ Define:
 
 **Files:** `packages/project-store-sqlite/src/migrations/**`, `store.ts`, migration tests.
 
-Task 2 is split. The **ledger-only** sub-slice lands first and must GO before any
-Workspace/Person target schema or backfill work.
+Task 2 is split. The **ledger-only** sub-slice landed first, followed by the
+additive Workspace/Person target schema. Both slices are GO; no legacy rows are
+backfilled by Task 2.
 
 **Detailed plan (ledger-only):** [R1 Versioned SQLite Migration Ledger Implementation Plan](2026-07-17-r1-versioned-migration-ledger-plan.md)
 
@@ -108,26 +109,27 @@ does **not** create `workspaces`, `people`, `user_accounts`,
 `person_account_links`, `workspace_memberships`, roster, permission, or audit
 tables.
 
-**Deferred until ledger GO:** create tables from Design §§4–5 (explicit FKs,
-CHECKs, indexes) on the shared connection, then ordered domain migrations that
-depend on those tables.
+The target-schema slice creates the tables from Design §§4–5 (explicit FKs,
+CHECKs, indexes) on the shared connection in ordered domain migrations.
 
 **Approved Person ID strategy (record only; no tables in the ledger slice):**
 `user_accounts.id` retains the legacy `users.id`; `people.id` is derived
 deterministically from a fixed namespace and the legacy user ID. Implement that
 mapping only in the later Workspace/Person schema plan.
 
-- [ ] Ledger-only sub-slice (detailed plan above): fresh/reopen/partial-crash,
+- [x] Ledger-only sub-slice (detailed plan above): fresh/reopen/partial-crash,
   adoption, busy/race, and frozen-evidence gates.
-- [ ] After ledger GO: add target Workspace/Person tables and constraints.
-- [ ] Change migration order so referenced workspace/account tables exist before new FKs.
+- [x] After ledger GO: add target Workspace/Person tables and constraints.
+- [x] Register migrations in dependency order so referenced workspace/account
+  tables exist before new FKs.
 - [ ] Commit ledger first (`feat(store): …` / `test(store): prove concurrent migration startup`);
   target schema commit remains `feat(store): versioned workspace roster schema`.
 
 ### Task 3: Migrate accepted single-org databases
 
-**Blocked until the Task 2 ledger-only sub-slice is GO.** Do not start Task 3+
-domain migration while ledger adoption/concurrency remains incomplete.
+**Task 2 target-schema GO is complete. Task 3 remains unstarted and requires its
+own approved backfill slice.** Do not fold legacy row backfill, Person ID
+generation, claim tables, or repository cutover into registry wiring.
 
 - [ ] Convert every organization to a workspace with the same ID.
 - [ ] Create Person + account link for every existing user (using the approved

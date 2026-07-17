@@ -67,13 +67,15 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
 
     const migrationDb = new Database(copied.dbPath, {readonly: true});
     try {
-      expect(migrationDb.pragma("user_version", {simple: true})).toBe(1);
+      expect(migrationDb.pragma("user_version", {simple: true})).toBe(4);
       expect(
         migrationDb
-          .prepare("SELECT version FROM schema_migrations")
+          .prepare(
+            "SELECT version FROM schema_migrations ORDER BY version",
+          )
           .pluck()
           .all(),
-      ).toEqual([1]);
+      ).toEqual([1, 2, 3, 4]);
     } finally {
       migrationDb.close();
     }

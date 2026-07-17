@@ -8,6 +8,9 @@ import {openSqliteStore} from "../store.js";
 import {r1BaselineMigration} from "./0001-r1-baseline.js";
 import {configureSqliteConnection} from "./configure.js";
 import {runSchemaMigrations} from "./index.js";
+import targetFingerprint from "./r1-target-schema-fingerprint.json" with {
+  type: "json",
+};
 import {
   captureSchemaFingerprint,
   classifyLedgerlessDatabase,
@@ -65,25 +68,31 @@ function rowEvidence(db: Database.Database): unknown[] {
 }
 
 describe("ledgerless R1 adoption", () => {
-  it("adopts the accepted current fixture without changing schema or logical evidence", () => {
+  it("adopts the accepted current fixture, advances to v4, and preserves logical evidence", () => {
     const copied = copyFixture();
     const before = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
     const db = new Database(copied.dbPath);
     try {
-      const beforeFingerprint = captureSchemaFingerprint(db);
       const beforeRows = rowEvidence(db);
 
       configureSqliteConnection(db);
       runSchemaMigrations(db);
 
-      expect(db.pragma("user_version", {simple: true})).toBe(1);
+      expect(db.pragma("user_version", {simple: true})).toBe(4);
       expect(
         db
-          .prepare("SELECT version, name FROM schema_migrations")
+          .prepare(
+            "SELECT version, name FROM schema_migrations ORDER BY version",
+          )
           .all(),
-      ).toEqual([{version: 1, name: "r1-baseline"}]);
-      expect(captureSchemaFingerprint(db)).toEqual(beforeFingerprint);
-      expect(rowEvidence(db)).toEqual(beforeRows);
+      ).toEqual([
+        {version: 1, name: "r1-baseline"},
+        {version: 2, name: "r1-identity-core"},
+        {version: 3, name: "r1-school-roster"},
+        {version: 4, name: "r1-access-import-audit"},
+      ]);
+      expect(captureSchemaFingerprint(db)).toEqual(targetFingerprint.current);
+      expect(rowEvidence(db)).toEqual(expect.arrayContaining(beforeRows));
     } finally {
       db.close();
     }
@@ -94,7 +103,7 @@ describe("ledgerless R1 adoption", () => {
     expect(afterEvidence).toEqual(beforeEvidence);
   });
 
-  it("patches only generation when adopting the accepted pre-generation fixture and is idempotent", () => {
+  it("patches generation, advances the accepted pre-generation fixture to v4, and is idempotent", () => {
     const copied = copyFixture();
     const db = new Database(copied.dbPath);
     try {
@@ -105,7 +114,7 @@ describe("ledgerless R1 adoption", () => {
       configureSqliteConnection(db);
       runSchemaMigrations(db);
 
-      expect(rowEvidence(db)).toEqual(beforeRows);
+      expect(rowEvidence(db)).toEqual(expect.arrayContaining(beforeRows));
       expect(
         db
           .prepare(
@@ -114,9 +123,10 @@ describe("ledgerless R1 adoption", () => {
           .pluck()
           .all(),
       ).toEqual(["id", "owner", "acquired_at", "expires_at", "generation"]);
-      expect(db.pragma("user_version", {simple: true})).toBe(1);
+      expect(db.pragma("user_version", {simple: true})).toBe(4);
       const firstLedger = ledgerRows(db);
       const firstFingerprint = captureSchemaFingerprint(db);
+      expect(firstLedger).toHaveLength(4);
 
       runSchemaMigrations(db);
 
