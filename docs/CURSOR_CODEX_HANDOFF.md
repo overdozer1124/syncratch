@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 21:05:19 JST |
+| 最終更新 | 2026-07-17 21:07:37 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `DESIGN_REVIEW` |
-| 現在の担当 | Cursor |
-| 現在のTask | Workspace Directory Domain Contracts 設計 |
-| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 設計中 |
+| ワークフロー状態 | `PLAN_REVIEW` |
+| 現在の担当 | User |
+| 現在のTask | Workspace Directory Domain Contracts 詳細実装計画 |
+| 全体進捗 | Migration Ledger **100%**（Cursor内正式承認） / Domain Contracts 設計・計画完了 |
 | 承認基準SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08`（Migration Ledger正式承認） |
-| 再提出SHA | `9b940f35b0b809daf9fa6d7e567da9d8565c0c08` |
+| 再提出SHA | `7e77c990962c5e03a8a48a73eef2dd718d1a4f9a` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
-| 計画 | `docs/superpowers/plans/2026-07-17-r1-versioned-migration-ledger-plan.md`（完了） |
+| 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md` |
 | 前スライス | R1 Versioned SQLite Migration Ledger = 100%（Cursor内正式承認・凍結） |
-| 次Task | Domain Contracts 設計書作成 → written spec承認 → TDD実装計画 |
+| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-Workspace Directory Domain Contracts の設計書を作成し、自己レビュー後にcommitする。SQLite target schema / migration 0002 には着手しない。
+ユーザーの詳細実装計画レビュー待ち。承認前にproduction domain package実装へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2396,3 +2396,37 @@ Cursor内レビュー:
 - Migration LedgerをCursor内正式承認として凍結。
 - 次スライスをdomain contracts優先で開始。
 - merge / push / PR作成なし。
+
+### 2026-07-17 21:07:37 JST — Cursor（Domain Contracts設計・計画完了）
+
+```text
+最終更新: 2026-07-17 21:07:37 JST
+更新者: Cursor
+状態: PLAN_REVIEW
+対象Task: Workspace Directory Domain Contracts
+設計commit SHA: e3e9a9b5004737c0e4c64b8af39012ebdc559947
+計画commit SHA: 7e77c990962c5e03a8a48a73eef2dd718d1a4f9a
+設計:
+- docs/superpowers/specs/2026-07-17-r1-workspace-directory-domain-contracts-design.md
+詳細計画:
+- docs/superpowers/plans/2026-07-17-r1-workspace-directory-domain-contracts-plan.md
+計画構成:
+- Task 1: package scaffold + ID/time primitives
+- Task 2: domain model validators
+- Task 3: closed capabilities + deny-by-default evaluator
+- Task 4: conflict detectors
+- Task 5: roster import contracts + public surface + roadmap更新
+自己レビュー:
+- placeholder: なし（Task2 enrollment fixtureは実装時にparseEnrollmentIdを使用するよう明記）
+- Capability閉じたunion / exact-scope / UserAccount主体を明記
+- SQLite/migration/Person ID生成は非対象
+- git diff --check: PASS
+次の作業:
+- ユーザーが詳細計画を承認し、実行方式を選択。
+- 承認前にproduction domain package実装へ着手しない。
+次の担当: User
+```
+
+- 承認済み設計をTDD・5 Taskの詳細計画へ展開しcommit。
+- merge / push / PR作成なし。
+- 次担当: User（計画レビュー・実行方式選択）。
