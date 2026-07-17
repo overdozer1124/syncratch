@@ -1,10 +1,7 @@
 import type Database from "better-sqlite3";
 
-export function migrate(db: Database.Database): void {
+export function createProjectSchema(db: Database.Database): void {
   db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       organization_id TEXT NOT NULL,
@@ -49,4 +46,10 @@ export function migrate(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_members_user ON project_members(user_id);
   `);
+}
+
+export function migrate(db: Database.Database): void {
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  createProjectSchema(db);
 }

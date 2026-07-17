@@ -1,9 +1,7 @@
 import type Database from "better-sqlite3";
 
-export function migrateAuth(db: Database.Database): void {
+export function createAuthSchema(db: Database.Database): void {
   db.exec(`
-    PRAGMA foreign_keys = ON;
-
     CREATE TABLE IF NOT EXISTS organizations (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -58,4 +56,9 @@ export function migrateAuth(db: Database.Database): void {
         REFERENCES organization_memberships(organization_id, user_id)
     );
   `);
+}
+
+export function migrateAuth(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  createAuthSchema(db);
 }

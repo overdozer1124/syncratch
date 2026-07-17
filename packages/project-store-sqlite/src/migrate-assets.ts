@@ -1,9 +1,7 @@
 import type Database from "better-sqlite3";
 
-export function migrateAssets(db: Database.Database): void {
+export function createAssetSchema(db: Database.Database): void {
   db.exec(`
-    PRAGMA foreign_keys = ON;
-
     CREATE TABLE IF NOT EXISTS asset_objects (
       sha256 TEXT PRIMARY KEY
         CHECK(length(sha256) = 64
@@ -88,7 +86,11 @@ export function migrateAssets(db: Database.Database): void {
       expires_at TEXT NOT NULL
     );
   `);
+}
 
+export function addAssetGcGenerationIfMissing(
+  db: Database.Database,
+): void {
   const lockColumns = db
     .prepare(`PRAGMA table_info(asset_gc_lock)`)
     .all() as Array<{ name: string }>;
@@ -98,4 +100,10 @@ export function migrateAssets(db: Database.Database): void {
       ADD COLUMN generation INTEGER NOT NULL DEFAULT 1
     `);
   }
+}
+
+export function migrateAssets(db: Database.Database): void {
+  db.pragma("foreign_keys = ON");
+  createAssetSchema(db);
+  addAssetGcGenerationIfMissing(db);
 }
