@@ -18,32 +18,52 @@
 ## 進捗の計算方法
 
 - 全体を Task 0〜11 の12 Taskとして計算する。
-- Codex承認済みTaskのみ完了として数える。
+- Cursor 内レビュー GO（または過去の Codex 承認）済み Task のみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜9 の10 Taskが承認済みなので **83%**。
+- 現在は Task 0〜9 の10 Taskが承認済みなので **83%**（Task 10 commit 後に更新）。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 11:28:22 JST |
+| 最終更新 | 2026-07-17 11:50:59 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `TASK_10_IN_PROGRESS` |
+| ワークフロー状態 | `CURSOR_REVIEW_GO`（Task 10 commit 直前） |
 | 現在の担当 | Cursor |
 | 現在のTask | Task 10 — Narrow Scratch host |
 | 全体進捗 | **83%**（Task 0〜9承認済み / 全12 Task） |
-| 承認基準SHA | `585e690ea79f06aa12e7255a21fb15220e2ce531` |
-| 再提出SHA | — |
+| 承認基準SHA | `2923662a31308903279d59eb1f2e32ec7c1b3a8b` |
+| 再提出SHA | 未コミット |
 | Task 9 commit SHA | `585e690ea79f06aa12e7255a21fb15220e2ce531` |
 | Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | Task 11（Task 10 Go まで着手禁止） |
+| 次Task | Task 11（Task 10 commit 後に解禁） |
 | レビュー運用 | **Cursor 内**作業者 ↔ 専用 code-reviewer（Codex 正式レビューは回さない） |
 
 ## Cursorが次に行う作業
 
-Task 9 は Cursor 内レビュー GO のうえ commit 済み。Task 10（narrow Scratch host）を実装し、専用 code-reviewer でレビューしてから commit する。Task 11 には着手しない。
+Task 10 を指定 message で commit し、台帳に SHA を記録して Task 11 を解禁する。
+
+## Task 10 再提出サマリー
+
+```text
+最終更新: 2026-07-17 11:50:59 JST
+更新者: Cursor
+状態: CURSOR_REVIEW_GO
+対象Task: Task 10
+全体進捗: 83%
+基準SHA: 2923662a31308903279d59eb1f2e32ec7c1b3a8b
+再提出SHA: 未コミット
+実装内容:
+- apps/r1-scratch-host/src: persist-client / document-bridge / persist-storage(§7.3) / autosave-host / openProjectSession
+- 統合試験: import→open→asset bytes→hat edit+autosave→GET reload→export/re-import equivalenceProduction
+- spike は回帰として維持（28）+ narrow host 1 = 29
+- r1-persist-server exports ./data-dir（テストハーネス用）
+Cursor code-reviewer: GO（P0/P1 なし; dispose・devDeps・encodeURIComponent 対応済み）
+テスト: typecheck PASS / 29/29 PASS
+次の担当: Cursor（commit）
+```
 
 ## Task 9 完了サマリー
 

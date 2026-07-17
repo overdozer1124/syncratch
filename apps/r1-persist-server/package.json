@@ -6,7 +6,8 @@
   "description": "EXPERIMENTAL R1 project persistence HTTP server. No production API stability.",
   "exports": {
     ".": "./src/server.ts",
-    "./bootstrap": "./src/bootstrap.ts"
+    "./bootstrap": "./src/bootstrap.ts",
+    "./data-dir": "./src/data-dir.ts"
   },
   "scripts": {
     "start": "tsx src/main.ts",

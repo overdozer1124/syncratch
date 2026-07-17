@@ -9,6 +9,6 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["spike/**/*.ts", "vitest.config.ts"],
+  "include": ["spike/**/*.ts", "src/**/*.ts", "vitest.config.ts"],
   "exclude": ["spike/**/*.spec.ts"]
 }

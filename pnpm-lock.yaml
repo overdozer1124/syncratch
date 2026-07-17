@@ -189,6 +189,15 @@ importers:
 
   apps/r1-scratch-host:
     dependencies:
+      '@blocksync/project-autosave':
+        specifier: workspace:*
+        version: link:../../packages/project-autosave
+      '@blocksync/project-schema':
+        specifier: workspace:*
+        version: link:../../packages/project-schema
+      '@blocksync/sb3-tools':
+        specifier: workspace:*
+        version: link:../../packages/sb3-tools
       '@blocksync/scratch-adapter':
         specifier: workspace:*
         version: link:../../packages/scratch-adapter
@@ -196,9 +205,33 @@ importers:
         specifier: ^3.10.1
         version: 3.10.1
     devDependencies:
+      '@blocksync/auth-context':
+        specifier: workspace:*
+        version: link:../../packages/auth-context
+      '@blocksync/project-assets-fs':
+        specifier: workspace:*
+        version: link:../../packages/project-assets-fs
+      '@blocksync/project-service':
+        specifier: workspace:*
+        version: link:../../packages/project-service
+      '@blocksync/project-snapshots-fs':
+        specifier: workspace:*
+        version: link:../../packages/project-snapshots-fs
+      '@blocksync/project-store-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/project-store-sqlite
+      '@blocksync/r1-persist-server':
+        specifier: workspace:*
+        version: link:../r1-persist-server
       '@playwright/test':
         specifier: ^1.52.0
         version: 1.61.1
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      better-sqlite3:
+        specifier: ^12.11.1
+        version: 12.11.1
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

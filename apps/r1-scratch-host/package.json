@@ -3,21 +3,32 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "R1 narrow Scratch host (Task 0 spike + future editor shell).",
+  "description": "R1 narrow Scratch host (Task 0 spike + production editor shell).",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts",
-    "test:spike": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts",
-    "test:browser": "playwright install chromium && playwright test",
     "fixtures:check": "vitest run spike/fixtures-check.test.ts",
+    "test": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts src/narrow-host.integration.test.ts",
+    "test:browser": "playwright install chromium && playwright test",
+    "test:spike": "vitest run spike/spike.test.ts spike/equivalence-spike-v0.test.ts spike/fixtures-check.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "write-fixtures": "vitest run spike/write-fixtures.test.ts"
   },
   "dependencies": {
+    "@blocksync/project-autosave": "workspace:*",
+    "@blocksync/project-schema": "workspace:*",
+    "@blocksync/sb3-tools": "workspace:*",
     "@blocksync/scratch-adapter": "workspace:*",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
+    "@blocksync/auth-context": "workspace:*",
+    "@blocksync/project-assets-fs": "workspace:*",
+    "@blocksync/project-service": "workspace:*",
+    "@blocksync/project-snapshots-fs": "workspace:*",
+    "@blocksync/project-store-sqlite": "workspace:*",
+    "@blocksync/r1-persist-server": "workspace:*",
     "@playwright/test": "^1.52.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "better-sqlite3": "^12.11.1",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
