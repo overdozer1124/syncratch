@@ -4,7 +4,7 @@
 **Verdict:** **Technical Go**  
 **Design / Plan baseline:** `docs/superpowers/specs/2026-07-16-r1-scratch-sb3-design.md` / `docs/superpowers/plans/2026-07-16-r1-scratch-sb3-plan.md`  
 **Task 11 approval base (pre-docs):** `bfc4ba617efa74686fb4ddf456860751039fcb44`  
-**Implementation HEAD:** tip of this branch after `docs(r1): Scratch SB3 runbook and Go`
+**Implementation HEAD / Go commit:** `357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed` (`docs(r1): Scratch SB3 runbook and Go`)
 
 Gate 0 Technical Go, R1 persistence Technical Go, and R1 auth Technical Go baselines are unchanged.
 

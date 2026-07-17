@@ -20,31 +20,50 @@
 - 全体を Task 0〜11 の12 Taskとして計算する。
 - Cursor 内レビュー GO（または過去の Codex 承認）済み Task のみ完了として数える。
 - `全体進捗率 = 承認済みTask数 / 12 × 100`（整数へ四捨五入）。
-- 現在は Task 0〜10 の11 Taskが承認済みなので **92%**（Task 11 commit 後に 100%）。
+- 現在は Task 0〜11 の12 Taskがすべて承認済みなので **100%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 12:05:00 JST |
+| 最終更新 | 2026-07-17 12:06:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `CURSOR_REVIEW_GO`（Task 11 commit 直前） |
-| 現在の担当 | Cursor |
-| 現在のTask | Task 11 — Docs + scripts + final gates |
-| 全体進捗 | **92%**（Task 0〜10承認済み / 全12 Task） |
-| 承認基準SHA | `bfc4ba617efa74686fb4ddf456860751039fcb44` |
-| 再提出SHA | 未コミット |
+| ワークフロー状態 | `SLICE_COMPLETE` |
+| 現在の担当 | — |
+| 現在のTask | （なし — R1 Scratch SB3 スライス完了） |
+| 全体進捗 | **100%**（Task 0〜11承認済み / 全12 Task） |
+| 承認基準SHA | `357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed` |
+| 再提出SHA | — |
+| Task 11 commit SHA | `357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed` |
 | Task 10 commit SHA | `bfc4ba617efa74686fb4ddf456860751039fcb44` |
 | Task 9 commit SHA | `585e690ea79f06aa12e7255a21fb15220e2ce531` |
 | Task 8 commit SHA | `c2164df37cf9ca533ea51ecfda87e58a9be14627` |
 | Task 7 commit SHA | `2b9ae11331bc64db6c67175ab6120307f7b1632a` |
 | Task 6 commit SHA | `5b83f36b4e1b8b14d97e4e47140a86f9e845411a` |
-| 次Task | （Task 11 commit 後にスライス完了） |
+| 次Task | —（design §15 以降は別スライス） |
 | レビュー運用 | **Cursor 内**作業者 ↔ 専用 code-reviewer（Codex 正式レビューは回さない） |
 
 ## Cursorが次に行う作業
 
-Task 11 を指定 message で commit し、台帳に SHA を記録してスライス完了（100%）にする。
+R1 Scratch SB3 実装スライス（Task 0〜11）は完了。追加作業はユーザー指示待ち。
+
+## Task 11 完了サマリー
+
+```text
+最終更新: 2026-07-17 12:06:00 JST
+更新者: Cursor
+状態: TASK_11_GO / SLICE_COMPLETE
+対象Task: Task 11（完了）
+全体進捗: 100%
+基準SHA: bfc4ba617efa74686fb4ddf456860751039fcb44
+再提出SHA: 357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed
+commit message: docs(r1): Scratch SB3 runbook and Go
+commit除外: docs/ai-platform/
+成果物: SCRATCH_SB3.md / SCRATCH_SB3_GO_NO_GO.md / better-sqlite3 直接依存 / 台帳 UTF-8 復元
+最終ゲート: opcodes/build/gate0/persist/auth/scratch すべて PASS
+Cursor code-reviewer: GO
+次の担当: —（スライス完了）
+```
 
 ## Task 11 再提出サマリー
 
@@ -1881,3 +1900,19 @@ commit message: feat(r1-scratch-host): narrow editor after spike Go
 
 - Task 10 commit 済み。全体進捗 92%。
 - Task 11 着手（runbook / final gates / better-sqlite3 依存）。
+
+### 2026-07-17 12:06:00 JST — Cursor
+
+```text
+最終更新: 2026-07-17 12:06:00 JST
+更新者: Cursor
+状態: TASK_11_GO / SLICE_COMPLETE
+対象Task: Task 11
+全体進捗: 100%
+Task 11 commit SHA: 357bb3f75ed1adec0584cfc5b427ef3b1e36d6ed
+commit message: docs(r1): Scratch SB3 runbook and Go
+次の担当: —（スライス完了）
+```
+
+- Task 11 commit 済み。Cursor review GO を正式承認として全体進捗 100%。
+- R1 Scratch SB3 スライス（Task 0〜11）完了。
