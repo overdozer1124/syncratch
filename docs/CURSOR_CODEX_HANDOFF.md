@@ -41,11 +41,11 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 18:42:02 JST |
+| 最終更新 | 2026-07-17 18:59:59 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `DESIGN_REVIEW` |
+| ワークフロー状態 | `PLAN_REVIEW` |
 | 現在の担当 | User |
-| 現在のTask | R1 Versioned SQLite Migration Ledger 設計 |
+| 現在のTask | R1 Versioned SQLite Migration Ledger 詳細実装計画 |
 | 全体進捗 | **100%**（Cursor内正式承認 / 全4 Task） |
 | 承認基準SHA | `bca7840101ed5318c6bc75ad540a690428eb62ff` |
 | 再提出SHA | `6ecadec68e57de1b314fb9260a74ac2421cd11b9` |
@@ -53,12 +53,12 @@
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` |
 | 前スライス | R1 Scratch SB3 Task 0〜11 = 100%（凍結） |
-| 次Task | 設計spec承認後にversioned migration ledgerの詳細実装計画を作成 |
+| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの設計specレビュー待ち。承認後に詳細実装計画を作成する。production schema/migration実装には着手しない。
+ユーザーの詳細実装計画レビュー待ち。承認前にproduction migration実装へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2277,3 +2277,40 @@ commit除外:
 - 承認済み設計4セクションをspecへ固定しcommit。
 - merge / push / PR作成なし。
 - 次担当: User（specレビュー）。
+
+### 2026-07-17 18:59:59 JST — Cursor（Versioned Migration Ledger詳細計画）
+
+```text
+最終更新: 2026-07-17 18:59:59 JST
+更新者: Cursor
+状態: PLAN_REVIEW
+対象Task: R1 Versioned SQLite Migration Ledger 詳細実装計画
+前スライス進捗: Workspace Migration Fixtures 100%
+設計spec承認: User（2026-07-17）
+設計commit SHA: f3616ec470719cc281baeff6f73b3f22d690d444
+計画commit SHA: 84c458c0d5b482dfc47abf35174fdf88226a7137
+詳細計画:
+- docs/superpowers/plans/2026-07-17-r1-versioned-migration-ledger-plan.md
+計画構成:
+- Task 1: migration型・error・connection PRAGMA・checksum
+- Task 2: current/pre-generation strict schema fingerprint
+- Task 3: immutable baseline migration 0001
+- Task 4: atomic runner・ledger guards・fault rollback
+- Task 5: accepted legacy adoption・store配線・ledgerless fixture維持
+- Task 6: cross-process concurrency・最終ゲート・独立レビュー
+自己レビュー:
+- spec要件coverage: 全項目をTask 1〜6へ割当
+- placeholder: なし
+- 型/signature整合: 確認済み
+- scope guard: Workspace/Person schema・backfillなし
+- git diff --check: PASS
+次の作業:
+- ユーザーが詳細計画を承認し、実行方式を選択。
+- 承認前にproduction migration実装へ着手しない。
+次の担当: User
+```
+
+- 承認済みspecをTDD・6 Taskの詳細計画へ展開しcommit。
+- ledgerless legacy fixture生成を維持する専用回帰条件を追加。
+- merge / push / PR作成なし。
+- 次担当: User（計画レビュー・実行方式選択）。
