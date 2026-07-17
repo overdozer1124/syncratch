@@ -65,6 +65,19 @@ describe("legacy R1 workspace migration fixture copy/reopen", () => {
     store.close();
     const after = readLegacyR1Manifest(copied.dbPath, copied.snapshotDir);
 
+    const migrationDb = new Database(copied.dbPath, {readonly: true});
+    try {
+      expect(migrationDb.pragma("user_version", {simple: true})).toBe(1);
+      expect(
+        migrationDb
+          .prepare("SELECT version FROM schema_migrations")
+          .pluck()
+          .all(),
+      ).toEqual([1]);
+    } finally {
+      migrationDb.close();
+    }
+
     // Reopen/WAL may change page bytes (databaseSha256), while every item of
     // logical migration evidence must stay fixed.
     const {databaseSha256: _beforeDatabaseSha256, ...beforeEvidence} = before;

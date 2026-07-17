@@ -1,6 +1,7 @@
 import {mkdtempSync, rmSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
+import Database from "better-sqlite3";
 import {afterEach, describe, expect, it} from "vitest";
 import {createLegacyR1Fixture} from "./legacy-r1-fixture.js";
 
@@ -14,11 +15,12 @@ describe("legacy R1 fixture builder", () => {
   it("creates auth, project, revision and snapshot evidence through public APIs", async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "legacy-r1-fixture-"));
     roots.push(rootDir);
-    const manifest = await createLegacyR1Fixture({
+    const paths = {
       rootDir,
       dbPath: join(rootDir, "projects.sqlite"),
-      snapshotDir: join(rootDir, "snapshots")
-    });
+      snapshotDir: join(rootDir, "snapshots"),
+    };
+    const manifest = await createLegacyR1Fixture(paths);
 
     expect(manifest.organizations).toHaveLength(1);
     expect(manifest.organizations[0]).toMatchObject({
@@ -59,5 +61,20 @@ describe("legacy R1 fixture builder", () => {
       createdAt: "2026-07-17T00:00:00.000Z",
     });
     expect(Object.keys(manifest.snapshotSha256)).toHaveLength(1);
+
+    const schemaDb = new Database(paths.dbPath, {readonly: true});
+    try {
+      expect(schemaDb.pragma("user_version", {simple: true})).toBe(0);
+      expect(
+        schemaDb
+          .prepare(
+            `SELECT name FROM sqlite_master
+             WHERE type = 'table' AND name = 'schema_migrations'`,
+          )
+          .get(),
+      ).toBeUndefined();
+    } finally {
+      schemaDb.close();
+    }
   });
 });

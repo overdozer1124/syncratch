@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import {addAssetGcGenerationIfMissing} from "../migrate-assets.js";
 import {classifyLedgerlessDatabase} from "./schema-fingerprint.js";
 import {computeMigrationChecksum} from "./checksum.js";
 import {SchemaMigrationError, type SchemaMigration} from "./types.js";
@@ -237,22 +238,34 @@ function applyAndRecordMigration(
   setUserVersion(db, migration.version);
 }
 
-function ensureLedgerForEmptyDatabase(db: Database.Database): void {
-  if (ledgerTableExists(db)) return;
-
+function initializeOrAdoptBaseline(
+  db: Database.Database,
+  migration: SchemaMigration,
+  appliedAt: string,
+  fault?: MigrationRunnerTestOptions["fault"],
+): void {
   const classification = classifyLedgerlessDatabase(db);
-  if (classification.kind !== "empty") {
-    const detail =
-      classification.kind === "unknown"
-        ? classification.difference
-        : classification.kind;
-    throw new SchemaMigrationError(
-      "SCHEMA_UNKNOWN_LEGACY",
-      `Legacy schema is not accepted: ${detail}`,
-    );
+  switch (classification.kind) {
+    case "empty":
+      createLedgerTable(db);
+      applyAndRecordMigration(db, migration, appliedAt, fault);
+      return;
+    case "current":
+      createLedgerTable(db);
+      recordAdoptedMigration(db, migration, appliedAt);
+      return;
+    case "pre_generation": {
+      addAssetGcGenerationIfMissing(db);
+      createLedgerTable(db);
+      recordAdoptedMigration(db, migration, appliedAt);
+      return;
+    }
+    case "unknown":
+      throw new SchemaMigrationError(
+        "SCHEMA_UNKNOWN_LEGACY",
+        `Legacy schema is not accepted: ${classification.difference}`,
+      );
   }
-
-  createLedgerTable(db);
 }
 
 export function runSchemaMigrationsWithOptions(
@@ -264,9 +277,9 @@ export function runSchemaMigrationsWithOptions(
   const fault = options.fault;
 
   validateRegistry(migrations);
+  const appliedAt = now();
 
   for (const migration of migrations) {
-    const appliedAt = now();
     withMigrationTransaction(db, () => {
       const rows = validateLedgerHistory(db, migrations);
       if (rows.some(row => row.version === migration.version)) {
@@ -281,7 +294,10 @@ export function runSchemaMigrationsWithOptions(
         );
       }
 
-      ensureLedgerForEmptyDatabase(db);
+      if (!ledgerTableExists(db)) {
+        initializeOrAdoptBaseline(db, migration, appliedAt, fault);
+        return;
+      }
       applyAndRecordMigration(db, migration, appliedAt, fault);
     });
   }

@@ -3,7 +3,7 @@ import type {AuthContext, AuthPrincipal, AuthRequestHints} from "@blocksync/auth
 import {richFixtureDocument} from "@blocksync/project-envelope";
 import {createProjectService} from "@blocksync/project-service";
 import {createFsSnapshotStore} from "@blocksync/project-snapshots-fs";
-import {openSqliteStore} from "../store.js";
+import {openLegacyR1StoreForFixture} from "../store.js";
 import {
   readLegacyR1Manifest,
   type LegacyR1Manifest,
@@ -39,7 +39,7 @@ export async function createLegacyR1Fixture(
 ): Promise<LegacyR1Manifest> {
   mkdirSync(paths.rootDir, {recursive: true});
 
-  const store = openSqliteStore({dbPath: paths.dbPath});
+  const store = openLegacyR1StoreForFixture({dbPath: paths.dbPath});
   try {
     const organizationId = store.authRepo.withTransaction(tx => {
       const id = tx.ensureOrgForHostedDomain(
