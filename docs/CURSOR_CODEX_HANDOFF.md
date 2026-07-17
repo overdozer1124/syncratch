@@ -41,11 +41,11 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 18:21:57 JST |
+| 最終更新 | 2026-07-17 18:42:02 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `SLICE_COMPLETE / NEXT_PLAN_READY` |
-| 現在の担当 | Cursor |
-| 現在のTask | Workspace Migration Fixtures 完了 → versioned migration ledger / Workspace schema 計画 |
+| ワークフロー状態 | `DESIGN_REVIEW` |
+| 現在の担当 | User |
+| 現在のTask | R1 Versioned SQLite Migration Ledger 設計 |
 | 全体進捗 | **100%**（Cursor内正式承認 / 全4 Task） |
 | 承認基準SHA | `bca7840101ed5318c6bc75ad540a690428eb62ff` |
 | 再提出SHA | `6ecadec68e57de1b314fb9260a74ac2421cd11b9` |
@@ -53,12 +53,12 @@
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` |
 | 前スライス | R1 Scratch SB3 Task 0〜11 = 100%（凍結） |
-| 次Task | versioned migration ledger / Workspace schema の詳細計画作成（実装は計画承認後） |
+| 次Task | 設計spec承認後にversioned migration ledgerの詳細実装計画を作成 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-versioned migration ledger / Workspace schema の詳細計画を作成する。計画承認前にproduction schema/migration実装へ着手しない。
+ユーザーの設計specレビュー待ち。承認後に詳細実装計画を作成する。production schema/migration実装には着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2243,3 +2243,37 @@ commit除外:
 - 承認済み9ファイルをcommit。merge / push / PR作成は未実施。
 - Workspace Migration Fixtures Tasks 1〜4 を100%完了。
 - 次担当: Cursor（次スライスの詳細計画作成）。
+
+### 2026-07-17 18:42:02 JST — Cursor（Versioned Migration Ledger設計）
+
+```text
+最終更新: 2026-07-17 18:42:02 JST
+更新者: Cursor
+状態: DESIGN_REVIEW
+対象Task: R1 Versioned SQLite Migration Ledger 設計
+前スライス進捗: Workspace Migration Fixtures 100%
+設計commit SHA: f3616ec470719cc281baeff6f73b3f22d690d444
+設計spec:
+- docs/superpowers/specs/2026-07-17-r1-versioned-migration-ledger-design.md
+承認済み設計判断:
+- 次スライスはmigration ledger基盤のみ。Workspace/Person schema・backfillは別スライス。
+- schema_migrationsを正、PRAGMA user_versionをミラー。
+- 1 version = 1 BEGIN IMMEDIATE同期transaction。
+- ledger無しlegacy DBは厳格schema fingerprintでbaseline採用。
+- 同一DBへの複数process同時起動までSQLite lockで保証。
+- forward repair + 将来の変換前backup。runtime自動downなし。
+- 後続Person IDは固定namespace + legacy user IDから決定的生成。UserAccount IDはlegacy user IDを維持。
+自己レビュー:
+- placeholder: なし
+- scope矛盾: なし
+- git diff --check: PASS
+次の作業:
+- ユーザーがspecをレビュー・承認。
+- 承認後に詳細実装計画を作成。
+- 計画承認前にproduction migration実装へ着手しない。
+次の担当: User
+```
+
+- 承認済み設計4セクションをspecへ固定しcommit。
+- merge / push / PR作成なし。
+- 次担当: User（specレビュー）。
