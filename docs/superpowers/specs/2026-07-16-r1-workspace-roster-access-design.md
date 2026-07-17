@@ -1,8 +1,8 @@
 # Release 1 Slice — Workspace, Roster & Scoped Access Design
 
-> **Status:** Design for review — implementation not started
+> **Status:** Approved in design dialogue — written-spec review pending; implementation not started
 >
-> **Baselines:** R1 persistence Technical Go @ `3d6053b`; R1 auth Technical Go — real GIS conditional @ `570e237`; Scratch/SB3 design remains independent
+> **Baselines:** R1 persistence Technical Go @ `3d6053b`; R1 auth Technical Go — real GIS conditional @ `570e237`; Scratch/SB3 Technical Go @ `357bb3f`
 >
 > **Master specification:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md`
 
@@ -32,7 +32,7 @@ This slice supersedes the product-facing single-organization assumption of the a
 - Guardian portal
 - Attendance taking, grades or school administration records beyond programming use
 - Public room discovery
-- Unauthenticated guest collaboration in this slice; the model reserves it for the collaboration slice
+- Unauthenticated guest collaboration in this slice; the model reserves it for the Release 3 collaboration slice
 - AI provider configuration UI beyond capability placeholders
 
 ## 4. Core model
@@ -108,15 +108,17 @@ Rules:
 
 - `StaffAssignment` does not automatically grant System Owner.
 - `Enrollment` does not automatically grant Project Host.
+- Claim-code issuance requires the school-scoped `roster_claim.issue` capability; a teacher or administrator title alone is insufficient.
 - The same person may explicitly hold System Owner, Workspace Owner and Teacher.
 - A student may explicitly hold Project Host.
 - Project Host cannot read or modify provider secrets, global budgets, roster, retention or system safety limits.
 - The last active System Owner or Workspace Owner cannot remove or demote themselves without an atomic transfer.
 - Every authorization decision is made server-side from durable state.
+- `guest` is reserved in the capability vocabulary, but guest invitation and guest-principal flows are deferred to Release 3.
 
 ## 6. Bootstrap
 
-Self-hosted mode uses a single-use setup secret printed or written during initialization. The first authenticated account presenting that secret becomes System Owner; the secret is then irreversibly consumed. Hosted mode provisions System Owner through an operator-only path.
+Self-hosted mode uses a single-use setup secret shown once on the controlling terminal during initialization. Only its hash is stored in the database; the plaintext must not be written to a file, persistent log or audit payload. The first authenticated account atomically consuming that secret becomes System Owner; concurrent or replayed consumption fails. Hosted mode provisions System Owner through an operator-only path.
 
 Merely selecting “teacher” or creating a school never grants system privileges.
 
@@ -132,7 +134,7 @@ The existing code stores `primary_organization_id`, binds `external_identities` 
 The migration must:
 
 1. Add versioned migrations and a `schema_migrations` ledger.
-2. Convert each existing organization into a workspace while retaining its identifier.
+2. Add a physical `workspaces` table and convert each existing organization into a workspace while retaining its identifier.
 3. Create people/account links for existing users.
 4. Convert organization memberships to workspace memberships.
 5. Point projects at the migrated workspace without changing frozen envelope JSON or hashes.
@@ -140,6 +142,19 @@ The migration must:
 7. Replace auth tests that assert immutable cross-`hd` failure with multi-workspace and explicit-join tests, while retaining signature/audience/expiry/oracle/CSRF tests.
 
 `organizationId` inside schemaVersion 1 project envelopes remains frozen compatibility data. New code interprets it as the legacy tenant/workspace identifier. It must not be renamed or rehashed in place. A later schema version may introduce `workspaceId` explicitly.
+
+During R1 migration, keep the physical `organizations` table and its existing foreign keys. `workspaces` is the new domain source of truth. A compatibility adapter creates or validates the paired `organizations` row with the same identifier in the same transaction when an R1 path still needs a legacy row. No compatibility view replaces `organizations`; migrations repoint foreign keys explicitly before that table can ever be retired.
+
+### 7.1 Roster account claim
+
+An authenticated user links their account to a roster `Person` by entering a one-time claim code issued by a principal with `roster_claim.issue`.
+
+- Generate at least 128 bits with a cryptographically secure RNG. Store only a hash of the code, with expiry, consumed state and target person.
+- Consume the code and create `PersonAccountLink` in one synchronous transaction.
+- Reject replay, expiry and disabled people without revealing another account's identity.
+- A code is deterministically bound to one person. “Ambiguous” means durable state already contains a conflicting active link: either the target person is linked to another account or the authenticated account is linked to another person. The claim never overrides such a link. It becomes a pending conflict that requires an authorized teacher or administrator to verify identity and resolve the old link through a separate audited operation.
+- Rate-limit failed claims by authenticated account and remote source. For the initial single-node server, allow at most 10 failed attempts per account and 50 per source in 15 minutes; persist counters in SQLite so restart cannot reset the budget. Return the same public failure body for invalid, expired, consumed and throttled codes.
+- Never claim or link from email equality alone.
 
 ## 8. Roster import
 
@@ -229,9 +244,9 @@ Roster access is least-privilege and audited. AI payload construction excludes n
 - Roster schema ships without APIs and usable minimal management UI.
 - Personal/casual use requires school data.
 
-## 15. Open decisions before implementation
+## 15. Resolved implementation decisions
 
-1. Keep the physical `organizations` table as a compatibility workspace table, or migrate to a new `workspaces` table. Recommended: new table + retained IDs + compatibility views/adapters during R1.
-2. Roster account claim mechanism. Recommended: authenticated user enters a one-time roster claim code; teacher confirms only ambiguous matches.
-3. Guest collaboration. Recommended for first collaboration Go: account-required invite; design a short-lived project-only guest principal separately if display-name-only entry is required.
-4. System Owner bootstrap storage. Recommended: one-time hash in DB plus secret shown once at initialization.
+1. Add a physical `workspaces` table, retain every existing organization ID and keep the physical `organizations` table behind a compatibility adapter during R1.
+2. Link roster people through an authenticated, one-time claim code. A conflicting active account/person link creates a pending conflict; it never auto-overrides and requires a separate audited resolution by an authorized teacher or administrator.
+3. Reserve `guest` in the role/capability vocabulary, but defer invitations and guest-principal implementation to Release 3.
+4. Store a one-time System Owner setup-secret hash in the database and show the plaintext secret only once during initialization.
