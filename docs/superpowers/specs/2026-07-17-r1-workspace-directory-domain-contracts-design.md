@@ -1,6 +1,9 @@
 # R1 Workspace Directory Domain Contracts Design
 
-> **Status:** Draft for user review — brainstorming sections approved 2026-07-17
+> **Status:** Approved by user on 2026-07-17 — implementation not started
+>
+> **Approval basis:** brainstorming sections approved in-session; written spec
+> committed at `e3e9a9b`; user directed plan execution to completion
 >
 > **Parent design:** `docs/superpowers/specs/2026-07-16-r1-workspace-roster-access-design.md`
 >
