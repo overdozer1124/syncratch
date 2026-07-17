@@ -31,34 +31,35 @@
 
 ## 進捗の計算方法
 
-- **前スライス（R1 Scratch SB3）:** Task 0〜11 の12 Taskはすべて承認済み（**100%**）。完了済みとして凍結。
-- **現行スライス（Workspace Migration Fixtures）:** `docs/superpowers/plans/2026-07-17-r1-workspace-migration-fixtures-plan.md` の Task 1〜4 を全体として計算する。
-- Codex 正式承認済み Task のみ完了として数える。
-- `全体進捗率 = 承認済みTask数 / 4 × 100`（整数へ四捨五入）。
-- 現在は Codex 未承認のため **0%**。
+- **前スライス（R1 Scratch SB3 / Migration Fixtures / Domain Contracts / Target Schema）:** 完了済みとして凍結（各100%、Target Schema main `57b1b94`）。
+- **現行スライス（Legacy Organization/User Backfill）:** `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` の Task 1〜7 を全体として計算する。
+- Cursor内正式GO（ユーザー「次の作業へ」）または Codex 正式承認済み Task のみ完了として数える。
+- `全体進捗率 = 承認済みTask数 / 7 × 100`（整数へ四捨五入）。
+- 現在は正式GO前のため **0%**（実装・敵対的レビューは完了）。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 02:26:58 JST |
+| 最終更新 | 2026-07-18 07:16:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `PLAN_REVIEW` |
-| 現在の担当 | User |
-| 現在のTask | Legacy Organization/User Backfill TDD実装計画レビュー |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 設計・計画完成 |
-| 承認基準SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（Target Schema main merge・Cursor内正式GO） |
-| 再提出SHA | `d9faf4f9f0756094f6ceddae1d2a4a483faecd1b` |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | User（Cursor内正式GO） |
+| 現在のTask | Legacy Organization/User Backfill Task 1〜7 実装完了・レビュー提出 |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill 正式承認 **0%**（実装7/7・branch Ready） |
+| 承認基準SHA | `57b1b942c34bc6be2a97948412e148eb37665ccf`（Target Schema main merge） |
+| 再提出SHA | `d2b5d990053ff792b9b1c2a55a9fe5b1d572d185`（実装 tip） |
 | 作業ブランチ | `feat/r1-legacy-backfill` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill` |
+| 設計 | `docs/superpowers/specs/2026-07-18-r1-legacy-organization-user-backfill-design.md` |
 | 計画 | `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` |
 | 前スライス | Workspace Directory Target Schema = 100%（Cursor内正式承認・main統合） |
-| 次Task | TDD実装計画承認 → Task 1から実装 |
+| 次Task | 正式GO後に main 統合 / PR / 保持を選択。次機能スライスは別途 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーのTDD実装計画レビュー待ち。承認前に実装へ進まない。
+ユーザーの正式GO待ち。GO後に finishing options（local merge / PR / keep / discard）を実行する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2705,3 +2706,60 @@ spec承認: ユーザー承認済み
 - 承認済みspecを7 TaskのTDD実装計画へ展開しcommit。
 - 実装コード変更なし。
 - 次担当: User（計画レビュー・実行方式選択）。
+
+### 2026-07-18 07:16:00 JST — Cursor（Legacy Backfill 実装完了・READY）
+
+```text
+最終更新: 2026-07-18 07:16:00 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+対象Task: Legacy Organization/User Backfill Task 1〜7
+全体進捗（正式承認）: 0%（実装・Cursor内タスクレビューは 7/7 Approved）
+基準SHA: 47718b369e1ab66339f98bc6a0272241f5a406ba（merge-base main）
+再提出SHA: d2b5d990053ff792b9b1c2a55a9fe5b1d572d185
+作業ブランチ: feat/r1-legacy-backfill
+作業worktree: C:\cursor\NewScratchEditor\.worktrees\r1-legacy-backfill
+実行方式: Subagent-Driven Development（ユーザー選択「1」）
+主要コミット:
+- 92291da feat(store): add prepared migration lifecycle
+- 011d9f5 feat(store): add deterministic legacy backfill identity
+- 092c3f8 feat(store): add canonical legacy data digest
+- 0e6d587 feat(store): validate and plan legacy backfill
+- 0fb9379 feat(store): add verified pre-v5 backup gate
+- 46f8a3f fix(store): share v5 backfill checksum source
+- 163d1cd feat(store): migrate legacy organizations without rehash
+- c644eb4 feat(store): register immutable r1 legacy organization user backfill
+- d2b5d99 test(store): prove legacy backfill integration and race
+成果物:
+- immutable v5 migration + shared descriptor checksum
+  c88745d2f32c1f59426bc83a58254e8ce77dd876e93fda075449d6f297cd2e08
+- production registry gapless [1,2,3,4,5]
+- prepare outside txn + locked live digest recheck before DML
+- VACUUM INTO verified backup gate / session revoke / FK-order inserts
+レビュー:
+- Task 1〜7: 各 Approved（Critical/Importantなし）
+- whole-branch adversarial: Ready（Minorのみ・マージ阻害なし）
+ゲート（exit 0）:
+- pnpm --filter @blocksync/project-store-sqlite typecheck/test(253)/build
+- pnpm --filter @blocksync/workspace-directory typecheck/test(59)/build
+- pnpm --filter @blocksync/session-service typecheck/test(15)
+- pnpm r1:persist:test PASS
+- pnpm r1:auth:test PASS（先行レビュー時）
+- git diff --check PASS
+未解決（Minor・任意）:
+- already_applied rename失敗が SCHEMA_BACKUP_FAILED に包まれる可能性（到達不能）
+- backupファイル名が圧縮ISO表記（設計のUTC-ms表記との体裁差）
+- owner重複の不正ロール行を正規化前に検証で落とす（fail-closed）
+禁止事項遵守:
+- docs/ai-platform/ 未変更
+- school/roster/import/audit・claim・repos・API/UI・projects.workspace_id 未着手
+- fingerprints / committed fixture 不変
+次の作業:
+- ユーザー正式GO（「次の作業へ進んでください」等）
+- finishing: local merge / PR / keep / discard
+次の担当: User
+```
+
+- Subagent-Driven で Task 1〜7 を実装・個別レビューし、全branch敵対的レビュー Ready。
+- 正式承認前のため Backfill 進捗は 0% のまま。
+- 次担当: User（正式GO / finishing選択）。
