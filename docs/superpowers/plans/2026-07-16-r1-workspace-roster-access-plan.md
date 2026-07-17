@@ -97,18 +97,41 @@ Define:
 
 **Files:** `packages/project-store-sqlite/src/migrations/**`, `store.ts`, migration tests.
 
-Implement a monotonic `schema_migrations` runner. Create tables from Design §§4–5, with explicit FKs, CHECKs and indexes. Preserve the existing shared connection.
+Task 2 is split. The **ledger-only** sub-slice lands first and must GO before any
+Workspace/Person target schema or backfill work.
 
-- [ ] Failing fresh/reopen/partial-crash migration tests.
-- [ ] Add ledger and ordered migrations.
-- [ ] Add target tables and constraints.
+**Detailed plan (ledger-only):** [R1 Versioned SQLite Migration Ledger Implementation Plan](2026-07-17-r1-versioned-migration-ledger-plan.md)
+
+That ledger slice adds `schema_migrations`, the ordered synchronous runner,
+accepted-legacy adoption, crash/retry guards, and concurrent-startup proof. It
+does **not** create `workspaces`, `people`, `user_accounts`,
+`person_account_links`, `workspace_memberships`, roster, permission, or audit
+tables.
+
+**Deferred until ledger GO:** create tables from Design §§4–5 (explicit FKs,
+CHECKs, indexes) on the shared connection, then ordered domain migrations that
+depend on those tables.
+
+**Approved Person ID strategy (record only; no tables in the ledger slice):**
+`user_accounts.id` retains the legacy `users.id`; `people.id` is derived
+deterministically from a fixed namespace and the legacy user ID. Implement that
+mapping only in the later Workspace/Person schema plan.
+
+- [ ] Ledger-only sub-slice (detailed plan above): fresh/reopen/partial-crash,
+  adoption, busy/race, and frozen-evidence gates.
+- [ ] After ledger GO: add target Workspace/Person tables and constraints.
 - [ ] Change migration order so referenced workspace/account tables exist before new FKs.
-- [ ] Commit: `feat(store): versioned workspace roster schema`.
+- [ ] Commit ledger first (`feat(store): …` / `test(store): prove concurrent migration startup`);
+  target schema commit remains `feat(store): versioned workspace roster schema`.
 
 ### Task 3: Migrate accepted single-org databases
 
+**Blocked until the Task 2 ledger-only sub-slice is GO.** Do not start Task 3+
+domain migration while ledger adoption/concurrency remains incomplete.
+
 - [ ] Convert every organization to a workspace with the same ID.
-- [ ] Create Person + account link for every existing user.
+- [ ] Create Person + account link for every existing user (using the approved
+  deterministic Person ID strategy recorded under Task 2).
 - [ ] Convert memberships and project ownership without broadening access.
 - [ ] Migrate or revoke old org-scoped sessions fail-closed.
 - [ ] Keep project envelope bytes, V1 hashes, snapshots and transaction ids unchanged.
@@ -120,6 +143,8 @@ Implement a monotonic `schema_migrations` runner. Create tables from Design §§
 **Anti-pattern guards:** `CREATE TABLE IF NOT EXISTS` alone is not a migration strategy; no direct rename inside V1 envelope JSON; no second SQLite connection factory.
 
 ## Phase 3 — Repositories and directory services
+
+**Blocked until the Task 2 ledger-only sub-slice is GO.**
 
 ### Task 4: Repository ports and SQLite adapters
 
