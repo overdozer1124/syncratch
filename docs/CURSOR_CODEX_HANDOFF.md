@@ -41,24 +41,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-17 22:49:46 JST |
+| 最終更新 | 2026-07-17 23:44:56 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `PLAN_REVIEW` |
-| 現在の担当 | User |
-| 現在のTask | Workspace Directory Target Schema 詳細実装計画 |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 設計・計画完了 |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | User / Codex（Cursor内正式レビュー可） |
+| 現在のTask | Workspace Directory Target Schema 実装完了・正式承認待ち |
+| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema 実装完了（正式承認待ち） |
 | 承認基準SHA | `76be558eb13ee35835a5aed1845f562deb356318`（Domain Contracts正式承認） |
-| 再提出SHA | `b3b49d4f76aa5237d58d3383062e96bede74159e` |
+| 再提出SHA | `8a27415779721fe9368fa7d117c18154bfa926c4` |
 | 作業ブランチ | `feat/r1-workspace-migration-fixtures` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-workspace-migration-fixtures` |
 | 計画 | `docs/superpowers/plans/2026-07-17-r1-workspace-directory-target-schema-plan.md` |
 | 前スライス | Workspace Directory Domain Contracts = 100%（Cursor内正式承認・凍結） |
-| 次Task | 詳細計画承認後にTask 1からTDDで実装 |
+| 次Task | Target Schema 正式GO後、legacy organization/user backfill の別設計 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの詳細実装計画レビュー待ち。承認前にmigration 0002〜0004実装へ着手しない。
+Target Schema 実装の正式承認待ち。承認前に legacy backfill / Person ID / claim tables / repository cutover へ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
