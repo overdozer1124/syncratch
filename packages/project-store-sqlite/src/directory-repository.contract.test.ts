@@ -53,7 +53,7 @@ function openMigratedDb(dbPath: string): Database.Database {
   return db;
 }
 
-describe("sqlite workspace directory repository  Ereads", () => {
+describe("sqlite workspace directory repository — reads", () => {
   const closers: Array<() => void> = [];
 
   afterEach(() => {
@@ -229,7 +229,7 @@ describe("sqlite workspace directory repository  Ereads", () => {
   });
 });
 
-describe("sqlite workspace directory repository  Ewrites", () => {
+describe("sqlite workspace directory repository — writes", () => {
   const closers: Array<() => void> = [];
 
   afterEach(() => {
