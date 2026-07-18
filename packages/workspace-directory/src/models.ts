@@ -27,6 +27,15 @@ import {
   type ValidationResult,
 } from "./validation.js";
 
+export interface UserAccount {
+  id: UserAccountId;
+  displayName: string | null;
+  email: string | null;
+  status: "active" | "disabled";
+  createdAt: UtcDateTime;
+  updatedAt: UtcDateTime;
+}
+
 export type PersonStatus = "active" | "disabled" | "archived";
 
 export interface Person {
@@ -291,6 +300,30 @@ function addEntityId(
   path = "id",
 ): void {
   addNonEmpty(issues, value, path);
+}
+
+export function validateUserAccount(
+  value: UserAccount,
+): ValidationResult<UserAccount> {
+  const issues: ValidationIssue[] = [];
+  addEntityId(issues, value.id);
+  if (value.displayName !== null) {
+    addNonEmpty(issues, value.displayName, "displayName");
+  }
+  if (value.email !== null) {
+    addNonEmpty(issues, value.email, "email");
+  }
+  addEnum(issues, value.status, ["active", "disabled"], "status");
+  addUtcDateTime(issues, value.createdAt, "createdAt");
+  addUtcDateTime(issues, value.updatedAt, "updatedAt");
+  addOrderedValues(
+    issues,
+    value.createdAt,
+    value.updatedAt,
+    "createdAt",
+    "updatedAt",
+  );
+  return finish(value, issues);
 }
 
 export function validatePerson(value: Person): ValidationResult<Person> {
