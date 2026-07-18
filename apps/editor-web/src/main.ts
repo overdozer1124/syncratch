@@ -329,7 +329,10 @@ function markDirty(): void {
   driveIntegration.markLocalChange();
 }
 
-async function loadRecord(record: LocalProjectRecord): Promise<void> {
+async function loadRecord(
+  record: LocalProjectRecord,
+  signal?: AbortSignal,
+): Promise<void> {
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
   await loadRecordSafely({
@@ -341,6 +344,7 @@ async function loadRecord(record: LocalProjectRecord): Promise<void> {
     async load(recordToLoad) {
       attachLocalStorage(recordToLoad);
       await vm.loadProject(documentToProjectJson(recordToLoad.document));
+      signal?.throwIfAborted();
     },
     commit(loaded) {
       const session = projectSessions.begin();
@@ -408,6 +412,7 @@ async function importProject(
   bytes: Uint8Array,
   title: string,
   driveFileId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const result = await loadSb3(bytes);
   if (!result.ok || !result.document || !result.assets) {
@@ -425,9 +430,11 @@ async function importProject(
     saveState: "clean",
     ...(driveFileId ? {driveFileId} : {}),
   };
+  signal?.throwIfAborted();
   await store.createOrReplace(record, null);
   try {
-    await loadRecord(record);
+    signal?.throwIfAborted();
+    await loadRecord(record, signal);
   } catch (error) {
     await store.delete(record.localProjectId).catch(() => undefined);
     throw error;
@@ -529,8 +536,16 @@ function renderDriveStatus(
 async function persistDriveFileId(
   driveFileId: string,
   localProjectId: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const saved = await persistDriveFileLink(store, localProjectId, driveFileId);
+  const saved = await persistDriveFileLink(
+    store,
+    localProjectId,
+    driveFileId,
+    undefined,
+    signal,
+  );
+  signal?.throwIfAborted();
   if (
     hasCurrent &&
     current.localProjectId === localProjectId &&

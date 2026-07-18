@@ -24,6 +24,7 @@ export {
   DriveAuthenticationError,
   DriveConfigurationError,
   DriveConflictError,
+  DriveFileNotFoundError,
   DriveInvalidFileError,
   DriveInvalidResponseError,
   DriveNetworkError,

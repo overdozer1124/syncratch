@@ -3,6 +3,7 @@ import {
   DRIVE_FILE_SCOPE,
   DriveAuthenticationError,
   DriveConflictError,
+  DriveFileNotFoundError,
   DriveInvalidFileError,
   DriveNetworkError,
   DrivePermissionError,
@@ -192,8 +193,11 @@ describe("Drive REST adapter", () => {
       getAccessToken: () => "token",
       validateSb3,
     });
+    const signal = new AbortController().signal;
 
+    const reservedFileId = await drive.reserveFileId(signal);
     const created = await drive.createFile({
+      fileId: reservedFileId,
       name: "Project.sb3",
       bytes: validSb3,
       snapshot: {
@@ -201,8 +205,8 @@ describe("Drive REST adapter", () => {
         leadershipEpoch: "4",
         stateHash: "hash-new",
       },
-    });
-    const downloaded = await drive.readFile("file-1");
+    }, signal);
+    const downloaded = await drive.readFile("file-1", signal);
 
     expect(fetch.mock.calls[0]![0]).toBe(
       "https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files",
@@ -230,6 +234,7 @@ describe("Drive REST adapter", () => {
     expect(created.fileId).toBe("reserved-id");
     expect(downloaded.bytes).toEqual(validSb3);
     expect(validateSb3).toHaveBeenCalledWith(validSb3);
+    expect(fetch.mock.calls.every(call => call[1]?.signal === signal)).toBe(true);
   });
 
   it("updates only after matching observation and checks attempted snapshot after write", async () => {
@@ -245,6 +250,7 @@ describe("Drive REST adapter", () => {
       getAccessToken: () => "token",
       validateSb3: async () => true,
     });
+    const signal = new AbortController().signal;
 
     await drive.updateFile({
       fileId: "file-1",
@@ -255,12 +261,13 @@ describe("Drive REST adapter", () => {
         leadershipEpoch: "4",
         stateHash: "hash-2",
       },
-    });
+    }, signal);
 
     expect(fetch.mock.calls[1]![0]).toBe(
       "https://www.googleapis.com/upload/drive/v3/files/file-1?uploadType=multipart&supportsAllDrives=true",
     );
     expect(fetch.mock.calls[1]![1].method).toBe("PATCH");
+    expect(fetch.mock.calls.every(call => call[1]?.signal === signal)).toBe(true);
   });
 
   it("refuses a pre-write observation conflict without uploading", async () => {
@@ -322,9 +329,7 @@ describe("Drive REST adapter", () => {
     _phase,
     createResponse,
   ) => {
-    const fetch = vi.fn()
-      .mockResolvedValueOnce(response(200, {ids: ["reserved-id"]}))
-      .mockResolvedValueOnce(createResponse);
+    const fetch = vi.fn().mockResolvedValueOnce(createResponse);
     const drive = createDriveRestAdapter({
       fetch,
       getAccessToken: () => "token",
@@ -332,6 +337,7 @@ describe("Drive REST adapter", () => {
     });
 
     await expect(drive.createFile({
+      fileId: "reserved-id",
       name: "Project.sb3",
       bytes: validSb3,
       snapshot: {
@@ -344,7 +350,6 @@ describe("Drive REST adapter", () => {
 
   it("attaches the reserved file ID when create confirmation fails", async () => {
     const fetch = vi.fn()
-      .mockResolvedValueOnce(response(200, {ids: ["reserved-id"]}))
       .mockResolvedValueOnce(response(200, {id: "reserved-id"}))
       .mockResolvedValueOnce(response(200, metadata({
         id: "reserved-id",
@@ -357,6 +362,7 @@ describe("Drive REST adapter", () => {
     });
 
     await expect(drive.createFile({
+      fileId: "reserved-id",
       name: "Project.sb3",
       bytes: validSb3,
       snapshot: {
@@ -374,7 +380,7 @@ describe("Drive REST adapter", () => {
     [401, {}, DriveAuthenticationError],
     [403, {}, DrivePermissionError],
     [403, {error: {errors: [{reason: "userRateLimitExceeded"}]}}, DriveQuotaError],
-    [404, {}, DriveInvalidFileError],
+    [404, {}, DriveFileNotFoundError],
     [429, {}, DriveQuotaError],
     [500, {}, DriveNetworkError],
   ])("maps HTTP %i failures", async (status, body, errorType) => {
@@ -470,5 +476,52 @@ describe("Drive REST adapter", () => {
       DriveInvalidFileError,
     );
     expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-flight download stream when its signal aborts", async () => {
+    let secondReadStarted!: () => void;
+    const firstChunkReady = new Promise<void>(resolve => {
+      secondReadStarted = resolve;
+    });
+    let finishRead!: (value: {done: true; value?: undefined}) => void;
+    const pendingRead = new Promise<{done: true; value?: undefined}>(resolve => {
+      finishRead = resolve;
+    });
+    const cancelled = vi.fn(async () => {
+      finishRead({done: true});
+    });
+    const reader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({
+          done: false,
+          value: new Uint8Array([1]),
+        })
+        .mockImplementationOnce(() => {
+          secondReadStarted();
+          return pendingRead;
+        }),
+      cancel: cancelled,
+    };
+    const download = {
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      body: {getReader: () => reader},
+    } as unknown as Response;
+    const controller = new AbortController();
+    const drive = createDriveRestAdapter({
+      fetch: vi.fn()
+        .mockResolvedValueOnce(response(200, metadata({size: "4"})))
+        .mockResolvedValueOnce(download),
+      getAccessToken: () => "token",
+      validateSb3: async () => true,
+    });
+
+    const reading = drive.readFile("file-1", controller.signal);
+    await firstChunkReady;
+    controller.abort();
+
+    await expect(reading).rejects.toMatchObject({name: "AbortError"});
+    expect(cancelled).toHaveBeenCalled();
   });
 });

@@ -11,9 +11,12 @@ export async function persistDriveFileLink(
   localProjectId: string,
   driveFileId: string,
   now: () => string = () => new Date().toISOString(),
+  signal?: AbortSignal,
 ): Promise<LocalProjectRecord> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
+    signal?.throwIfAborted();
     const record = await store.get(localProjectId);
+    signal?.throwIfAborted();
     if (record.driveFileId === driveFileId) return record;
     const next: LocalProjectRecord = {
       ...record,
@@ -22,6 +25,7 @@ export async function persistDriveFileLink(
       updatedAt: now(),
     };
     try {
+      signal?.throwIfAborted();
       return await store.createOrReplace(next, record.revision);
     } catch (error) {
       if (!(error instanceof ProjectStoreRevisionConflictError)) throw error;

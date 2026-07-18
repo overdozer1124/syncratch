@@ -48,4 +48,22 @@ describe("persistDriveFileLink", () => {
     });
     expect(createOrReplace).toHaveBeenCalledTimes(2);
   });
+
+  it("does not start the IDB write when aborted after reading", async () => {
+    const controller = new AbortController();
+    const get = vi.fn(async () => {
+      controller.abort();
+      return record(1, "current");
+    });
+    const createOrReplace = vi.fn();
+
+    await expect(persistDriveFileLink(
+      {get, createOrReplace},
+      "local-1",
+      "reserved-id",
+      () => "2026-07-19T01:00:00.000Z",
+      controller.signal,
+    )).rejects.toMatchObject({name: "AbortError"});
+    expect(createOrReplace).not.toHaveBeenCalled();
+  });
 });

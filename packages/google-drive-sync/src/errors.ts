@@ -63,6 +63,13 @@ export class DriveInvalidFileError extends DriveSyncError {
   }
 }
 
+export class DriveFileNotFoundError extends DriveInvalidFileError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "DriveFileNotFoundError";
+  }
+}
+
 export class DriveInvalidResponseError extends DriveSyncError {
   constructor(message: string, options?: ErrorOptions) {
     super(message, "invalid-response", options);

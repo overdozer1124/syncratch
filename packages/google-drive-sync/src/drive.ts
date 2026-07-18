@@ -1,6 +1,7 @@
 import {
   DriveAuthenticationError,
   DriveConflictError,
+  DriveFileNotFoundError,
   DriveInvalidFileError,
   DriveInvalidResponseError,
   DriveNetworkError,
@@ -53,6 +54,7 @@ export interface DriveWriteResult {
 }
 
 export interface CreateDriveFileInput {
+  fileId: string;
   name: string;
   bytes: Uint8Array;
   snapshot: DriveSnapshot;
@@ -66,13 +68,20 @@ export interface UpdateDriveFileInput {
 }
 
 export interface DriveRestAdapter {
-  getMetadata(fileId: string): Promise<DriveFileMetadata>;
-  readFile(fileId: string): Promise<{
+  getMetadata(fileId: string, signal?: AbortSignal): Promise<DriveFileMetadata>;
+  readFile(fileId: string, signal?: AbortSignal): Promise<{
     metadata: DriveFileMetadata;
     bytes: Uint8Array;
   }>;
-  createFile(input: CreateDriveFileInput): Promise<DriveWriteResult>;
-  updateFile(input: UpdateDriveFileInput): Promise<DriveWriteResult>;
+  reserveFileId(signal?: AbortSignal): Promise<string>;
+  createFile(
+    input: CreateDriveFileInput,
+    signal?: AbortSignal,
+  ): Promise<DriveWriteResult>;
+  updateFile(
+    input: UpdateDriveFileInput,
+    signal?: AbortSignal,
+  ): Promise<DriveWriteResult>;
 }
 
 export interface DriveRestAdapterOptions {
@@ -84,6 +93,13 @@ export interface DriveRestAdapterOptions {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("The operation was aborted", "AbortError");
 }
 
 async function responseError(response: Response): Promise<DriveSyncError> {
@@ -113,7 +129,7 @@ async function responseError(response: Response): Promise<DriveSyncError> {
     return new DrivePermissionError("Google Drive permission denied");
   }
   if (response.status === 404) {
-    return new DriveInvalidFileError("Google Drive file was not found");
+    return new DriveFileNotFoundError("Google Drive file was not found");
   }
   if (response.status >= 500) {
     return new DriveNetworkError(
@@ -213,7 +229,9 @@ export function createDriveRestAdapter(
   const authorizedFetch = async (
     url: string,
     init: RequestInit = {},
+    signal?: AbortSignal,
   ): Promise<Response> => {
+    throwIfAborted(signal);
     const accessToken = options.getAccessToken();
     if (!accessToken) {
       throw new DriveAuthenticationError("Google is not connected");
@@ -222,26 +240,36 @@ export function createDriveRestAdapter(
     try {
       result = await options.fetch(url, {
         ...init,
+        signal,
         headers: {
           Authorization: `Bearer ${accessToken}`,
           ...init.headers,
         },
       });
     } catch (error) {
+      if (signal?.aborted) {
+        throwIfAborted(signal);
+      }
       throw new DriveNetworkError("Google Drive request failed", {cause: error});
     }
     if (!result.ok) throw await responseError(result);
     return result;
   };
 
-  const getMetadata = async (fileId: string): Promise<DriveFileMetadata> => {
+  const getMetadata = async (
+    fileId: string,
+    signal?: AbortSignal,
+  ): Promise<DriveFileMetadata> => {
     const query = new URLSearchParams({
       fields: METADATA_FIELDS,
       supportsAllDrives: "true",
     });
     const result = await authorizedFetch(
       `${DRIVE_API}/${encodeURIComponent(fileId)}?${query}`,
+      {},
+      signal,
     );
+    throwIfAborted(signal);
     try {
       return parseMetadata(await result.json());
     } catch (error) {
@@ -253,13 +281,18 @@ export function createDriveRestAdapter(
     }
   };
 
-  const generateFileId = async (): Promise<string> => {
+  const reserveFileId = async (signal?: AbortSignal): Promise<string> => {
     const query = new URLSearchParams({
       count: "1",
       space: "drive",
       type: "files",
     });
-    const result = await authorizedFetch(`${DRIVE_API}/generateIds?${query}`);
+    const result = await authorizedFetch(
+      `${DRIVE_API}/generateIds?${query}`,
+      {},
+      signal,
+    );
+    throwIfAborted(signal);
     let value: unknown;
     try {
       value = await result.json();
@@ -284,9 +317,11 @@ export function createDriveRestAdapter(
   const confirmAttempt = async (
     fileId: string,
     attemptedSnapshotId: string,
+    signal?: AbortSignal,
   ): Promise<DriveWriteResult> => {
     try {
-      const after = await getMetadata(fileId);
+      const after = await getMetadata(fileId, signal);
+      throwIfAborted(signal);
       if (after.snapshotId !== attemptedSnapshotId) {
         throw new DriveConflictError(
           "Drive changed during upload; automatic saves are stopped",
@@ -308,8 +343,10 @@ export function createDriveRestAdapter(
 
   return {
     getMetadata,
-    async readFile(fileId) {
-      const metadata = await getMetadata(fileId);
+    reserveFileId,
+    async readFile(fileId, signal) {
+      const metadata = await getMetadata(fileId, signal);
+      throwIfAborted(signal);
       if (!metadata.canDownload) {
         throw new DrivePermissionError("Drive file cannot be downloaded");
       }
@@ -324,7 +361,10 @@ export function createDriveRestAdapter(
       const query = new URLSearchParams({alt: "media", supportsAllDrives: "true"});
       const result = await authorizedFetch(
         `${DRIVE_API}/${encodeURIComponent(fileId)}?${query}`,
+        {},
+        signal,
       );
+      throwIfAborted(signal);
       const declaredSize = Number(result.headers.get("content-length"));
       if (
         Number.isFinite(declaredSize) &&
@@ -338,19 +378,29 @@ export function createDriveRestAdapter(
         );
       }
       const reader = result.body.getReader();
+      const cancelOnAbort = (): void => {
+        void reader.cancel(signal?.reason).catch(() => undefined);
+      };
+      signal?.addEventListener("abort", cancelOnAbort, {once: true});
       const chunks: Uint8Array[] = [];
       let total = 0;
-      while (true) {
-        const {done, value} = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > maxBytes) {
-          await reader.cancel();
-          throw new DriveInvalidFileError(
-            "Drive .sb3 exceeds the size limit",
-          );
+      try {
+        while (true) {
+          throwIfAborted(signal);
+          const {done, value} = await reader.read();
+          throwIfAborted(signal);
+          if (done) break;
+          total += value.byteLength;
+          if (total > maxBytes) {
+            await reader.cancel();
+            throw new DriveInvalidFileError(
+              "Drive .sb3 exceeds the size limit",
+            );
+          }
+          chunks.push(value);
         }
-        chunks.push(value);
+      } finally {
+        signal?.removeEventListener("abort", cancelOnAbort);
       }
       if (total !== metadata.size) {
         throw new DriveInvalidFileError("Drive .sb3 size is invalid");
@@ -366,11 +416,11 @@ export function createDriveRestAdapter(
       }
       return {metadata, bytes};
     },
-    async createFile(input) {
+    async createFile(input, signal) {
       if (input.bytes.byteLength > maxBytes) {
         throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
       }
-      const fileId = await generateFileId();
+      const fileId = input.fileId;
       try {
         const query = new URLSearchParams({
           uploadType: "multipart",
@@ -386,7 +436,8 @@ export function createDriveRestAdapter(
           method: "POST",
           headers: {"Content-Type": multipart.contentType},
           body: multipart.body,
-        });
+        }, signal);
+        throwIfAborted(signal);
         let value: unknown;
         try {
           value = await result.json();
@@ -401,7 +452,11 @@ export function createDriveRestAdapter(
             "Drive create response did not confirm the reserved file ID",
           );
         }
-        return await confirmAttempt(fileId, input.snapshot.snapshotId);
+        return await confirmAttempt(
+          fileId,
+          input.snapshot.snapshotId,
+          signal,
+        );
       } catch (error) {
         const typed = error instanceof DriveSyncError
           ? error
@@ -413,11 +468,12 @@ export function createDriveRestAdapter(
         throw typed;
       }
     },
-    async updateFile(input) {
+    async updateFile(input, signal) {
       if (input.bytes.byteLength > maxBytes) {
         throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
       }
-      const before = await getMetadata(input.fileId);
+      const before = await getMetadata(input.fileId, signal);
+      throwIfAborted(signal);
       if (!before.canEdit) {
         throw new DrivePermissionError("Drive file is no longer editable");
       }
@@ -447,8 +503,14 @@ export function createDriveRestAdapter(
           headers: {"Content-Type": multipart.contentType},
           body: multipart.body,
         },
+        signal,
       );
-      return confirmAttempt(input.fileId, input.snapshot.snapshotId);
+      throwIfAborted(signal);
+      return confirmAttempt(
+        input.fileId,
+        input.snapshot.snapshotId,
+        signal,
+      );
     },
   };
 }
