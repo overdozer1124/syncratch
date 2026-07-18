@@ -1,4 +1,5 @@
 import type {
+  Enrollment,
   Person,
   PersonAccountLink,
   RoleAssignment,
@@ -40,6 +41,7 @@ export interface WorkspaceDirectoryRepositoryTx {
     options?: {includeEnded?: boolean},
   ): RoleAssignment[]; // only scope.kind === "workspace"
   getDirectoryRevision(workspaceId: string): DirectoryRevisionState | null;
+  getEnrollment(enrollmentId: string): Enrollment | null;
 
   createWorkspace(input: {
     workspace: Workspace;
@@ -84,6 +86,13 @@ export interface WorkspaceDirectoryRepositoryTx {
     membershipId: string;
     endedAt: string;
   }): {revision: number; membership: WorkspaceMembership};
+
+  createEnrollment(input: {
+    workspaceId: string;
+    expectedRevision: number;
+    updatedAt: string;
+    enrollment: Enrollment;
+  }): {revision: number; enrollment: Enrollment};
 
   grantWorkspaceRole(input: {
     expectedRevision: number;

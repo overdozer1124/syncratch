@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {DirectoryError} from "./errors.js";
+import type {Enrollment} from "./models.js";
 import type {
   WorkspaceDirectoryRepository,
   WorkspaceDirectoryRepositoryTx,
@@ -43,5 +44,31 @@ describe("directory repository port", () => {
 
     expect(_endMembership.workspaceId).toBe("ws-1");
     expect(_endWorkspaceRole.workspaceId).toBe("ws-1");
+  });
+
+  it("types enrollment reads and CAS-gated creation", () => {
+    type EnrollmentPort = Pick<
+      WorkspaceDirectoryRepositoryTx,
+      "getEnrollment" | "createEnrollment"
+    >;
+
+    const enrollment = {} as Enrollment;
+    const _typeCheck: EnrollmentPort = {
+      getEnrollment: () => null,
+      createEnrollment: input => ({
+        revision: input.expectedRevision + 1,
+        enrollment: input.enrollment,
+      }),
+    };
+
+    expect(_typeCheck.getEnrollment("enrollment-1")).toBeNull();
+    expect(
+      _typeCheck.createEnrollment({
+        workspaceId: "workspace-1",
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T00:00:00.000Z",
+        enrollment,
+      }).revision,
+    ).toBe(1);
   });
 });
