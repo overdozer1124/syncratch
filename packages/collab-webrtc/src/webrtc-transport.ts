@@ -28,6 +28,8 @@ export interface WebRtcTransportOptions {
   iceServers?: RTCIceServer[];
   WebSocketImpl?: WebSocketFactory;
   createPeerConnection?: (config: RTCConfiguration) => RTCPeerConnection;
+  /** Optional diagnostic sink for connection/ICE transitions (debugging/E2E). */
+  onDiagnostic?: (message: string) => void;
 }
 
 interface PeerEntry {
@@ -93,11 +95,18 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     const entry: PeerEntry = {pc, channel: null, initiator};
     peerConnections.set(peerId, entry);
     pc.addEventListener("icecandidate", (ev: RTCPeerConnectionIceEvent) => {
+      if (options.onDiagnostic) options.onDiagnostic(`cand(${peerId})=${ev.candidate ? "1" : "end"}`);
       if (ev.candidate) signal(peerId, {candidate: ev.candidate.toJSON()});
     });
     pc.addEventListener("connectionstatechange", () => {
+      if (options.onDiagnostic) options.onDiagnostic(`pc(${peerId})=${pc.connectionState}`);
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         handlers?.onPeerClose(peerId);
+      }
+    });
+    pc.addEventListener("iceconnectionstatechange", () => {
+      if (options.onDiagnostic) {
+        options.onDiagnostic(`ice(${peerId})=${(pc as RTCPeerConnection).iceConnectionState}`);
       }
     });
     if (initiator) {
@@ -107,7 +116,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         signal(peerId, {description: offer});
-      })();
+      })().catch((error) => {
+        if (options.onDiagnostic) options.onDiagnostic(`offer-error(${peerId})=${String(error)}`);
+      });
     } else {
       pc.addEventListener("datachannel", (ev: RTCDataChannelEvent) => {
         attachChannel(peerId, entry, ev.channel);
@@ -130,21 +141,21 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   };
 
   const onSignal = async (from: string, data: any): Promise<void> => {
-    let entry = peerConnections.get(from);
-    if (data?.description) {
-      if (!entry) entry = createPeer(from, false);
-      await entry.pc.setRemoteDescription(data.description);
-      if (data.description.type === "offer") {
-        const answer = await entry.pc.createAnswer();
-        await entry.pc.setLocalDescription(answer);
-        signal(from, {description: answer});
-      }
-    } else if (data?.candidate && entry) {
-      try {
+    try {
+      let entry = peerConnections.get(from);
+      if (data?.description) {
+        if (!entry) entry = createPeer(from, false);
+        await entry.pc.setRemoteDescription(data.description);
+        if (data.description.type === "offer") {
+          const answer = await entry.pc.createAnswer();
+          await entry.pc.setLocalDescription(answer);
+          signal(from, {description: answer});
+        }
+      } else if (data?.candidate && entry) {
         await entry.pc.addIceCandidate(data.candidate);
-      } catch {
-        // ignore late/duplicate candidates
       }
+    } catch (error) {
+      if (options.onDiagnostic) options.onDiagnostic(`signal-error(${from})=${String(error)}`);
     }
   };
 
@@ -155,6 +166,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     } catch {
       return;
     }
+    if (options.onDiagnostic) options.onDiagnostic(`recv ${msg.t} ${msg.peer ?? msg.from ?? ""}`);
     switch (msg.t) {
       case "joined":
         // Peers already present will initiate to us; we wait for their offers.
@@ -228,6 +240,7 @@ export function createWebRtcProvider(options: WebRtcProviderOptions): CollabProv
     iceServers: options.iceServers,
     WebSocketImpl: options.WebSocketImpl,
     createPeerConnection: options.createPeerConnection,
+    onDiagnostic: options.onDiagnostic,
   });
   return createCollabProvider({
     doc: options.doc,
