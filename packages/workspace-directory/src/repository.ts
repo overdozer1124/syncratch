@@ -79,6 +79,7 @@ export interface WorkspaceDirectoryRepositoryTx {
   }): {revision: number; membership: WorkspaceMembership};
 
   endMembership(input: {
+    workspaceId: string;
     expectedRevision: number;
     membershipId: string;
     endedAt: string;
@@ -93,6 +94,7 @@ export interface WorkspaceDirectoryRepositoryTx {
   }): {revision: number; assignment: RoleAssignment};
 
   endWorkspaceRole(input: {
+    workspaceId: string;
     expectedRevision: number;
     assignmentId: string;
     endedAt: string;
