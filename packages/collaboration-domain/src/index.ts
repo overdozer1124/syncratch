@@ -149,3 +149,15 @@ export function encodeState(doc: CollaborationDocument): Uint8Array {
 export function applyUpdate(doc: CollaborationDocument, update: Uint8Array): void {
   Y.applyUpdate(doc.ydoc, update);
 }
+
+export {
+  DEFAULT_PROJECT_COLLAB_LIMITS,
+  LOCAL_ORIGIN,
+  ProjectCollaborationDocument,
+  REMOTE_ORIGIN,
+  type ApplyRemoteResult,
+  type MaterializeFailure,
+  type MaterializeResult,
+  type MaterializeSuccess,
+  type ProjectCollabLimits,
+} from "./project-collab.js";

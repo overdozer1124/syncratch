@@ -1,0 +1,19 @@
+{
+  "name": "@blocksync/collab-invite",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL small-room collaboration invitation model: fragment-only encoding, injected entropy, one-way signaling topic derivation. No R1 API stability.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

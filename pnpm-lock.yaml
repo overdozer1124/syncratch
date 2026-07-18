@@ -288,6 +288,24 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
+  packages/collab-invite:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
+  packages/collab-leader:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
   packages/collaboration-domain:
     dependencies:
       '@blocksync/project-schema':
