@@ -32,7 +32,8 @@
 ## 進捗の計算方法
 
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
-- **現行スライス（Workspace Directory Repositories・薄い Task 5）:** 5 Task 計画・実装完了（identity/membership thin slice）。Codex レビュー待ち。
+- **前スライス（Workspace Directory Repositories・薄い Task 5）:** 実装完了（identity/membership thin slice）。
+- **現行スライス（Directory constraint error mapping follow-up）:** Task 1 実装完了（`c67b2ac`）。Codex / Cursor内レビュー待ち。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
 - 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。claim / attendance / last-owner / audit は未実装。
 
@@ -40,26 +41,27 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 10:40:00 JST |
+| 最終更新 | 2026-07-18 11:17:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 5）実装完了 |
-| 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了（レビュー待ち） |
+| 現在のTask | Directory constraint error mapping follow-up |
+| 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了 / constraint mapping follow-up 実装完了（レビュー待ち） |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 実装SHA | `50c01e3`（feat(store): expose directoryRepo from openSqliteStore） |
-| 再提出SHA | implementation tip: `50c01e3` |
-| 作業ブランチ | `feat/r1-directory-repos` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-repos` |
-| 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
+| 実装SHA | `c67b2ac`（fix(store): map directory SQLite constraints by error code） |
+| 再提出SHA | implementation tip: `c67b2ac` |
+| 作業ブランチ | `feat/r1-directory-constraint-map` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-constraint-map` |
+| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-constraint-error-mapping-design.md`（Approved）; predecessor §8 整合 |
 | 計画 | docs/superpowers/plans/2026-07-18-r1-workspace-directory-repositories-plan.md |
-| 前スライス | Legacy Organization/User Backfill = 100%（Cursor内正式GO・main統合） |
-| 次Task | Codexレビュー（薄い Directory Repositories 実装） |
+| 前スライス | Workspace Directory Repositories 薄いスライス = 実装完了 |
+| 次Task | Codex / Cursor内レビュー（constraint error mapping follow-up） |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
+| 未解決（スライス外） | claim / attendance / last-owner / audit |
 
 ## Cursorが次に行う作業
 
-薄い Directory Repositories 実装のCodexレビュー待ち。
+Directory constraint error mapping follow-up の Codex / Cursor内レビュー待ち。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2857,5 +2859,20 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 - ドキュメントコミットを実装SHAと誤記していた c4a1d2d 等を削除
 - 薄いスライス実装 tip を 50c01e3 に明示固定（docs commit ≠ implementation SHA）
 次の担当: Codex
+```
+
+### 2026-07-18 11:17:00 JST — Cursor（Directory constraint error mapping follow-up）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Directory constraint error mapping follow-up（Task 2 仕様・引き継ぎ）
+実装SHA: c67b2ac（fix(store): map directory SQLite constraints by error code）
+再提出SHA: implementation tip: c67b2ac（docs commit ≠ implementation SHA）
+設計:
+- predecessor §8 を UNIQUE/PK / FOREIGN KEY / その他 SQLITE_CONSTRAINT* に整合
+- follow-up design を Approved design に更新
+未解決（スライス外）:
+- claim / attendance / last-owner / audit
+次の担当: Codex / Cursor内レビュー
 ```
 

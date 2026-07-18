@@ -177,10 +177,10 @@ Typed errors thrown from the adapter (and allowed from port documentation):
 
 | Code | When |
 |---|---|
-| `DIRECTORY_NOT_FOUND` | Required target row missing (membership/role/link end, get-by-id used as write precondition). Prefer this over boolean “false” for write preconditions. |
+| `DIRECTORY_NOT_FOUND` | Required target row missing (membership/role/link end, get-by-id used as write precondition), **or** SQLite `FOREIGN KEY` violation on a write. Prefer this over boolean "false" for write preconditions. |
 | `DIRECTORY_REVISION_CONFLICT` | CAS mismatch |
-| `DIRECTORY_CONFLICT` | Unique active link or active membership violation (SQLite constraint or pre-check) |
-| `DIRECTORY_INVALID` | Domain validation failure or corrupt/missing revision row |
+| `DIRECTORY_CONFLICT` | Unique / primary-key constraint on active link, membership, role grant, or equivalent unique write (`SQLITE_CONSTRAINT_UNIQUE` / `SQLITE_CONSTRAINT_PRIMARYKEY`) |
+| `DIRECTORY_INVALID` | Domain validation failure, corrupt/missing revision row, **or** other SQLite constraints (CHECK / NOT NULL / …) |
 
 BOLA / existence hiding for **reads**: getters return `null`; lists omit
 foreign-tenant rows. Writers that target another tenant’s membership/role IDs
@@ -218,6 +218,7 @@ fresh empty file DB as needed):
 5. End/get with foreign workspace membership id → `DIRECTORY_NOT_FOUND`.
 6. Failed write rolls back DML and leaves revision unchanged.
 7. `openSqliteStore(...).directoryRepo` is usable without a second open.
+8. createMembership (or link) with missing FK target → `DIRECTORY_NOT_FOUND`; revision unchanged.
 
 ### 10.3 Gates
 

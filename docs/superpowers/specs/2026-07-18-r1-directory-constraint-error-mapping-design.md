@@ -1,7 +1,7 @@
 # R1 Directory Constraint Error Mapping Design
 
 **Date:** 2026-07-18  
-**Status:** Draft design (awaiting user review)  
+**Status:** Approved design  
 **Predecessor:** [R1 Workspace Directory Repositories](2026-07-18-r1-workspace-directory-repositories-design.md)  
 **Roadmap:** Follow-up to Phase 3 Task 4 thin slice (error-contract hardening)
 
