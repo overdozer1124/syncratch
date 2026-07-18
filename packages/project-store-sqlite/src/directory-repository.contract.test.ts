@@ -794,6 +794,383 @@ describe("sqlite workspace directory repository - writes", () => {
     expect(repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id))).toBeNull();
   });
 
+  it("updateEnrollment patches attendanceNumber and bumps revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-update-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    const result = repo.withTransaction(tx =>
+      tx.updateEnrollment({
+        workspaceId,
+        expectedRevision: 1,
+        updatedAt: "2026-07-18T02:00:00.000Z",
+        enrollmentId: enrollment.id,
+        patch: {attendanceNumber: "99"},
+      }),
+    );
+
+    expect(result.revision).toBe(2);
+    expect(result.enrollment.attendanceNumber).toBe("99");
+    expect(
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id)),
+    ).toMatchObject({attendanceNumber: "99", status: "active", endDate: null});
+  });
+
+  it("rejects a duplicate active attendance number update without changing the enrollment or revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-update-conflict-");
+    const firstEnrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    const secondEnrollment = {
+      ...firstEnrollment,
+      id: "enrollment-2",
+      personId: "person-2",
+      attendanceNumber: "13",
+    } as Enrollment;
+    const first = repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment: firstEnrollment,
+      }),
+    );
+    const second = repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: first.revision,
+        updatedAt: "2026-07-18T02:00:00.000Z",
+        enrollment: secondEnrollment,
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: second.revision,
+          updatedAt: "2026-07-18T03:00:00.000Z",
+          enrollmentId: secondEnrollment.id,
+          patch: {attendanceNumber: "12"},
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_CONFLICT"}));
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(second.revision);
+    expect(
+      repo.withTransaction(tx =>
+        tx.getEnrollment(workspaceId, secondEnrollment.id),
+      ),
+    ).toEqual(secondEnrollment);
+  });
+
+  it("endEnrollment ends an active enrollment and bumps revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-end-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    const created = repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    const result = repo.withTransaction(tx =>
+      tx.endEnrollment({
+        workspaceId,
+        expectedRevision: created.revision,
+        updatedAt: "2026-07-18T02:00:00.000Z",
+        enrollmentId: enrollment.id,
+        endDate: "2026-07-18",
+      }),
+    );
+
+    expect(result.revision).toBe(created.revision + 1);
+    expect(result.enrollment).toMatchObject({
+      status: "ended",
+      endDate: "2026-07-18",
+    });
+  });
+
+  it("rejects update and second end after an enrollment ends without changing revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-ended-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    const created = repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+    const ended = repo.withTransaction(tx =>
+      tx.endEnrollment({
+        workspaceId,
+        expectedRevision: created.revision,
+        updatedAt: "2026-07-18T02:00:00.000Z",
+        enrollmentId: enrollment.id,
+        endDate: "2026-07-18",
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: ended.revision,
+          updatedAt: "2026-07-18T03:00:00.000Z",
+          enrollmentId: enrollment.id,
+          patch: {attendanceNumber: "99"},
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_NOT_FOUND"}));
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.endEnrollment({
+          workspaceId,
+          expectedRevision: ended.revision,
+          updatedAt: "2026-07-18T04:00:00.000Z",
+          enrollmentId: enrollment.id,
+          endDate: "2026-07-18",
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_NOT_FOUND"}));
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(ended.revision);
+  });
+
+  it("rejects foreign workspace enrollment updates and ends without changing either revision", () => {
+    const {repo, workspaceId, foreignWorkspaceId} = openEnrollmentDb(
+      "dir-enroll-foreign-update-end-",
+    );
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    const created = repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId: foreignWorkspaceId,
+          expectedRevision: 0,
+          updatedAt: "2026-07-18T02:00:00.000Z",
+          enrollmentId: enrollment.id,
+          patch: {attendanceNumber: "99"},
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_NOT_FOUND"}));
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.endEnrollment({
+          workspaceId: foreignWorkspaceId,
+          expectedRevision: 0,
+          updatedAt: "2026-07-18T03:00:00.000Z",
+          enrollmentId: enrollment.id,
+          endDate: "2026-07-18",
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_NOT_FOUND"}));
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(created.revision);
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(foreignWorkspaceId))
+        ?.revision,
+    ).toBe(0);
+  });
+
+  it("rejects a stale enrollment update without changing revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-update-stale-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: -1,
+          updatedAt: "2026-07-18T02:00:00.000Z",
+          enrollmentId: enrollment.id,
+          patch: {attendanceNumber: "99"},
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({code: "DIRECTORY_REVISION_CONFLICT"}),
+    );
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(1);
+  });
+
+  it("rejects an enrollment update with an invalid updatedAt without changing revision", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-update-invalid-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: 1,
+          updatedAt: "not-a-utc-date-time",
+          enrollmentId: enrollment.id,
+          patch: {attendanceNumber: "99"},
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "DIRECTORY_INVALID",
+        message: expect.stringContaining("UtcDateTime"),
+      }),
+    );
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(1);
+  });
+
+  it("rejects empty and unknown enrollment update patches", () => {
+    const {repo, workspaceId} = openEnrollmentDb("dir-enroll-update-patch-");
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: 1,
+          updatedAt: "2026-07-18T02:00:00.000Z",
+          enrollmentId: enrollment.id,
+          patch: {},
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "DIRECTORY_INVALID",
+        message: expect.stringContaining("patch"),
+      }),
+    );
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.updateEnrollment({
+          workspaceId,
+          expectedRevision: 1,
+          updatedAt: "2026-07-18T03:00:00.000Z",
+          enrollmentId: enrollment.id,
+          patch: {attendanceNumber: "1", classGroupId: "x"} as never,
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "DIRECTORY_INVALID",
+        message: expect.stringContaining("patch"),
+      }),
+    );
+  });
+
   it("createMembership with a missing accountId yields DIRECTORY_NOT_FOUND and leaves revision unchanged", () => {
     const {db, workspaceId} = openFixtureDb("dir-fk-membership-");
     const repo = createSqliteWorkspaceDirectoryRepository(db);

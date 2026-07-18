@@ -511,6 +511,18 @@ export function createSqliteWorkspaceDirectoryRepository(
       runMappedConstraint(() => insertEnrollmentStmt.run(validEnrollment));
       return {revision, enrollment: validEnrollment};
     },
+    updateEnrollment(_input) {
+      throw new DirectoryError(
+        "DIRECTORY_INVALID",
+        "enrollment update not implemented",
+      );
+    },
+    endEnrollment(_input) {
+      throw new DirectoryError(
+        "DIRECTORY_INVALID",
+        "enrollment end not implemented",
+      );
+    },
     grantWorkspaceRole({expectedRevision, assignment}) {
       const validAssignment = validated(
         assignment as RoleAssignment,
