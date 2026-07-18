@@ -24,6 +24,10 @@ import {
   collectRuntimeAssetBytes,
   type RuntimeAssetTarget,
 } from "./runtime-assets.js";
+import {downloadFilename} from "./download-filename.js";
+import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
+import {readSb3File} from "./import-file.js";
+import {loadRecordSafely} from "./load-record.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -119,6 +123,7 @@ const guiHost = requiredElement<HTMLElement>("scratch-gui");
 let store: ProjectStore;
 let vm: ScratchVm;
 let current: LocalProjectRecord;
+let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
 let suppressVmChanges = true;
 let failNextWrite = false;
@@ -167,7 +172,9 @@ declare global {
     __blocksyncTask3?: typeof diagnostic;
   }
 }
-window.__blocksyncTask3 = diagnostic;
+if (shouldExposeTask3Diagnostics(import.meta.env.MODE)) {
+  window.__blocksyncTask3 = diagnostic;
+}
 
 function decodeAssets(encoded: Record<string, string>): Map<string, Uint8Array> {
   const assets = new Map<string, Uint8Array>();
@@ -304,13 +311,25 @@ function markDirty(): void {
 }
 
 async function loadRecord(record: LocalProjectRecord): Promise<void> {
-  suppressVmChanges = true;
-  current = structuredClone(record);
-  titleInput.value = current.title;
-  attachLocalStorage(current);
-  await vm.loadProject(documentToProjectJson(current.document));
-  installSaveCoordinator();
-  suppressVmChanges = false;
+  const candidate = structuredClone(record);
+  const previous = hasCurrent ? structuredClone(current) : undefined;
+  await loadRecordSafely({
+    candidate,
+    previous,
+    setSuppressed(value) {
+      suppressVmChanges = value;
+    },
+    async load(recordToLoad) {
+      attachLocalStorage(recordToLoad);
+      await vm.loadProject(documentToProjectJson(recordToLoad.document));
+    },
+    commit(loaded) {
+      current = loaded;
+      hasCurrent = true;
+      titleInput.value = loaded.title;
+      installSaveCoordinator();
+    },
+  });
 }
 
 async function loadFixtureRecord(
@@ -346,7 +365,12 @@ async function loadFixtureRecord(
 async function createNewProject(): Promise<void> {
   const record = await loadFixtureRecord();
   await store.createOrReplace(record, null);
-  await loadRecord(record);
+  try {
+    await loadRecord(record);
+  } catch (error) {
+    await store.delete(record.localProjectId).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function exportCurrentSb3(): Promise<Uint8Array> {
@@ -372,7 +396,12 @@ async function importProject(bytes: Uint8Array, title: string): Promise<void> {
     saveState: "clean",
   };
   await store.createOrReplace(record, null);
-  await loadRecord(record);
+  try {
+    await loadRecord(record);
+  } catch (error) {
+    await store.delete(record.localProjectId).catch(() => undefined);
+    throw error;
+  }
 }
 
 function download(bytes: Uint8Array): void {
@@ -380,7 +409,7 @@ function download(bytes: Uint8Array): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${titleInput.value || "project"}.sb3`;
+  anchor.download = downloadFilename(titleInput.value);
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -402,13 +431,13 @@ async function boot(): Promise<void> {
   store = await openProjectStore();
   vm = await getVm();
   vm.on("PROJECT_CHANGED", markDirty);
-  const records = await store.list();
-  if (records.length === 0) {
+  const latest = await store.getLatest();
+  if (latest === null) {
     const initial = await loadFixtureRecord();
     await store.createOrReplace(initial, null);
     await loadRecord(initial);
   } else {
-    await loadRecord(records[0]!);
+    await loadRecord(latest);
   }
   diagnostic.ready = true;
 }
@@ -421,9 +450,12 @@ fileInput.addEventListener("change", async () => {
   if (!file) return;
   try {
     await importProject(
-      new Uint8Array(await file.arrayBuffer()),
+      await readSb3File(file),
       file.name.replace(/\.sb3$/i, ""),
     );
+  } catch {
+    saveStatus.textContent = "Import failed";
+    retryButton.hidden = true;
   } finally {
     fileInput.value = "";
   }

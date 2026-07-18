@@ -17,7 +17,7 @@
     "@blocksync/project-assets-fs": "workspace:*",
     "@blocksync/project-schema": "workspace:*",
     "@noble/hashes": "2.2.0",
-    "@xmldom/xmldom": "0.8.10",
+    "@xmldom/xmldom": "0.8.13",
     "css-tree": "3.2.1",
     "jszip": "^3.10.1"
   },

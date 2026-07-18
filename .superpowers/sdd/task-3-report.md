@@ -171,3 +171,89 @@ in the commit.
   automatic merge/rebase is intentionally not implemented in this MVP.
 - “Most recently opened” is represented by the record `updatedAt`; there is no
   separate last-opened metadata field in the required `LocalProjectRecord`.
+
+## Review fix report
+
+### Security and dependency corrections
+
+- Updated `@xmldom/xmldom` from `0.8.10` to `0.8.13`; `pnpm audit --prod`
+  reports no known vulnerabilities.
+- Replaced the recursive SVG DOM walk with an explicit stack, a 256-level
+  depth limit, the existing 65,536-node limit, and document-level inspection
+  of DOCTYPE and processing-instruction nodes.
+- Added XML regressions for depth, DOCTYPE, processing instructions, CDATA,
+  and comments.
+- Added an iterative canonical JSON boundary scan with depth, total-value, and
+  pending-work limits. It rejects `__proto__`, `prototype`, and `constructor`
+  at any depth, as well as non-plain prototypes, before any Scratch dictionary
+  is assigned or spread.
+- Added prototype-control regressions for blocks, variables, lists,
+  broadcasts, inputs, fields, mutations, and metadata, plus deep and wide
+  non-recursive DoS cases.
+- `File.size` is checked against `DEFAULT_LIMITS.maxBytes` before
+  `File.arrayBuffer()` is called.
+
+### Store and editor corrections
+
+- Migrated the IndexedDB schema to version 2 to add an `updatedAt` index.
+  `getLatest()` opens one reverse index cursor and never calls `getAll()` or
+  advances into older records; `list()` remains compatible.
+- Editor boot now uses `getLatest()` rather than loading every project and all
+  historical assets.
+- Invalid/oversized SB3 input is caught at the file boundary and shown as the
+  recoverable `Import failed` status. The active project, retry path, and
+  export remain available without an unhandled rejection.
+- Record loading now commits `current`, title, and save coordinator only after
+  VM loading succeeds. A failed candidate load restores the prior VM project,
+  preserves coordinator state, and removes the failed new IndexedDB record
+  without masking the original error.
+- Runtime-created `jpeg` assets are canonicalized to `.jpg`.
+- `window.__blocksyncTask3` is exposed only in Vite `e2e` mode. A normal
+  production build was launched in Chromium and reported
+  `diagnosticsExposed: false`.
+- Download names remove control characters, Windows-forbidden characters and
+  reserved device names, trim invalid suffixes, and cap the basename at 100
+  Unicode code points.
+
+### TDD evidence for review fixes
+
+Before implementation:
+
+```text
+SB3 security RED:
+- deeply nested SVG was accepted
+- variables/lists/broadcasts/meta prototype-control keys were accepted
+- canonical JSON depth/width limits were absent
+
+project-store-idb RED:
+- getLatest is not a function
+
+editor-web RED:
+- import-file, download-filename, diagnostics, and load-record modules absent
+- runtime-created costume.jpeg remained costume.jpeg
+
+E2E RED:
+- invalid import recovery initially exposed an unrelated standalone-GUI
+  startup pageerror; moving error observation after GUI readiness isolated the
+  import boundary, which then passed without pageerrors
+```
+
+After the review fixes:
+
+```text
+@blocksync/project-store-idb: 11 tests passed; typecheck passed
+@blocksync/editor-web: 10 unit tests passed; typecheck/build passed
+editor-web Playwright: 6 acceptance tests passed
+@blocksync/project-local-core: 14 tests passed; typecheck passed
+@blocksync/sb3-tools: 56 tests passed; build passed
+@blocksync/r1-scratch-host: 29 tests + 1 browser smoke passed
+workspace build: passed
+pnpm audit --prod: no known vulnerabilities
+```
+
+### Review disposition
+
+- Independent code and security reviews found no Critical/High issues.
+- A reviewer-noted wide primitive JSON budget gap was reproduced RED and
+  fixed by counting both processed and pending values before scheduling them.
+- CSP remains intentionally deferred to Task 7 as directed.

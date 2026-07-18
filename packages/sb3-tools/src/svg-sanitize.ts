@@ -10,6 +10,7 @@ export class SvgSafetyError extends Error {
 
 export const SVG_MAX_BYTES = 512 * 1024;
 export const SVG_MAX_NODES = 65_536;
+export const SVG_MAX_DEPTH = 256;
 
 const DISALLOWED_ELEMENTS = new Set([
   "script",
@@ -202,12 +203,7 @@ function assertSafeCssAttribute(name: string, value: string): void {
   }
 }
 
-function walkNode(node: Node, nodeCount: { n: number }): void {
-  nodeCount.n += 1;
-  if (nodeCount.n > SVG_MAX_NODES) {
-    throw new SvgSafetyError("NODE_LIMIT");
-  }
-
+function assertSafeNode(node: Node): void {
   if (node.nodeType === 10) {
     throw new SvgSafetyError("DOCTYPE");
   }
@@ -215,9 +211,6 @@ function walkNode(node: Node, nodeCount: { n: number }): void {
     throw new SvgSafetyError("PROCESSING_INSTRUCTION");
   }
   if (node.nodeType !== 1) {
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      walkNode(child, nodeCount);
-    }
     return;
   }
 
@@ -274,8 +267,28 @@ function walkNode(node: Node, nodeCount: { n: number }): void {
     }
   }
 
-  for (let child = node.firstChild; child; child = child.nextSibling) {
-    walkNode(child, nodeCount);
+}
+
+function walkNodes(root: Node): void {
+  const stack: Array<{node: Node; depth: number}> = [{node: root, depth: 0}];
+  let nodeCount = 0;
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    nodeCount += 1;
+    if (nodeCount > SVG_MAX_NODES) {
+      throw new SvgSafetyError("NODE_LIMIT");
+    }
+    if (current.depth > SVG_MAX_DEPTH) {
+      throw new SvgSafetyError("DEPTH_LIMIT");
+    }
+    assertSafeNode(current.node);
+    for (
+      let child = current.node.lastChild;
+      child;
+      child = child.previousSibling
+    ) {
+      stack.push({node: child, depth: current.depth + 1});
+    }
   }
 }
 
@@ -295,5 +308,5 @@ export function assertSafeSvgBytes(bytes: Uint8Array): void {
     throw new SvgSafetyError("NOT_SVG");
   }
 
-  walkNode(root, { n: 0 });
+  walkNodes(doc);
 }

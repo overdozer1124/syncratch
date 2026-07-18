@@ -33,7 +33,8 @@ export function collectRuntimeAssetBytes(
     ];
     for (const runtimeAsset of runtimeAssets) {
       const assetId = runtimeAsset.assetId;
-      const dataFormat = runtimeAsset.dataFormat?.toLowerCase();
+      const rawDataFormat = runtimeAsset.dataFormat?.toLowerCase();
+      const dataFormat = rawDataFormat === "jpeg" ? "jpg" : rawDataFormat;
       const data = runtimeAsset.asset?.data;
       if (!assetId || !dataFormat || !data) continue;
       assets.set(`${assetId}.${dataFormat}`, copyBytes(data));

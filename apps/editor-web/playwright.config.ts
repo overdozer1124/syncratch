@@ -11,7 +11,7 @@ export default defineConfig({
     acceptDownloads: true,
   },
   webServer: {
-    command: "pnpm build && pnpm exec vite preview",
+    command: "pnpm build:e2e && pnpm exec vite preview",
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

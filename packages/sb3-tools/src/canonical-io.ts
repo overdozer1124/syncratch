@@ -13,6 +13,13 @@ import {
 } from "@blocksync/project-schema";
 
 const utf8 = new TextEncoder();
+const FORBIDDEN_DICTIONARY_KEYS = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+]);
+const CANONICAL_JSON_MAX_DEPTH = 128;
+const CANONICAL_JSON_MAX_NODES = 200_000;
 
 export class CanonicalImportError extends Error {
   constructor(
@@ -80,6 +87,85 @@ const BLOCK_ALLOWED = new Set([
 
 const COSTUME_FORMATS = new Set(["svg", "png", "jpg", "jpeg", "bmp", "gif"]);
 const SOUND_FORMATS = new Set(["wav", "mp3"]);
+
+function assertSafeCanonicalJson(root: unknown): void {
+  const stack: Array<{value: unknown; path: string; depth: number}> = [{
+    value: root,
+    path: "project.json",
+    depth: 0,
+  }];
+  let nodes = 0;
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    nodes += 1;
+    if (nodes > CANONICAL_JSON_MAX_NODES) {
+      throw new CanonicalImportError(
+        "canonical JSON node limit exceeded",
+        current.path,
+      );
+    }
+    if (
+      current.value === null ||
+      (typeof current.value !== "object" &&
+        typeof current.value !== "function")
+    ) {
+      continue;
+    }
+    if (current.depth > CANONICAL_JSON_MAX_DEPTH) {
+      throw new CanonicalImportError(
+        "canonical JSON depth limit exceeded",
+        current.path,
+      );
+    }
+    if (Array.isArray(current.value)) {
+      for (let index = current.value.length - 1; index >= 0; index -= 1) {
+        if (nodes + stack.length >= CANONICAL_JSON_MAX_NODES) {
+          throw new CanonicalImportError(
+            "canonical JSON node limit exceeded",
+            current.path,
+          );
+        }
+        stack.push({
+          value: current.value[index],
+          path: `${current.path}[${index}]`,
+          depth: current.depth + 1,
+        });
+      }
+      continue;
+    }
+
+    const prototype = Object.getPrototypeOf(current.value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      throw new CanonicalImportError(
+        "canonical JSON object has a non-plain prototype",
+        current.path,
+      );
+    }
+    const object = current.value as Record<string, unknown>;
+    const keys = Object.keys(object);
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      const key = keys[index]!;
+      if (FORBIDDEN_DICTIONARY_KEYS.has(key)) {
+        throw new CanonicalImportError(
+          `forbidden dictionary key ${key}`,
+          `${current.path}.${key}`,
+        );
+      }
+      if (nodes + stack.length >= CANONICAL_JSON_MAX_NODES) {
+        throw new CanonicalImportError(
+          "canonical JSON node limit exceeded",
+          current.path,
+        );
+      }
+      stack.push({
+        value: object[key],
+        path: `${current.path}.${key}`,
+        depth: current.depth + 1,
+      });
+    }
+  }
+}
 
 export function canonicalDataFormat(format: string): string {
   const lower = format.toLowerCase();
@@ -375,6 +461,7 @@ export function projectJsonToDocument(
   raw: unknown,
   assetShaByMd5ext: Map<string, string> = new Map(),
 ): ProjectDocument {
+  assertSafeCanonicalJson(raw);
   const root = assertPlainObject(raw, "project.json");
   rejectUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json");
 

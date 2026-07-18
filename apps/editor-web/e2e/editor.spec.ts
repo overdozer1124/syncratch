@@ -81,6 +81,45 @@ test("exports the current project and imports it as a new local project", async 
   ).not.toBe(originalId);
 });
 
+test("invalid SB3 import is recoverable and preserves retry and export", async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  await waitUntilReady(page);
+  page.on("pageerror", error => pageErrors.push(error.message));
+  const originalId = await page.evaluate(
+    () => window.__blocksyncTask3!.getState().localProjectId,
+  );
+  const validBytes = await page.evaluate(async () =>
+    Array.from(await window.__blocksyncTask3!.exportSb3()),
+  );
+
+  await page.locator("#open-file").setInputFiles({
+    name: "invalid.sb3",
+    mimeType: "application/x.scratch.sb3",
+    buffer: Buffer.from([1, 2, 3]),
+  });
+
+  await expect(page.getByTestId("save-status")).toHaveText("Import failed");
+  expect(
+    await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
+  ).toBe(originalId);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", {name: "Download .sb3"}).click();
+  expect((await downloadPromise).suggestedFilename()).toMatch(/\.sb3$/);
+
+  await page.locator("#open-file").setInputFiles({
+    name: "retry.sb3",
+    mimeType: "application/x.scratch.sb3",
+    buffer: Buffer.from(validBytes),
+  });
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  expect(
+    await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
+  ).not.toBe(originalId);
+  expect(pageErrors).toEqual([]);
+});
+
 test("save failure is recoverable and does not disable SB3 download", async ({
   page,
 }) => {

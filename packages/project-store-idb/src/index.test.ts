@@ -113,6 +113,59 @@ describe("IndexedDB project store", () => {
     reopened.close();
   });
 
+  it("returns null when no latest project exists", async () => {
+    const store = await openProjectStore({databaseName: databaseName("latest-empty")});
+
+    expect(await store.getLatest()).toBeNull();
+    store.close();
+  });
+
+  it("returns only the project with the newest updatedAt", async () => {
+    const store = await openProjectStore({databaseName: databaseName("latest")});
+    const older = record("older");
+    older.updatedAt = "2026-07-18T00:00:00.000Z";
+    older.assets = [{md5ext: "large.bin", bytes: new Uint8Array(1_000_000)}];
+    const newer = record("newer");
+    newer.updatedAt = "2026-07-19T00:00:00.000Z";
+    await store.createOrReplace(older, null);
+    await store.createOrReplace(newer, null);
+
+    expect(await store.getLatest()).toMatchObject({
+      localProjectId: "newer",
+      updatedAt: newer.updatedAt,
+    });
+    store.close();
+  });
+
+  it("uses one reverse index cursor without getAll or scanning older assets", async () => {
+    const store = await openProjectStore({databaseName: databaseName("latest-cursor")});
+    const older = record("older");
+    older.updatedAt = "2026-07-18T00:00:00.000Z";
+    const newer = record("newer");
+    newer.updatedAt = "2026-07-19T00:00:00.000Z";
+    await store.createOrReplace(older, null);
+    await store.createOrReplace(newer, null);
+    const originalGetAll = IDBObjectStore.prototype.getAll;
+    const originalContinue = IDBCursor.prototype.continue;
+    let continueCalls = 0;
+    IDBObjectStore.prototype.getAll = function forbiddenGetAll() {
+      throw new Error("getAll must not be used by getLatest");
+    };
+    IDBCursor.prototype.continue = function trackedContinue(key?: IDBValidKey) {
+      continueCalls += 1;
+      return originalContinue.call(this, key);
+    };
+
+    try {
+      expect((await store.getLatest())?.localProjectId).toBe("newer");
+      expect(continueCalls).toBe(0);
+    } finally {
+      IDBObjectStore.prototype.getAll = originalGetAll;
+      IDBCursor.prototype.continue = originalContinue;
+      store.close();
+    }
+  });
+
   it("deletes projects and reports typed not-found errors", async () => {
     const store = await openProjectStore({databaseName: databaseName("delete")});
     await store.createOrReplace(record(), null);

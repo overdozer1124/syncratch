@@ -758,6 +758,39 @@ describe("canonical SB3 I/O", () => {
     expect(() => assertSafeSvgBytes(bytes)).not.toThrow();
   });
 
+  it("rejects deeply nested SVG with an explicit depth error, not recursion overflow", () => {
+    const depth = 2_000;
+    const bytes = new TextEncoder().encode(
+      `<svg xmlns="http://www.w3.org/2000/svg">${"<g>".repeat(depth)}<rect width="1" height="1"/>${"</g>".repeat(depth)}</svg>`,
+    );
+
+    expect(() => assertSafeSvgBytes(bytes)).toThrowError(
+      expect.objectContaining({
+        name: "SvgSafetyError",
+        message: "DEPTH_LIMIT",
+      }),
+    );
+  });
+
+  it.each([
+    ["DOCTYPE", '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>'],
+    [
+      "processing instruction",
+      '<svg xmlns="http://www.w3.org/2000/svg"><?unsafe value?></svg>',
+    ],
+  ])("rejects XML %s nodes", (_label, svg) => {
+    expect(() => assertSafeSvgBytes(new TextEncoder().encode(svg))).toThrow(
+      SvgSafetyError,
+    );
+  });
+
+  it("handles comments and CDATA without treating their text as markup", () => {
+    const bytes = new TextEncoder().encode(
+      '<svg xmlns="http://www.w3.org/2000/svg"><!-- <script/> --><text><![CDATA[<safe>]]></text></svg>',
+    );
+    expect(() => assertSafeSvgBytes(bytes)).not.toThrow();
+  });
+
   it("projectJsonToDocument assigns schemaVersion 2", () => {
     const projectJson = buildAudioCorpusProjectJson();
     const { _assetIds: _, ...clean } = projectJson;
@@ -765,6 +798,115 @@ describe("canonical SB3 I/O", () => {
     expect(doc.schemaVersion).toBe(2);
     expect(doc.monitors).toEqual([]);
     expect(doc.targets[0]!.comments).toEqual({});
+  });
+
+  it.each([
+    ["blocks", (target: Record<string, unknown>, value: unknown) => {
+      Object.defineProperty(target.blocks as object, "__proto__", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["variables", (target: Record<string, unknown>, value: unknown) => {
+      Object.defineProperty(target.variables as object, "prototype", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["lists", (target: Record<string, unknown>, value: unknown) => {
+      Object.defineProperty(target.lists as object, "constructor", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["broadcasts", (target: Record<string, unknown>, value: unknown) => {
+      Object.defineProperty(target.broadcasts as object, "__proto__", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["inputs", (target: Record<string, unknown>, value: unknown) => {
+      const block = Object.values(target.blocks as object)[0] as Record<string, unknown>;
+      Object.defineProperty(block.inputs as object, "prototype", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["fields", (target: Record<string, unknown>, value: unknown) => {
+      const block = Object.values(target.blocks as object)[0] as Record<string, unknown>;
+      Object.defineProperty(block.fields as object, "constructor", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["mutation", (target: Record<string, unknown>, value: unknown) => {
+      const block = Object.values(target.blocks as object)[0] as Record<string, unknown>;
+      block.mutation = {};
+      Object.defineProperty(block.mutation, "__proto__", {
+        value,
+        enumerable: true,
+      });
+    }],
+    ["meta", (_target: Record<string, unknown>, value: unknown, root: Record<string, unknown>) => {
+      root.meta = {};
+      Object.defineProperty(root.meta, "constructor", {
+        value,
+        enumerable: true,
+      });
+    }],
+  ])("rejects prototype-control keys deeply in %s", (_label, inject) => {
+    const root = structuredClone(buildAudioCorpusProjectJson()) as unknown as Record<string, unknown>;
+    delete root._assetIds;
+    const target = (root.targets as Record<string, unknown>[])[1]!;
+    target.blocks = {
+      safe: {
+        opcode: "event_whenflagclicked",
+        next: null,
+        parent: null,
+        inputs: {},
+        fields: {},
+        shadow: false,
+        topLevel: true,
+      },
+    };
+    inject(target, {polluted: true}, root);
+
+    expect(() => projectJsonToDocument(root)).toThrowError(
+      expect.objectContaining({name: "CanonicalImportError"}),
+    );
+    expect(({} as {polluted?: boolean}).polluted).toBeUndefined();
+  });
+
+  it("rejects excessive canonical JSON depth without recursive traversal", () => {
+    const root = structuredClone(buildAudioCorpusProjectJson()) as unknown as Record<string, unknown>;
+    delete root._assetIds;
+    let nested: Record<string, unknown> = {};
+    root.meta = nested;
+    for (let index = 0; index < 2_000; index += 1) {
+      const child: Record<string, unknown> = {};
+      nested.value = child;
+      nested = child;
+    }
+
+    expect(() => projectJsonToDocument(root)).toThrowError(
+      expect.objectContaining({
+        name: "CanonicalImportError",
+        message: expect.stringContaining("depth"),
+      }),
+    );
+  });
+
+  it("rejects excessive canonical JSON width before scheduling all primitive values", () => {
+    const root = structuredClone(buildAudioCorpusProjectJson()) as unknown as Record<string, unknown>;
+    delete root._assetIds;
+    root.meta = {values: new Array(200_001).fill(0)};
+
+    expect(() => projectJsonToDocument(root)).toThrowError(
+      expect.objectContaining({
+        name: "CanonicalImportError",
+        message: expect.stringContaining("node limit"),
+      }),
+    );
   });
 
   it("rejects PNG wider than 4096px", () => {

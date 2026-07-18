@@ -50,7 +50,11 @@ export {
   sha256Hex,
   stableTargetId,
 } from "./canonical-io.js";
-export { assertSafeSvgBytes, SvgSafetyError } from "./svg-sanitize.js";
+export {
+  assertSafeSvgBytes,
+  SVG_MAX_DEPTH,
+  SvgSafetyError,
+} from "./svg-sanitize.js";
 export {
   assertValidMp3Bytes,
   MediaVerifyError,

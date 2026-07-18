@@ -4,8 +4,9 @@ import {
 } from "@blocksync/project-local-core";
 
 export const PROJECT_STORE_DATABASE_NAME = "blocksync-projects";
-export const PROJECT_STORE_DATABASE_VERSION = 1;
+export const PROJECT_STORE_DATABASE_VERSION = 2;
 export const PROJECTS_OBJECT_STORE = "projects";
+export const UPDATED_AT_INDEX = "updatedAt";
 
 type ErrorCode =
   | "NOT_FOUND"
@@ -69,6 +70,7 @@ export interface OpenProjectStoreOptions {
 
 export interface ProjectStore {
   get(localProjectId: string): Promise<LocalProjectRecord>;
+  getLatest(): Promise<LocalProjectRecord | null>;
   list(): Promise<LocalProjectRecord[]>;
   createOrReplace(
     record: LocalProjectRecord,
@@ -137,10 +139,13 @@ function openDatabase(factory: IDBFactory, databaseName: string): Promise<IDBDat
     const request = factory.open(databaseName, PROJECT_STORE_DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
-      if (!database.objectStoreNames.contains(PROJECTS_OBJECT_STORE)) {
-        database.createObjectStore(PROJECTS_OBJECT_STORE, {
+      const objectStore = database.objectStoreNames.contains(PROJECTS_OBJECT_STORE)
+        ? request.transaction!.objectStore(PROJECTS_OBJECT_STORE)
+        : database.createObjectStore(PROJECTS_OBJECT_STORE, {
           keyPath: "localProjectId",
         });
+      if (!objectStore.indexNames.contains(UPDATED_AT_INDEX)) {
+        objectStore.createIndex(UPDATED_AT_INDEX, "updatedAt");
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -183,6 +188,18 @@ export async function openProjectStore(
         throw new ProjectStoreNotFoundError(localProjectId);
       }
       return cloneRecord(assertValidRecord(value));
+    },
+
+    async getLatest() {
+      const transaction = database.transaction(PROJECTS_OBJECT_STORE, "readonly");
+      const request = transaction
+        .objectStore(PROJECTS_OBJECT_STORE)
+        .index(UPDATED_AT_INDEX)
+        .openCursor(null, "prev");
+      const cursor = await requestResult(request);
+      await transactionDone(transaction);
+      if (!cursor) return null;
+      return cloneRecord(assertValidRecord(cursor.value));
     },
 
     async list() {

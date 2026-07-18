@@ -10,7 +10,7 @@ describe("collectRuntimeAssetBytes", () => {
       sprite: {
         costumes: [{
           assetId: "costume",
-          dataFormat: "png",
+          dataFormat: "jpeg",
           asset: {data: new Uint8Array([2, 3])},
         }],
         sounds: [{
@@ -25,9 +25,9 @@ describe("collectRuntimeAssetBytes", () => {
 
     expect([...assets]).toEqual([
       ["existing.svg", new Uint8Array([1])],
-      ["costume.png", new Uint8Array([2, 3])],
+      ["costume.jpg", new Uint8Array([2, 3])],
       ["sound.wav", new Uint8Array([4, 5])],
     ]);
-    expect(assets.get("costume.png")).not.toBe(targets[0]!.sprite.costumes[0]!.asset.data);
+    expect(assets.get("costume.jpg")).not.toBe(targets[0]!.sprite.costumes[0]!.asset.data);
   });
 });
