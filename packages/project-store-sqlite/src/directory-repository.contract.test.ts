@@ -138,24 +138,42 @@ describe("sqlite workspace directory repository — reads", () => {
     );
 
     repo.withTransaction(tx => {
-      const activeMemberships = tx.listMembershipsForWorkspace(
+      const activeWorkspaceMemberships = tx.listMembershipsForWorkspace(
         source.workspaceId,
       );
-      const allMemberships = tx.listMembershipsForAccount(source.accountId, {
-        includeEnded: true,
-      });
+      const allWorkspaceMemberships = tx.listMembershipsForWorkspace(
+        source.workspaceId,
+        {includeEnded: true},
+      );
+      const activeAccountMemberships = tx.listMembershipsForAccount(
+        source.accountId,
+      );
+      const allAccountMemberships = tx.listMembershipsForAccount(
+        source.accountId,
+        {includeEnded: true},
+      );
       const activeRoles = tx.listWorkspaceRoleAssignments(source.workspaceId);
       const allRoles = tx.listWorkspaceRoleAssignments(source.workspaceId, {
         includeEnded: true,
       });
 
       expect(
-        activeMemberships.some(
+        activeWorkspaceMemberships.some(
           membership => membership.id === "membership-ended-contract",
         ),
       ).toBe(false);
       expect(
-        allMemberships.some(
+        allWorkspaceMemberships.some(
+          membership => membership.id === "membership-ended-contract",
+        ),
+      ).toBe(true);
+      expect(
+        activeAccountMemberships.some(
+          membership => membership.id === "membership-ended-contract",
+        ),
+      ).toBe(false);
+      expect(
+        allAccountMemberships.some(
           membership => membership.id === "membership-ended-contract",
         ),
       ).toBe(true);
