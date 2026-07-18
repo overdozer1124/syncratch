@@ -1,8 +1,8 @@
 # R1 Directory Last-Owner Protection Design
 
-**Date:** 2026-07-18  
-**Status:** Draft design (awaiting user review)  
-**Predecessor:** [R1 Workspace Directory Repositories](2026-07-18-r1-workspace-directory-repositories-design.md)  
+**Date:** 2026-07-18
+**Status:** Approved design
+**Predecessor:** [R1 Workspace Directory Repositories](2026-07-18-r1-workspace-directory-repositories-design.md)
 **Roadmap:** [R1 Workspace Roster Access Plan, Phase 3 Task 4](../plans/2026-07-16-r1-workspace-roster-access-plan.md) (last-owner refuse slice)
 
 ## 1. Goal

@@ -32,36 +32,36 @@
 ## 進捗の計算方法
 
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
-- **前スライス（Workspace Directory Repositories・薄い Task 5）:** 実装完了（identity/membership thin slice）。
-- **現行スライス（Directory constraint error mapping follow-up）:** Task 1 実装完了（`c67b2ac`）。Codex / Cursor内レビュー待ち。
+- **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
+- **現行スライス（Directory last-owner protection）:** Workspace membership owner 拒否のみ実装完了（`f0dafe0`）。Codex / Cursor内レビュー待ち。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
-- 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。claim / attendance / last-owner / audit は未実装。
+- 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。claim / attendance / System Owner / transfer / audit は未実装。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 11:17:00 JST |
+| 最終更新 | 2026-07-18 14:04:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Directory constraint error mapping follow-up |
-| 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了 / constraint mapping follow-up 実装完了（レビュー待ち） |
+| 現在のTask | Directory last-owner protection（Workspace membership owner refuse） |
+| 全体進捗 | Backfill **100%** / Directory thin slices 実装完了 / last-owner refuse 実装完了（レビュー待ち） |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 実装SHA | `c67b2ac`（fix(store): map directory SQLite constraints by error code） |
-| 再提出SHA | implementation tip: `c67b2ac` |
-| 作業ブランチ | `feat/r1-directory-constraint-map` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-constraint-map` |
-| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-constraint-error-mapping-design.md`（Approved）; predecessor §8 整合 |
-| 計画 | docs/superpowers/plans/2026-07-18-r1-workspace-directory-repositories-plan.md |
-| 前スライス | Workspace Directory Repositories 薄いスライス = 実装完了 |
-| 次Task | Codex / Cursor内レビュー（constraint error mapping follow-up） |
+| 実装SHA | `f0dafe0`（feat(store): protect last workspace owner membership） |
+| 再提出SHA | implementation tip: `f0dafe0` |
+| 作業ブランチ | `feat/r1-directory-last-owner` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-last-owner` |
+| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-last-owner-protection-design.md`（Approved） |
+| 計画 | Cursor plan `last-owner-protection` / design §7 files |
+| 前スライス | Directory constraint error mapping follow-up = 実装完了（main） |
+| 次Task | Codex / Cursor内レビュー（last-owner protection） |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
-| 未解決（スライス外） | claim / attendance / last-owner / audit |
+| 未解決（スライス外） | claim / attendance / System Owner last-owner / transfer / audit |
 
 ## Cursorが次に行う作業
 
-Directory constraint error mapping follow-up の Codex / Cursor内レビュー待ち。
+Directory last-owner protection の Codex / Cursor内レビュー待ち。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2873,6 +2873,25 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 - follow-up design を Approved design に更新
 未解決（スライス外）:
 - claim / attendance / last-owner / audit
+次の担当: Codex / Cursor内レビュー
+```
+
+### 2026-07-18 14:04:00 JST — Cursor（Directory last-owner protection）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Directory last-owner protection（Workspace membership owner refuse）
+実装SHA: f0dafe0（feat(store): protect last workspace owner membership）
+再提出SHA: implementation tip: f0dafe0（docs commit ≠ implementation SHA）
+ドメイン: 6041612 feat(directory): add last workspace owner guard
+検証:
+- workspace-directory: 65 tests PASS + typecheck
+- directory-repository.contract.test.ts: 21 tests PASS + typecheck
+設計:
+- last-owner design → Approved design
+- predecessor §8 に DIRECTORY_LAST_OWNER 追記
+未解決（スライス外）:
+- claim / attendance / System Owner last-owner / transfer / audit
 次の担当: Codex / Cursor内レビュー
 ```
 

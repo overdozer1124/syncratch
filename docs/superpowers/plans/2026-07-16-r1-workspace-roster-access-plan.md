@@ -166,6 +166,10 @@ Copy the acyclic dependency direction used by `session-service` → repository p
 **Thin slice (2026-07-18):** identity/membership `directoryRepo` port + SQLite
 adapter + CAS writes landed; claim/attendance/last-owner/audit remain open.
 
+**Thin slice (2026-07-18 last-owner):** Workspace membership `role='owner'` refuse
+via `DIRECTORY_LAST_OWNER` on `endMembership` landed. System Owner protection,
+atomic transfer, claim, attendance uniqueness, and audit remain open.
+
 ### Task 5: Directory service
 
 - [ ] Implement school/year/grade/class lifecycle.

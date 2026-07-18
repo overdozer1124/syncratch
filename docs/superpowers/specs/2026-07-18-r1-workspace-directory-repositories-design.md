@@ -181,6 +181,7 @@ Typed errors thrown from the adapter (and allowed from port documentation):
 | `DIRECTORY_REVISION_CONFLICT` | CAS mismatch |
 | `DIRECTORY_CONFLICT` | Unique / primary-key constraint on active link, membership, role grant, or equivalent unique write (`SQLITE_CONSTRAINT_UNIQUE` / `SQLITE_CONSTRAINT_PRIMARYKEY`) |
 | `DIRECTORY_INVALID` | Domain validation failure, corrupt/missing revision row, **or** other SQLite constraints (CHECK / NOT NULL / …) |
+| `DIRECTORY_LAST_OWNER` | `endMembership` would leave the workspace with zero active `role='owner'` memberships (Workspace Owner refuse; System Owner / transfer deferred) |
 
 BOLA / existence hiding for **reads**: getters return `null`; lists omit
 foreign-tenant rows. Writers that target another tenant’s membership/role IDs
