@@ -1,6 +1,4 @@
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import {scratchOpcodeArtifact} from "./scratch-opcodes-v14.1.0.js";
 
 export interface OpcodeArtifact {
   vendorTag: string;
@@ -9,18 +7,13 @@ export interface OpcodeArtifact {
   opcodes: string[];
 }
 
-const artifactPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../sb3-tools/vendor/scratch-opcodes-v14.1.0.json",
-);
-
-let cached: OpcodeArtifact | null = null;
-
 export function loadOpcodeArtifact(): OpcodeArtifact {
-  if (!cached) {
-    cached = JSON.parse(readFileSync(artifactPath, "utf8")) as OpcodeArtifact;
-  }
-  return cached;
+  return {
+    vendorTag: scratchOpcodeArtifact.vendorTag,
+    vendorPin: scratchOpcodeArtifact.vendorPin,
+    allowedExtensionIds: [...scratchOpcodeArtifact.allowedExtensionIds],
+    opcodes: [...scratchOpcodeArtifact.opcodes],
+  };
 }
 
 export function allowedOpcodeSet(): ReadonlySet<string> {

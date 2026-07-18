@@ -21,7 +21,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/gate0-auth-smoke:
     dependencies:
@@ -34,7 +34,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/gate0-collab-demo:
     dependencies:
@@ -65,7 +65,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/gate0-collab-server:
     dependencies:
@@ -93,7 +93,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/r1-persist-demo:
     dependencies:
@@ -130,7 +130,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/r1-persist-server:
     dependencies:
@@ -191,7 +191,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   apps/r1-scratch-host:
     dependencies:
@@ -243,7 +243,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/auth-context:
     devDependencies:
@@ -252,7 +252,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/collaboration-domain:
     dependencies:
@@ -268,7 +268,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/google-identity:
     dependencies:
@@ -281,7 +281,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-assets-fs:
     devDependencies:
@@ -290,7 +290,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-autosave:
     dependencies:
@@ -303,20 +303,45 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-envelope:
     dependencies:
       '@blocksync/project-schema':
         specifier: workspace:*
         version: link:../project-schema
+      '@noble/hashes':
+        specifier: 2.2.0
+        version: 2.2.0
     devDependencies:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
+  packages/project-local-core:
+    dependencies:
+      '@blocksync/project-schema':
+        specifier: workspace:*
+        version: link:../project-schema
+    devDependencies:
+      '@blocksync/project-envelope':
+        specifier: workspace:*
+        version: link:../project-envelope
+      '@blocksync/sb3-tools':
+        specifier: workspace:*
+        version: link:../sb3-tools
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-schema:
     devDependencies:
@@ -325,7 +350,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-service:
     dependencies:
@@ -344,7 +369,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-snapshots-fs:
     dependencies:
@@ -357,7 +382,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/project-store-sqlite:
     dependencies:
@@ -397,7 +422,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/sb3-tools:
     dependencies:
@@ -407,6 +432,9 @@ importers:
       '@blocksync/project-schema':
         specifier: workspace:*
         version: link:../project-schema
+      '@noble/hashes':
+        specifier: 2.2.0
+        version: 2.2.0
       '@xmldom/xmldom':
         specifier: 0.8.10
         version: 0.8.10
@@ -428,7 +456,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/scratch-adapter:
     devDependencies:
@@ -437,7 +465,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/session-service:
     dependencies:
@@ -453,7 +481,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/workspace-directory:
     devDependencies:
@@ -462,7 +490,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^3.2.4
-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
 packages:
 
@@ -696,6 +724,10 @@ packages:
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+
+  '@noble/hashes@2.2.0':
+    resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
+    engines: {node: '>= 20.19.0'}
 
   '@playwright/test@1.61.1':
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
@@ -1596,7 +1628,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@exodus/bytes@1.15.1':
+  '@exodus/bytes@1.15.1(@noble/hashes@2.2.0)':
+    optionalDependencies:
+      '@noble/hashes': 2.2.0
     optional: true
 
   '@hono/node-server@1.19.14(hono@4.12.30)':
@@ -1604,6 +1638,8 @@ snapshots:
       hono: 4.12.30
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
+
+  '@noble/hashes@2.2.0': {}
 
   '@playwright/test@1.61.1':
     dependencies:
@@ -1818,10 +1854,10 @@ snapshots:
       lru-cache: 11.5.2
     optional: true
 
-  data-urls@7.0.0:
+  data-urls@7.0.0(@noble/hashes@2.2.0):
     dependencies:
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1
+      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
     transitivePeerDependencies:
       - '@noble/hashes'
     optional: true
@@ -1909,9 +1945,9 @@ snapshots:
 
   hono@4.12.30: {}
 
-  html-encoding-sniffer@6.0.0:
+  html-encoding-sniffer@6.0.0(@noble/hashes@2.2.0):
     dependencies:
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
     transitivePeerDependencies:
       - '@noble/hashes'
     optional: true
@@ -1951,16 +1987,16 @@ snapshots:
 
   js-tokens@9.0.1: {}
 
-  jsdom@28.1.0:
+  jsdom@28.1.0(@noble/hashes@2.2.0):
     dependencies:
       '@acemir/cssom': 0.9.31
       '@asamuzakjp/dom-selector': 6.8.1
       '@bramus/specificity': 2.4.2
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
       cssstyle: 6.2.0
-      data-urls: 7.0.0
+      data-urls: 7.0.0(@noble/hashes@2.2.0)
       decimal.js: 10.6.0
-      html-encoding-sniffer: 6.0.0
+      html-encoding-sniffer: 6.0.0(@noble/hashes@2.2.0)
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       is-potential-custom-element-name: 1.0.1
@@ -1972,7 +2008,7 @@ snapshots:
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
-      whatwg-url: 16.0.1
+      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
@@ -2279,7 +2315,7 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.23.1
 
-  vitest@3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1):
+  vitest@3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/expect': 3.2.7
@@ -2306,7 +2342,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.13.3
-      jsdom: 28.1.0
+      jsdom: 28.1.0(@noble/hashes@2.2.0)
     transitivePeerDependencies:
       - jiti
       - less
@@ -2332,9 +2368,9 @@ snapshots:
   whatwg-mimetype@5.0.0:
     optional: true
 
-  whatwg-url@16.0.1:
+  whatwg-url@16.0.1(@noble/hashes@2.2.0):
     dependencies:
-      '@exodus/bytes': 1.15.1
+      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
       tr46: 6.0.0
       webidl-conversions: 8.0.1
     transitivePeerDependencies:

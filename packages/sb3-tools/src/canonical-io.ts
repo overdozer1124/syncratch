@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import {sha256} from "@noble/hashes/sha2.js";
+import {bytesToHex} from "@noble/hashes/utils.js";
 import type {
   BlockMapEntry,
   CostumeRef,
@@ -10,6 +11,8 @@ import type {
 import {
   isPrimitiveBlockEntry,
 } from "@blocksync/project-schema";
+
+const utf8 = new TextEncoder();
 
 export class CanonicalImportError extends Error {
   constructor(
@@ -106,14 +109,11 @@ function canonicalMd5ext(
 }
 
 export function sha256Hex(bytes: Uint8Array): string {
-  return createHash("sha256").update(bytes).digest("hex");
+  return bytesToHex(sha256(bytes));
 }
 
 export function stableTargetId(name: string, isStage: boolean): string {
-  return createHash("sha256")
-    .update(`${isStage}:${name}`)
-    .digest("hex")
-    .slice(0, 16);
+  return sha256Hex(utf8.encode(`${isStage}:${name}`)).slice(0, 16);
 }
 
 function assertPlainObject(

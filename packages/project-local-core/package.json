@@ -1,9 +1,9 @@
 {
-  "name": "@blocksync/project-envelope",
+  "name": "@blocksync/project-local-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "EXPERIMENTAL R1 blocksync.project/v1 envelope and document hashes. No production API stability.",
+  "description": "Browser-safe local project record contracts.",
   "exports": {
     ".": "./src/index.ts"
   },
@@ -13,10 +13,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@blocksync/project-schema": "workspace:*",
-    "@noble/hashes": "2.2.0"
+    "@blocksync/project-schema": "workspace:*"
   },
   "devDependencies": {
+    "@blocksync/project-envelope": "workspace:*",
+    "@blocksync/sb3-tools": "workspace:*",
+    "esbuild": "0.28.1",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }

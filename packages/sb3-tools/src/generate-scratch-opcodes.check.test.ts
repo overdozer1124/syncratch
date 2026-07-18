@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {loadOpcodeArtifact} from "@blocksync/project-schema";
 import {
   artifactsEqual,
   generate,
@@ -18,6 +19,10 @@ describe("generate-scratch-opcodes --check contract", () => {
     const generated = generate();
     const existing = JSON.parse(readFileSync(artifactPath, "utf8"));
     expect(artifactsEqual(generated, existing)).toBe(true);
+  });
+
+  it("browser-safe project-schema artifact matches the generated contract", () => {
+    expect(artifactsEqual(generate(), loadOpcodeArtifact())).toBe(true);
   });
 
   it("detects vendorPin tampering", () => {

@@ -2,7 +2,8 @@
  * @experimental R1 blocksync.project/v1 envelope helpers.
  */
 
-import { createHash } from "node:crypto";
+import {sha256} from "@noble/hashes/sha2.js";
+import {bytesToHex} from "@noble/hashes/utils.js";
 import {
   emptyProject,
   isScratchBlock,
@@ -36,6 +37,12 @@ export interface ProjectEnvelopeV1 {
 }
 
 export type RequestOp = "save_document" | "restore";
+
+const utf8 = new TextEncoder();
+
+function sha256Utf8(value: string): string {
+  return bytesToHex(sha256(utf8.encode(value)));
+}
 
 function sortKeysDeep(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -190,7 +197,7 @@ export function canonicalizeDocument(doc: ProjectDocument): string {
 }
 
 export function contentHash(doc: ProjectDocument): string {
-  return createHash("sha256").update(canonicalizeDocument(doc)).digest("hex");
+  return sha256Utf8(canonicalizeDocument(doc));
 }
 
 export function requestHash(args: {
@@ -210,7 +217,7 @@ export function requestHash(args: {
     }
     material.snapshotId = args.snapshotId;
   }
-  return createHash("sha256").update(JSON.stringify(material)).digest("hex");
+  return sha256Utf8(JSON.stringify(material));
 }
 
 export function emptyDocument(): ProjectDocument {

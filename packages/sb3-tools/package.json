@@ -5,7 +5,9 @@
   "type": "module",
   "description": "EXPERIMENTAL Gate 0 SB3 load/round-trip tools. No R1 API stability.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts",
+    "./node": "./src/node.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -14,6 +16,7 @@
   "dependencies": {
     "@blocksync/project-assets-fs": "workspace:*",
     "@blocksync/project-schema": "workspace:*",
+    "@noble/hashes": "2.2.0",
     "@xmldom/xmldom": "0.8.10",
     "css-tree": "3.2.1",
     "jszip": "^3.10.1"
