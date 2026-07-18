@@ -8,6 +8,7 @@ import {
   validateUserAccount,
   validateWorkspace,
   validateWorkspaceMembership,
+  type Enrollment,
   type Person,
   type PersonAccountLink,
   type RoleAssignment,
@@ -310,6 +311,9 @@ export function createSqliteWorkspaceDirectoryRepository(
         | undefined;
       return row ?? null;
     },
+    getEnrollment(_enrollmentId: string): Enrollment | null {
+      return null;
+    },
     createWorkspace({workspace, initialRevision}) {
       const validWorkspace = validated(workspace, validateWorkspace);
       const revision = initialRevision ?? 0;
@@ -445,6 +449,12 @@ export function createSqliteWorkspaceDirectoryRepository(
       );
       runMappedConstraint(() => endMembershipStmt.run({id: membershipId, endedAt}));
       return {revision, membership: updated};
+    },
+    createEnrollment(_input) {
+      throw new DirectoryError(
+        "DIRECTORY_INVALID",
+        "enrollment write not implemented",
+      );
     },
     grantWorkspaceRole({expectedRevision, assignment}) {
       const validAssignment = validated(
