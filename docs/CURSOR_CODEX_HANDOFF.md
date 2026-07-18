@@ -31,35 +31,34 @@
 
 ## 進捗の計算方法
 
-- **前スライス（R1 Scratch SB3 / Migration Fixtures / Domain Contracts / Target Schema）:** 完了済みとして凍結（各100%、Target Schema main `57b1b94`）。
-- **現行スライス（Legacy Organization/User Backfill）:** `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` の Task 1〜7 を全体として計算する。
-- Cursor内正式GO（ユーザー local merge「1」）または Codex 正式承認済み Task のみ完了として数える。
-- `全体進捗率 = 承認済みTask数 / 7 × 100`（整数へ四捨五入）。
-- 正式GO済みのため **100%**（Task 1〜7 すべて承認）。
+- **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
+- **現行スライス（Workspace Directory Repositories・薄い Task 4）:** 設計承認後に Task 数を計画で確定する。
+- Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
+- 設計レビュー中のため実装進捗は **0%**。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 07:35:00 JST |
+| 最終更新 | 2026-07-18 09:10:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
+| ワークフロー状態 | `SPEC_REVIEW` |
 | 現在の担当 | User |
-| 現在のTask | Legacy Organization/User Backfill = **完了（main統合）** |
-| 全体進捗 | Migration Ledger **100%** / Domain Contracts **100%** / Target Schema **100%** / Backfill **100%** |
-| 承認基準SHA | `d2b5d990053ff792b9b1c2a55a9fe5b1d572d185`（実装 tip・Cursor内正式GO） |
-| 再提出SHA | （なし・スライス完了） |
-| 作業ブランチ | `main`（`feat/r1-legacy-backfill` を local merge） |
-| 作業worktree | `C:\cursor\NewScratchEditor`（feature worktree は削除予定） |
-| 設計 | `docs/superpowers/specs/2026-07-18-r1-legacy-organization-user-backfill-design.md` |
-| 計画 | `docs/superpowers/plans/2026-07-18-r1-legacy-organization-user-backfill-plan.md` |
-| 前スライス | Workspace Directory Target Schema = 100%（Cursor内正式承認・main統合） |
-| 次Task | 次機能スライスはユーザー指示待ち（school/roster/import/audit・claim・repos・API/UI は未着手） |
+| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）設計レビュー |
+| 全体進捗 | Backfill **100%** / Directory Repositories 設計レビュー中 **0%** |
+| 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
+| 再提出SHA | be3b5b6da7fe3b080442c49ddfce5f480096287b |
+| 作業ブランチ | `main` |
+| 作業worktree | `C:\cursor\NewScratchEditor` |
+| 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
+| 計画 | （設計承認後に作成） |
+| 前スライス | Legacy Organization/User Backfill = 100%（Cursor内正式GO・main統合） |
+| 次Task | ユーザーが設計書をレビュー → 承認後に TDD 実装計画 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-なし（Backfill スライス完了）。次スライスの指示を待つ。
+ユーザーの written spec レビュー待ち。承認前に実装計画・実装へ進まない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2780,3 +2779,19 @@ spec承認: ユーザー承認済み
 
 - ユーザーが finishing option 1（main へ local merge）を選択。
 - Backfill Task 1〜7 を正式承認 **100%** とし、main へ統合する。
+
+### 2026-07-18 09:10:00 JST — Cursor（Directory Repositories 設計ドラフト）
+
+```text
+最終更新: 2026-07-18 09:10:00 JST
+更新者: Cursor
+状態: SPEC_REVIEW
+対象: Workspace Directory Repositories（薄い Phase 3 Task 4）
+設計: docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md
+合意:
+- 薄いスライス / identity+membership / read+最小write / CASあり・auditなし
+- 単一 WorkspaceDirectoryRepository（AuthRepository 同型）
+次の担当: User（written spec レビュー）
+```
+
+- 設計書を作成。実装・計画には未着手。
