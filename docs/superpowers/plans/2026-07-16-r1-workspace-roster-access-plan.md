@@ -154,13 +154,17 @@ generation, claim tables, or repository cutover into registry wiring.
 
 Copy the acyclic dependency direction used by `session-service` → repository port → SQLite adapter.
 
-- [ ] Contract tests for CRUD, historical rows and audit writes.
-- [ ] Enforce account↔person uniqueness and explicit claim state.
+- [x] Contract tests for the identity/membership CRUD subset and historical rows; audit writes are deferred.
+- [x] Enforce account↔person uniqueness.
+- [ ] Implement explicit claim state.
 - [ ] Enforce overlapping active attendance-number uniqueness transactionally.
 - [ ] Refuse removal of the last System Owner or Workspace Owner.
-- [ ] Add cross-workspace BOLA and rollback tests.
-- [ ] Return repositories from the existing `openSqliteStore` result.
+- [x] Add cross-workspace BOLA and rollback tests.
+- [x] Return repositories from the existing `openSqliteStore` result.
 - [ ] Commit: `feat(store): workspace directory repositories`.
+
+**Thin slice (2026-07-18):** identity/membership `directoryRepo` port + SQLite
+adapter + CAS writes landed; claim/attendance/last-owner/audit remain open.
 
 ### Task 5: Directory service
 

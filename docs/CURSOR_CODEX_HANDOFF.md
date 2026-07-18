@@ -40,25 +40,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 09:10:00 JST |
+| 最終更新 | 2026-07-18 10:25:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `SPEC_REVIEW` |
-| 現在の担当 | User |
-| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）TDD実装計画レビュー |
-| 全体進捗 | Backfill **100%** / Directory Repositories 設計レビュー中 **0%** |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
+| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）実装完了 |
+| 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了（レビュー待ち） |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
 | 再提出SHA | be3b5b6da7fe3b080442c49ddfce5f480096287b |
-| 作業ブランチ | `main` |
-| 作業worktree | `C:\cursor\NewScratchEditor` |
+| 作業ブランチ | `feat/r1-directory-repos` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-repos` |
 | 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
 | 計画 | docs/superpowers/plans/2026-07-18-r1-workspace-directory-repositories-plan.md |
 | 前スライス | Legacy Organization/User Backfill = 100%（Cursor内正式GO・main統合） |
-| 次Task | ユーザーが実装計画をレビュー → 承認後に実行方式選択 |
+| 次Task | Codexレビュー（薄い Directory Repositories 実装） |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの TDD 実装計画レビュー待ち。承認前に実装へ進まない。
+薄い Directory Repositories 実装のCodexレビュー待ち。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2807,4 +2807,24 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 `
 
 - 承認済み設計を5 TaskのTDD実装計画へ展開。
+
+### 2026-07-18 10:25:00 JST — Cursor（Directory Repositories 薄い実装完了）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Workspace Directory Repositories（薄い Phase 3 Task 4）
+基準SHA: 52a220f
+実装:
+- openSqliteStore が共有SQLite接続上の directoryRepo を公開
+- store経由の create/get スモークテストを追加
+- target-schemaのproduction SQL guardは意図的な directory-repository adapter を除外し、他consumerへの禁止を維持
+進捗:
+- identity/membership CRUD subset、history、BOLA、rollback、store return を完了として記録
+- claim、attendance、last-owner、audit は未実装のまま
+最終ゲート:
+- workspace-directory typecheck/test: PASS（62 tests）
+- project-store-sqlite typecheck/test: PASS
+- r1:persist:test: PASS
+次の担当: Codex
+```
 

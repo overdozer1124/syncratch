@@ -8,6 +8,7 @@ import {copyLegacyR1Fixture} from "./fixtures/legacy-r1-manifest.js";
 import {configureSqliteConnection} from "./migrations/configure.js";
 import {runSchemaMigrations} from "./migrations/index.js";
 import {createSqliteWorkspaceDirectoryRepository} from "./directory-repository.js";
+import {openSqliteStore} from "./store.js";
 
 function openMigratedDb(dbPath: string): Database.Database {
   const db = new Database(dbPath);
@@ -721,5 +722,32 @@ describe("sqlite workspace directory repository — writes", () => {
     expect(
       repo.withTransaction(tx => tx.getDirectoryRevision("fresh-workspace")),
     ).toEqual({revision: 0, updatedAt: "2026-07-18T00:00:00.000Z"});
+  });
+});
+
+describe("openSqliteStore directory repository", () => {
+  it("exposes directoryRepo on the shared connection", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dir-store-"));
+    const store = openSqliteStore({dbPath: join(dir, "db.sqlite")});
+    try {
+      const created = store.directoryRepo.withTransaction(tx =>
+        tx.createWorkspace({
+          workspace: {
+            id: "ws-smoke",
+            kind: "personal",
+            name: "Smoke",
+            createdAt: "2026-07-18T00:00:00.000Z",
+            updatedAt: "2026-07-18T00:00:00.000Z",
+          } as never,
+        }),
+      );
+      expect(created.revision).toBe(0);
+      expect(
+        store.directoryRepo.withTransaction(tx => tx.getWorkspace("ws-smoke"))
+          ?.name,
+      ).toBe("Smoke");
+    } finally {
+      store.close();
+    }
   });
 });

@@ -1,6 +1,6 @@
 import {mkdtempSync, readFileSync, readdirSync, rmSync, statSync} from "node:fs";
 import {tmpdir} from "node:os";
-import {dirname, extname, join} from "node:path";
+import {basename, dirname, extname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import Database from "better-sqlite3";
 import {afterEach, describe, expect, it} from "vitest";
@@ -310,18 +310,20 @@ describe("production target schema", () => {
     },
   );
 
-  it("keeps production consumers unread from target tables before repository cutover", () => {
+  it("keeps production consumers other than the directory adapter unread from target tables", () => {
     const forbiddenPattern = new RegExp(
       `\\b(${targetTableNames.join("|")})\\b`,
     );
-    const matches = productionSourceFiles(sourceRoot).flatMap(path => {
-      const lines = readFileSync(path, "utf8").split(/\r?\n/);
-      return lines.flatMap((line, index) =>
-        forbiddenPattern.test(line)
-          ? [`${path}:${index + 1}:${line.trim()}`]
-          : [],
-      );
-    });
+    const matches = productionSourceFiles(sourceRoot)
+      .filter(path => basename(path) !== "directory-repository.ts")
+      .flatMap(path => {
+        const lines = readFileSync(path, "utf8").split(/\r?\n/);
+        return lines.flatMap((line, index) =>
+          forbiddenPattern.test(line)
+            ? [`${path}:${index + 1}:${line.trim()}`]
+            : [],
+        );
+      });
 
     expect(matches).toEqual([]);
   });
