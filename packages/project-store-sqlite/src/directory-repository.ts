@@ -127,11 +127,14 @@ export function createSqliteWorkspaceDirectoryRepository(
     FROM person_account_links WHERE id = ?
   `);
   const getEnrollment = db.prepare(`
-    SELECT id, person_id AS personId, class_group_id AS classGroupId,
-           status, start_date AS startDate, end_date AS endDate,
-           attendance_number AS attendanceNumber
-    FROM enrollments
-    WHERE id = ?
+    SELECT e.id, e.person_id AS personId, e.class_group_id AS classGroupId,
+           e.status, e.start_date AS startDate, e.end_date AS endDate,
+           e.attendance_number AS attendanceNumber
+    FROM enrollments e
+    INNER JOIN class_groups cg ON cg.id = e.class_group_id
+    INNER JOIN academic_years ay ON ay.id = cg.academic_year_id
+    INNER JOIN schools s ON s.id = ay.school_id
+    WHERE e.id = ? AND s.workspace_id = ?
   `);
   const getClassWorkspace = db.prepare(`
     SELECT s.workspace_id AS workspaceId
@@ -152,7 +155,7 @@ export function createSqliteWorkspaceDirectoryRepository(
   const bumpRevisionStmt = db.prepare(`
     UPDATE workspace_directory_revisions
     SET revision = revision + 1, updated_at = @updatedAt
-    WHERE workspace_id = @workspaceId
+    WHERE workspace_id = @workspaceId AND revision = @expectedRevision
   `);
   const insertPersonStmt = db.prepare(`
     INSERT INTO people(id, display_name, status, created_at, updated_at)
@@ -244,6 +247,14 @@ export function createSqliteWorkspaceDirectoryRepository(
     expectedRevision: number,
     updatedAt: string,
   ): number {
+    const result = bumpRevisionStmt.run({
+      workspaceId,
+      updatedAt,
+      expectedRevision,
+    });
+    if (result.changes === 1) {
+      return expectedRevision + 1;
+    }
     const row = getDirectoryRevision.get(workspaceId) as
       | {revision: number}
       | undefined;
@@ -253,14 +264,10 @@ export function createSqliteWorkspaceDirectoryRepository(
         `missing directory revision for workspace ${workspaceId}`,
       );
     }
-    if (row.revision !== expectedRevision) {
-      throw new DirectoryError(
-        "DIRECTORY_REVISION_CONFLICT",
-        `expected revision ${expectedRevision}, found ${row.revision}`,
-      );
-    }
-    bumpRevisionStmt.run({workspaceId, updatedAt});
-    return expectedRevision + 1;
+    throw new DirectoryError(
+      "DIRECTORY_REVISION_CONFLICT",
+      `expected revision ${expectedRevision}, found ${row.revision}`,
+    );
   }
 
   const tx: WorkspaceDirectoryRepositoryTx = {
@@ -336,8 +343,10 @@ export function createSqliteWorkspaceDirectoryRepository(
         | undefined;
       return row ?? null;
     },
-    getEnrollment(enrollmentId: string): Enrollment | null {
-      const row = getEnrollment.get(enrollmentId) as Enrollment | undefined;
+    getEnrollment(workspaceId, enrollmentId) {
+      const row = getEnrollment.get(enrollmentId, workspaceId) as
+        | Enrollment
+        | undefined;
       return row === undefined ? null : validated(row, validateEnrollment);
     },
     createWorkspace({workspace, initialRevision}) {
@@ -560,7 +569,7 @@ export function createSqliteWorkspaceDirectoryRepository(
 
   return {
     withTransaction(fn) {
-      return db.transaction(() => fn(tx))();
+      return db.transaction(() => fn(tx)).immediate();
     },
   };
 }

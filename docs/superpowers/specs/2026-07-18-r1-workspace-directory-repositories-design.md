@@ -17,7 +17,7 @@ v5-backfilled rows, and perform **minimal writes** under
 Task 4 surface (claims, full attendance lifecycle, last-owner protection).
 
 The attendance uniqueness follow-on adds a deliberately narrow enrollment
-surface: `getEnrollment(enrollmentId)` and CAS-gated
+surface: `getEnrollment(workspaceId, enrollmentId)` and CAS-gated
 `createEnrollment({ workspaceId, expectedRevision, updatedAt, enrollment })`.
 For active rows with non-null attendance numbers, SQLite enforces uniqueness
 through the existing `ux_enroll_active_attendance` partial UNIQUE index.
@@ -195,6 +195,21 @@ Typed errors thrown from the adapter (and allowed from port documentation):
 BOLA / existence hiding for **reads**: getters return `null`; lists omit
 foreign-tenant rows. Writers that target another tenant’s membership/role IDs
 return `DIRECTORY_NOT_FOUND` (do not reveal that the ID exists elsewhere).
+
+**Workspace-scoped vs global identity reads:**
+- Workspace-scoped: `getWorkspace`, membership/role lists, `getDirectoryRevision`,
+  and `getEnrollment(workspaceId, enrollmentId)` (enrollment ownership is
+  proven via `class_groups → academic_years → schools.workspace_id`).
+- Global identity lookups (schema has no `people.workspace_id`): `getPerson`,
+  `getUserAccount`, and `getActivePersonAccountLinkBy*`. These are authorized
+  internal lookups; tenant isolation for person/account identity is a
+  service/authorization concern, not a repository BOLA filter on those getters.
+
+**CAS concurrency:** directory `withTransaction` begins as `BEGIN IMMEDIATE`,
+and revision bumps use a single conditional
+`UPDATE … WHERE workspace_id = ? AND revision = ?`. Concurrent writers that
+share the same `expectedRevision` serialize so exactly one succeeds and losers
+receive `DIRECTORY_REVISION_CONFLICT` with no DML from the losing attempt.
 
 ## 9. Store wiring
 

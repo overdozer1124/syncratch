@@ -41,7 +41,7 @@ export interface WorkspaceDirectoryRepositoryTx {
     options?: {includeEnded?: boolean},
   ): RoleAssignment[]; // only scope.kind === "workspace"
   getDirectoryRevision(workspaceId: string): DirectoryRevisionState | null;
-  getEnrollment(enrollmentId: string): Enrollment | null;
+  getEnrollment(workspaceId: string, enrollmentId: string): Enrollment | null;
 
   createWorkspace(input: {
     workspace: Workspace;

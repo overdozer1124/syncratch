@@ -61,7 +61,7 @@ describe("directory repository port", () => {
       }),
     };
 
-    expect(_typeCheck.getEnrollment("enrollment-1")).toBeNull();
+    expect(_typeCheck.getEnrollment("workspace-1", "enrollment-1")).toBeNull();
     expect(
       _typeCheck.createEnrollment({
         workspaceId: "workspace-1",

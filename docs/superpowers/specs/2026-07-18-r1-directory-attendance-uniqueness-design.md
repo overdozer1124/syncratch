@@ -34,7 +34,7 @@ Duplicate active numbers in the same class map to `DIRECTORY_CONFLICT`.
 Extend `WorkspaceDirectoryRepositoryTx`:
 
 ```ts
-getEnrollment(enrollmentId: string): Enrollment | null;
+getEnrollment(workspaceId: string, enrollmentId: string): Enrollment | null;
 
 createEnrollment(input: {
   workspaceId: string;
@@ -45,6 +45,8 @@ createEnrollment(input: {
 ```
 
 Import `Enrollment` / `validateEnrollment` from existing models.
+`getEnrollment` is workspace-scoped: a foreign-tenant `workspaceId`
+returns `null` even when the enrollment id exists elsewhere.
 
 ## 4. Adapter algorithm
 
@@ -69,7 +71,10 @@ Inside the existing sync `withTransaction` / shared `db`:
    - other `SQLITE_CONSTRAINT*` → `DIRECTORY_INVALID`
 5. Return `{ revision, enrollment: validated }`
 
-`getEnrollment` maps a row through `validateEnrollment` (or `null`).
+`getEnrollment(workspaceId, enrollmentId)` maps a row through
+`validateEnrollment` (or `null`), joining ownership through
+`class_groups → academic_years → schools` so a foreign `workspaceId`
+hides the row.
 
 Do not call `findAttendanceNumberConflicts` in the adapter for this slice.
 
@@ -80,13 +85,16 @@ workspace (kind `school`) + school + academic year + grade + class + people
 + `workspace_directory_revisions` (same shape as
 `0003-r1-school-roster.test.ts` helpers):
 
-1. Successful create → revision +1; `getEnrollment` returns the row
+1. Successful create → revision +1; `getEnrollment(workspaceId, id)` returns the row
 2. Second active enrollment same class + same non-null attendance →
    `DIRECTORY_CONFLICT`; revision unchanged
 3. Two actives with `attendanceNumber: null` succeed
 4. Class belonging to another workspace → `DIRECTORY_NOT_FOUND`; revision
    unchanged
 5. Stale `expectedRevision` → `DIRECTORY_REVISION_CONFLICT`
+6. `getEnrollment(foreignWorkspaceId, id)` → `null` while owner workspace still reads the row
+7. Two connections racing the same `expectedRevision` → one success, loser
+   `DIRECTORY_REVISION_CONFLICT`, no loser DML
 
 ### Gates
 

@@ -1,6 +1,8 @@
+import {spawn} from "node:child_process";
 import {mkdtempSync} from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {afterEach, describe, expect, it} from "vitest";
 import Database from "better-sqlite3";
 import {
@@ -13,6 +15,37 @@ import {runSchemaMigrations} from "./migrations/index.js";
 import {createSqliteWorkspaceDirectoryRepository} from "./directory-repository.js";
 import {openSqliteStore} from "./store.js";
 
+function spawnDirectoryCasRace(
+  dbPath: string,
+  personId: string,
+): Promise<{code: number | null; stdout: string; stderr: string}> {
+  const childPath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "directory-cas-race-child.ts",
+  );
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      ["--import", "tsx", childPath, dbPath, personId],
+      {stdio: ["ignore", "pipe", "pipe"]},
+    );
+    let stdout = "";
+    let stderr = "";
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", chunk => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", code => {
+      resolve({code, stdout, stderr});
+    });
+  });
+}
+
 function openMigratedDb(dbPath: string): Database.Database {
   const db = new Database(dbPath);
   configureSqliteConnection(db);
@@ -20,7 +53,7 @@ function openMigratedDb(dbPath: string): Database.Database {
   return db;
 }
 
-describe("sqlite workspace directory repository — reads", () => {
+describe("sqlite workspace directory repository  Ereads", () => {
   const closers: Array<() => void> = [];
 
   afterEach(() => {
@@ -196,7 +229,7 @@ describe("sqlite workspace directory repository — reads", () => {
   });
 });
 
-describe("sqlite workspace directory repository — writes", () => {
+describe("sqlite workspace directory repository  Ewrites", () => {
   const closers: Array<() => void> = [];
 
   afterEach(() => {
@@ -278,6 +311,7 @@ describe("sqlite workspace directory repository — writes", () => {
     `);
     return {
       db,
+      dbPath: join(dir, "db.sqlite"),
       repo: createSqliteWorkspaceDirectoryRepository(db),
       workspaceId: "ws-school",
       foreignWorkspaceId: "ws-foreign",
@@ -535,7 +569,40 @@ describe("sqlite workspace directory repository — writes", () => {
 
     expect(result.revision).toBe(1);
     expect(
-      repo.withTransaction(tx => tx.getEnrollment(enrollment.id)),
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id)),
+    ).toEqual(enrollment);
+  });
+
+  it("hides enrollments that belong to another workspace on getEnrollment", () => {
+    const {repo, workspaceId, foreignWorkspaceId} = openEnrollmentDb(
+      "dir-enrollment-read-bola-",
+    );
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    expect(
+      repo.withTransaction(tx =>
+        tx.getEnrollment(foreignWorkspaceId, enrollment.id),
+      ),
+    ).toBeNull();
+    expect(
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id)),
     ).toEqual(enrollment);
   });
 
@@ -580,7 +647,7 @@ describe("sqlite workspace directory repository — writes", () => {
         ?.revision,
     ).toBe(1);
     expect(
-      repo.withTransaction(tx => tx.getEnrollment(secondEnrollment.id)),
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, secondEnrollment.id)),
     ).toBeNull();
   });
 
@@ -620,10 +687,10 @@ describe("sqlite workspace directory repository — writes", () => {
 
     expect(second.revision).toBe(2);
     expect(
-      repo.withTransaction(tx => tx.getEnrollment(firstEnrollment.id)),
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, firstEnrollment.id)),
     ).toEqual(firstEnrollment);
     expect(
-      repo.withTransaction(tx => tx.getEnrollment(secondEnrollment.id)),
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, secondEnrollment.id)),
     ).toEqual(secondEnrollment);
   });
 
@@ -659,7 +726,7 @@ describe("sqlite workspace directory repository — writes", () => {
       repo.withTransaction(tx => tx.getDirectoryRevision(foreignWorkspaceId))
         ?.revision,
     ).toBe(0);
-    expect(repo.withTransaction(tx => tx.getEnrollment(enrollment.id))).toBeNull();
+    expect(repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id))).toBeNull();
   });
 
   it("rejects a stale enrollment write without changing revision or writing the enrollment", () => {
@@ -690,7 +757,7 @@ describe("sqlite workspace directory repository — writes", () => {
       repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
         ?.revision,
     ).toBe(0);
-    expect(repo.withTransaction(tx => tx.getEnrollment(enrollment.id))).toBeNull();
+    expect(repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id))).toBeNull();
   });
 
   it("rejects an enrollment write with an invalid updatedAt without changing revision or writing the enrollment", () => {
@@ -724,7 +791,7 @@ describe("sqlite workspace directory repository — writes", () => {
       repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
         ?.revision,
     ).toBe(0);
-    expect(repo.withTransaction(tx => tx.getEnrollment(enrollment.id))).toBeNull();
+    expect(repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id))).toBeNull();
   });
 
   it("createMembership with a missing accountId yields DIRECTORY_NOT_FOUND and leaves revision unchanged", () => {
@@ -1141,6 +1208,51 @@ describe("sqlite workspace directory repository — writes", () => {
     expect(
       repo.withTransaction(tx => tx.getDirectoryRevision("fresh-workspace")),
     ).toEqual({revision: 0, updatedAt: "2026-07-18T00:00:00.000Z"});
+  });
+
+  it("maps a two-connection CAS race loser to DIRECTORY_REVISION_CONFLICT with no loser DML", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dir-cas-race-"));
+    const dbPath = join(dir, "db.sqlite");
+    const seed = openMigratedDb(dbPath);
+    seed.exec(`
+      INSERT INTO workspaces(id, kind, name, created_at, updated_at)
+      VALUES ('ws-cas','personal','CAS','2026-07-18T00:00:00.000Z','2026-07-18T00:00:00.000Z');
+      INSERT INTO workspace_directory_revisions(workspace_id, revision, updated_at)
+      VALUES ('ws-cas',0,'2026-07-18T00:00:00.000Z');
+    `);
+    seed.close();
+
+    const [first, second] = await Promise.all([
+      spawnDirectoryCasRace(dbPath, "person-race-a"),
+      spawnDirectoryCasRace(dbPath, "person-race-b"),
+    ]);
+
+    expect(first.stderr).toBe("");
+    expect(second.stderr).toBe("");
+    expect(first.code).toBe(0);
+    expect(second.code).toBe(0);
+
+    const results = [JSON.parse(first.stdout), JSON.parse(second.stdout)] as Array<{
+      ok: boolean;
+      code?: string;
+    }>;
+    const successes = results.filter(result => result.ok);
+    const conflicts = results.filter(
+      result => !result.ok && result.code === "DIRECTORY_REVISION_CONFLICT",
+    );
+    expect(successes).toHaveLength(1);
+    expect(conflicts).toHaveLength(1);
+
+    const verify = openMigratedDb(dbPath);
+    closers.push(() => verify.close());
+    const repo = createSqliteWorkspaceDirectoryRepository(verify);
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision("ws-cas"))?.revision,
+    ).toBe(1);
+    const people = verify
+      .prepare(`SELECT id FROM people WHERE id LIKE 'person-race-%' ORDER BY id`)
+      .all() as Array<{id: string}>;
+    expect(people).toHaveLength(1);
   });
 });
 
