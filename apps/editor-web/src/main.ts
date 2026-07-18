@@ -49,7 +49,7 @@ import {
   type EditorDriveIntegration,
   type EditorDriveStatus,
 } from "./drive-integration.js";
-import {persistDriveFileLink} from "./drive-file-link.js";
+import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
 import {prepareCommittedDriveExport} from "./drive-export.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
@@ -538,21 +538,16 @@ async function persistDriveFileId(
   localProjectId: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const saved = await persistDriveFileLink(
+  await persistDriveFileIdAndSyncCurrent({
     store,
-    localProjectId,
     driveFileId,
-    undefined,
+    localProjectId,
     signal,
-  );
-  signal?.throwIfAborted();
-  if (
-    hasCurrent &&
-    current.localProjectId === localProjectId &&
-    current.revision < saved.revision
-  ) {
-    current = saved;
-  }
+    getCurrent: () => hasCurrent ? current : undefined,
+    setCurrent: saved => {
+      if (hasCurrent) current = saved;
+    },
+  });
 }
 
 function setupDriveIntegration(): EditorDriveIntegration {

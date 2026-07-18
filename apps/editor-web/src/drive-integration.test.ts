@@ -534,6 +534,109 @@ describe("editor Drive integration", () => {
     expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses the ID committed during disconnect when reconnecting and saving", async () => {
+    let current = {
+      localProjectId: "local-1",
+      title: "Local",
+      driveFileId: undefined as string | undefined,
+    };
+    let finishCommit!: () => void;
+    const commit = new Promise<void>(resolve => {
+      finishCommit = resolve;
+    });
+    const deps = dependencies({
+      getCurrent: vi.fn(() => current),
+      persistDriveFileId: vi.fn(async (fileId, _localProjectId, signal) => {
+        await commit;
+        current = {...current, driveFileId: fileId};
+        signal?.throwIfAborted();
+      }),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => {
+          throw new DriveFileNotFoundError("missing reserved file");
+        }),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    const interruptedSave = integration.saveToDrive();
+    await vi.waitFor(() =>
+      expect(deps.persistDriveFileId).toHaveBeenCalledWith(
+        "created-file",
+        "local-1",
+        expect.any(AbortSignal),
+      ),
+    );
+    integration.disconnect();
+    finishCommit();
+    await expect(interruptedSave).resolves.toBe(false);
+
+    await expect(integration.connect()).resolves.toBe(true);
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
+    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
+    expect(deps.drive.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({fileId: "created-file"}),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("starts a new-generation save without joining or clearing the aborted old save", async () => {
+    let releaseOldExport!: () => void;
+    const oldExport = new Promise<void>(resolve => {
+      releaseOldExport = resolve;
+    });
+    let resolveNewCreate!: (result: {
+      fileId: string;
+      observation: {version: string; snapshotId: string};
+    }) => void;
+    const newCreate = new Promise<{
+      fileId: string;
+      observation: {version: string; snapshotId: string};
+    }>(resolve => {
+      resolveNewCreate = resolve;
+    });
+    const deps = dependencies({
+      exportCurrent: vi.fn()
+        .mockImplementationOnce(async () => {
+          await oldExport;
+          return bytes;
+        })
+        .mockResolvedValue(bytes),
+      drive: {
+        ...dependencies().drive,
+        createFile: vi.fn(() => newCreate),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    const oldSave = integration.saveToDrive();
+    await vi.waitFor(() => expect(deps.exportCurrent).toHaveBeenCalledTimes(1));
+    integration.disconnect();
+    await integration.connect();
+    const newSave = integration.saveToDrive();
+    await vi.waitFor(() => expect(deps.drive.createFile).toHaveBeenCalledTimes(1));
+
+    releaseOldExport();
+    await expect(oldSave).resolves.toBe(false);
+    const joinedNewSave = integration.saveToDrive();
+    resolveNewCreate({
+      fileId: "created-file",
+      observation: {version: "1", snapshotId: "snapshot-created"},
+    });
+
+    await expect(Promise.all([newSave, joinedNewSave])).resolves.toEqual([
+      true,
+      true,
+    ]);
+    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
+    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
+  });
+
   it("retries an uncertain create only with the same durable reserved ID", async () => {
     let driveFileId: string | undefined;
     const conflict = new DriveConflictError(

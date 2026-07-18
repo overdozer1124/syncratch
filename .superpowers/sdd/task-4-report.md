@@ -16,11 +16,12 @@
 - Follow-up RED cycles covered local-change unsynced state, official `multipart/related` upload formatting, reconnect re-observation, uncertain-create duplicate prevention, and local Drive-link CAS retry.
 - Mandatory review-fix RED cycles covered hash-gated reconnect, failed/stale local flush rejection, pre-generated create IDs, bounded stream cancellation, missing response bodies, concurrent connect deduplication, auth-token clearing, active-project switching, shared-drive query flags, octet-stream SB3 validation, and the boot gate.
 - Final security RED cycles covered reserve/create API separation, durable reservation before POST, persistence failure with zero uploads, crash/reload 404 recovery using the same ID, AbortSignal propagation, stream cancellation, and late GIS/Picker/reserve callbacks after disconnect.
+- Final race RED cycles covered an IDB CAS that commits during disconnect and a new-generation save incorrectly joining an aborted old save.
 
 ### GREEN
 
 - Drive package: 22 tests passed.
-- Editor unit/integration: 45 tests passed, including real fake-IndexedDB create/open/update preservation.
+- Editor unit/integration: 49 tests passed, including real fake-IndexedDB create/open/update preservation.
 - Editor E2E: 7 tests passed, including no-config local operation and zero Google requests.
 - SB3 tools: 56 tests passed.
 - Browser local core: 14 tests passed.
@@ -52,9 +53,10 @@ Implementation constraints:
 - Metadata is fetched again after writing. Snapshot mismatch is post-write, best-effort conflict detection only. It is not atomic compare-and-swap or a strict distributed lock.
 - Downloads check metadata size, require a readable response body, and stream only through `maxBytes + 1`; overflow cancels immediately. MIME is not trusted: `.sb3` extension, size, and browser-safe `loadSb3` validation are authoritative.
 - A 401/authentication error disconnects GIS and clears the in-memory token. Concurrent connects share one token request.
-- Concurrent explicit Drive saves share one in-flight operation, preventing duplicate create IDs/files.
+- Concurrent explicit Drive saves in the same generation share one in-flight operation, preventing duplicate create IDs/files. A save after disconnect gets a new entry; identity-guarded cleanup from the old promise cannot clear it.
 - Connect/open/save operations carry a generation and AbortController. Disconnect increments the generation, aborts all in-flight Drive fetches/readers, and invalidates late GIS and Picker callbacks.
 - Generation is checked after every asynchronous boundary and before IDB link persistence or status publication, preventing disconnected operations from restoring `connected`/`synced` or starting later writes.
+- If the reserved-ID CAS commits while disconnect aborts the operation, the matching active local project's global record is first advanced to the committed `driveFileId` and revision, then the abort is surfaced. This reconciles memory with durable local state without publishing a Drive status.
 - Drive controls remain disabled until editor boot completes.
 - No background Drive autosave was added.
 

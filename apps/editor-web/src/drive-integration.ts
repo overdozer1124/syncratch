@@ -75,7 +75,10 @@ export function createEditorDriveIntegration(
   const pendingCreates = new Set<string>();
   const controllers = new Set<AbortController>();
   let generation = 0;
-  let saveInFlight: Promise<boolean> | null = null;
+  let saveInFlight: {
+    generation: number;
+    promise: Promise<boolean>;
+  } | null = null;
 
   interface Operation {
     generation: number;
@@ -262,8 +265,11 @@ export function createEditorDriveIntegration(
       }
     },
     async saveToDrive() {
-      if (saveInFlight) return saveInFlight;
-      saveInFlight = (async () => {
+      if (saveInFlight?.generation === generation) {
+        return saveInFlight.promise;
+      }
+      const entryGeneration = generation;
+      const promise = (async () => {
         const operation = beginOperation();
         try {
         if (!dependencies.auth.getAccessToken()) {
@@ -348,6 +354,7 @@ export function createEditorDriveIntegration(
             observations.set(targetFileId, updated.observation);
           }
           if (
+            isActive(operation) &&
             dependencies.getCurrent().localProjectId === current.localProjectId
           ) {
             setStatus("synced");
@@ -363,10 +370,12 @@ export function createEditorDriveIntegration(
           finishOperation(operation);
         }
       })();
+      const entry = {generation: entryGeneration, promise};
+      saveInFlight = entry;
       try {
-        return await saveInFlight;
+        return await promise;
       } finally {
-        saveInFlight = null;
+        if (saveInFlight === entry) saveInFlight = null;
       }
     },
   };
