@@ -2,6 +2,8 @@ import type Database from "better-sqlite3";
 import {
   assertCanEndWorkspaceOwnerMembership,
   DirectoryError,
+  parseUtcDateTime,
+  validateEnrollment,
   validatePerson,
   validatePersonAccountLink,
   validateRoleAssignment,
@@ -124,6 +126,20 @@ export function createSqliteWorkspaceDirectoryRepository(
            linked_at AS linkedAt, unlinked_at AS unlinkedAt
     FROM person_account_links WHERE id = ?
   `);
+  const getEnrollment = db.prepare(`
+    SELECT id, person_id AS personId, class_group_id AS classGroupId,
+           status, start_date AS startDate, end_date AS endDate,
+           attendance_number AS attendanceNumber
+    FROM enrollments
+    WHERE id = ?
+  `);
+  const getClassWorkspace = db.prepare(`
+    SELECT s.workspace_id AS workspaceId
+    FROM class_groups cg
+    INNER JOIN academic_years ay ON ay.id = cg.academic_year_id
+    INNER JOIN schools s ON s.id = ay.school_id
+    WHERE cg.id = ?
+  `);
 
   const insertWorkspaceStmt = db.prepare(`
     INSERT INTO workspaces(id, kind, name, created_at, updated_at)
@@ -175,6 +191,15 @@ export function createSqliteWorkspaceDirectoryRepository(
   const endRoleAssignmentStmt = db.prepare(`
     UPDATE role_assignments SET status = 'ended', ended_at = @endedAt
     WHERE id = @id
+  `);
+  const insertEnrollmentStmt = db.prepare(`
+    INSERT INTO enrollments(
+      id, person_id, class_group_id, status,
+      start_date, end_date, attendance_number
+    ) VALUES (
+      @id, @personId, @classGroupId, @status,
+      @startDate, @endDate, @attendanceNumber
+    )
   `);
 
   function mapSqliteConstraint(error: unknown): DirectoryError | null {
@@ -311,8 +336,9 @@ export function createSqliteWorkspaceDirectoryRepository(
         | undefined;
       return row ?? null;
     },
-    getEnrollment(_enrollmentId: string): Enrollment | null {
-      return null;
+    getEnrollment(enrollmentId: string): Enrollment | null {
+      const row = getEnrollment.get(enrollmentId) as Enrollment | undefined;
+      return row === undefined ? null : validated(row, validateEnrollment);
     },
     createWorkspace({workspace, initialRevision}) {
       const validWorkspace = validated(workspace, validateWorkspace);
@@ -450,11 +476,31 @@ export function createSqliteWorkspaceDirectoryRepository(
       runMappedConstraint(() => endMembershipStmt.run({id: membershipId, endedAt}));
       return {revision, membership: updated};
     },
-    createEnrollment(_input) {
-      throw new DirectoryError(
-        "DIRECTORY_INVALID",
-        "enrollment write not implemented",
+    createEnrollment({workspaceId, expectedRevision, updatedAt, enrollment}) {
+      const validEnrollment = validated(enrollment, validateEnrollment);
+      const parsedUpdatedAt = parseUtcDateTime(updatedAt);
+      if (!parsedUpdatedAt.ok) {
+        throw new DirectoryError(
+          "DIRECTORY_INVALID",
+          parsedUpdatedAt.issues.map(issue => issue.message).join("; "),
+        );
+      }
+      const classOwner = getClassWorkspace.get(validEnrollment.classGroupId) as
+        | {workspaceId: string}
+        | undefined;
+      if (classOwner === undefined || classOwner.workspaceId !== workspaceId) {
+        throw new DirectoryError(
+          "DIRECTORY_NOT_FOUND",
+          `class ${validEnrollment.classGroupId} not found in workspace ${workspaceId}`,
+        );
+      }
+      const revision = assertAndBumpRevision(
+        workspaceId,
+        expectedRevision,
+        parsedUpdatedAt.value,
       );
+      runMappedConstraint(() => insertEnrollmentStmt.run(validEnrollment));
+      return {revision, enrollment: validEnrollment};
     },
     grantWorkspaceRole({expectedRevision, assignment}) {
       const validAssignment = validated(
