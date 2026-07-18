@@ -23,7 +23,7 @@ BlockSync Community の主系を、ログイン不要で開始できる Local-Fi
 - `.sb3` の読み込みと書き出し。Drive、共同編集、補助サービスの障害中も書き出せる。
 - Google ログイン後、Google Picker で利用者が明示的に選んだ Drive ファイルの作成またはオープン。
 - Yjs/WebRTC による少人数のライブ編集。
-- 選出された 1 台の leader による共有 Drive ファイルへの durable snapshot 書き込みと、退出時の leadership handoff。
+- best-effort で選出された論理 leader による通常時の Drive snapshot 書き込みと、退出時の leadership handoff。これは厳密な分散ロックではない。
 - 任意導入の Apps Script によるクラス名簿、招待、ルームメタデータ、Drive 権限設定の補助。
 
 ### 2.2 Non-goals
@@ -67,7 +67,7 @@ BlockSync Community の主系を、ログイン不要で開始できる Local-Fi
 │       │                    │                    │           │
 │       └────────────── .sb3 import/export       │           │
 │                            │                    │           │
-│                     elected leader ◄───────────┘           │
+│                 best-effort leader ◄───────────┘           │
 └────────────────────────────┼───────────────────────────────┘
                              │ Drive API (`drive.file`)
                              ▼
@@ -96,17 +96,22 @@ r1-persist-server ─ SQLite / GC / Workspace / roster / RBAC / audit
 2. Google Picker で、アプリが作成したファイルまたは利用者が明示的に選択したファイルだけを取得する。
 3. Drive snapshot をローカル record/Y.Doc へ読み込み、ローカル copy を即座に保持する。
 4. 参加者間のライブ変更は Yjs/WebRTC で交換する。
-5. 現在の leader だけが Y.Doc の一貫した snapshot を共有 Drive ファイルへ書く。
+5. 通常時は current leader が Y.Doc の一貫した snapshot を共有 Drive ファイルへ書く。ネットワーク分断中の重複 leader を厳密には排除できないため、競合は app-level metadata と Drive の観測値で事後検出する。
 
 ### 4.3 Leader ownership and handoff
 
-- 各 room は participant ID と leadership epoch を持ち、同期済みで Drive 書き込み権限を持つ参加者から 1 台を current leader として合意する。
-- **Drive 書き込み所有者は current leadership epoch の leader だけ**である。他の peer は Yjs update を交換し、IndexedDB に保存するが Drive を書かない。
-- leader は debounce 後、明示保存時、重要な lifecycle 境界、および正常退出前に durable snapshot を書く。書き込みには既知の Drive file version を前提条件として用いる。
-- 正常退出では、leader が未保存 snapshot を flush し、次の eligible peer へ epoch と既知の Drive version を渡し、受領確認後に退出する。
-- 突然の切断では、残存 peer が新 epoch の leader を再選出する。新 leader は最新のローカル Y.Doc と Drive version を照合してから書く。
-- 競合する leader の書き込みは Drive version precondition で検出する。失敗した writer は上書きを継続せず、Drive snapshot を再読込して Yjs で収束させ、新しい leader のみが再保存する。
-- leader が存在しない、または誰も Drive 書き込み権限を持たない間、Drive 永続化は停止するが、各 peer の IndexedDB 保存と `.sb3` 書き出しは継続する。
+- 各 room は participant ID と leadership epoch を持ち、同期済みで Drive 書き込み権限を持つ参加者から 1 台を current leader として合意する。これは通常時の重複書き込みを減らす **best-effort の論理的 single writer** であり、partition や同時再選出を排除する厳密な分散ロックではない。
+- 通常時は current leader だけが Drive 保存を試み、他の peer は Yjs update を交換して各自の IndexedDB に保存する。ただし、この役割分担だけで split-brain 時の Drive 同時更新を拒否できるとは主張しない。
+- 各 Drive snapshot は app-level の `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` を payload metadata に含める。各 peer は対応する snapshot metadata と Drive の `headRevisionId` / `version` 観測値をローカルにも記録する。
+- leader は debounce 後、明示保存時、重要な lifecycle 境界、および正常退出前に snapshot を書く。書き込み前に Drive の `headRevisionId` / `version` と現行 snapshot metadata を再取得し、既知値との差があれば書き込まず競合状態へ移る。
+- Drive API v3 の `File.version` と `headRevisionId` は output-only の観測値であり、`files.update` にそれらの一致を原子的に強制する条件はない。書き込み前の一致確認から update までには競合窓が残るため、これを atomic compare-and-swap または split-brain 拒否とは扱わない。
+- update 後にも Drive の `headRevisionId` / `version` と保存された app-level snapshot metadata を再取得する。期待した `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` と一致しない、観測値が想定外に進んだ、または別 peer の snapshot が見つかった場合は、競合または split-brain 疑いとして扱う。この検査は **事後検出** であり、同時書き込みの防止ではない。
+- 前後検査でも、writer A の post-read 後に writer B が上書きする等の競合を即時には観測できない。再接続時、leadership handoff 時、次回保存前にも同じ照合を繰り返して検出機会を作るが、全競合の即時検出は保証しない。
+- 正常退出では、leader が競合なしを確認できる場合に未保存 snapshot を flush し、次の eligible peer へ epoch と最新観測値を渡し、受領確認後に退出する。突然の切断では残存 peer が新 epoch の leader を best-effort で再選出する。
+- 競合または split-brain 疑いを検出したら、自動 Drive 保存を直ちに停止する。両 peer の IndexedDB copy と、利用可能な競合 Drive revision ID・snapshot metadata を recovery candidate として保持し、Drive revision を削除しない。保持可能な binary revision は Drive の制限内で `keepForever` の対象とする。
+- 復旧では各 recovery candidate を別々に読み、Yjs で再収束した結果と差分を利用者に提示する。利用者の明示確認後にのみ current leader が同じ Picker-selected file へ新 snapshot を保存して自動保存を再開する。別ファイルへの自動作成・自動上書きで競合から逃げない。
+- leader が存在しない、誰も Drive 書き込み権限を持たない、または競合停止中は Drive 永続化を停止するが、各 peer の IndexedDB 保存と `.sb3` 書き出しは継続する。
+- Apps Script は roster、invitation、room metadata、Drive permission setup の任意補助に留め、leader election または Drive 書き込みの必須 lock service にしない。
 
 ## 5. Failure semantics
 
@@ -119,8 +124,8 @@ r1-persist-server ─ SQLite / GC / Workspace / roster / RBAC / audit
 | WebRTC peer failure | 到達可能な peer とローカル編集を継続する。切断 peer の未受信変更を保存済みと表示しない。各端末のローカル copy は export 可能なままにする。 |
 | Signaling unavailable | 新規接続・再接続だけを停止する。既存 data channel とローカル編集は継続し、中央 relay へ切り替えない。 |
 | Apps Script unavailable | 名簿、招待、room metadata、権限自動設定だけを degraded とする。エディター、IndexedDB、既存 WebRTC room、Drive 直接保存、`.sb3` export を停止しない。 |
-| Leader departure or crash | 正常時は flush + handoff、異常時は epoch を進めて再選出する。Drive 保存不能でもローカル保存と export は継続する。 |
-| Drive version conflict | 盲目的な last-write-wins を行わず競合として停止し、再読込・Yjs 収束後に current leader が再保存する。 |
+| Leader departure or crash | 正常時は競合なしを確認して flush + handoff、異常時は epoch を進めて best-effort で再選出する。厳密な lock 成立を仮定せず、Drive 保存不能でもローカル保存と export は継続する。 |
+| Concurrent Drive update / split-brain suspicion | 前後の `headRevisionId` / `version` と app-level snapshot metadata による事後検出である。検出時は自動 Drive 保存を停止し、両方の IndexedDB copy と利用可能な Drive revisions を保持する。Yjs 再収束と利用者確認後だけ再保存し、別ファイルへ自動退避しない。 |
 
 Drive、WebRTC、signaling、Apps Script の障害画面には、ローカルに保存された最終時刻、未同期状態、および `.sb3` 書き出し操作を表示する。
 
@@ -190,18 +195,20 @@ Community package から frozen package への runtime import を追加しない
 ### Stage 2 — Drive
 
 - Google login、`drive.file` consent、Google Picker。
-- Picker-selected file の作成・読込・version-aware snapshot 書き込み。
-- token expiry、permission loss、quota、version conflict の degraded behavior。
+- Picker-selected file の作成・読込と、`snapshotId` / `leadershipEpoch` / `yjsStateVector` / `yjsStateHash` を持つ snapshot 書き込み。
+- 書き込み前後に `headRevisionId` / `version` と app-level snapshot metadata を取得する post-write conflict detection。Drive API による atomic CAS ではないことを API contract と UI に明示する。
+- token expiry、permission loss、quota、concurrent update の degraded behavior。競合時は自動保存停止、local copy と Drive revisions の保持、利用者確認付き recovery とする。
 
-**Gate:** Drive 障害中も local source of truth が維持され、再接続後に明示的に同期できる。広い OAuth scope を要求しない。
+**Gate:** Drive 障害中も local source of truth が維持され、再接続後に明示的に同期できる。広い OAuth scope を要求しない。観測可能な metadata 不一致を作る制御済み並行 update 試験で事後検出し、自動保存を停止して recovery candidates を保持する。検査をすり抜ける race window を文書化し、`File.version` / `headRevisionId` を atomic precondition または全競合検出として扱う実装がない。
 
 ### Stage 3 — P2P
 
 - Y.Doc mapping、WebRTC provider、最小 signaling、presence。
-- leader election、single-writer Drive snapshot、正常 handoff、crash re-election。
-- partition、split-brain、late peer、Drive conflict の試験。
+- best-effort の logical leader election、通常時の single-writer behavior、正常 handoff、crash re-election。
+- partition、同時再選出、split-brain、late peer、並行 Drive update、利用者確認付き recovery の試験。
+- Apps Script を必須 lock service としない構成試験。
 
-**Gate:** live edits が peer 間で収束し、同一 epoch で Drive writer が 1 台に限定され、どの通信障害でも各端末から `.sb3` を書き出せる。
+**Gate:** 非 partition 時は logical leader だけが Drive 保存を試み、live edits が peer 間で収束する。partition で複数 writer が生じ得る試験では厳密な排他を主張しない。競合または split-brain 疑いを観測した client は直ちに自動 Drive 保存を停止し、通知を受けた peer も停止する。切断中の peer は観測まで継続し得るため、再接続時の照合で停止へ収束することを試験する。両方の IndexedDB copy と Drive revisions を保持し、Yjs 再収束と利用者確認前には再保存しない。どの通信障害でも各端末から `.sb3` を書き出せる。
 
 ### Stage 4 — Optional Apps Script
 
@@ -226,10 +233,12 @@ Community package から frozen package への runtime import を追加しない
 3. Drive 共有または共同編集を選ぶまで Google ログインを要求しない。
 4. OAuth scope は `drive.file` のみで、ファイルアクセスは Google Picker で明示選択された範囲に限る。
 5. ライブ編集は Yjs/WebRTC で運び、signaling と Apps Script は Yjs update を relay・保存しない。
-6. current leadership epoch の leader だけが共有 Drive ファイルへ durable snapshot を書き、正常退出時に flush と handoff を行い、異常退出時に再選出する。
+6. WebRTC leader election は通常時の重複書き込みを減らす best-effort の logical single writer であり、partition 時の厳密な分散ロックまたは atomic split-brain rejection を保証すると表示しない。
 7. Drive、WebRTC、signaling、Apps Script のいずれが失敗しても、ローカルデータを保持し `.sb3` として書き出せる。
-8. Apps Script は roster、invitation、room metadata、Drive permission setup に限定され、project payload を保存しない。
-9. `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit は buildable な frozen School/self-hosted track として残り、Community runtime の必須依存ではない。
-10. AI、中央バックアップ、大規模ルーム、新規 school-directory 機能は初回 Local-First release に含まれない。
-11. 公開済み `ProjectEnvelopeV1` と hash contract は byte/hash compatibility tests を通し、変更されない。
-12. Stage 0 から Stage 5 の gate を順に満たし、前段 gate を迂回して次段を release しない。
+8. 各 Drive snapshot は app-level `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` を持つ。保存前後、再接続、handoff、次回保存前に Drive `headRevisionId` / `version` と app metadata を再取得するが、これは output-only 値による best-effort の事後競合検出であり、atomic CAS、即時検出、全競合検出ではない。
+9. 競合または split-brain 疑いでは自動 Drive 保存を停止し、両方の IndexedDB copy と利用可能な Drive revisions を保持する。Yjs 再収束後、利用者の明示確認前に再保存せず、別ファイルへ自動上書き退避しない。
+10. Apps Script は roster、invitation、room metadata、Drive permission setup に限定され、project payload を保存せず、必須 lock service にしない。
+11. `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit は buildable な frozen School/self-hosted track として残り、Community runtime の必須依存ではない。
+12. AI、中央バックアップ、大規模ルーム、新規 school-directory 機能は初回 Local-First release に含まれない。
+13. 公開済み `ProjectEnvelopeV1` と hash contract は byte/hash compatibility tests を通し、変更されない。
+14. Stage 0 から Stage 5 の gate を順に満たし、前段 gate を迂回して次段を release しない。

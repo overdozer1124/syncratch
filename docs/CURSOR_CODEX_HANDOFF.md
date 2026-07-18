@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-19 04:28:00 JST |
+| 最終更新 | 2026-07-19 04:38:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `PIVOT_DESIGN_READY` |
 | 現在の担当 | Cursor |
@@ -53,6 +53,7 @@
 | 作業ブランチ | `feat/local-first-pivot-impl` |
 | 作業worktree | `C:\cursor\NewScratchEditor-local-first-pivot` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
+| Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
 | 次Task | Stage 0 browser-safe core：V1 contract/hashを凍結したブラウザー安全境界と versioned LocalProjectRecord contract |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
@@ -3085,10 +3086,27 @@ Local-First実装進捗: 0%（設計のみ、Stage 0未着手）
 決定:
 - login-free solo editing + IndexedDB source of truth + .sb3 import/export
 - Google Drive sharing uses drive.file + Picker
-- Yjs/WebRTC live edits; elected leader is the sole durable Drive snapshot writer
+- Yjs/WebRTC live edits; elected leader is the sole durable Drive snapshot writer（04:38 correctionで superseded: best-effort logical writer、strict lockなし）
 - Apps Script is optional classroom control plane and never carries project payload/Yjs updates
 - School Server track remains buildable but frozen
 次Task: Stage 0 browser-safe core + versioned LocalProjectRecord contract
 凍結: pending Person/link claim、audit、class-move、overlap、System Owner transfer
+```
+
+### 2026-07-19 04:38:00 JST — Cursor（Drive concurrency guarantee correction）
+
+```text
+状態: PIVOT_DESIGN_READY / IMPORTANT_FINDING_FIXED
+対象: Drive snapshot concurrency semantics
+Local-First実装進捗: 0%（設計のみ、Stage 0未着手）
+修正:
+- File.version / headRevisionId は output-only observation。files.update の atomic CAS として扱わない
+- WebRTC leader は best-effort logical single writer。partition時のstrict lockを保証しない
+- snapshotId / leadershipEpoch / yjsStateVector / yjsStateHash をDrive snapshotへ記録
+- pre/post-write・再接続時の観測でbest-effort事後検出。atomic CAS・即時/全競合検出は保証しない
+- 競合・split-brain疑いを観測したclientから自動Drive保存を停止し、再接続時に停止状態へ収束
+- local IndexedDB copiesと利用可能なDrive revisionsを保持し、Yjs再収束 + 利用者確認後のみ再保存
+- 別ファイルへの自動退避なし。Apps Scriptは必須lock serviceにしない
+次Task: Stage 0 browser-safe core + versioned LocalProjectRecord contract
 ```
 
