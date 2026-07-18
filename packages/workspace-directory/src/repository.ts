@@ -94,6 +94,25 @@ export interface WorkspaceDirectoryRepositoryTx {
     enrollment: Enrollment;
   }): {revision: number; enrollment: Enrollment};
 
+  updateEnrollment(input: {
+    workspaceId: string;
+    expectedRevision: number;
+    updatedAt: string;
+    enrollmentId: string;
+    patch: {
+      attendanceNumber?: string | null;
+      startDate?: string;
+    };
+  }): {revision: number; enrollment: Enrollment};
+
+  endEnrollment(input: {
+    workspaceId: string;
+    expectedRevision: number;
+    updatedAt: string;
+    enrollmentId: string;
+    endDate: string;
+  }): {revision: number; enrollment: Enrollment};
+
   grantWorkspaceRole(input: {
     expectedRevision: number;
     assignment: Extract<

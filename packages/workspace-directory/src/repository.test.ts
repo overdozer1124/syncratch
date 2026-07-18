@@ -71,4 +71,42 @@ describe("directory repository port", () => {
       }).revision,
     ).toBe(1);
   });
+
+  it("types enrollment update and end", () => {
+    type EnrollmentMutations = Pick<
+      WorkspaceDirectoryRepositoryTx,
+      "updateEnrollment" | "endEnrollment"
+    >;
+
+    const enrollment = {} as Enrollment;
+    const _typeCheck: EnrollmentMutations = {
+      updateEnrollment: input => ({
+        revision: input.expectedRevision + 1,
+        enrollment,
+      }),
+      endEnrollment: input => ({
+        revision: input.expectedRevision + 1,
+        enrollment,
+      }),
+    };
+
+    expect(
+      _typeCheck.updateEnrollment({
+        workspaceId: "workspace-1",
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T00:00:00.000Z",
+        enrollmentId: "enrollment-1",
+        patch: {attendanceNumber: "12"},
+      }).revision,
+    ).toBe(1);
+    expect(
+      _typeCheck.endEnrollment({
+        workspaceId: "workspace-1",
+        expectedRevision: 1,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollmentId: "enrollment-1",
+        endDate: "2026-07-18",
+      }).revision,
+    ).toBe(2);
+  });
 });
