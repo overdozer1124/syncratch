@@ -183,6 +183,10 @@ describe("sqlite workspace directory repository — reads", () => {
       expect(allRoles.some(role => role.id === "role-ended-contract")).toBe(
         true,
       );
+      for (const assignment of allRoles) {
+        expect(assignment.scope.kind).toBe("workspace");
+        expect(assignment).not.toHaveProperty("workspaceId");
+      }
     });
   });
 });

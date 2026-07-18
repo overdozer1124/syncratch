@@ -164,15 +164,16 @@ export function createSqliteWorkspaceDirectoryRepository(
           workspaceId,
           options?.includeEnded === true ? 1 : 0,
         ) as WorkspaceRoleAssignmentRow[]
-      ).map(row =>
-        validated(
+      ).map(row => {
+        const {workspaceId, ...assignment} = row;
+        return validated(
           {
-            ...row,
-            scope: {kind: "workspace", workspaceId: row.workspaceId},
-          } as unknown as RoleAssignment,
+            ...assignment,
+            scope: {kind: "workspace", workspaceId},
+          } as RoleAssignment,
           validateRoleAssignment,
-        ),
-      );
+        );
+      });
     },
     getDirectoryRevision(workspaceId) {
       const row = getDirectoryRevision.get(workspaceId) as
