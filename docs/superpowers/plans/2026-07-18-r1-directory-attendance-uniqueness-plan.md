@@ -210,6 +210,9 @@ throw new DirectoryError("DIRECTORY_INVALID", "enrollment write not implemented"
 
 - [ ] **Step 4: Run the focused contracts to verify RED**
 
+The invalid-`updatedAt` contract also asserts a `UtcDateTime` validation
+message, so it fails against the generic enrollment stub.
+
 Run:
 
 ```bash

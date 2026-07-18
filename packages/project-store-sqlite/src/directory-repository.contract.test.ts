@@ -714,7 +714,12 @@ describe("sqlite workspace directory repository — writes", () => {
           enrollment,
         }),
       ),
-    ).toThrow(expect.objectContaining({code: "DIRECTORY_INVALID"}));
+    ).toThrow(
+      expect.objectContaining({
+        code: "DIRECTORY_INVALID",
+        message: expect.stringContaining("UtcDateTime"),
+      }),
+    );
     expect(
       repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
         ?.revision,
