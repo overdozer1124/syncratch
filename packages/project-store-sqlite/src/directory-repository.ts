@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import {
+  assertCanEndWorkspaceOwnerMembership,
   DirectoryError,
   validatePerson,
   validatePersonAccountLink,
@@ -159,6 +160,11 @@ export function createSqliteWorkspaceDirectoryRepository(
   const endMembershipStmt = db.prepare(`
     UPDATE workspace_memberships SET status = 'ended', ended_at = @endedAt
     WHERE id = @id
+  `);
+  const countActiveOwnersStmt = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM workspace_memberships
+    WHERE workspace_id = ? AND status = 'active' AND role = 'owner'
   `);
   const insertRoleAssignmentStmt = db.prepare(`
     INSERT INTO role_assignments(
@@ -417,6 +423,13 @@ export function createSqliteWorkspaceDirectoryRepository(
           `membership ${membershipId} not found in workspace ${workspaceId}`,
         );
       }
+      const activeOwnerCountInWorkspace = (
+        countActiveOwnersStmt.get(workspaceId) as {count: number}
+      ).count;
+      assertCanEndWorkspaceOwnerMembership({
+        membership: existing,
+        activeOwnerCountInWorkspace,
+      });
       const updated = validated(
         {
           ...existing,

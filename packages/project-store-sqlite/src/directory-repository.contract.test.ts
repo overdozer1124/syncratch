@@ -597,11 +597,19 @@ describe("sqlite workspace directory repository — writes", () => {
     ).toBe(beforeForeign.revision);
   });
 
-  it("endMembership ends an active membership and bumps the revision", () => {
+  it("endMembership ends an active non-owner membership and bumps the revision", () => {
     const {db, workspaceId, membershipId} = openFixtureDb(
       "dir-end-membership-",
     );
     const repo = createSqliteWorkspaceDirectoryRepository(db);
+    const role = (
+      db
+        .prepare(
+          `SELECT role FROM workspace_memberships WHERE id = ? AND workspace_id = ?`,
+        )
+        .get(membershipId, workspaceId) as {role: string}
+    ).role;
+    expect(role).not.toBe("owner");
     const before = repo.withTransaction(tx =>
       tx.getDirectoryRevision(workspaceId)!,
     );
@@ -621,6 +629,125 @@ describe("sqlite workspace directory repository — writes", () => {
         .withTransaction(tx => tx.listMembershipsForWorkspace(workspaceId))
         .some(m => m.id === membershipId),
     ).toBe(false);
+  });
+
+  it("ending the sole active owner membership yields DIRECTORY_LAST_OWNER and leaves revision unchanged", () => {
+    const {db, workspaceId, membershipId} = openFixtureDb(
+      "dir-last-owner-",
+    );
+    const repo = createSqliteWorkspaceDirectoryRepository(db);
+    db.prepare(
+      `UPDATE workspace_memberships SET role = 'owner'
+       WHERE id = ? AND workspace_id = ?`,
+    ).run(membershipId, workspaceId);
+    const ownerCount = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS count FROM workspace_memberships
+           WHERE workspace_id = ? AND status = 'active' AND role = 'owner'`,
+        )
+        .get(workspaceId) as {count: number}
+    ).count;
+    expect(ownerCount).toBe(1);
+
+    const before = repo.withTransaction(tx =>
+      tx.getDirectoryRevision(workspaceId)!,
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.endMembership({
+          workspaceId,
+          expectedRevision: before.revision,
+          membershipId,
+          endedAt: "2026-07-18T00:00:00.000Z",
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_LAST_OWNER"}));
+
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(before.revision);
+    expect(
+      (
+        db
+          .prepare(
+            `SELECT status FROM workspace_memberships WHERE id = ?`,
+          )
+          .get(membershipId) as {status: string}
+      ).status,
+    ).toBe("active");
+  });
+
+  it("ending one owner succeeds when another active owner remains", () => {
+    const {db, workspaceId, membershipId} = openFixtureDb(
+      "dir-second-owner-",
+    );
+    const repo = createSqliteWorkspaceDirectoryRepository(db);
+    db.prepare(
+      `UPDATE workspace_memberships SET role = 'owner'
+       WHERE id = ? AND workspace_id = ?`,
+    ).run(membershipId, workspaceId);
+    const secondAccountId = "second-owner-account";
+    db.prepare(
+      `INSERT INTO user_accounts(id, display_name, email, status, created_at, updated_at)
+       VALUES (?, ?, ?, 'active', ?, ?)`,
+    ).run(
+      secondAccountId,
+      "Second Owner",
+      "second-owner@example.test",
+      "2026-07-18T00:00:00.000Z",
+      "2026-07-18T00:00:00.000Z",
+    );
+    const beforeCreate = repo.withTransaction(tx =>
+      tx.getDirectoryRevision(workspaceId)!,
+    );
+    const afterCreate = repo.withTransaction(tx =>
+      tx.createMembership({
+        expectedRevision: beforeCreate.revision,
+        membership: {
+          id: "88888888-8888-4888-8888-888888888888",
+          workspaceId,
+          accountId: secondAccountId,
+          role: "owner",
+          status: "active",
+          startedAt: "2026-07-18T00:00:00.000Z",
+          endedAt: null,
+        } as never,
+      }),
+    );
+    expect(
+      (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS count FROM workspace_memberships
+             WHERE workspace_id = ? AND status = 'active' AND role = 'owner'`,
+          )
+          .get(workspaceId) as {count: number}
+      ).count,
+    ).toBe(2);
+
+    const result = repo.withTransaction(tx =>
+      tx.endMembership({
+        workspaceId,
+        expectedRevision: afterCreate.revision,
+        membershipId,
+        endedAt: "2026-07-18T01:00:00.000Z",
+      }),
+    );
+    expect(result.revision).toBe(afterCreate.revision + 1);
+    expect(result.membership.status).toBe("ended");
+    expect(
+      (
+        db
+          .prepare(
+            `SELECT COUNT(*) AS count FROM workspace_memberships
+             WHERE workspace_id = ? AND status = 'active' AND role = 'owner'`,
+          )
+          .get(workspaceId) as {count: number}
+      ).count,
+    ).toBe(1);
   });
 
   it("grantWorkspaceRole / endWorkspaceRole bump revision; duplicate active grant is DIRECTORY_CONFLICT", () => {
