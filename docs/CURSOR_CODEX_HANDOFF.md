@@ -33,15 +33,16 @@
 
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
 - **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
-- **現行スライス（Directory thin slices）:** P1 CAS/BOLA 修正を含め Codex 正式承認済み。実装進捗・正式承認進捗ともに **100%**（実装 `76e22f3`）。
+- **前 Directory thin slices:** P1 CAS/BOLA 修正を含め Codex 正式承認・main 統合済み（実装 `76e22f3`）。
+- **現行スライス（enrollment update/end thin slice）:** 実装は完了し、Codex レビュー待ち。正式承認・main 統合は未了（実装 `cd83e0445fa2178b91520b9860ebd027a1b21e29`）。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
-- 次スライスの進捗は、実装着手後から正式承認まで別に計上する。update/end enrollment、overlap service rule、claim、System Owner transfer、audit は未実装。
+- 後続スライスの進捗は、実装着手後から正式承認まで別に計上する。class-move orchestration、overlap service rule、claim、System Owner transfer、audit は未実装。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 20:36:00 JST |
+| 最終更新 | 2026-07-18 20:39:48 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
@@ -60,7 +61,7 @@
 
 ## Cursorが次に行う作業
 
-Directory thin slices は正式承認・main 統合完了。次スライスの設計/計画準備を待つ。
+Codex は enrollment update/end thin slice をレビューする。レビュー対象は実装SHA `cd83e0445fa2178b91520b9860ebd027a1b21e29` であり、docs tip ではない。`GO` または `NO_GO` を記録するまで、正式承認・main 統合・次スライス準備へ進めない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
