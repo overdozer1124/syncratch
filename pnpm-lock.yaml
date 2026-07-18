@@ -25,6 +25,18 @@ importers:
 
   apps/editor-web:
     dependencies:
+      '@blocksync/collab-invite':
+        specifier: workspace:*
+        version: link:../../packages/collab-invite
+      '@blocksync/collab-leader':
+        specifier: workspace:*
+        version: link:../../packages/collab-leader
+      '@blocksync/collab-webrtc':
+        specifier: workspace:*
+        version: link:../../packages/collab-webrtc
+      '@blocksync/collaboration-domain':
+        specifier: workspace:*
+        version: link:../../packages/collaboration-domain
       '@blocksync/google-drive-sync':
         specifier: workspace:*
         version: link:../../packages/google-drive-sync
@@ -37,6 +49,9 @@ importers:
       '@blocksync/sb3-tools':
         specifier: workspace:*
         version: link:../../packages/sb3-tools
+      yjs:
+        specifier: ^13.6.27
+        version: 13.6.31
     devDependencies:
       '@blocksync/project-schema':
         specifier: workspace:*

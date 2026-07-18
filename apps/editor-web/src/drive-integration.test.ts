@@ -739,3 +739,48 @@ describe("editor Drive integration", () => {
     });
   });
 });
+
+describe("leadership epoch and leader-only Drive writes", () => {
+  it("stamps the injected leadership epoch on the Drive snapshot", async () => {
+    const deps = dependencies({
+      getLeadershipEpoch: () => "e1-abc123-3",
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+    await integration.saveToDrive();
+
+    expect(deps.drive.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snapshot: expect.objectContaining({leadershipEpoch: "e1-abc123-3"}),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("defaults to epoch 0 for solo operation when none is injected", async () => {
+    const deps = dependencies();
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+    await integration.saveToDrive();
+
+    expect(deps.drive.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        snapshot: expect.objectContaining({leadershipEpoch: "0"}),
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("refuses to write to Drive when this peer is not the leader", async () => {
+    const deps = dependencies({
+      canPersistToDrive: () => ({ok: false, reason: "Follower does not save"}),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.saveToDrive()).resolves.toBe(false);
+    expect(deps.drive.createFile).not.toHaveBeenCalled();
+    expect(deps.drive.updateFile).not.toHaveBeenCalled();
+    expect(deps.onStatus).toHaveBeenLastCalledWith("unsynced", "Follower does not save");
+  });
+});

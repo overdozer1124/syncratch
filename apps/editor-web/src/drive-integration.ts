@@ -49,6 +49,18 @@ export interface EditorDriveDependencies {
   hashBytes(bytes: Uint8Array): Promise<string>;
   createSnapshotId(): string;
   onStatus(status: EditorDriveStatus, message?: string): void;
+  /**
+   * Current leadership epoch to stamp on Drive snapshots. Solo/local operation
+   * returns "0"; in a collaboration room this is the deterministic epoch derived
+   * from the room id, leader, and eligible membership.
+   */
+  getLeadershipEpoch?(): string;
+  /**
+   * Gate that decides whether this peer may perform a durable Drive snapshot.
+   * Only the current room leader may write; solo operation always may. When it
+   * returns not-ok the save is refused without claiming remote save success.
+   */
+  canPersistToDrive?(): {ok: boolean; reason?: string};
 }
 
 export interface EditorDriveIntegration {
@@ -276,6 +288,14 @@ export function createEditorDriveIntegration(
           setStatus("unsynced", "Connect Google before saving to Drive");
           return false;
         }
+        const writeGate = dependencies.canPersistToDrive?.();
+        if (writeGate && !writeGate.ok) {
+          setStatus(
+            "unsynced",
+            writeGate.reason ?? "Only the room leader saves to Drive",
+          );
+          return false;
+        }
         const current = dependencies.getCurrent();
         try {
           const fileId = current.driveFileId ??
@@ -296,8 +316,9 @@ export function createEditorDriveIntegration(
           }
           const snapshot = {
             snapshotId: dependencies.createSnapshotId(),
-            // P2P leadership does not exist yet; explicit solo saves use epoch 0.
-            leadershipEpoch: "0",
+            // Solo/local operation stamps epoch "0"; in a room this is the
+            // deterministic leadership epoch supplied by the collaboration layer.
+            leadershipEpoch: dependencies.getLeadershipEpoch?.() ?? "0",
             stateHash,
           };
           let targetFileId = fileId;

@@ -13,10 +13,15 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@blocksync/collab-invite": "workspace:*",
+    "@blocksync/collab-leader": "workspace:*",
+    "@blocksync/collab-webrtc": "workspace:*",
+    "@blocksync/collaboration-domain": "workspace:*",
     "@blocksync/google-drive-sync": "workspace:*",
     "@blocksync/project-local-core": "workspace:*",
     "@blocksync/project-store-idb": "workspace:*",
-    "@blocksync/sb3-tools": "workspace:*"
+    "@blocksync/sb3-tools": "workspace:*",
+    "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
