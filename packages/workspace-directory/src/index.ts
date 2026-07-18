@@ -2,6 +2,7 @@ export * from "./access.js";
 export * from "./conflicts.js";
 export * from "./errors.js";
 export * from "./ids.js";
+export * from "./last-owner.js";
 export * from "./models.js";
 export * from "./repository.js";
 export * from "./roster-import.js";

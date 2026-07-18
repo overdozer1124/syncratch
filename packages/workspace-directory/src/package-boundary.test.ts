@@ -15,6 +15,7 @@ describe("package boundary", () => {
       "access.ts",
       "conflicts.ts",
       "errors.ts",
+      "last-owner.ts",
       "repository.ts",
       "roster-import.ts",
       "index.ts",
