@@ -38,6 +38,29 @@ function validated<T>(
   return result.value;
 }
 
+const ENROLLMENT_UPDATE_KEYS = new Set([
+  "attendanceNumber",
+  "startDate",
+]);
+
+function normalizeEnrollmentPatch(
+  patch: Record<string, unknown>,
+): {attendanceNumber?: string | null; startDate?: string} {
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw new DirectoryError("DIRECTORY_INVALID", "enrollment patch is empty");
+  }
+  for (const key of keys) {
+    if (!ENROLLMENT_UPDATE_KEYS.has(key)) {
+      throw new DirectoryError(
+        "DIRECTORY_INVALID",
+        `unknown enrollment patch field: ${key}`,
+      );
+    }
+  }
+  return patch as {attendanceNumber?: string | null; startDate?: string};
+}
+
 interface WorkspaceRoleAssignmentRow {
   id: string;
   accountId: string;
@@ -203,6 +226,16 @@ export function createSqliteWorkspaceDirectoryRepository(
       @id, @personId, @classGroupId, @status,
       @startDate, @endDate, @attendanceNumber
     )
+  `);
+  const updateEnrollmentStmt = db.prepare(`
+    UPDATE enrollments
+    SET person_id = @personId,
+        class_group_id = @classGroupId,
+        status = @status,
+        start_date = @startDate,
+        end_date = @endDate,
+        attendance_number = @attendanceNumber
+    WHERE id = @id
   `);
 
   function mapSqliteConstraint(error: unknown): DirectoryError | null {
@@ -511,17 +544,88 @@ export function createSqliteWorkspaceDirectoryRepository(
       runMappedConstraint(() => insertEnrollmentStmt.run(validEnrollment));
       return {revision, enrollment: validEnrollment};
     },
-    updateEnrollment(_input) {
-      throw new DirectoryError(
-        "DIRECTORY_INVALID",
-        "enrollment update not implemented",
+    updateEnrollment({
+      workspaceId,
+      expectedRevision,
+      updatedAt,
+      enrollmentId,
+      patch,
+    }) {
+      const parsedUpdatedAt = parseUtcDateTime(updatedAt);
+      if (!parsedUpdatedAt.ok) {
+        throw new DirectoryError(
+          "DIRECTORY_INVALID",
+          parsedUpdatedAt.issues.map(issue => issue.message).join("; "),
+        );
+      }
+      const normalizedPatch = normalizeEnrollmentPatch(
+        patch as Record<string, unknown>,
       );
+      const existing = tx.getEnrollment(workspaceId, enrollmentId);
+      if (existing === null || existing.status !== "active") {
+        throw new DirectoryError(
+          "DIRECTORY_NOT_FOUND",
+          `enrollment ${enrollmentId} not found in workspace ${workspaceId}`,
+        );
+      }
+      const enrollment = validated(
+        {
+          ...existing,
+          attendanceNumber:
+            normalizedPatch.attendanceNumber !== undefined
+              ? normalizedPatch.attendanceNumber
+              : existing.attendanceNumber,
+          startDate:
+            normalizedPatch.startDate !== undefined
+              ? (normalizedPatch.startDate as Enrollment["startDate"])
+              : existing.startDate,
+        },
+        validateEnrollment,
+      );
+      const revision = assertAndBumpRevision(
+        workspaceId,
+        expectedRevision,
+        parsedUpdatedAt.value,
+      );
+      runMappedConstraint(() => updateEnrollmentStmt.run(enrollment));
+      return {revision, enrollment};
     },
-    endEnrollment(_input) {
-      throw new DirectoryError(
-        "DIRECTORY_INVALID",
-        "enrollment end not implemented",
+    endEnrollment({
+      workspaceId,
+      expectedRevision,
+      updatedAt,
+      enrollmentId,
+      endDate,
+    }) {
+      const parsedUpdatedAt = parseUtcDateTime(updatedAt);
+      if (!parsedUpdatedAt.ok) {
+        throw new DirectoryError(
+          "DIRECTORY_INVALID",
+          parsedUpdatedAt.issues.map(issue => issue.message).join("; "),
+        );
+      }
+      const existing = tx.getEnrollment(workspaceId, enrollmentId);
+      if (existing === null || existing.status !== "active") {
+        throw new DirectoryError(
+          "DIRECTORY_NOT_FOUND",
+          `enrollment ${enrollmentId} not found in workspace ${workspaceId}`,
+        );
+      }
+      const enrollment = validated(
+        {
+          ...existing,
+          status: "ended" as const,
+          endDate: endDate as Enrollment["endDate"],
+        },
+        validateEnrollment,
       );
+      const revision = assertAndBumpRevision(
+        workspaceId,
+        expectedRevision,
+        parsedUpdatedAt.value,
+      );
+      runMappedConstraint(() => updateEnrollmentStmt.run(enrollment));
+      return {revision, enrollment};
     },
     grantWorkspaceRole({expectedRevision, assignment}) {
       const validAssignment = validated(
