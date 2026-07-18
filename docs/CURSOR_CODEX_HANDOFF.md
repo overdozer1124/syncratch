@@ -34,7 +34,7 @@
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
 - **現行スライス（Workspace Directory Repositories・薄い Task 4）:** 設計承認後に Task 数を計画で確定する。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
-- 設計レビュー中のため実装進捗は **0%**。
+- 計画レビュー中のため実装進捗は **0%**。
 
 ## 現在の状態
 
@@ -44,21 +44,21 @@
 | 更新者 | Cursor |
 | ワークフロー状態 | `SPEC_REVIEW` |
 | 現在の担当 | User |
-| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）設計レビュー |
+| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）TDD実装計画レビュー |
 | 全体進捗 | Backfill **100%** / Directory Repositories 設計レビュー中 **0%** |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
 | 再提出SHA | be3b5b6da7fe3b080442c49ddfce5f480096287b |
 | 作業ブランチ | `main` |
 | 作業worktree | `C:\cursor\NewScratchEditor` |
 | 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
-| 計画 | （設計承認後に作成） |
+| 計画 | docs/superpowers/plans/2026-07-18-r1-workspace-directory-repositories-plan.md |
 | 前スライス | Legacy Organization/User Backfill = 100%（Cursor内正式GO・main統合） |
-| 次Task | ユーザーが設計書をレビュー → 承認後に TDD 実装計画 |
+| 次Task | ユーザーが実装計画をレビュー → 承認後に実行方式選択 |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
 
 ## Cursorが次に行う作業
 
-ユーザーの written spec レビュー待ち。承認前に実装計画・実装へ進まない。
+ユーザーの TDD 実装計画レビュー待ち。承認前に実装へ進まない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2795,3 +2795,16 @@ spec承認: ユーザー承認済み
 ```
 
 - 設計書を作成。実装・計画には未着手。
+
+### 2026-07-18 09:11:13 JST — Cursor（Directory Repositories TDD計画）
+
+`	ext
+状態: PLAN_REVIEW
+設計: docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md (Approved)
+計画: docs/superpowers/plans/2026-07-18-r1-workspace-directory-repositories-plan.md
+Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store wiring/gates
+次の担当: User（計画レビュー・実行方式選択）
+`
+
+- 承認済み設計を5 TaskのTDD実装計画へ展開。
+

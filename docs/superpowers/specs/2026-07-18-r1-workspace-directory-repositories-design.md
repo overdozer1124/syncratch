@@ -1,7 +1,7 @@
 # R1 Workspace Directory Repositories Design
 
 **Date:** 2026-07-18  
-**Status:** Draft (awaiting written-spec review)  
+**Status:** Approved design  
 **Predecessor:** [R1 Legacy Organization/User Backfill](2026-07-18-r1-legacy-organization-user-backfill-design.md)  
 **Roadmap:** [R1 Workspace Roster Access Plan, Phase 3 Task 4](../plans/2026-07-16-r1-workspace-roster-access-plan.md) (thin slice)
 
