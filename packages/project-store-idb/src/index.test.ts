@@ -7,11 +7,14 @@ import {
 } from "@blocksync/project-local-core";
 import {
   openProjectStore,
+  PROJECT_STORE_DATABASE_VERSION,
+  PROJECTS_OBJECT_STORE,
   ProjectStoreInvalidRecordError,
   ProjectStoreNotFoundError,
   ProjectStoreQuotaError,
   ProjectStoreRevisionConflictError,
   ProjectStoreTransactionError,
+  UPDATED_AT_INDEX,
 } from "./index.js";
 
 const databases = new Set<string>();
@@ -55,6 +58,27 @@ afterEach(async () => {
 });
 
 describe("IndexedDB project store", () => {
+  it("creates the projects store and updatedAt index in database version 1", async () => {
+    const name = databaseName("version-one");
+    const store = await openProjectStore({databaseName: name});
+    store.close();
+
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name, 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction(PROJECTS_OBJECT_STORE, "readonly");
+    expect(PROJECT_STORE_DATABASE_VERSION).toBe(1);
+    expect(database.version).toBe(1);
+    expect(
+      transaction.objectStore(PROJECTS_OBJECT_STORE).indexNames.contains(
+        UPDATED_AT_INDEX,
+      ),
+    ).toBe(true);
+    database.close();
+  });
+
   it("creates, reads, and lists structured-cloned records", async () => {
     const store = await openProjectStore({databaseName: databaseName("crud")});
     const source = record();

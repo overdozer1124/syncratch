@@ -4,7 +4,7 @@ import {
 } from "@blocksync/project-local-core";
 
 export const PROJECT_STORE_DATABASE_NAME = "blocksync-projects";
-export const PROJECT_STORE_DATABASE_VERSION = 2;
+export const PROJECT_STORE_DATABASE_VERSION = 1;
 export const PROJECTS_OBJECT_STORE = "projects";
 export const UPDATED_AT_INDEX = "updatedAt";
 

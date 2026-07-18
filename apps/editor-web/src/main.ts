@@ -28,6 +28,14 @@ import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
+import {
+  createProjectSessionTracker,
+  type ProjectSession,
+} from "./project-session.js";
+import {
+  createMemoryAssetLoader,
+  type MemoryAssetStorage,
+} from "./scratch-storage-loader.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -50,18 +58,7 @@ interface ScratchVm {
   };
 }
 
-interface ScratchStorageInstance {
-  AssetType: {
-    Sound: unknown;
-    ImageVector: unknown;
-    ImageBitmap: unknown;
-  };
-  DataFormat: {
-    SVG: string;
-    WAV: string;
-    MP3: string;
-    PNG: string;
-  };
+interface ScratchStorageInstance extends MemoryAssetStorage {
   addHelper(helper: {
     load(
       assetType: unknown,
@@ -69,13 +66,6 @@ interface ScratchStorageInstance {
       dataFormat: string,
     ): Promise<unknown>;
   }): void;
-  createAsset(
-    assetType: unknown,
-    dataFormat: string,
-    bytes: Uint8Array,
-    assetId: string,
-    generateMd5: boolean,
-  ): unknown;
 }
 
 interface ScratchGuiGlobal {
@@ -127,6 +117,7 @@ let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
 let suppressVmChanges = true;
 let failNextWrite = false;
+const projectSessions = createProjectSessionTracker();
 
 const diagnostic = {
   ready: false,
@@ -211,50 +202,11 @@ function assetRecords(
   });
 }
 
-function assetTypeFor(
-  storage: ScratchStorageInstance,
-  format: string,
-): unknown {
-  if (format === "wav" || format === "mp3") return storage.AssetType.Sound;
-  if (format === "svg") return storage.AssetType.ImageVector;
-  return storage.AssetType.ImageBitmap;
-}
-
-function storageFormatFor(
-  storage: ScratchStorageInstance,
-  format: string,
-): string {
-  if (format === "svg") return storage.DataFormat.SVG;
-  if (format === "wav") return storage.DataFormat.WAV;
-  if (format === "mp3") return storage.DataFormat.MP3;
-  return storage.DataFormat.PNG;
-}
-
 function attachLocalStorage(record: LocalProjectRecord): void {
   const assets = assetMap(record);
   const storage = new GUI.ScratchStorage();
   storage.addHelper({
-    load(requestedType, assetId, dataFormat) {
-      const format = String(dataFormat).toLowerCase();
-      const md5ext = `${assetId}.${format}`;
-      const bytes = assets.get(md5ext);
-      if (!bytes) return Promise.resolve(null);
-      const expectedType = assetTypeFor(storage, format);
-      const requestedName =
-        (requestedType as {name?: string})?.name ?? String(requestedType);
-      const expectedName =
-        (expectedType as {name?: string})?.name ?? String(expectedType);
-      if (requestedName !== expectedName) return Promise.resolve(null);
-      return Promise.resolve(
-        storage.createAsset(
-          expectedType,
-          storageFormatFor(storage, format),
-          bytes,
-          assetId,
-          false,
-        ),
-      );
-    },
+    load: createMemoryAssetLoader(storage, assets),
   });
   vm.attachStorage(storage);
 }
@@ -271,7 +223,7 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
   return projectJsonToDocument(JSON.parse(vm.toJSON()), hashes);
 }
 
-async function persistCurrent(): Promise<void> {
+async function persistCurrent(session: ProjectSession): Promise<void> {
   if (failNextWrite) {
     failNextWrite = false;
     throw new ProjectStoreTransactionError("Simulated IndexedDB write failure");
@@ -287,7 +239,10 @@ async function persistCurrent(): Promise<void> {
     assets: assetRecords(document, assets),
     saveState: "clean",
   };
-  current = await store.createOrReplace(next, current.revision);
+  const saved = await store.createOrReplace(next, current.revision);
+  projectSessions.runIfActive(session, () => {
+    current = saved;
+  });
 }
 
 function renderSaveState(state: LocalSaveState): void {
@@ -295,12 +250,14 @@ function renderSaveState(state: LocalSaveState): void {
   retryButton.hidden = state !== "error" && state !== "conflict";
 }
 
-function installSaveCoordinator(): void {
+function installSaveCoordinator(session: ProjectSession): void {
   saveCoordinator?.dispose();
   saveCoordinator = createSaveCoordinator({
     debounceMs: 250,
-    save: persistCurrent,
-    onState: renderSaveState,
+    save: () => persistCurrent(session),
+    onState: state => {
+      projectSessions.runIfActive(session, () => renderSaveState(state));
+    },
   });
   renderSaveState("clean");
 }
@@ -324,10 +281,11 @@ async function loadRecord(record: LocalProjectRecord): Promise<void> {
       await vm.loadProject(documentToProjectJson(recordToLoad.document));
     },
     commit(loaded) {
+      const session = projectSessions.begin();
       current = loaded;
       hasCurrent = true;
       titleInput.value = loaded.title;
-      installSaveCoordinator();
+      installSaveCoordinator(session);
     },
   });
 }

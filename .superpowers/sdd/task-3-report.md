@@ -195,7 +195,8 @@ in the commit.
 
 ### Store and editor corrections
 
-- Migrated the IndexedDB schema to version 2 to add an `updatedAt` index.
+- Kept the unreleased IndexedDB schema at required version 1 and creates both
+  the `projects` store and its `updatedAt` index in the same initial upgrade.
   `getLatest()` opens one reverse index cursor and never calls `getAll()` or
   advances into older records; `list()` remains compatible.
 - Editor boot now uses `getLatest()` rather than loading every project and all
@@ -257,3 +258,50 @@ pnpm audit --prod: no known vulnerabilities
 - A reviewer-noted wide primitive JSON budget gap was reproduced RED and
   fixed by counting both processed and pending values before scheduling them.
 - CSP remains intentionally deferred to Task 7 as directed.
+
+## Final Important review fixes
+
+### Corrections
+
+- Restored `PROJECT_STORE_DATABASE_VERSION` to 1. A regression opens a fresh
+  store, confirms database version 1, and confirms the `updatedAt` index is
+  present while the existing `getLatest()` cursor tests remain green.
+- Added `JPG` to the local ScratchStorage `DataFormat` boundary. Both `jpg`
+  and `jpeg` requests resolve `.jpg` bytes and call `createAsset` with
+  `DataFormat.JPG`; the regression exports a JPG project, reloads it, and
+  exercises both spellings.
+- Added monotonically increasing project-session tokens. An in-flight save
+  still performs CAS against the old project snapshot, but its completion can
+  update global `current` or render save state only while that session remains
+  active. Switching through New/import/loadRecord begins a new session and
+  disposes the old coordinator.
+
+### Final TDD and verification
+
+RED:
+
+```text
+project-store-idb:
+- opening the implementation-created database explicitly at version 1 failed
+  with VersionError
+
+editor-web:
+- project-session and scratch-storage-loader modules did not exist
+```
+
+GREEN:
+
+```text
+@blocksync/project-store-idb: 12 tests passed; typecheck passed
+@blocksync/editor-web: 12 unit tests passed; typecheck/build passed
+editor-web Playwright: 6 acceptance tests passed
+@blocksync/project-local-core: 14 tests passed; typecheck passed
+@blocksync/sb3-tools: 56 tests passed; build passed
+@blocksync/r1-scratch-host: 29 tests + 1 browser smoke passed
+workspace build: passed
+```
+
+Independent final review found no Critical or High issues. Because the schema
+is explicitly unreleased, version 1 is correct for release; developers who
+already ran the transient branch-local version 2 database must clear that
+local development database before running this revision.
