@@ -1169,6 +1169,69 @@ describe("sqlite workspace directory repository - writes", () => {
         message: expect.stringContaining("patch"),
       }),
     );
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(1);
+    expect(
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id)),
+    ).toEqual(enrollment);
+  });
+
+  it("rejects null and present-but-undefined enrollment update patches without changing revision or row", () => {
+    const {repo, workspaceId} = openEnrollmentDb(
+      "dir-enroll-update-patch-body-",
+    );
+    const enrollment = {
+      id: "enrollment-1",
+      personId: "person-1",
+      classGroupId: "class-1",
+      status: "active",
+      startDate: "2026-04-01",
+      endDate: null,
+      attendanceNumber: "12",
+    } as Enrollment;
+    repo.withTransaction(tx =>
+      tx.createEnrollment({
+        workspaceId,
+        expectedRevision: 0,
+        updatedAt: "2026-07-18T01:00:00.000Z",
+        enrollment,
+      }),
+    );
+
+    const invalidPatches = [
+      null,
+      {attendanceNumber: undefined},
+      {startDate: undefined},
+    ] as const;
+
+    for (const [index, patch] of invalidPatches.entries()) {
+      expect(() =>
+        repo.withTransaction(tx =>
+          tx.updateEnrollment({
+            workspaceId,
+            expectedRevision: 1,
+            updatedAt: `2026-07-18T0${index + 2}:00:00.000Z`,
+            enrollmentId: enrollment.id,
+            patch: patch as never,
+          }),
+        ),
+      ).toThrow(
+        expect.objectContaining({
+          code: "DIRECTORY_INVALID",
+          message: expect.stringContaining("patch"),
+        }),
+      );
+    }
+
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(1);
+    expect(
+      repo.withTransaction(tx => tx.getEnrollment(workspaceId, enrollment.id)),
+    ).toEqual(enrollment);
   });
 
   it("createMembership with a missing accountId yields DIRECTORY_NOT_FOUND and leaves revision unchanged", () => {

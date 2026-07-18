@@ -43,13 +43,25 @@ const ENROLLMENT_UPDATE_KEYS = new Set([
   "startDate",
 ]);
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function normalizeEnrollmentPatch(
-  patch: Record<string, unknown>,
+  patch: unknown,
 ): {attendanceNumber?: string | null; startDate?: string} {
+  if (!isPlainObject(patch)) {
+    throw new DirectoryError(
+      "DIRECTORY_INVALID",
+      "enrollment patch must be a non-null object",
+    );
+  }
   const keys = Object.keys(patch);
   if (keys.length === 0) {
     throw new DirectoryError("DIRECTORY_INVALID", "enrollment patch is empty");
   }
+  const normalized: {attendanceNumber?: string | null; startDate?: string} =
+    {};
   for (const key of keys) {
     if (!ENROLLMENT_UPDATE_KEYS.has(key)) {
       throw new DirectoryError(
@@ -57,8 +69,20 @@ function normalizeEnrollmentPatch(
         `unknown enrollment patch field: ${key}`,
       );
     }
+    const value = patch[key];
+    if (value === undefined) {
+      throw new DirectoryError(
+        "DIRECTORY_INVALID",
+        `enrollment patch field ${key} must not be undefined`,
+      );
+    }
+    if (key === "attendanceNumber") {
+      normalized.attendanceNumber = value as string | null;
+    } else {
+      normalized.startDate = value as string;
+    }
   }
-  return patch as {attendanceNumber?: string | null; startDate?: string};
+  return normalized;
 }
 
 interface WorkspaceRoleAssignmentRow {
@@ -558,9 +582,7 @@ export function createSqliteWorkspaceDirectoryRepository(
           parsedUpdatedAt.issues.map(issue => issue.message).join("; "),
         );
       }
-      const normalizedPatch = normalizeEnrollmentPatch(
-        patch as Record<string, unknown>,
-      );
+      const normalizedPatch = normalizeEnrollmentPatch(patch);
       const existing = tx.getEnrollment(workspaceId, enrollmentId);
       if (existing === null || existing.status !== "active") {
         throw new DirectoryError(
