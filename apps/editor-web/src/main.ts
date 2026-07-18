@@ -16,6 +16,14 @@ import {
   sha256Hex,
 } from "@blocksync/sb3-tools/browser";
 import {
+  createDriveRestAdapter,
+  createGoogleAuthorization,
+  createGooglePicker,
+  loadGoogleScripts,
+  type GoogleIdentityGlobal,
+  type PickerBuildOptions,
+} from "@blocksync/google-drive-sync";
+import {
   createSaveCoordinator,
   type LocalSaveState,
   type SaveCoordinator,
@@ -36,6 +44,12 @@ import {
   createMemoryAssetLoader,
   type MemoryAssetStorage,
 } from "./scratch-storage-loader.js";
+import {
+  createEditorDriveIntegration,
+  type EditorDriveIntegration,
+  type EditorDriveStatus,
+} from "./drive-integration.js";
+import {persistDriveFileLink} from "./drive-file-link.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -84,6 +98,43 @@ interface ScratchGuiGlobal {
   };
 }
 
+interface GapiGlobal {
+  load(
+    module: string,
+    options: {
+      callback(): void;
+      onerror(): void;
+    },
+  ): void;
+}
+
+interface PickerView {
+  setMimeTypes(mimeTypes: string): void;
+}
+
+interface PickerBuilder {
+  setDeveloperKey(value: string): PickerBuilder;
+  setAppId(value: string): PickerBuilder;
+  setOAuthToken(value: string): PickerBuilder;
+  addView(value: PickerView): PickerBuilder;
+  setCallback(callback: (data: Record<string, unknown>) => void): PickerBuilder;
+  build(): {setVisible(visible: boolean): void};
+}
+
+interface PickerGlobal {
+  Action: {PICKED: string; CANCEL: string};
+  Response: {DOCUMENTS: string};
+  Document: {ID: string};
+  ViewId: {DOCS: string};
+  View: new (viewId: string) => PickerView;
+  DocsUploadView: new () => PickerView;
+  PickerBuilder: new () => PickerBuilder;
+}
+
+interface GoogleBrowserGlobal extends GoogleIdentityGlobal {
+  picker: PickerGlobal;
+}
+
 declare const GUI: ScratchGuiGlobal;
 
 const statusText: Record<LocalSaveState, string> = {
@@ -108,6 +159,13 @@ const downloadButton = requiredElement<HTMLButtonElement>("download-project");
 const saveButton = requiredElement<HTMLButtonElement>("save-project");
 const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const saveStatus = requiredElement<HTMLElement>("save-status");
+const connectGoogleButton =
+  requiredElement<HTMLButtonElement>("connect-google");
+const openDriveButton = requiredElement<HTMLButtonElement>("open-drive");
+const saveDriveButton = requiredElement<HTMLButtonElement>("save-drive");
+const disconnectGoogleButton =
+  requiredElement<HTMLButtonElement>("disconnect-google");
+const driveStatus = requiredElement<HTMLElement>("drive-status");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 
 let store: ProjectStore;
@@ -115,6 +173,7 @@ let vm: ScratchVm;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
+let driveIntegration: EditorDriveIntegration;
 let suppressVmChanges = true;
 let failNextWrite = false;
 const projectSessions = createProjectSessionTracker();
@@ -265,6 +324,7 @@ function installSaveCoordinator(session: ProjectSession): void {
 function markDirty(): void {
   if (suppressVmChanges) return;
   saveCoordinator.markDirty();
+  driveIntegration.markLocalChange();
 }
 
 async function loadRecord(record: LocalProjectRecord): Promise<void> {
@@ -337,7 +397,11 @@ async function exportCurrentSb3(): Promise<Uint8Array> {
   return exportSb3(document, assets);
 }
 
-async function importProject(bytes: Uint8Array, title: string): Promise<void> {
+async function importProject(
+  bytes: Uint8Array,
+  title: string,
+  driveFileId?: string,
+): Promise<void> {
   const result = await loadSb3(bytes);
   if (!result.ok || !result.document || !result.assets) {
     const message = result.issues.map(issue => issue.message).join("; ");
@@ -352,6 +416,7 @@ async function importProject(bytes: Uint8Array, title: string): Promise<void> {
     document: result.document,
     assets: assetRecords(result.document, result.assets),
     saveState: "clean",
+    ...(driveFileId ? {driveFileId} : {}),
   };
   await store.createOrReplace(record, null);
   try {
@@ -385,6 +450,144 @@ async function getVm(): Promise<ScratchVm> {
   });
 }
 
+function googleGlobal(): GoogleBrowserGlobal | undefined {
+  return (window as unknown as {google?: GoogleBrowserGlobal}).google;
+}
+
+function gapiGlobal(): GapiGlobal | undefined {
+  return (window as unknown as {gapi?: GapiGlobal}).gapi;
+}
+
+function buildPicker(options: PickerBuildOptions) {
+  const picker = googleGlobal()?.picker;
+  if (!picker) throw new Error("Google Picker did not initialize");
+  const view = new picker.View(picker.ViewId.DOCS);
+  view.setMimeTypes(options.mimeType);
+  return new picker.PickerBuilder()
+    .setDeveloperKey(options.apiKey)
+    .setAppId(options.appId)
+    .setOAuthToken(options.accessToken)
+    .addView(view)
+    .addView(new picker.DocsUploadView())
+    .setCallback(data => {
+      if (data.action === picker.Action.CANCEL) {
+        options.callback({action: "cancel"});
+        return;
+      }
+      if (data.action !== picker.Action.PICKED) return;
+      const documents = data[picker.Response.DOCUMENTS];
+      const first = Array.isArray(documents) ? documents[0] : undefined;
+      const fileId = typeof first === "object" && first !== null
+        ? (first as Record<string, unknown>)[picker.Document.ID]
+        : undefined;
+      options.callback({
+        action: "picked",
+        documents: [{id: typeof fileId === "string" ? fileId : undefined}],
+      });
+    })
+    .build();
+}
+
+const driveStatusText: Record<EditorDriveStatus, string> = {
+  "not-configured": "Not configured",
+  disconnected: "Disconnected",
+  connected: "Connected",
+  syncing: "Syncing…",
+  synced: "Synced",
+  unsynced: "Unsynced",
+  conflict: "Conflict",
+};
+
+function renderDriveStatus(
+  status: EditorDriveStatus,
+  message?: string,
+): void {
+  driveStatus.textContent = message
+    ? `${driveStatusText[status]}: ${message}`
+    : driveStatusText[status];
+  driveStatus.title = message ?? "";
+  const configured = status !== "not-configured";
+  const connected = !["not-configured", "disconnected", "syncing"]
+    .includes(status);
+  connectGoogleButton.disabled =
+    !configured || status === "connected" || status === "synced" ||
+    status === "syncing";
+  openDriveButton.disabled = !connected;
+  saveDriveButton.disabled = !connected || status === "conflict";
+  disconnectGoogleButton.disabled = !configured || status === "disconnected";
+}
+
+async function persistDriveFileId(
+  driveFileId: string,
+  localProjectId: string,
+): Promise<void> {
+  const saved = await persistDriveFileLink(store, localProjectId, driveFileId);
+  if (
+    hasCurrent &&
+    current.localProjectId === localProjectId &&
+    current.revision < saved.revision
+  ) {
+    current = saved;
+  }
+}
+
+function setupDriveIntegration(): EditorDriveIntegration {
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
+  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY?.trim() ?? "";
+  const appId = import.meta.env.VITE_GOOGLE_APP_ID?.trim() ?? "";
+  const configured = Boolean(clientId && apiKey && appId);
+  const scripts = loadGoogleScripts();
+  const auth = createGoogleAuthorization({
+    clientId,
+    loadScripts: scripts,
+    getGoogle: googleGlobal,
+  });
+  const picker = createGooglePicker({
+    apiKey,
+    appId,
+    initializePicker: async () => {
+      await scripts();
+      const gapi = gapiGlobal();
+      if (!gapi) throw new Error("Google API loader did not initialize");
+      await new Promise<void>((resolve, reject) => {
+        gapi.load("picker", {
+          callback: resolve,
+          onerror: () => reject(new Error("Google Picker failed to load")),
+        });
+      });
+    },
+    buildPicker,
+  });
+  const drive = createDriveRestAdapter({
+    fetch: window.fetch.bind(window),
+    getAccessToken: auth.getAccessToken,
+    validateSb3: async bytes => {
+      const loaded = await loadSb3(bytes);
+      return Boolean(loaded.ok && loaded.document && loaded.assets);
+    },
+  });
+  return createEditorDriveIntegration({
+    configured,
+    auth,
+    picker,
+    drive,
+    exportCurrent: async () => {
+      await saveCoordinator.flush();
+      return exportCurrentSb3();
+    },
+    getCurrent: () => ({
+      localProjectId: current.localProjectId,
+      title: titleInput.value,
+      driveFileId: current.driveFileId,
+    }),
+    importAsNewLocal: importProject,
+    persistDriveFileId,
+    hashBytes: async bytes => sha256Hex(bytes),
+    createSnapshotId: () => crypto.randomUUID(),
+    onStatus: renderDriveStatus,
+  });
+}
+
 async function boot(): Promise<void> {
   store = await openProjectStore();
   vm = await getVm();
@@ -399,6 +602,8 @@ async function boot(): Promise<void> {
   }
   diagnostic.ready = true;
 }
+
+driveIntegration = setupDriveIntegration();
 
 titleInput.addEventListener("input", markDirty);
 newButton.addEventListener("click", () => void createNewProject());
@@ -423,6 +628,18 @@ downloadButton.addEventListener("click", () => {
 });
 saveButton.addEventListener("click", () => void saveCoordinator.flush());
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
+connectGoogleButton.addEventListener("click", () => {
+  void driveIntegration.connect();
+});
+openDriveButton.addEventListener("click", () => {
+  void driveIntegration.openFromDrive();
+});
+saveDriveButton.addEventListener("click", () => {
+  void driveIntegration.saveToDrive();
+});
+disconnectGoogleButton.addEventListener("click", () => {
+  driveIntegration.disconnect();
+});
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);

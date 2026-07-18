@@ -24,6 +24,33 @@ test("fresh load mounts the standalone GUI and reports local save ready", async 
   ).toBe(0);
 });
 
+test("no Google configuration keeps Drive disabled and local editing available", async ({
+  page,
+}) => {
+  const googleRequests: string[] = [];
+  page.on("request", request => {
+    if (
+      request.url().includes("google.com") ||
+      request.url().includes("googleapis.com")
+    ) {
+      googleRequests.push(request.url());
+    }
+  });
+  await waitUntilReady(page);
+
+  await expect(page.getByTestId("drive-status")).toHaveText("Not configured");
+  await expect(
+    page.getByRole("button", {name: "Connect Google"}),
+  ).toBeDisabled();
+  await page.evaluate(
+    id => window.__blocksyncTask3!.createTestBlock(id),
+    "drive-unconfigured-local-block",
+  );
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+
+  expect(googleRequests).toEqual([]);
+});
+
 test("VM block mutation autosaves and survives reload", async ({page}) => {
   await waitUntilReady(page);
 

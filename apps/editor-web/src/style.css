@@ -10,7 +10,7 @@ body,
 
 #app {
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
+  grid-template-rows: 82px minmax(0, 1fr);
 }
 
 .toolbar {
@@ -18,8 +18,9 @@ body,
   z-index: 2147483647;
   inset: 0 0 auto;
   box-sizing: border-box;
-  height: 44px;
+  min-height: 82px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
@@ -51,6 +52,19 @@ body,
   text-align: right;
 }
 
+.drive-controls {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#drive-status {
+  margin-left: auto;
+  min-width: 108px;
+  text-align: right;
+}
+
 #scratch-gui,
 #scratch-gui > div {
   min-height: 0;
@@ -59,5 +73,5 @@ body,
 
 #scratch-gui {
   box-sizing: border-box;
-  padding-top: 44px;
+  padding-top: 82px;
 }
