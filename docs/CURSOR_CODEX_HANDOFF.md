@@ -2997,7 +2997,7 @@ P1-2: 解消。getEnrollment(workspaceId, enrollmentId)とownership JOIN、forei
 実装SHA（正式承認）: 76e22f3a1810e3d5b48f431c28ef3c74417b1486
 承認時 tip: 2d823d81ac6d05de359fad8d3aabf9df2c35c8c0
 統合後追加: describe 名の区切りを ASCII `- reads` / `- writes` に修正
-正本: main @ （本コミットtip）
+正本: main @ a6b68dc9823a60d4195713463ca44fc2050d85ef
 作業ブランチ/worktree: 削除予定
 未解決（スライス外）:
 - update/end enrollment / overlap service rule / claim / System Owner transfer / audit
