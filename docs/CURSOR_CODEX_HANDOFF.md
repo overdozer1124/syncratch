@@ -49,7 +49,7 @@
 | 全体進捗 | Backfill **100%** / Directory thin slices 実装・正式承認 **100%** / broad attendance and Task 5 remain open |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
 | 実装SHA | `76e22f3a1810e3d5b48f431c28ef3c74417b1486`（fix(directory): serialize CAS and scope enrollment reads） |
-| 正本SHA（main tip） | `（commit後に確定）` |
+| 統合記録SHA | `a6b68dc9823a60d4195713463ca44fc2050d85ef`（docs: merge directory thin slices to main after Codex GO） |
 | レビュー対象範囲 | `0ba3fe403baa0358a5129e9b917bf0fab64c712b..76e22f3a1810e3d5b48f431c28ef3c74417b1486`（承認範囲） |
 | 再提出SHA | handoff tip at approval: `2d823d81ac6d05de359fad8d3aabf9df2c35c8c0` |
 | 作業ブランチ | `main` |
@@ -2997,8 +2997,8 @@ P1-2: 解消。getEnrollment(workspaceId, enrollmentId)とownership JOIN、forei
 実装SHA（正式承認）: 76e22f3a1810e3d5b48f431c28ef3c74417b1486
 承認時 tip: 2d823d81ac6d05de359fad8d3aabf9df2c35c8c0
 統合後追加: describe 名の区切りを ASCII `- reads` / `- writes` に修正
-正本: main @ 26a393a2c77ef5c2339b1ff616a6eeb12ae99347
-作業ブランチ/worktree: 削除予定
+統合記録SHA: a6b68dc9823a60d4195713463ca44fc2050d85ef
+作業ブランチ/worktree: 削除済み
 未解決（スライス外）:
 - update/end enrollment / overlap service rule / claim / System Owner transfer / audit
 次の担当: Cursor（次スライス準備）
