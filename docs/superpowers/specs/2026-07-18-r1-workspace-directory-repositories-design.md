@@ -14,7 +14,14 @@ and a SQLite adapter in `@blocksync/project-store-sqlite`, wired through
 This thin slice covers **identity and membership** tables only: read existing
 v5-backfilled rows, and perform **minimal writes** under
 `workspace_directory_revisions` CAS. It does not implement the full roadmap
-Task 4 surface (claims, attendance uniqueness, last-owner protection).
+Task 4 surface (claims, full attendance lifecycle, last-owner protection).
+
+The attendance uniqueness follow-on adds a deliberately narrow enrollment
+surface: `getEnrollment(enrollmentId)` and CAS-gated
+`createEnrollment({ workspaceId, expectedRevision, updatedAt, enrollment })`.
+For active rows with non-null attendance numbers, SQLite enforces uniqueness
+through the existing `ux_enroll_active_attendance` partial UNIQUE index.
+Update/end enrollment and service-layer date-overlap rules remain follow-ons.
 
 ## 2. Non-goals
 

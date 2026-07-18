@@ -170,6 +170,11 @@ adapter + CAS writes landed; claim/attendance/last-owner/audit remain open.
 via `DIRECTORY_LAST_OWNER` on `endMembership` landed. System Owner protection,
 atomic transfer, claim, attendance uniqueness, and audit remain open.
 
+**Thin slice (2026-07-18 attendance):** `getEnrollment` / CAS-gated
+`createEnrollment` landed; active non-null attendance uniqueness follows the
+existing partial UNIQUE index. Update/end enrollment, overlap-only service
+rules, claim, System Owner transfer, and audit remain open.
+
 ### Task 5: Directory service
 
 - [ ] Implement school/year/grade/class lifecycle.

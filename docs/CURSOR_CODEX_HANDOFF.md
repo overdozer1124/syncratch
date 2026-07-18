@@ -41,27 +41,27 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 14:04:00 JST |
+| 最終更新 | 2026-07-18 19:15:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Directory last-owner protection（Workspace membership owner refuse） |
-| 全体進捗 | Backfill **100%** / Directory thin slices 実装完了 / last-owner refuse 実装完了（レビュー待ち） |
+| 現在のTask | Directory attendance uniqueness thin slice |
+| 全体進捗 | Backfill **100%** / Directory thin slices 実装完了（レビュー待ち） / broad attendance and Task 5 remain open |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 実装SHA | `f0dafe0`（feat(store): protect last workspace owner membership） |
-| 再提出SHA | implementation tip: `f0dafe0` |
-| 作業ブランチ | `feat/r1-directory-last-owner` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-last-owner` |
-| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-last-owner-protection-design.md`（Approved） |
-| 計画 | Cursor plan `last-owner-protection` / design §7 files |
-| 前スライス | Directory constraint error mapping follow-up = 実装完了（main） |
-| 次Task | Codex / Cursor内レビュー（last-owner protection） |
+| 実装SHA | `d3c44754f86b7982b0a2d0828369a2f924fd4cd3`（feat(store): create enrollment with attendance uniqueness） |
+| 再提出SHA | implementation tip: `d3c4475`（docs commit ≠ implementation SHA） |
+| 作業ブランチ | `feat/r1-directory-attendance` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-attendance` |
+| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-attendance-uniqueness-design.md`（Approved） |
+| 計画 | attendance uniqueness thin slice |
+| 前スライス | Directory last-owner protection = 実装完了（review pending） |
+| 次Task | Codex / Cursor内レビュー（attendance uniqueness thin slice） |
 | レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
-| 未解決（スライス外） | claim / attendance / System Owner last-owner / transfer / audit |
+| 未解決（スライス外） | update/end enrollment / overlap service rule / claim / System Owner transfer / audit |
 
 ## Cursorが次に行う作業
 
-Directory last-owner protection の Codex / Cursor内レビュー待ち。
+Directory attendance uniqueness thin slice の Codex / Cursor内レビュー待ち。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2892,6 +2892,25 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 - predecessor §8 に DIRECTORY_LAST_OWNER 追記
 未解決（スライス外）:
 - claim / attendance / System Owner last-owner / transfer / audit
+次の担当: Codex / Cursor内レビュー
+```
+
+### 2026-07-18 19:15:00 JST — Cursor（Directory attendance uniqueness thin slice）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Directory attendance uniqueness thin slice
+実装SHA: d3c44754f86b7982b0a2d0828369a2f924fd4cd3
+再提出SHA: implementation tip: d3c4475（docs commit ≠ implementation SHA）
+証跡:
+- directory-repository.contract.test.ts: PASS（27 tests、enrollment 6 casesを含む）
+- workspace-directory: PASS（66 tests）+ typecheck
+- project-store-sqlite: full package test + typecheck PASS
+実装:
+- getEnrollment / CAS-gated createEnrollment
+- active non-null attendance uniqueness は ux_enroll_active_attendance に従う
+未解決（スライス外）:
+- update/end enrollment / overlap service rule / claim / System Owner transfer / audit
 次の担当: Codex / Cursor内レビュー
 ```
 
