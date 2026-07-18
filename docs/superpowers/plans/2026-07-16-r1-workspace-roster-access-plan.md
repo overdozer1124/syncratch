@@ -1,6 +1,10 @@
 # R1 Workspace, Roster & Scoped Access Implementation Plan
 
-> **Status:** Approved execution roadmap — implement through the linked detailed subplans
+> **STATUS — FROZEN / SUPERSEDED AS PRIMARY ROADMAP (2026-07-19)**
+>
+> This historical plan now belongs to the optional School/self-hosted track. The Local-First Community direction in `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` supersedes it as the active primary roadmap.
+>
+> Preserve the completed implementation and evidence, and keep `r1-persist-server`, SQLite GC, Workspace/Person/roster/RBAC/audit packages buildable. Do not continue unchecked tasks—including the pending Person/link-claim and audit work—until the School/self-hosted track is explicitly resumed. This notice changes status only; the historical plan below is intentionally preserved.
 >
 > **Design:** `docs/superpowers/specs/2026-07-16-r1-workspace-roster-access-design.md` (approved at `3dda2b8`)
 >

@@ -4,6 +4,12 @@
 
 ## システム仕様書・実装計画書 v1.2
 
+> **文書状態 — 任意 School/self-hosted track の履歴仕様（2026-07-19）**
+>
+> 本 v1.2 は、サーバー永続化、Workspace、Person、学校名簿、RBAC、監査を備える任意の School/self-hosted track を記述する履歴仕様として保持する。Community の主ロードマップではなく、主系は `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` の Local-First 設計へ移行した。
+>
+> 既存の School Server 実装と本書本文は削除・全面改稿せず buildable な将来 track として凍結する。以下にある Release 1 の Workspace/名簿優先順、サーバー正本、AI、集中バックアップ、大規模共同編集の記述は Local-First 初回リリースの要求ではない。
+
 ---
 
 ## 0. 文書管理
