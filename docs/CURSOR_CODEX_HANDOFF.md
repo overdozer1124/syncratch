@@ -40,14 +40,15 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 10:35:00 JST |
+| 最終更新 | 2026-07-18 10:40:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
 | 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 5）実装完了 |
 | 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了（レビュー待ち） |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 再提出SHA | `c4a1d2d568ce46e2dc3b5a32bb496bfe3b4d3c83` |
+| 実装SHA | `50c01e3`（feat(store): expose directoryRepo from openSqliteStore） |
+| 再提出SHA | implementation tip: `50c01e3` |
 | 作業ブランチ | `feat/r1-directory-repos` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-repos` |
 | 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
@@ -2814,7 +2815,8 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 状態: READY_FOR_CODEX_REVIEW
 対象: Workspace Directory Repositories（薄い Phase 3 Task 5）
 基準SHA: 52a220f
-再提出SHA: 50c01e3
+実装SHA: 50c01e3
+再提出SHA: implementation tip: 50c01e3
 実装:
 - openSqliteStore が共有SQLite接続上の directoryRepo を公開
 - store経由の create/get スモークテストを追加
@@ -2835,13 +2837,25 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 ```text
 状態: READY_FOR_CODEX_REVIEW
 対象: Task 5 ドキュメント整合
-再提出SHA: c4a1d2d
+実装SHA: 50c01e3
 修正:
 - 進捗セクションの「計画レビュー中 / 実装進捗 0%」を削除し実装完了・レビュー待ちに整合
-- 再提出SHA を branch tip に更新（`git rev-parse HEAD`）
 - task-5-report から無関係 VACUUM 節を削除、contract smoke を 18 tests に訂正
 未解決（スライス外）:
 - claim、attendance、last-owner、audit
+次の担当: Codex
+```
+
+### 2026-07-18 10:40:00 JST — Cursor（Task 5 再レビュー: 実装SHA固定）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Task 5 ドキュメント整合（再提出）
+実装SHA: 50c01e3（feat(store): expose directoryRepo from openSqliteStore）
+再提出SHA: implementation tip: 50c01e3
+修正:
+- ドキュメントコミットを実装SHAと誤記していた c4a1d2d 等を削除
+- 薄いスライス実装 tip を 50c01e3 に明示固定（docs commit ≠ implementation SHA）
 次の担当: Codex
 ```
 

@@ -39,4 +39,4 @@ None. Existing untracked `.superpowers/sdd` task artifacts were not staged.
 - Removed unrelated Pre-v5 VACUUM backup gate section that was appended by mistake.
 - Corrected contract smoke count from 19 to 18 (verified via
   `pnpm --filter @blocksync/project-store-sqlite test -- src/directory-repository.contract.test.ts`).
-- Aligned `docs/CURSOR_CODEX_HANDOFF.md` status/SHA with HEAD `c4a1d2d`.
+- Pinned thin-slice implementation SHA to `50c01e3`; docs commits are not the implementation tip.
