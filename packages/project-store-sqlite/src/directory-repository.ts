@@ -170,26 +170,38 @@ export function createSqliteWorkspaceDirectoryRepository(
     WHERE id = @id
   `);
 
-  function isSqliteConstraintError(error: unknown): boolean {
-    return (
-      typeof error === "object" &&
-      error !== null &&
-      typeof (error as {code?: unknown}).code === "string" &&
-      (error as {code: string}).code.startsWith("SQLITE_CONSTRAINT")
-    );
+  function mapSqliteConstraint(error: unknown): DirectoryError | null {
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      typeof (error as {code?: unknown}).code !== "string"
+    ) {
+      return null;
+    }
+    const code = (error as {code: string}).code;
+    if (!code.startsWith("SQLITE_CONSTRAINT")) {
+      return null;
+    }
+    const message =
+      error instanceof Error ? error.message : "directory constraint violated";
+    switch (code) {
+      case "SQLITE_CONSTRAINT_UNIQUE":
+      case "SQLITE_CONSTRAINT_PRIMARYKEY":
+        return new DirectoryError("DIRECTORY_CONFLICT", message);
+      case "SQLITE_CONSTRAINT_FOREIGNKEY":
+        return new DirectoryError("DIRECTORY_NOT_FOUND", message);
+      default:
+        return new DirectoryError("DIRECTORY_INVALID", message);
+    }
   }
 
-  function runOrConflict<T>(fn: () => T): T {
+  function runMappedConstraint<T>(fn: () => T): T {
     try {
       return fn();
     } catch (error) {
-      if (isSqliteConstraintError(error)) {
-        throw new DirectoryError(
-          "DIRECTORY_CONFLICT",
-          error instanceof Error
-            ? error.message
-            : "directory constraint violated",
-        );
+      const mapped = mapSqliteConstraint(error);
+      if (mapped) {
+        throw mapped;
       }
       throw error;
     }
@@ -301,7 +313,7 @@ export function createSqliteWorkspaceDirectoryRepository(
           "initialRevision must be a non-negative safe integer",
         );
       }
-      runOrConflict(() => {
+      runMappedConstraint(() => {
         insertWorkspaceStmt.run(validWorkspace);
         insertRevisionStmt.run({
           workspaceId: validWorkspace.id,
@@ -318,7 +330,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         validPerson.updatedAt,
       );
-      runOrConflict(() => insertPersonStmt.run(validPerson));
+      runMappedConstraint(() => insertPersonStmt.run(validPerson));
       return {revision, person: validPerson};
     },
     updatePerson({workspaceId, expectedRevision, personId, patch, updatedAt}) {
@@ -343,7 +355,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         updatedAt,
       );
-      runOrConflict(() => updatePersonStmt.run(merged));
+      runMappedConstraint(() => updatePersonStmt.run(merged));
       return {revision, person: merged};
     },
     linkPersonAccount({workspaceId, expectedRevision, link}) {
@@ -353,7 +365,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         validLink.linkedAt,
       );
-      runOrConflict(() => insertLinkStmt.run(validLink));
+      runMappedConstraint(() => insertLinkStmt.run(validLink));
       return {revision, link: validLink};
     },
     unlinkPersonAccount({workspaceId, expectedRevision, linkId, unlinkedAt}) {
@@ -379,7 +391,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         unlinkedAt,
       );
-      runOrConflict(() => updateLinkStmt.run({id: linkId, unlinkedAt}));
+      runMappedConstraint(() => updateLinkStmt.run({id: linkId, unlinkedAt}));
       return {revision, link: updated};
     },
     createMembership({expectedRevision, membership}) {
@@ -392,7 +404,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         validMembership.startedAt,
       );
-      runOrConflict(() => insertMembershipStmt.run(validMembership));
+      runMappedConstraint(() => insertMembershipStmt.run(validMembership));
       return {revision, membership: validMembership};
     },
     endMembership({workspaceId, expectedRevision, membershipId, endedAt}) {
@@ -418,7 +430,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         endedAt,
       );
-      runOrConflict(() => endMembershipStmt.run({id: membershipId, endedAt}));
+      runMappedConstraint(() => endMembershipStmt.run({id: membershipId, endedAt}));
       return {revision, membership: updated};
     },
     grantWorkspaceRole({expectedRevision, assignment}) {
@@ -432,7 +444,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         assignment.startedAt,
       );
-      runOrConflict(() =>
+      runMappedConstraint(() =>
         insertRoleAssignmentStmt.run({
           id: assignment.id,
           accountId: assignment.accountId,
@@ -470,7 +482,7 @@ export function createSqliteWorkspaceDirectoryRepository(
         expectedRevision,
         endedAt,
       );
-      runOrConflict(() =>
+      runMappedConstraint(() =>
         endRoleAssignmentStmt.run({id: assignmentId, endedAt}),
       );
       return {revision, assignment: updated};

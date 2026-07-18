@@ -466,6 +466,37 @@ describe("sqlite workspace directory repository — writes", () => {
     expect(result.membership.accountId).toBe(secondAccountId);
   });
 
+  it("createMembership with a missing accountId yields DIRECTORY_NOT_FOUND and leaves revision unchanged", () => {
+    const {db, workspaceId} = openFixtureDb("dir-fk-membership-");
+    const repo = createSqliteWorkspaceDirectoryRepository(db);
+    const before = repo.withTransaction(tx =>
+      tx.getDirectoryRevision(workspaceId)!,
+    );
+
+    expect(() =>
+      repo.withTransaction(tx =>
+        tx.createMembership({
+          expectedRevision: before.revision,
+          membership: {
+            id: "77777777-7777-4777-8777-777777777777",
+            workspaceId,
+            accountId: "missing-account-for-fk-test",
+            role: "member",
+            status: "active",
+            startedAt: "2026-07-18T00:00:00.000Z",
+            endedAt: null,
+          } as never,
+        }),
+      ),
+    ).toThrow(expect.objectContaining({code: "DIRECTORY_NOT_FOUND"}));
+
+    expect(
+      repo.withTransaction(tx => tx.getDirectoryRevision(workspaceId))
+        ?.revision,
+    ).toBe(before.revision);
+    db.close();
+  });
+
   it("duplicate active membership for the same (workspace, account) yields DIRECTORY_CONFLICT", () => {
     const {db, workspaceId, accountId} = openFixtureDb("dir-dup-membership-");
     const repo = createSqliteWorkspaceDirectoryRepository(db);
