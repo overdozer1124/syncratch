@@ -28,11 +28,13 @@ Update/end enrollment and service-layer date-overlap rules remain follow-ons.
 This slice does not:
 
 - create claim, setup-secret, or rate-limit tables;
-- implement school / academic year / grade / class / enrollment /
-  staff assignment / roster import repositories;
+- implement school / academic year / grade / class repositories, enrollment
+  update/end operations, staff assignment, or roster import repositories;
 - write `audit_events`;
 - enforce last System Owner or last Workspace Owner removal rules;
-- enforce attendance-number uniqueness (no enrollment writes);
+- enforce attendance-number uniqueness beyond the attendance follow-on's
+  SQLite constraint for active non-null rows created through `createEnrollment`,
+  or service-layer date-overlap rules;
 - change auth principal, sessions, or `AuthRepository`;
 - add API or UI routes;
 - add `projects.workspace_id` or change project/asset repositories;

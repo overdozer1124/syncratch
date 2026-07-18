@@ -34,8 +34,9 @@
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
 - **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
 - **現行スライス（Directory last-owner protection）:** Workspace membership owner 拒否のみ実装完了（`f0dafe0`）。Codex / Cursor内レビュー待ち。
+- **現行スライス（Directory attendance uniqueness）:** `getEnrollment` / CAS-gated `createEnrollment` と active non-null attendance の UNIQUE 制約を実装完了（`d3c4475`）。Codex / Cursor内レビュー待ち。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
-- 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。claim / attendance / System Owner / transfer / audit は未実装。
+- 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。update/end enrollment、overlap service rule、claim、System Owner transfer、audit は未実装。
 
 ## 現在の状態
 
