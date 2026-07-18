@@ -1,8 +1,11 @@
 # BlockSync Local-First Pivot Design
 
-**Status:** Primary product direction  
-**Date:** 2026-07-19  
-**Supersedes as primary roadmap:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md` and `docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md`  
+**Status:** Primary product direction
+
+**Date:** 2026-07-19
+
+**Supersedes as primary roadmap:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md` and `docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md`
+
 **Compatibility constraint:** Published `ProjectEnvelopeV1` bytes, canonicalization, and hash contract remain unchanged.
 
 ## 1. Decision

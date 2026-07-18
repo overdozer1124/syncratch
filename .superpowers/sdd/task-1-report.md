@@ -40,7 +40,7 @@
 
 ## Verification
 
-- `git diff --check`: PASS。
+- `git diff --check HEAD~3..HEAD`: PASS（全 3 commit の最終差分を検査）。
 - 変更対象確認: implementation commit は上記 4 文書のみ。source code と external Cursor plan file は未変更。
 - Primary-roadmap contradiction scan: 変更文書に Workspace/roster を active primary roadmap とする未注記の記述なし。旧 plan と v1.2 の本文は冒頭 notice により historical frozen scope と明示。
 - Placeholder scan: 新規設計書に `TBD`、`TODO`、`FIXME`、`XXX`、`PLACEHOLDER` なし。
