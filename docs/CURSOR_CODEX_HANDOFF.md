@@ -41,25 +41,22 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 20:10:00 JST |
+| 最終更新 | 2026-07-18 20:36:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `GO` / main 統合完了 |
-| 現在の担当 | Cursor |
-| 現在のTask | Directory thin slices — 正式承認・main 統合完了 |
-| 全体進捗 | Backfill **100%** / Directory thin slices 実装・正式承認 **100%** / broad attendance and Task 5 remain open |
-| 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 実装SHA | `76e22f3a1810e3d5b48f431c28ef3c74417b1486`（fix(directory): serialize CAS and scope enrollment reads） |
-| 統合記録SHA | `a6b68dc9823a60d4195713463ca44fc2050d85ef`（docs: merge directory thin slices to main after Codex GO） |
-| レビュー対象範囲 | `0ba3fe403baa0358a5129e9b917bf0fab64c712b..76e22f3a1810e3d5b48f431c28ef3c74417b1486`（承認範囲） |
-| 再提出SHA | handoff tip at approval: `2d823d81ac6d05de359fad8d3aabf9df2c35c8c0` |
-| 作業ブランチ | `main` |
-| 作業worktree | `C:\cursor\NewScratchEditor` |
-| 設計 | attendance uniqueness + predecessor §8 BOLA/CAS（Approved） |
-| 計画 | Directory thin slices cumulative review = 完了 |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex |
+| 現在のTask | Directory enrollment update/end thin slice |
+| 全体進捗 | Backfill **100%** / prior Directory thin slices **100%** / enrollment update/end review pending / Task 5 remains open |
+| 実装SHA | `cd83e0445fa2178b91520b9860ebd027a1b21e29`（feat(store): update and end enrollments with uniqueness） |
+| レビュー対象SHA | implementation SHA above（docs tip ではない） |
+| 作業ブランチ | `feat/r1-directory-enrollment-update-end` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-enrollment-update-end` |
+| 設計 | enrollment update/end + attendance uniqueness（Approved） |
+| 計画 | Phase 3 Task 4 thin slice; broad Task 5 remains unchecked |
 | 前スライス | Directory thin slices（repositories → constraint mapping → last-owner → attendance + P1 CAS/BOLA）= 正式承認・main 統合済み |
-| 次Task | 承認済み計画に従い次スライス（update/end enrollment / claim / System Owner transfer / audit 等）を準備 |
-| レビュー運用 | **GO（Codex 正式承認）・main 統合済み** |
-| 未解決（スライス外） | update/end enrollment / overlap service rule / claim / System Owner transfer / audit |
+| 次Task | Codex review; class-move orchestration, overlap service, claim, System Owner transfer, audit remain open |
+| レビュー運用 | Codex review requested |
+| 未解決（スライス外） | class-move orchestration / overlap service / claim / System Owner transfer / audit |
 
 ## Cursorが次に行う作業
 
@@ -3002,5 +2999,25 @@ P1-2: 解消。getEnrollment(workspaceId, enrollmentId)とownership JOIN、forei
 未解決（スライス外）:
 - update/end enrollment / overlap service rule / claim / System Owner transfer / audit
 次の担当: Cursor（次スライス準備）
+```
+
+### 2026-07-18 20:36:00 JST — Cursor（Directory enrollment update/end thin slice）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Directory enrollment update/end thin slice
+実装SHA: cd83e0445fa2178b91520b9860ebd027a1b21e29
+レビュー対象SHA: implementation SHA above（docs tip ではない）
+実装:
+- CAS-gated updateEnrollment（attendanceNumber/startDate patch）と endEnrollment
+- active-only、ended enrollment は DIRECTORY_NOT_FOUND、UNIQUE は DB-owned
+証跡:
+- directory-repository.contract.test.ts: PASS（37 tests）
+- workspace-directory: PASS（67 tests）+ typecheck
+- project-store-sqlite: typecheck PASS
+- pnpm r1:persist:test: PASS
+未解決（スライス外）:
+- class-move orchestration / overlap service / claim / System Owner transfer / audit
+次の担当: Codex
 ```
 

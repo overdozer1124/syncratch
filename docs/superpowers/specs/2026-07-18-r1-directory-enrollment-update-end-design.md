@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-18
 **Status:** Approved design
+**Implementation:** `cd83e0445fa2178b91520b9860ebd027a1b21e29` (`updateEnrollment` / `endEnrollment` thin slice)
 **Predecessor:** [R1 Directory Attendance Uniqueness](2026-07-18-r1-directory-attendance-uniqueness-design.md)
 **Roadmap:** [R1 Workspace Roster Access Plan, Phase 3 Task 4](../plans/2026-07-16-r1-workspace-roster-access-plan.md) (enrollment update/end thin slice)
 

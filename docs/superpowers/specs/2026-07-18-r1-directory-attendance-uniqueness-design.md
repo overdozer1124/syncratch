@@ -117,7 +117,8 @@ workspace (kind `school`) + school + academic year + grade + class + people
 
 ## 7. Follow-ons
 
-- `updateEnrollment` / `endEnrollment` with the same UNIQUE semantics
+- `updateEnrollment` / `endEnrollment` landed in the enrollment update/end
+  thin slice (active-only; class moves still end→create)
 - Service-layer date-overlap checks using `findAttendanceNumberConflicts`
 - Full school hierarchy write APIs (Task 5)
 - claim / audit slices

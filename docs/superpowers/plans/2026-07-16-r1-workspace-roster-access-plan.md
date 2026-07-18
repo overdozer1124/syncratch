@@ -175,6 +175,12 @@ atomic transfer, claim, attendance uniqueness, and audit remain open.
 existing partial UNIQUE index. Update/end enrollment, overlap-only service
 rules, claim, System Owner transfer, and audit remain open.
 
+**Thin slice (2026-07-18 enrollment update/end):** CAS-gated
+`updateEnrollment` (attendanceNumber/startDate patch) and `endEnrollment`
+landed; active-only; ended rows hide as NOT_FOUND; UNIQUE remains DB-owned.
+Class moves, overlap service rules, claim, System Owner transfer, and audit
+remain open.
+
 ### Task 5: Directory service
 
 - [ ] Implement school/year/grade/class lifecycle.
