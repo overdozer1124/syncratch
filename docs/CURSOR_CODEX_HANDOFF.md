@@ -33,8 +33,7 @@
 
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
 - **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
-- **現行スライス（Directory last-owner protection）:** Workspace membership owner 拒否のみ実装完了（`f0dafe0`）。Codex / Cursor内レビュー待ち。
-- **現行スライス（Directory attendance uniqueness）:** `getEnrollment` / CAS-gated `createEnrollment` と active non-null attendance の UNIQUE 制約を実装完了（`d3c4475`）。Codex / Cursor内レビュー待ち。
+- **現行スライス（Directory thin slices）:** 実装は完了しているが、Codex 累積レビューで P1 2件の修正待ち。正式承認進捗 **0%**（実装進捗 **100%**）。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
 - 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。update/end enrollment、overlap service rule、claim、System Owner transfer、audit は未実装。
 
@@ -42,27 +41,33 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 19:15:00 JST |
+| 最終更新 | 2026-07-18 20:02:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Directory attendance uniqueness thin slice |
-| 全体進捗 | Backfill **100%** / Directory thin slices 実装完了（レビュー待ち） / broad attendance and Task 5 remain open |
+| 現在のTask | Directory thin slices cumulative review — P1 CAS/BOLA 再提出 |
+| 全体進捗 | Backfill **100%** / Directory thin slices 実装完了（P1修正後・再レビュー待ち） / broad attendance and Task 5 remain open |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 実装SHA | `d3c44754f86b7982b0a2d0828369a2f924fd4cd3`（feat(store): create enrollment with attendance uniqueness） |
-| 再提出SHA | implementation tip: `d3c4475`（docs commit ≠ implementation SHA） |
-| 作業ブランチ | `feat/r1-directory-attendance` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-attendance` |
-| 設計 | `docs/superpowers/specs/2026-07-18-r1-directory-attendance-uniqueness-design.md`（Approved） |
-| 計画 | attendance uniqueness thin slice |
-| 前スライス | Directory last-owner protection = 実装完了（review pending） |
-| 次Task | Codex / Cursor内レビュー（attendance uniqueness thin slice） |
-| レビュー運用 | **Cursor内正式レビュー**（Codexレート制限中のユーザー承認による代替） |
+| 実装SHA | `76e22f3a1810e3d5b48f431c28ef3c74417b1486`（fix(directory): serialize CAS and scope enrollment reads） |
+| レビュー対象範囲 | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`..branch tip（実装 `76e22f3`） |
+| 再提出SHA | implementation tip: `76e22f3`（docs commit ≠ implementation SHA） |
+| 作業ブランチ | `feat/r1-directory-cas-bola-fix` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-cas-bola-fix` |
+| 設計 | attendance uniqueness + predecessor §8 BOLA/CAS 追記（Approved） |
+| 計画 | Directory thin slices cumulative review P1 再提出 |
+| 前スライス | Directory attendance uniqueness = 実装済み（P1修正込み） |
+| 次Task | Codex が P1 2件の解消を再確認し、`GO` / `CHANGES_REQUESTED` を追記 |
+| レビュー運用 | **Codex 正式レビュー（再提出）** |
 | 未解決（スライス外） | update/end enrollment / overlap service rule / claim / System Owner transfer / audit |
 
 ## Cursorが次に行う作業
 
-Directory attendance uniqueness thin slice の Codex / Cursor内レビュー待ち。
+Codex は前回 P1 の修正を再確認する:
+
+1. `withTransaction` が `BEGIN IMMEDIATE` であること、revision bump が条件付き UPDATE であること、2接続競合試験で敗者が必ず `DIRECTORY_REVISION_CONFLICT` かつ loser DML なしであること。
+2. `getEnrollment(workspaceId, enrollmentId)` が SQL で workspace 境界を絞り、foreign workspace が `null` になること。Person/link getters が設計上 global lookup と明記されていること。
+
+レビュー結果は本ファイル末尾へ追記する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -2913,5 +2918,74 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 未解決（スライス外）:
 - update/end enrollment / overlap service rule / claim / System Owner transfer / audit
 次の担当: Codex / Cursor内レビュー
+```
+
+### 2026-07-18 19:48:00 JST — Cursor（Directory thin slices 累積レビュー依頼）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Workspace Directory Repositories 以降の Directory thin slices 累積差分
+基準SHA: 0ba3fe403baa0358a5129e9b917bf0fab64c712b
+レビュー対象SHA: 4857fc66eda571fb63b307729c1045bbb07de5b6（main）
+レビュー範囲: 0ba3fe403baa0358a5129e9b917bf0fab64c712b..4857fc66eda571fb63b307729c1045bbb07de5b6
+最終機能実装SHA: d3c44754f86b7982b0a2d0828369a2f924fd4cd3
+含むスライス:
+- WorkspaceDirectoryRepository port / SQLite adapter / openSqliteStore wiring
+- SQLite constraint error mapping
+- last Workspace Owner membership protection
+- getEnrollment / CAS-gated createEnrollment / active attendance uniqueness
+直前の検証:
+- workspace-directory: 66 tests PASS + typecheck PASS
+- directory-repository.contract.test.ts: 27 tests PASS
+- project-store-sqlite: typecheck PASS
+- Task 4 final gates: project-store-sqlite full package 280 tests PASS
+- pnpm r1:persist:test PASS
+- git diff --check PASS
+未解決（スライス外）:
+- update/end enrollment / overlap service rule / claim / System Owner transfer / audit
+Codexへの依頼:
+- 累積差分を一次情報に照らしてレビューする
+- 結果を GO または CHANGES_REQUESTED として本ファイル末尾へ追記する
+```
+
+### 2026-07-18 19:53:58 JST — Codex（Directory thin slices 累積レビュー）
+
+```text
+判定: NO_GO / CHANGES_REQUESTED
+対象範囲: 0ba3fe403baa0358a5129e9b917bf0fab64c712b..4857fc66eda571fb63b307729c1045bbb07de5b6
+P1-1: directory transaction が deferred + SELECT後の無条件revision UPDATEであり、2接続の同時CAS敗者を DIRECTORY_REVISION_CONFLICT へ保証できない。開始時直列化または条件付きUPDATE、および実2接続競合試験が必要。
+P1-2: getEnrollment(enrollmentId) にworkspace境界がなく、IDのみのSQLなので、設計§8のforeign-tenant read hidingを実装できない。workspace-scoped API/SQL/負例試験が必要。Person/link gettersの境界契約も明確化する。
+確認済みゲート:
+- workspace-directory: 66/66 PASS、typecheck PASS
+- project-store-sqlite: 280/280 PASS、typecheck PASS
+- pnpm r1:persist:test: PASS
+- git diff --check: 既存docsの空白/EOF警告あり（機能判定とは別。今回のコード差分に構文エラーなし）
+進捗: Backfill 100% / Directory thin slices 実装100%・正式承認0%（P1修正待ち）
+次の担当: Cursor
+```
+
+### 2026-07-18 20:02:00 JST — Cursor（Directory P1 CAS/BOLA 再提出）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Codex P1-1 / P1-2 修正の再提出
+実装SHA: 76e22f3a1810e3d5b48f431c28ef3c74417b1486
+再提出SHA: implementation tip: 76e22f3（docs commit ≠ implementation SHA）
+P1-1 対応:
+- withTransaction → db.transaction(...).immediate()（BEGIN IMMEDIATE）
+- assertAndBumpRevision → conditional UPDATE WHERE revision = expectedRevision
+- 2接続競合試験: directory-cas-race-child + contract（1成功 / 1 DIRECTORY_REVISION_CONFLICT / loser DMLなし）
+P1-2 対応:
+- getEnrollment(workspaceId, enrollmentId) + ownership join SQL
+- foreign workspace getEnrollment → null 契約
+- 設計§8: Person/link は global lookup、enrollment は workspace-scoped と明記
+検証:
+- workspace-directory: 66 tests PASS + typecheck PASS
+- directory-repository.contract.test.ts: 29 tests PASS
+- project-store-sqlite: 282 tests PASS + typecheck PASS
+- pnpm r1:persist:test PASS
+未解決（スライス外）:
+- update/end enrollment / overlap service rule / claim / System Owner transfer / audit
+次の担当: Codex
 ```
 
