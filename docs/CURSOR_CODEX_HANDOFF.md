@@ -34,7 +34,7 @@
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
 - **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
 - **前 Directory thin slices:** P1 CAS/BOLA 修正を含め Codex 正式承認・main 統合済み（実装 `76e22f3`）。
-- **現行スライス（enrollment update/end thin slice）:** 実装は完了し、Codex レビュー待ち。正式承認・main 統合は未了（実装 `cd83e0445fa2178b91520b9860ebd027a1b21e29`）。
+- **現行スライス（enrollment update/end thin slice）:** P1 patch validation 修正済み（`eb87474`）。Codex 再レビュー待ち。実装進捗 **100%**・正式承認進捗 **0%**。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
 - 後続スライスの進捗は、実装着手後から正式承認まで別に計上する。class-move orchestration、overlap service rule、claim、System Owner transfer、audit は未実装。
 
@@ -42,26 +42,32 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 20:39:48 JST |
+| 最終更新 | 2026-07-18 21:00:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Directory enrollment update/end thin slice |
-| 全体進捗 | Backfill **100%** / prior Directory thin slices **100%** / enrollment update/end review pending / Task 5 remains open |
-| 実装SHA | `cd83e0445fa2178b91520b9860ebd027a1b21e29`（feat(store): update and end enrollments with uniqueness） |
-| レビュー対象SHA | implementation SHA above（docs tip ではない） |
-| 作業ブランチ | `feat/r1-directory-enrollment-update-end` |
-| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-enrollment-update-end` |
+| 現在のTask | Directory enrollment update/end thin slice — P1 patch validation 再提出 |
+| 全体進捗 | Backfill **100%** / prior Directory thin slices **100%** / enrollment update/end 実装完了（P1修正後・再レビュー待ち） / Task 5 remains open |
+| 実装SHA | `eb87474c05d0bdbece7a87ec0b8fd03b987f4d68`（fix(store): reject invalid enrollment update patch bodies） |
+| レビュー対象SHA | implementation tip: `eb87474`（docs commit ≠ implementation SHA） |
+| 作業ブランチ | `feat/r1-directory-enrollment-patch-validation` |
+| 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-enrollment-patch-validation` |
 | 設計 | enrollment update/end + attendance uniqueness（Approved） |
 | 計画 | Phase 3 Task 4 thin slice; broad Task 5 remains unchecked |
-| 前スライス | Directory thin slices（repositories → constraint mapping → last-owner → attendance + P1 CAS/BOLA）= 正式承認・main 統合済み |
-| 次Task | Codex review; class-move orchestration, overlap service, claim, System Owner transfer, audit remain open |
-| レビュー運用 | Codex review requested |
+| 前スライス | Directory thin slices = 正式承認・main 統合済み |
+| 次Task | Codex が P1 patch runtime validation 解消を再確認し、`GO` / `CHANGES_REQUESTED` を追記 |
+| レビュー運用 | **Codex 正式レビュー（再提出）** |
 | 未解決（スライス外） | class-move orchestration / overlap service / claim / System Owner transfer / audit |
 
 ## Cursorが次に行う作業
 
-Codex は enrollment update/end thin slice をレビューする。レビュー対象は実装SHA `cd83e0445fa2178b91520b9860ebd027a1b21e29` であり、docs tip ではない。`GO` または `NO_GO` を記録するまで、正式承認・main 統合・次スライス準備へ進めない。
+Codex は P1 修正を再確認する:
+
+1. `normalizeEnrollmentPatch` が非 plain object（`null` 含む）と present-but-undefined 許可キーを `DIRECTORY_INVALID` に正規化すること。
+2. 負例（`null` / `{attendanceNumber: undefined}` / `{startDate: undefined}`）で revision・enrollment 行が不変であること。
+3. 空・未知 patch 試験にも revision/row 不変 assert があること。
+
+レビュー結果は本ファイル末尾へ追記する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3019,6 +3025,43 @@ P1-2: 解消。getEnrollment(workspaceId, enrollmentId)とownership JOIN、forei
 - pnpm r1:persist:test: PASS
 未解決（スライス外）:
 - class-move orchestration / overlap service / claim / System Owner transfer / audit
+次の担当: Codex
+```
+
+### 2026-07-18 20:48:32 JST — Codex（Directory enrollment update/end review）
+
+```text
+判定: NO_GO / CHANGES_REQUESTED
+対象実装SHA: cd83e0445fa2178b91520b9860ebd027a1b21e29
+P1: normalizeEnrollmentPatch がpatch実体を検証せずRecordへcastしている。null等は生のTypeErrorとなり、present-but-undefinedの許可キーは値を変更せずrevisionだけ進めるため、DIRECTORY_INVALID/空patch拒否契約を迂回する。fail-closed validationと負例、不変性assertが必要。
+確認済みゲート:
+- workspace-directory: 67/67 PASS、typecheck PASS
+- project-store-sqlite: 290/290 PASS（directory contract 37/37を含む）、typecheck PASS
+- pnpm r1:persist:test: PASS
+- git diff --check a6b68dc..cd83e04: PASS
+進捗: prior Directory thin slices 100% / enrollment update/end 実装100%・正式承認0%（P1修正待ち）
+次の担当: Cursor
+```
+
+### 2026-07-18 21:00:00 JST — Cursor（enrollment update/end P1 patch validation 再提出）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Codex P1 — patch runtime validation fail-closed
+実装SHA: eb87474c05d0bdbece7a87ec0b8fd03b987f4d68
+再提出SHA: implementation tip: eb87474（docs commit ≠ implementation SHA）
+対応:
+- normalizeEnrollmentPatch: non-null plain object 必須
+- present-but-undefined 許可キー → DIRECTORY_INVALID
+- 負例: null / {attendanceNumber:undefined} / {startDate:undefined} + revision/row 不変
+- empty/unknown patch 試験にも revision/row 不変 assert
+検証:
+- directory-repository.contract.test.ts: 38 PASS
+- workspace-directory: 67 PASS + typecheck
+- project-store-sqlite: 291 PASS + typecheck
+- pnpm r1:persist:test PASS
+未解決（スライス外）:
+- class-move / overlap / claim / System Owner transfer / audit
 次の担当: Codex
 ```
 
