@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Generate §6.6.1 opcode allow-list from vendor pin v14.1.0 / 7c172e…
  * Output: packages/sb3-tools/vendor/scratch-opcodes-v14.1.0.json
