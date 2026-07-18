@@ -1,0 +1,63 @@
+html,
+body,
+#app {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 44px minmax(0, 1fr);
+}
+
+.toolbar {
+  position: fixed;
+  z-index: 2147483647;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #4c97ff;
+  color: white;
+}
+
+.toolbar input,
+.toolbar button {
+  min-height: 30px;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: 5px;
+}
+
+.toolbar input {
+  width: min(260px, 30vw);
+  padding: 0 8px;
+}
+
+.toolbar button {
+  padding: 0 10px;
+  background: white;
+  cursor: pointer;
+}
+
+#save-status {
+  margin-left: auto;
+  min-width: 78px;
+  text-align: right;
+}
+
+#scratch-gui,
+#scratch-gui > div {
+  min-height: 0;
+  height: 100%;
+}
+
+#scratch-gui {
+  box-sizing: border-box;
+  padding-top: 44px;
+}

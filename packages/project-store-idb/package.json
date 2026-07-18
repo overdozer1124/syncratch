@@ -1,0 +1,24 @@
+{
+  "name": "@blocksync/project-store-idb",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-only atomic IndexedDB local project store.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@blocksync/project-local-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@blocksync/project-schema": "workspace:*",
+    "fake-indexeddb": "^6.2.2",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

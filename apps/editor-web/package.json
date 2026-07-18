@@ -1,0 +1,25 @@
+{
+  "name": "@blocksync/editor-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:assets": "node scripts/prepare-assets.mjs",
+    "dev": "pnpm prepare:assets && vite",
+    "build": "pnpm prepare:assets && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@blocksync/project-local-core": "workspace:*",
+    "@blocksync/project-store-idb": "workspace:*",
+    "@blocksync/sb3-tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4"
+  }
+}

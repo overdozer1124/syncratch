@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlockSync Editor</title>
+  </head>
+  <body>
+    <main id="app">
+      <header class="toolbar">
+        <input aria-label="Project title" id="project-title" value="Local project" />
+        <button id="new-project" type="button">New</button>
+        <button id="open-project" type="button">Open .sb3</button>
+        <input id="open-file" type="file" accept=".sb3" hidden />
+        <button id="download-project" type="button">Download .sb3</button>
+        <button id="save-project" type="button">Save</button>
+        <span data-testid="save-status" id="save-status">Starting…</span>
+        <button id="retry-save" type="button" hidden>Retry save</button>
+      </header>
+      <section data-testid="scratch-gui" id="scratch-gui"></section>
+    </main>
+    <script src="/generated/gui/scratch-gui-standalone.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

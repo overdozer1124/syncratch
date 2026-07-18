@@ -19,3 +19,4 @@ vendor/scratch-editor-bak*/
 apps/r1-persist-server/data/
 **/*.sqlite
 **/test-results/
+apps/editor-web/public/generated/
