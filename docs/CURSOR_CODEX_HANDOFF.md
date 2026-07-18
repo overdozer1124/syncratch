@@ -32,22 +32,22 @@
 ## 進捗の計算方法
 
 - **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
-- **現行スライス（Workspace Directory Repositories・薄い Task 4）:** 設計承認後に Task 数を計画で確定する。
+- **現行スライス（Workspace Directory Repositories・薄い Task 5）:** 5 Task 計画・実装完了（identity/membership thin slice）。Codex レビュー待ち。
 - Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
-- 計画レビュー中のため実装進捗は **0%**。
+- 未承認のためスライス進捗は **実装完了・レビュー待ち**（正式承認前は % 未確定）。claim / attendance / last-owner / audit は未実装。
 
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-18 10:25:00 JST |
+| 最終更新 | 2026-07-18 10:35:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex |
-| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 4）実装完了 |
+| 現在のTask | Workspace Directory Repositories（薄い Phase 3 Task 5）実装完了 |
 | 全体進捗 | Backfill **100%** / Directory Repositories 薄いスライス 実装完了（レビュー待ち） |
 | 承認基準SHA | `0ba3fe403baa0358a5129e9b917bf0fab64c712b`（Backfill main merge） |
-| 再提出SHA | be3b5b6da7fe3b080442c49ddfce5f480096287b |
+| 再提出SHA | `c4a1d2d568ce46e2dc3b5a32bb496bfe3b4d3c83` |
 | 作業ブランチ | `feat/r1-directory-repos` |
 | 作業worktree | `C:\cursor\NewScratchEditor\.worktrees\r1-directory-repos` |
 | 設計 | `docs/superpowers/specs/2026-07-18-r1-workspace-directory-repositories-design.md` |
@@ -2812,8 +2812,9 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 
 ```text
 状態: READY_FOR_CODEX_REVIEW
-対象: Workspace Directory Repositories（薄い Phase 3 Task 4）
+対象: Workspace Directory Repositories（薄い Phase 3 Task 5）
 基準SHA: 52a220f
+再提出SHA: 50c01e3
 実装:
 - openSqliteStore が共有SQLite接続上の directoryRepo を公開
 - store経由の create/get スモークテストを追加
@@ -2823,8 +2824,24 @@ Task: 1 port/errors, 2 failing reads, 3 implement reads, 4 CAS writes, 5 store w
 - claim、attendance、last-owner、audit は未実装のまま
 最終ゲート:
 - workspace-directory typecheck/test: PASS（62 tests）
-- project-store-sqlite typecheck/test: PASS
+- project-store-sqlite typecheck/test: PASS（271 tests）
+- directory-repository.contract.test.ts: PASS（18 tests）
 - r1:persist:test: PASS
+次の担当: Codex
+```
+
+### 2026-07-18 10:35:00 JST — Cursor（Task 5 レビュー指摘修正）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+対象: Task 5 ドキュメント整合
+再提出SHA: c4a1d2d
+修正:
+- 進捗セクションの「計画レビュー中 / 実装進捗 0%」を削除し実装完了・レビュー待ちに整合
+- 再提出SHA を branch tip に更新（`git rev-parse HEAD`）
+- task-5-report から無関係 VACUUM 節を削除、contract smoke を 18 tests に訂正
+未解決（スライス外）:
+- claim、attendance、last-owner、audit
 次の担当: Codex
 ```
 

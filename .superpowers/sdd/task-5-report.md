@@ -1,76 +1,42 @@
-# Task 5 Report: Verified Pre-v5 VACUUM Backup Gate
+# Task 5 Report: Store wiring + package gates
 
 ## Status
 
-Implemented and verified the synchronous pre-v5 backup preparation gate:
+Done. `openSqliteStore()` now exposes `directoryRepo` from the same SQLite
+connection. The legacy-v1 fixture store intentionally omits the directory
+adapter because its pre-migration schema does not contain directory tables.
 
-- `packages/project-store-sqlite/src/migrations/backfill/backup.ts`
-- `packages/project-store-sqlite/src/migrations/backfill/backup.test.ts`
+## Commit
 
-No v5 DML, registry wiring, or `docs/ai-platform/` changes were added. The
-exact v5 name/checksum contract needed by the race check is centralized in
-`backfill/v5-descriptor.ts` for Task 6 to reuse.
+`50c01e3` — `feat(store): expose directoryRepo from openSqliteStore`
 
-## TDD evidence
+## Tests
 
-### RED
+- RED: the new store smoke failed with `directoryRepo` undefined.
+- GREEN: focused directory repository smoke, including legacy fixture, passed
+  (18 tests).
+- `pnpm --filter @blocksync/workspace-directory typecheck` — PASS
+- `pnpm --filter @blocksync/workspace-directory test` — PASS (62 tests)
+- `pnpm --filter @blocksync/project-store-sqlite typecheck` — PASS
+- `pnpm --filter @blocksync/project-store-sqlite test` — PASS (271 tests)
+- `pnpm r1:persist:test` — PASS
+- `git diff --check` — PASS before commit.
 
-```text
-pnpm --filter @blocksync/project-store-sqlite test -- src/migrations/backfill/backup.test.ts
-```
+## Guard and scope
 
-Exit 1: Vitest failed to load the intentionally absent `./backup.js`; one
-suite failed before implementation.
-
-### GREEN
-
-```text
-pnpm --filter @blocksync/project-store-sqlite test -- src/migrations/backfill/backup.test.ts
-Test Files  1 passed (1)
-Tests       16 passed (16)
-Exit code: 0
-```
-
-```text
-pnpm --filter @blocksync/project-store-sqlite typecheck
-tsc -p tsconfig.json --noEmit
-Exit code: 0
-```
-
-```text
-pnpm --filter @blocksync/project-store-sqlite test
-Test Files  25 passed (25)
-Tests       241 passed (241)
-Exit code: 0
-```
-
-## Coverage
-
-- Legacy-empty memory/file databases return `empty` without a backup.
-- Non-empty in-memory legacy data fails with `SCHEMA_BACKUP_FAILED`.
-- The committed fixture is copied before use and explicitly advanced to v4.
-- Adjacent names compact `appliedAt` exactly and use 16 lowercase random hex
-  characters; repeated preparations use distinct names.
-- Apostrophes in destinations are safely escaped for `VACUUM INTO`.
-- Existing destinations are never overwritten or reused.
-- Integrity, FK, version, committed fingerprint, and digest mismatches fail
-  closed; failed artifacts remain as evidence.
-- Verification uses an independent readonly connection, enables foreign keys,
-  and closes in `finally` before Windows rename.
-- Only exact live v5 version/name/checksum evidence renames once to
-  `.superseded-v5.sqlite` and returns `already_applied`.
-- Successful artifacts have no adjacent WAL/SHM sidecars.
-
-## Self-review
-
-- All failures are wrapped as `SchemaMigrationError` with
-  `SCHEMA_BACKUP_FAILED`; no failed artifact is deleted.
-- Seams are limited to destination selection, post-VACUUM mutation, and rename
-  observation and are not exported from the package API.
-- Independent review found no critical/high defects. Its checksum-drift
-  warning was fixed by the shared descriptor source.
-- `git diff --check` exited 0.
+The target-schema production SQL guard now permits only
+`directory-repository.ts`, the intentional post-cutover adapter; it continues
+to reject target-table SQL in all other production consumers. The roadmap
+records only the identity/membership thin slice; claim, attendance, last-owner,
+and audit work remain unchecked.
 
 ## Concerns
 
-No functional concerns identified within Task 5 scope.
+None. Existing untracked `.superpowers/sdd` task artifacts were not staged.
+
+## Review fix notes (2026-07-18)
+
+- Removed unrelated Pre-v5 VACUUM backup gate section that was appended by mistake.
+- Corrected contract smoke count from 19 to 18 (verified via
+  `pnpm --filter @blocksync/project-store-sqlite test -- src/directory-repository.contract.test.ts`).
+- Aligned `docs/CURSOR_CODEX_HANDOFF.md` status/SHA with HEAD `c4a1d2d`.
