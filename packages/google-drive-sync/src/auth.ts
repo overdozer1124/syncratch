@@ -98,24 +98,35 @@ export function createGoogleAuthorization(
   options: GoogleAuthorizationOptions,
 ): GoogleAuthorization {
   let accessToken: string | null = null;
+  let connectPromise: Promise<string> | null = null;
+  let generation = 0;
 
   return {
     async connect() {
+      if (connectPromise) return connectPromise;
       if (!options.clientId) {
         throw new DriveConfigurationError("Google client ID is not configured");
       }
-      await options.loadScripts();
-      const google = options.getGoogle();
-      if (!google?.accounts?.oauth2) {
-        throw new DriveConfigurationError(
-          "Google Identity Services did not initialize",
-        );
-      }
-      return new Promise<string>((resolve, reject) => {
+      const connectGeneration = generation;
+      connectPromise = (async () => {
+        await options.loadScripts();
+        const google = options.getGoogle();
+        if (!google?.accounts?.oauth2) {
+          throw new DriveConfigurationError(
+            "Google Identity Services did not initialize",
+          );
+        }
+        return new Promise<string>((resolve, reject) => {
         const client = google.accounts.oauth2.initTokenClient({
           client_id: options.clientId,
           scope: DRIVE_FILE_SCOPE,
           callback(response) {
+            if (generation !== connectGeneration) {
+              reject(new DriveAuthenticationError(
+                "Google authorization was cancelled",
+              ));
+              return;
+            }
             if (!response.access_token || response.error) {
               reject(new DriveAuthenticationError(
                 response.error_description ??
@@ -135,9 +146,14 @@ export function createGoogleAuthorization(
           },
         });
         client.requestAccessToken({prompt: accessToken ? "" : "consent"});
+        });
+      })().finally(() => {
+        connectPromise = null;
       });
+      return connectPromise;
     },
     disconnect() {
+      generation += 1;
       if (accessToken) {
         options.getGoogle()?.accounts.oauth2.revoke?.(accessToken);
       }

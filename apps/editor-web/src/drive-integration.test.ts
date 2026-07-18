@@ -1,6 +1,10 @@
 import {describe, expect, it, vi} from "vitest";
 import "fake-indexeddb/auto";
-import {DriveConflictError, DriveNetworkError} from "@blocksync/google-drive-sync";
+import {
+  DriveAuthenticationError,
+  DriveConflictError,
+  DriveNetworkError,
+} from "@blocksync/google-drive-sync";
 import {
   LOCAL_PROJECT_FORMAT,
   type LocalProjectRecord,
@@ -132,6 +136,7 @@ describe("editor Drive integration", () => {
           canDownload: true,
         })),
       },
+      hashBytes: vi.fn(async () => "hash-12"),
     });
     const integration = createEditorDriveIntegration(deps);
 
@@ -143,6 +148,46 @@ describe("editor Drive integration", () => {
       fileId: "existing-file",
       knownObservation: {version: "12", snapshotId: "snapshot-12"},
     }));
+  });
+
+  it.each([
+    ["different", "remote-hash"],
+    ["missing", null],
+  ])("refuses reconnect baseline when remote state hash is %s", async (
+    _label,
+    remoteStateHash,
+  ) => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: "0",
+          stateHash: remoteStateHash,
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      hashBytes: vi.fn(async () => "local-hash"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(false);
+    await expect(integration.saveToDrive()).resolves.toBe(false);
+
+    expect(integration.getStatus()).toBe("conflict");
+    expect(deps.drive.updateFile).not.toHaveBeenCalled();
   });
 
   it("creates first, then updates only the recorded Drive file", async () => {
@@ -220,6 +265,95 @@ describe("editor Drive integration", () => {
 
     expect(deps.importAsNewLocal).not.toHaveBeenCalled();
     expect(integration.getStatus()).toBe("unsynced");
+  });
+
+  it.each([
+    [new Error("IndexedDB failed"), "unsynced"],
+    [new DriveConflictError("stale local revision", "pre-write"), "conflict"],
+  ] as const)("does not upload when local flush/export fails", async (
+    error,
+    expectedStatus,
+  ) => {
+    const deps = dependencies({
+      exportCurrent: vi.fn(async () => {
+        throw error;
+      }),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.saveToDrive()).resolves.toBe(false);
+
+    expect(integration.getStatus()).toBe(expectedStatus);
+    expect(deps.drive.createFile).not.toHaveBeenCalled();
+    expect(deps.drive.updateFile).not.toHaveBeenCalled();
+  });
+
+  it("disconnects and clears authentication after a Drive auth failure", async () => {
+    const deps = dependencies({
+      drive: {
+        ...dependencies().drive,
+        createFile: vi.fn(async () => {
+          throw new DriveAuthenticationError("expired");
+        }),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await integration.saveToDrive();
+
+    expect(deps.auth.disconnect).toHaveBeenCalled();
+    expect(integration.getStatus()).toBe("unsynced");
+  });
+
+  it("aborts before upload when the active project changes during export", async () => {
+    let activeProjectId = "local-1";
+    const onStatus = vi.fn();
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: activeProjectId,
+        title: "Local",
+        driveFileId: undefined,
+      })),
+      exportCurrent: vi.fn(async () => {
+        activeProjectId = "local-2";
+        return bytes;
+      }),
+      onStatus,
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+    onStatus.mockClear();
+
+    await expect(integration.saveToDrive()).resolves.toBe(false);
+
+    expect(deps.drive.createFile).not.toHaveBeenCalled();
+    expect(deps.drive.updateFile).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+  });
+
+  it("shares one in-flight save so concurrent clicks cannot create duplicates", async () => {
+    let releaseExport!: () => void;
+    const exportPending = new Promise<void>(resolve => {
+      releaseExport = resolve;
+    });
+    const deps = dependencies({
+      exportCurrent: vi.fn(async () => {
+        await exportPending;
+        return bytes;
+      }),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    const first = integration.saveToDrive();
+    const second = integration.saveToDrive();
+    releaseExport();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+    expect(deps.exportCurrent).toHaveBeenCalledTimes(1);
+    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
   });
 
   it("records a created file ID after uncertain post-write conflict to avoid duplicates", async () => {

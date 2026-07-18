@@ -50,6 +50,7 @@ import {
   type EditorDriveStatus,
 } from "./drive-integration.js";
 import {persistDriveFileLink} from "./drive-file-link.js";
+import {prepareCommittedDriveExport} from "./drive-export.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -174,6 +175,7 @@ let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
 let driveIntegration: EditorDriveIntegration;
+let driveReady = false;
 let suppressVmChanges = true;
 let failNextWrite = false;
 const projectSessions = createProjectSessionTracker();
@@ -397,6 +399,11 @@ async function exportCurrentSb3(): Promise<Uint8Array> {
   return exportSb3(document, assets);
 }
 
+async function exportCommittedCurrentSb3(): Promise<Uint8Array> {
+  const committed = structuredClone(current);
+  return exportSb3(committed.document, assetMap(committed));
+}
+
 async function importProject(
   bytes: Uint8Array,
   title: string,
@@ -509,12 +516,14 @@ function renderDriveStatus(
   const configured = status !== "not-configured";
   const connected = !["not-configured", "disconnected", "syncing"]
     .includes(status);
-  connectGoogleButton.disabled =
+  connectGoogleButton.disabled = !driveReady ||
     !configured || status === "connected" || status === "synced" ||
     status === "syncing";
-  openDriveButton.disabled = !connected;
-  saveDriveButton.disabled = !connected || status === "conflict";
-  disconnectGoogleButton.disabled = !configured || status === "disconnected";
+  openDriveButton.disabled = !driveReady || !connected;
+  saveDriveButton.disabled =
+    !driveReady || !connected || status === "conflict";
+  disconnectGoogleButton.disabled =
+    !driveReady || !configured || status === "disconnected";
 }
 
 async function persistDriveFileId(
@@ -572,8 +581,14 @@ function setupDriveIntegration(): EditorDriveIntegration {
     picker,
     drive,
     exportCurrent: async () => {
-      await saveCoordinator.flush();
-      return exportCurrentSb3();
+      const localProjectId = current.localProjectId;
+      return prepareCommittedDriveExport({
+        localProjectId,
+        flush: () => saveCoordinator.flush(),
+        getSaveState: () => saveCoordinator.getState(),
+        getCurrentProjectId: () => current.localProjectId,
+        exportCommitted: exportCommittedCurrentSb3,
+      });
     },
     getCurrent: () => ({
       localProjectId: current.localProjectId,
@@ -601,6 +616,8 @@ async function boot(): Promise<void> {
     await loadRecord(latest);
   }
   diagnostic.ready = true;
+  driveReady = true;
+  renderDriveStatus(driveIntegration.getStatus());
 }
 
 driveIntegration = setupDriveIntegration();

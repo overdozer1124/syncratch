@@ -89,6 +89,35 @@ describe("Google authorization", () => {
     expect(storageWrites).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+
+  it("shares one in-flight token request across concurrent connects", async () => {
+    let callback: (value: {access_token?: string; error?: string}) => void =
+      () => undefined;
+    const requestAccessToken = vi.fn();
+    const initTokenClient = vi.fn(config => {
+      callback = config.callback;
+      return {requestAccessToken};
+    });
+    const auth = createGoogleAuthorization({
+      clientId: "client-id",
+      loadScripts: async () => undefined,
+      getGoogle: () => ({
+        accounts: {oauth2: {initTokenClient}},
+      }),
+    });
+
+    const first = auth.connect();
+    const second = auth.connect();
+    await Promise.resolve();
+    callback({access_token: "shared-token"});
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      "shared-token",
+      "shared-token",
+    ]);
+    expect(initTokenClient).toHaveBeenCalledTimes(1);
+    expect(requestAccessToken).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("Google script loading", () => {
@@ -142,13 +171,20 @@ describe("Google Picker", () => {
 describe("Drive REST adapter", () => {
   it("creates with multipart metadata/media and reads validated SB3 bytes", async () => {
     const fetch = vi.fn()
-      .mockResolvedValueOnce(response(200, {id: "created"}))
+      .mockResolvedValueOnce(response(200, {
+        ids: ["reserved-id"],
+        space: "drive",
+        kind: "drive#generatedIds",
+      }))
+      .mockResolvedValueOnce(response(200, {id: "reserved-id"}))
       .mockResolvedValueOnce(response(200, metadata({
-        id: "created",
+        id: "reserved-id",
         version: "1",
         appProperties: {blocksyncSnapshotId: "snapshot-new"},
       })))
-      .mockResolvedValueOnce(response(200, metadata()))
+      .mockResolvedValueOnce(response(200, metadata({
+        mimeType: "application/octet-stream",
+      })))
       .mockResolvedValueOnce(response(200, validSb3, {"content-length": "4"}));
     const validateSb3 = vi.fn(async () => true);
     const drive = createDriveRestAdapter({
@@ -169,9 +205,12 @@ describe("Drive REST adapter", () => {
     const downloaded = await drive.readFile("file-1");
 
     expect(fetch.mock.calls[0]![0]).toBe(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      "https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files",
     );
-    expect(fetch.mock.calls[0]![1]).toMatchObject({
+    expect(fetch.mock.calls[1]![0]).toBe(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+    );
+    expect(fetch.mock.calls[1]![1]).toMatchObject({
       method: "POST",
       headers: {
         Authorization: "Bearer token",
@@ -180,14 +219,15 @@ describe("Drive REST adapter", () => {
         ),
       },
     });
-    const createBody = await (fetch.mock.calls[0]![1].body as Blob).text();
+    const createBody = await (fetch.mock.calls[1]![1].body as Blob).text();
+    expect(createBody).toContain('"id":"reserved-id"');
     expect(createBody).toContain('"name":"Project.sb3"');
     expect(createBody).toContain('"blocksyncSnapshotId":"snapshot-new"');
     expect(createBody).toContain("Content-Type: application/json; charset=UTF-8");
     expect(createBody).toContain(
       "Content-Type: application/x.scratch.sb3",
     );
-    expect(created.fileId).toBe("created");
+    expect(created.fileId).toBe("reserved-id");
     expect(downloaded.bytes).toEqual(validSb3);
     expect(validateSb3).toHaveBeenCalledWith(validSb3);
   });
@@ -218,7 +258,7 @@ describe("Drive REST adapter", () => {
     });
 
     expect(fetch.mock.calls[1]![0]).toBe(
-      "https://www.googleapis.com/upload/drive/v3/files/file-1?uploadType=multipart",
+      "https://www.googleapis.com/upload/drive/v3/files/file-1?uploadType=multipart&supportsAllDrives=true",
     );
     expect(fetch.mock.calls[1]![1].method).toBe("PATCH");
   });
@@ -276,6 +316,61 @@ describe("Drive REST adapter", () => {
   });
 
   it.each([
+    ["POST", response(500, {})],
+    ["JSON", response(200, {})],
+  ])("attaches a reserved file ID when create %s fails", async (
+    _phase,
+    createResponse,
+  ) => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(200, {ids: ["reserved-id"]}))
+      .mockResolvedValueOnce(createResponse);
+    const drive = createDriveRestAdapter({
+      fetch,
+      getAccessToken: () => "token",
+      validateSb3: async () => true,
+    });
+
+    await expect(drive.createFile({
+      name: "Project.sb3",
+      bytes: validSb3,
+      snapshot: {
+        snapshotId: "snapshot-new",
+        leadershipEpoch: "0",
+        stateHash: "hash-new",
+      },
+    })).rejects.toMatchObject({fileId: "reserved-id"});
+  });
+
+  it("attaches the reserved file ID when create confirmation fails", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(200, {ids: ["reserved-id"]}))
+      .mockResolvedValueOnce(response(200, {id: "reserved-id"}))
+      .mockResolvedValueOnce(response(200, metadata({
+        id: "reserved-id",
+        appProperties: {blocksyncSnapshotId: "other"},
+      })));
+    const drive = createDriveRestAdapter({
+      fetch,
+      getAccessToken: () => "token",
+      validateSb3: async () => true,
+    });
+
+    await expect(drive.createFile({
+      name: "Project.sb3",
+      bytes: validSb3,
+      snapshot: {
+        snapshotId: "snapshot-new",
+        leadershipEpoch: "0",
+        stateHash: "hash-new",
+      },
+    })).rejects.toMatchObject({
+      fileId: "reserved-id",
+      phase: "post-write",
+    });
+  });
+
+  it.each([
     [401, {}, DriveAuthenticationError],
     [403, {}, DrivePermissionError],
     [403, {error: {errors: [{reason: "userRateLimitExceeded"}]}}, DriveQuotaError],
@@ -328,5 +423,52 @@ describe("Drive REST adapter", () => {
     await expect(invalid.readFile("file-1")).rejects.toBeInstanceOf(
       DriveInvalidFileError,
     );
+  });
+
+  it("cancels a download stream immediately after the cap is exceeded", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.enqueue(new Uint8Array([4, 5, 6]));
+      },
+      cancel: cancelled,
+    });
+    const download = new Response(body, {
+      headers: {"content-length": "1"},
+    });
+    const arrayBuffer = vi.spyOn(download, "arrayBuffer");
+    const drive = createDriveRestAdapter({
+      fetch: vi.fn()
+        .mockResolvedValueOnce(response(200, metadata({size: "4"})))
+        .mockResolvedValueOnce(download),
+      getAccessToken: () => "token",
+      validateSb3: async () => true,
+      maxBytes: 4,
+    });
+
+    await expect(drive.readFile("file-1")).rejects.toBeInstanceOf(
+      DriveInvalidFileError,
+    );
+    expect(cancelled).toHaveBeenCalled();
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it("rejects download responses without a readable body", async () => {
+    const download = response(200, validSb3);
+    Object.defineProperty(download, "body", {value: null});
+    const arrayBuffer = vi.spyOn(download, "arrayBuffer");
+    const drive = createDriveRestAdapter({
+      fetch: vi.fn()
+        .mockResolvedValueOnce(response(200, metadata()))
+        .mockResolvedValueOnce(download),
+      getAccessToken: () => "token",
+      validateSb3: async () => true,
+    });
+
+    await expect(drive.readFile("file-1")).rejects.toBeInstanceOf(
+      DriveInvalidFileError,
+    );
+    expect(arrayBuffer).not.toHaveBeenCalled();
   });
 });

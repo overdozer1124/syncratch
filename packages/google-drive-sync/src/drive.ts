@@ -178,6 +178,7 @@ function snapshotMetadata(snapshot: DriveSnapshot): Record<string, string> {
 }
 
 function multipartBody(
+  fileId: string | undefined,
   name: string | undefined,
   bytes: Uint8Array,
   snapshot: DriveSnapshot,
@@ -186,6 +187,7 @@ function multipartBody(
     mimeType: SB3_MIME_TYPE,
     appProperties: snapshotMetadata(snapshot),
   };
+  if (fileId !== undefined) metadata.id = fileId;
   if (name !== undefined) metadata.name = name;
   const boundary = `blocksync_${crypto.randomUUID().replaceAll("-", "")}`;
   const body = new Blob([
@@ -251,6 +253,34 @@ export function createDriveRestAdapter(
     }
   };
 
+  const generateFileId = async (): Promise<string> => {
+    const query = new URLSearchParams({
+      count: "1",
+      space: "drive",
+      type: "files",
+    });
+    const result = await authorizedFetch(`${DRIVE_API}/generateIds?${query}`);
+    let value: unknown;
+    try {
+      value = await result.json();
+    } catch (error) {
+      throw new DriveInvalidResponseError(
+        "Drive generated ID response was not valid JSON",
+        {cause: error},
+      );
+    }
+    if (
+      !isRecord(value) ||
+      !Array.isArray(value.ids) ||
+      typeof value.ids[0] !== "string"
+    ) {
+      throw new DriveInvalidResponseError(
+        "Drive generated ID response has no file ID",
+      );
+    }
+    return value.ids[0];
+  };
+
   const confirmAttempt = async (
     fileId: string,
     attemptedSnapshotId: string,
@@ -285,8 +315,7 @@ export function createDriveRestAdapter(
       }
       if (
         metadata.size > maxBytes ||
-        !metadata.name.toLowerCase().endsWith(".sb3") ||
-        metadata.mimeType !== SB3_MIME_TYPE
+        !metadata.name.toLowerCase().endsWith(".sb3")
       ) {
         throw new DriveInvalidFileError(
           "Selected Drive file is not a supported .sb3",
@@ -303,9 +332,34 @@ export function createDriveRestAdapter(
       ) {
         throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
       }
-      const bytes = new Uint8Array(await result.arrayBuffer());
-      if (bytes.byteLength > maxBytes || bytes.byteLength !== metadata.size) {
+      if (!result.body) {
+        throw new DriveInvalidFileError(
+          "Drive download has no readable response body",
+        );
+      }
+      const reader = result.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          throw new DriveInvalidFileError(
+            "Drive .sb3 exceeds the size limit",
+          );
+        }
+        chunks.push(value);
+      }
+      if (total !== metadata.size) {
         throw new DriveInvalidFileError("Drive .sb3 size is invalid");
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
       }
       if (!await options.validateSb3(bytes)) {
         throw new DriveInvalidFileError("Drive file is not a valid .sb3");
@@ -316,20 +370,48 @@ export function createDriveRestAdapter(
       if (input.bytes.byteLength > maxBytes) {
         throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
       }
-      const query = new URLSearchParams({uploadType: "multipart"});
-      const multipart = multipartBody(input.name, input.bytes, input.snapshot);
-      const result = await authorizedFetch(`${DRIVE_UPLOAD_API}?${query}`, {
-        method: "POST",
-        headers: {"Content-Type": multipart.contentType},
-        body: multipart.body,
-      });
-      const value: unknown = await result.json();
-      if (!isRecord(value) || typeof value.id !== "string") {
-        throw new DriveInvalidResponseError(
-          "Drive create response has no file ID",
+      const fileId = await generateFileId();
+      try {
+        const query = new URLSearchParams({
+          uploadType: "multipart",
+          supportsAllDrives: "true",
+        });
+        const multipart = multipartBody(
+          fileId,
+          input.name,
+          input.bytes,
+          input.snapshot,
         );
+        const result = await authorizedFetch(`${DRIVE_UPLOAD_API}?${query}`, {
+          method: "POST",
+          headers: {"Content-Type": multipart.contentType},
+          body: multipart.body,
+        });
+        let value: unknown;
+        try {
+          value = await result.json();
+        } catch (error) {
+          throw new DriveInvalidResponseError(
+            "Drive create response was not valid JSON",
+            {cause: error},
+          );
+        }
+        if (!isRecord(value) || value.id !== fileId) {
+          throw new DriveInvalidResponseError(
+            "Drive create response did not confirm the reserved file ID",
+          );
+        }
+        return await confirmAttempt(fileId, input.snapshot.snapshotId);
+      } catch (error) {
+        const typed = error instanceof DriveSyncError
+          ? error
+          : new DriveInvalidResponseError(
+            "Drive create response could not be processed",
+            {cause: error},
+          );
+        typed.fileId ??= fileId;
+        throw typed;
       }
-      return confirmAttempt(value.id, input.snapshot.snapshotId);
     },
     async updateFile(input) {
       if (input.bytes.byteLength > maxBytes) {
@@ -348,8 +430,16 @@ export function createDriveRestAdapter(
           "pre-write",
         );
       }
-      const query = new URLSearchParams({uploadType: "multipart"});
-      const multipart = multipartBody(undefined, input.bytes, input.snapshot);
+      const query = new URLSearchParams({
+        uploadType: "multipart",
+        supportsAllDrives: "true",
+      });
+      const multipart = multipartBody(
+        undefined,
+        undefined,
+        input.bytes,
+        input.snapshot,
+      );
       await authorizedFetch(
         `${DRIVE_UPLOAD_API}/${encodeURIComponent(input.fileId)}?${query}`,
         {

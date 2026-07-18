@@ -1,4 +1,5 @@
 import {
+  DriveAuthenticationError,
   DriveConflictError,
   DriveSyncError,
   type DriveObservation,
@@ -6,6 +7,10 @@ import {
   type GoogleAuthorization,
   type GooglePicker,
 } from "@blocksync/google-drive-sync";
+import {
+  LocalDriveSaveError,
+  LocalProjectChangedDuringDriveSaveError,
+} from "./drive-export.js";
 
 export type EditorDriveStatus =
   | "not-configured"
@@ -61,6 +66,7 @@ export function createEditorDriveIntegration(
     : "not-configured";
   const observations = new Map<string, DriveObservation>();
   const boundFiles = new Map<string, string>();
+  let saveInFlight: Promise<boolean> | null = null;
 
   const setStatus = (
     next: EditorDriveStatus,
@@ -70,8 +76,26 @@ export function createEditorDriveIntegration(
     dependencies.onStatus(next, message);
   };
 
-  const handleError = (error: unknown): false => {
-    const next = error instanceof DriveConflictError ? "conflict" : "unsynced";
+  const handleError = (
+    error: unknown,
+    operationProjectId?: string,
+  ): false => {
+    if (error instanceof DriveAuthenticationError) {
+      dependencies.auth.disconnect();
+      observations.clear();
+      boundFiles.clear();
+    }
+    if (
+      operationProjectId &&
+      dependencies.getCurrent().localProjectId !== operationProjectId
+    ) {
+      return false;
+    }
+    const next =
+      error instanceof DriveConflictError ||
+      (error instanceof LocalDriveSaveError && error.state === "conflict")
+        ? "conflict"
+        : "unsynced";
     const message = error instanceof DriveSyncError
       ? error.message
       : "Google Drive operation failed";
@@ -91,9 +115,32 @@ export function createEditorDriveIntegration(
         await dependencies.auth.connect();
         const current = dependencies.getCurrent();
         if (current.driveFileId) {
+          const bytes = await dependencies.exportCurrent();
+          if (
+            dependencies.getCurrent().localProjectId !== current.localProjectId
+          ) {
+            setStatus("connected");
+            return true;
+          }
+          const localStateHash = await dependencies.hashBytes(bytes);
+          if (
+            dependencies.getCurrent().localProjectId !== current.localProjectId
+          ) {
+            setStatus("connected");
+            return true;
+          }
           const metadata = await dependencies.drive.getMetadata(
             current.driveFileId,
           );
+          if (
+            metadata.stateHash === null ||
+            metadata.stateHash !== localStateHash
+          ) {
+            throw new DriveConflictError(
+              "Drive content differs from the committed local project; open from Drive to resolve",
+              "pre-write",
+            );
+          }
           observations.set(current.driveFileId, {
             version: metadata.version,
             snapshotId: metadata.snapshotId,
@@ -146,66 +193,91 @@ export function createEditorDriveIntegration(
       }
     },
     async saveToDrive() {
-      if (!dependencies.auth.getAccessToken()) {
-        setStatus("unsynced", "Connect Google before saving to Drive");
-        return false;
-      }
-      setStatus("syncing");
-      try {
+      if (saveInFlight) return saveInFlight;
+      saveInFlight = (async () => {
+        if (!dependencies.auth.getAccessToken()) {
+          setStatus("unsynced", "Connect Google before saving to Drive");
+          return false;
+        }
         const current = dependencies.getCurrent();
-        const fileId = current.driveFileId ??
-          boundFiles.get(current.localProjectId);
-        const bytes = await dependencies.exportCurrent();
-        const snapshot = {
-          snapshotId: dependencies.createSnapshotId(),
-          // P2P leadership does not exist yet; explicit solo saves use epoch 0.
-          leadershipEpoch: "0",
-          stateHash: await dependencies.hashBytes(bytes),
-        };
-        if (!fileId) {
-          let created;
-          try {
-            created = await dependencies.drive.createFile({
-              name: `${current.title || "Project"}.sb3`,
-              bytes,
-              snapshot,
-            });
-          } catch (error) {
-            if (error instanceof DriveSyncError && error.fileId) {
-              boundFiles.set(current.localProjectId, error.fileId);
-              await dependencies.persistDriveFileId(
-                error.fileId,
-                current.localProjectId,
+        try {
+          const fileId = current.driveFileId ??
+            boundFiles.get(current.localProjectId);
+          const bytes = await dependencies.exportCurrent();
+          if (
+            dependencies.getCurrent().localProjectId !== current.localProjectId
+          ) {
+            return false;
+          }
+          const stateHash = await dependencies.hashBytes(bytes);
+          if (
+            dependencies.getCurrent().localProjectId !== current.localProjectId
+          ) {
+            return false;
+          }
+          const snapshot = {
+            snapshotId: dependencies.createSnapshotId(),
+            // P2P leadership does not exist yet; explicit solo saves use epoch 0.
+            leadershipEpoch: "0",
+            stateHash,
+          };
+          if (!fileId) {
+            let created;
+            try {
+              created = await dependencies.drive.createFile({
+                name: `${current.title || "Project"}.sb3`,
+                bytes,
+                snapshot,
+              });
+            } catch (error) {
+              if (error instanceof DriveSyncError && error.fileId) {
+                boundFiles.set(current.localProjectId, error.fileId);
+                await dependencies.persistDriveFileId(
+                  error.fileId,
+                  current.localProjectId,
+                );
+              }
+              throw error;
+            }
+            boundFiles.set(current.localProjectId, created.fileId);
+            observations.set(created.fileId, created.observation);
+            await dependencies.persistDriveFileId(
+              created.fileId,
+              current.localProjectId,
+            );
+          } else {
+            const knownObservation = observations.get(fileId);
+            if (!knownObservation) {
+              throw new DriveConflictError(
+                "Drive version has not been observed in this session",
+                "pre-write",
               );
             }
-            throw error;
+            const updated = await dependencies.drive.updateFile({
+              fileId,
+              bytes,
+              knownObservation,
+              snapshot,
+            });
+            observations.set(fileId, updated.observation);
           }
-          boundFiles.set(current.localProjectId, created.fileId);
-          observations.set(created.fileId, created.observation);
-          await dependencies.persistDriveFileId(
-            created.fileId,
-            current.localProjectId,
-          );
-        } else {
-          const knownObservation = observations.get(fileId);
-          if (!knownObservation) {
-            throw new DriveConflictError(
-              "Drive version has not been observed in this session",
-              "pre-write",
-            );
+          if (
+            dependencies.getCurrent().localProjectId === current.localProjectId
+          ) {
+            setStatus("synced");
           }
-          const updated = await dependencies.drive.updateFile({
-            fileId,
-            bytes,
-            knownObservation,
-            snapshot,
-          });
-          observations.set(fileId, updated.observation);
+          return true;
+        } catch (error) {
+          if (error instanceof LocalProjectChangedDuringDriveSaveError) {
+            return false;
+          }
+          return handleError(error, current.localProjectId);
         }
-        setStatus("synced");
-        return true;
-      } catch (error) {
-        return handleError(error);
+      })();
+      try {
+        return await saveInFlight;
+      } finally {
+        saveInFlight = null;
       }
     },
   };

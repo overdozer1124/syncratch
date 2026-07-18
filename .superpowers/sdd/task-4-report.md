@@ -14,11 +14,12 @@
 - Editor integration tests: failed because `drive-integration.ts` and the package entry did not exist.
 - E2E: failed because `drive-status` and Drive controls did not exist.
 - Follow-up RED cycles covered local-change unsynced state, official `multipart/related` upload formatting, reconnect re-observation, uncertain-create duplicate prevention, and local Drive-link CAS retry.
+- Mandatory review-fix RED cycles covered hash-gated reconnect, failed/stale local flush rejection, pre-generated create IDs, bounded stream cancellation, missing response bodies, concurrent connect deduplication, auth-token clearing, active-project switching, shared-drive query flags, octet-stream SB3 validation, and the boot gate.
 
 ### GREEN
 
-- Drive package: 15 tests passed.
-- Editor unit/integration: 23 tests passed, including real fake-IndexedDB create/open/update preservation.
+- Drive package: 21 tests passed.
+- Editor unit/integration: 38 tests passed, including real fake-IndexedDB create/open/update preservation.
 - Editor E2E: 7 tests passed, including no-config local operation and zero Google requests.
 - SB3 tools: 56 tests passed.
 - Browser local core: 14 tests passed.
@@ -31,6 +32,7 @@ Verified against official documentation:
 - GIS token model: <https://developers.google.com/identity/oauth2/web/guides/use-token-model>
 - Picker web sample: <https://developers.google.com/drive/picker/guides/sample>
 - Drive files get/create/update: <https://developers.google.com/drive/api/reference/rest/v3/files>
+- Drive files.generateIds: <https://developers.google.com/drive/api/reference/rest/v3/files/generateIds>
 - Multipart uploads: <https://developers.google.com/workspace/drive/api/guides/manage-uploads#multipart>
 
 Implementation constraints:
@@ -40,10 +42,23 @@ Implementation constraints:
 - Tokens are held only in a closure and are never written to storage, records, URLs, logs, Yjs, or Apps Script.
 - Picker grants access only through user-selected/uploaded files.
 - Drive uploads use `uploadType=multipart` with `multipart/related`, metadata first, and SB3 media second.
+- Create reserves one `drive`/`files` ID through `files.generateIds`, includes that ID in multipart metadata, and attaches it to every typed post-reservation failure so the editor never chooses another ID silently.
+- Create and update include `supportsAllDrives=true`.
 - Updates fetch `version`, `headRevisionId`, `appProperties`, and capabilities before writing and compare the caller's in-memory observation.
+- Reconnect adopts remote metadata as an observation only when its state hash matches freshly flushed, committed local SB3 bytes. Missing or different remote hashes enter conflict.
+- Drive export uses committed IndexedDB document/assets only after local save state is `clean`; failed/stale flushes and active-project changes stop upload.
 - Metadata is fetched again after writing. Snapshot mismatch is post-write, best-effort conflict detection only. It is not atomic compare-and-swap or a strict distributed lock.
-- Download metadata size is checked before buffering; downloaded bytes are then passed through browser-safe `loadSb3`.
+- Downloads check metadata size, require a readable response body, and stream only through `maxBytes + 1`; overflow cancels immediately. MIME is not trusted: `.sb3` extension, size, and browser-safe `loadSb3` validation are authoritative.
+- A 401/authentication error disconnects GIS and clears the in-memory token. Concurrent connects share one token request.
+- Concurrent explicit Drive saves share one in-flight operation, preventing duplicate create IDs/files.
+- Drive controls remain disabled until editor boot completes.
 - No background Drive autosave was added.
+
+### Best-effort limits
+
+- Google Drive does not provide an atomic compare-and-swap for this upload flow. A writer can race between preflight metadata and upload.
+- Post-write metadata verification detects a mismatched attempted snapshot after bytes may already have been written.
+- A pre-generated ID preserves file identity across uncertain create outcomes, but it cannot prove whether a failed network response reached Drive.
 
 ## Verification
 
@@ -62,42 +77,3 @@ Implementation constraints:
 - `pnpm audit --prod` (`No known vulnerabilities found`)
 
 All commands exited successfully. SB3 VM tests emitted their existing no-renderer costume warnings.
-# Task 4 Report — Documentation, Handoff, and Final Gates
-
-**Status:** READY_FOR_CODEX_REVIEW
-**Documentation commit:** `8881045` — `docs(r1): record enrollment update and end slice`
-**Implementation review target:** `cd83e0445fa2178b91520b9860ebd027a1b21e29` — `feat(store): update and end enrollments with uniqueness`
-
-## Documentation
-
-- Marked the enrollment update/end design as implemented from the Task 3 SHA.
-- Recorded the active-only update/end follow-on in the attendance uniqueness design.
-- Added the Phase 3 Task 4 thin-slice note while keeping broad Task 5 unchecked.
-- Updated the current state and appended the timestamped Codex handoff log.
-- Did not modify `docs/ai-platform/`.
-
-## Final gates
-
-All commands exited 0:
-
-- `pnpm --filter @blocksync/workspace-directory test` — 67 tests passed
-- `pnpm --filter @blocksync/workspace-directory typecheck`
-- `pnpm --filter @blocksync/project-store-sqlite test` — 290 tests passed; directory repository contract: 37 tests passed
-- `pnpm --filter @blocksync/project-store-sqlite typecheck`
-- `pnpm r1:persist:test`
-- `git diff --check`
-
-## Remaining
-
-Class-move orchestration, overlap service rules, claim, System Owner transfer, and audit remain open. Pre-existing `.superpowers/sdd/` working-tree changes were left untouched.
-
-## Task 4 review finding fix — 2026-07-18 20:39:48 JST
-
-- Corrected the top progress narrative so the approved/main-merged status applies only to prior Directory thin slices.
-- Replaced the stale next-steps instruction with a Codex review request for the enrollment update/end thin slice; approval, main integration, and next-slice preparation remain blocked on that review.
-
-### Evidence
-
-- `docs/CURSOR_CODEX_HANDOFF.md` now states `READY_FOR_CODEX_REVIEW` and pins the review target to implementation SHA `cd83e0445fa2178b91520b9860ebd027a1b21e29`, not the docs tip.
-- `git diff --check -- docs/CURSOR_CODEX_HANDOFF.md .superpowers/sdd/task-4-report.md` exited 0.
-- `docs/ai-platform/` was not modified.
