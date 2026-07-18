@@ -1,0 +1,26 @@
+{
+  "name": "@blocksync/collab-signaling",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EXPERIMENTAL stateless/ephemeral WebRTC signaling relay for small-room collaboration. Routes offers/answers/candidates by hashed topic. Stores no Yjs updates or project snapshots. No R1 API stability.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
