@@ -15,6 +15,10 @@ import {
 import {createWebRtcProvider, type CollabProvider} from "@blocksync/collab-webrtc";
 import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
 
+if (import.meta.env.MODE !== "e2e") {
+  throw new Error("The collaboration harness is available only in E2E mode");
+}
+
 function costume(assetId: string): CostumeRef {
   return {
     kind: "costume",

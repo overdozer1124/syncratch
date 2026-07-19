@@ -100,6 +100,21 @@ describe("signal relay", () => {
 });
 
 describe("validation and limits", () => {
+  it("closes a connection that exceeds the per-window message rate", () => {
+    const limited = new SignalingHub({
+      now: () => now,
+      maxMessagesPerWindow: 2,
+      rateWindowMs: 1000,
+    });
+    const a = new FakeConnection("a");
+    limited.handleConnection(a);
+    limited.handleMessage(a, JSON.stringify({t: "ping"}));
+    limited.handleMessage(a, JSON.stringify({t: "ping"}));
+    limited.handleMessage(a, JSON.stringify({t: "ping"}));
+
+    expect(a.closed).toEqual({code: 1008, reason: "message rate exceeded"});
+  });
+
   it("rejects oversized messages without processing", () => {
     const a = new FakeConnection("a");
     hub.handleConnection(a);

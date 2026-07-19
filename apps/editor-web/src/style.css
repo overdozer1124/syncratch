@@ -10,7 +10,7 @@ body,
 
 #app {
   display: grid;
-  grid-template-rows: 82px minmax(0, 1fr);
+  grid-template-rows: 118px minmax(0, 1fr);
 }
 
 .toolbar {
@@ -18,7 +18,7 @@ body,
   z-index: 2147483647;
   inset: 0 0 auto;
   box-sizing: border-box;
-  min-height: 82px;
+  min-height: 118px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -52,17 +52,24 @@ body,
   text-align: right;
 }
 
-.drive-controls {
+.drive-controls,
+.collab-controls {
   flex-basis: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-#drive-status {
+#drive-status,
+#collab-status {
   margin-left: auto;
   min-width: 108px;
   text-align: right;
+}
+
+#collab-invite {
+  flex: 1;
+  width: auto;
 }
 
 #scratch-gui,
@@ -73,5 +80,5 @@ body,
 
 #scratch-gui {
   box-sizing: border-box;
-  padding-top: 82px;
+  padding-top: 118px;
 }

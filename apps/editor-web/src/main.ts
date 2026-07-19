@@ -36,6 +36,9 @@ import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
+import {createAssetHashCache} from "./asset-hash-cache.js";
+import {preserveTargetIds} from "./target-identity.js";
+import {staticAssetUrl} from "./static-url.js";
 import {
   createProjectSessionTracker,
   type ProjectSession,
@@ -51,6 +54,21 @@ import {
 } from "./drive-integration.js";
 import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
 import {prepareCommittedDriveExport} from "./drive-export.js";
+import {
+  createInvite,
+  decodeInviteFragment,
+  deriveSignalingTopic,
+  inviteUrl,
+  parseInviteFromUrl,
+  type CollabInvite,
+} from "@blocksync/collab-invite";
+import {createWebRtcProvider} from "@blocksync/collab-webrtc";
+import {
+  createCollabSession,
+  evaluateCollabReadiness,
+  type CollabSession,
+  type CollabState,
+} from "./collab-session.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -69,6 +87,8 @@ interface ScratchVm {
     targets: Array<{
       isStage: boolean;
       blocks: VmBlocks;
+      getName(): string;
+      sprite: {name: string};
     } & RuntimeAssetTarget>;
   };
 }
@@ -167,6 +187,12 @@ const saveDriveButton = requiredElement<HTMLButtonElement>("save-drive");
 const disconnectGoogleButton =
   requiredElement<HTMLButtonElement>("disconnect-google");
 const driveStatus = requiredElement<HTMLElement>("drive-status");
+const createRoomButton = requiredElement<HTMLButtonElement>("create-room");
+const joinRoomButton = requiredElement<HTMLButtonElement>("join-room");
+const copyInviteButton = requiredElement<HTMLButtonElement>("copy-invite");
+const leaveRoomButton = requiredElement<HTMLButtonElement>("leave-room");
+const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
+const collabStatus = requiredElement<HTMLElement>("collab-status");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 
 let store: ProjectStore;
@@ -178,14 +204,21 @@ let driveIntegration: EditorDriveIntegration;
 let driveReady = false;
 let suppressVmChanges = true;
 let failNextWrite = false;
+let collabSession: CollabSession | null = null;
+let activeInvite: CollabInvite | null = null;
+let collaborationGeneration = 0;
+let collaborationTestGate = false;
 const projectSessions = createProjectSessionTracker();
+const assetHashCache = createAssetHashCache(sha256Hex);
 
 const diagnostic = {
   ready: false,
   error: null as string | null,
-  createTestBlock(id: string): void {
-    const target = vm.runtime.targets.find(candidate => !candidate.isStage);
-    if (!target) throw new Error("Sprite target missing");
+  createTestBlock(id: string, isStage = false): void {
+    const target = vm.runtime.targets.find(
+      candidate => candidate.isStage === isStage,
+    );
+    if (!target) throw new Error(isStage ? "Stage target missing" : "Sprite target missing");
     target.blocks.createBlock({
       id,
       opcode: "event_whenflagclicked",
@@ -200,8 +233,10 @@ const diagnostic = {
     });
     vm.emit("PROJECT_CHANGED");
   },
-  hasBlock(id: string): boolean {
-    const target = vm.runtime.targets.find(candidate => !candidate.isStage);
+  hasBlock(id: string, isStage = false): boolean {
+    const target = vm.runtime.targets.find(
+      candidate => candidate.isStage === isStage,
+    );
     return target?.blocks.getBlock(id) !== null &&
       target?.blocks.getBlock(id) !== undefined;
   },
@@ -216,6 +251,53 @@ const diagnostic = {
   importSb3: importProject,
   failNextWrite(): void {
     failNextWrite = true;
+  },
+  async configureCollaborationTestGate(driveFileId: string): Promise<void> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("Collaboration test gate is available only in E2E mode");
+    }
+    collaborationTestGate = true;
+    const saved = await store.createOrReplace({
+      ...current,
+      driveFileId,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    }, current.revision);
+    current = saved;
+    renderCollabIdle();
+  },
+  renameTarget(isStage: boolean, name: string): void {
+    const target = vm.runtime.targets.find(candidate => candidate.isStage === isStage);
+    if (!target) throw new Error("Target missing");
+    target.sprite.name = name;
+    vm.emit("PROJECT_CHANGED");
+  },
+  targetName(isStage: boolean): string | undefined {
+    return vm.runtime.targets.find(candidate => candidate.isStage === isStage)
+      ?.getName();
+  },
+  collaborationDebug() {
+    const materialized = collabSession?.domain.materialize();
+    return {
+      state: collabSession?.getState() ?? null,
+      vmTargets: vm.runtime.targets.map(target => ({
+        isStage: target.isStage,
+        name: target.getName(),
+      })),
+      localTargets: documentFromVm().targets.map(target => ({
+        id: target.id,
+        isStage: target.isStage,
+        name: target.name,
+      })),
+      sharedTargets: materialized?.ok
+        ? materialized.document.targets.map(target => ({
+            id: target.id,
+            isStage: target.isStage,
+            name: target.name,
+          }))
+        : null,
+      issues: materialized && !materialized.ok ? materialized.issues : null,
+    };
   },
 };
 
@@ -277,11 +359,11 @@ function runtimeAssetMap(): Map<string, Uint8Array> {
 }
 
 function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
-  const hashes = new Map<string, string>();
-  for (const [md5ext, bytes] of assets) {
-    hashes.set(md5ext, sha256Hex(bytes));
-  }
-  return projectJsonToDocument(JSON.parse(vm.toJSON()), hashes);
+  const hashes = assetHashCache.hashesFor(assets);
+  return preserveTargetIds(
+    current.document,
+    projectJsonToDocument(JSON.parse(vm.toJSON()), hashes),
+  );
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
@@ -327,6 +409,162 @@ function markDirty(): void {
   if (suppressVmChanges) return;
   saveCoordinator.markDirty();
   driveIntegration.markLocalChange();
+  collabSession?.noteLocalChange();
+}
+
+const signalingUrl =
+  import.meta.env.VITE_COLLAB_SIGNALING_URL?.trim() ?? "";
+
+function randomParticipantId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return `p-${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function renderCollabIdle(message = "Solo"): void {
+  collabStatus.textContent = message;
+  const ready = hasCurrent && evaluateCollabReadiness({
+    googleConnected:
+      collaborationTestGate || (driveReady && driveIntegration.isConnected()),
+    driveFileId: current.driveFileId,
+    signalingUrl,
+  }).ok;
+  createRoomButton.disabled = Boolean(collabSession) || !ready;
+  joinRoomButton.disabled = Boolean(collabSession) ||
+    !(collaborationTestGate || (driveReady && driveIntegration.isConnected())) ||
+    signalingUrl.length === 0;
+  copyInviteButton.disabled = activeInvite === null;
+  leaveRoomButton.disabled = collabSession === null;
+}
+
+function renderCollabState(state: CollabState): void {
+  const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
+  const conflict = state.conflict ? " · conflict; Drive paused" : "";
+  collabStatus.textContent =
+    `${state.status} · ${peers} · ${state.role}${conflict}`;
+  createRoomButton.disabled = true;
+  joinRoomButton.disabled = true;
+  copyInviteButton.disabled = activeInvite === null;
+  leaveRoomButton.disabled = false;
+}
+
+async function applyCollaborativeProject(
+  generation: number,
+  invite: CollabInvite,
+  document: ProjectDocument,
+  assets: Map<string, Uint8Array>,
+): Promise<void> {
+  if (generation !== collaborationGeneration || !collabSession) return;
+  await saveCoordinator.flush();
+  if (generation !== collaborationGeneration || !collabSession) return;
+  const next: LocalProjectRecord = {
+    ...current,
+    driveFileId: invite.driveFileId,
+    revision: current.revision + 1,
+    updatedAt: new Date().toISOString(),
+    document,
+    assets: assetRecords(document, assets),
+    saveState: "clean",
+  };
+  const saved = await store.createOrReplace(next, current.revision);
+  if (generation !== collaborationGeneration || !collabSession) return;
+  await loadRecord(saved);
+}
+
+async function startCollaboration(
+  invite: CollabInvite,
+  host: boolean,
+): Promise<void> {
+  collabSession?.leave();
+  const generation = ++collaborationGeneration;
+  const topic = await deriveSignalingTopic(invite);
+  if (generation !== collaborationGeneration) return;
+  const participantId = randomParticipantId();
+  const session = createCollabSession({
+    roomId: invite.roomId,
+    secret: invite.secret,
+    participantId,
+    createProvider: config => createWebRtcProvider({
+      ...config,
+      signalingUrl,
+      topic,
+    }),
+    materializeLocal: () => {
+      const assets = runtimeAssetMap();
+      return {document: documentFromVm(assets), assets};
+    },
+    applyRemoteToLocal: (document, assets) =>
+      applyCollaborativeProject(generation, invite, document, assets),
+    reobserveDriveBeforeLeadership: async () => {
+      if (collaborationTestGate) return;
+      if (!await driveIntegration.reobserveCurrentFile()) {
+        throw new Error("Drive changed during collaboration handoff");
+      }
+    },
+    onState: renderCollabState,
+  });
+  collabSession = session;
+  activeInvite = invite;
+  collabInviteInput.value = inviteUrl(window.location.href, invite);
+  session.start({host});
+}
+
+async function createRoom(): Promise<void> {
+  const readiness = evaluateCollabReadiness({
+    googleConnected: collaborationTestGate || driveIntegration.isConnected(),
+    driveFileId: current.driveFileId,
+    signalingUrl,
+  });
+  if (!readiness.ok) {
+    renderCollabIdle(readiness.reason);
+    return;
+  }
+  if (
+    !collaborationTestGate &&
+    !await driveIntegration.reobserveCurrentFile()
+  ) {
+    renderCollabIdle("Drive access check failed");
+    return;
+  }
+  await startCollaboration(createInvite(current.driveFileId!), true);
+}
+
+function inviteFromInput(): CollabInvite | null {
+  const value = collabInviteInput.value.trim();
+  return parseInviteFromUrl(value) ?? decodeInviteFragment(value) ??
+    decodeInviteFragment(window.location.hash);
+}
+
+async function joinRoom(): Promise<void> {
+  const invite = inviteFromInput();
+  if (!invite) {
+    renderCollabIdle("Invalid collaboration invite");
+    return;
+  }
+  const readiness = evaluateCollabReadiness({
+    googleConnected: collaborationTestGate || driveIntegration.isConnected(),
+    driveFileId: invite.driveFileId,
+    signalingUrl,
+  });
+  if (!readiness.ok) {
+    renderCollabIdle(readiness.reason);
+    return;
+  }
+  if (!collaborationTestGate) {
+    const opened = await driveIntegration.openCollaborationFile(invite.driveFileId);
+    if (!opened) {
+      renderCollabIdle("Unable to read the invited Drive file");
+      return;
+    }
+  }
+  await startCollaboration(invite, false);
+}
+
+function leaveRoom(): void {
+  collaborationGeneration += 1;
+  collabSession?.leave();
+  collabSession = null;
+  activeInvite = null;
+  renderCollabIdle();
 }
 
 async function loadRecord(
@@ -361,8 +599,8 @@ async function loadFixtureRecord(
   title = "Local project",
 ): Promise<LocalProjectRecord> {
   const [projectResponse, assetsResponse] = await Promise.all([
-    fetch("/generated/fixtures/cat-project.json"),
-    fetch("/generated/fixtures/assets.b64.json"),
+    fetch(staticAssetUrl("generated/fixtures/cat-project.json")),
+    fetch(staticAssetUrl("generated/fixtures/assets.b64.json")),
   ]);
   if (!projectResponse.ok || !assetsResponse.ok) {
     throw new Error("Failed to load local fixture");
@@ -531,6 +769,8 @@ function renderDriveStatus(
     !driveReady || !connected || status === "conflict";
   disconnectGoogleButton.disabled =
     !driveReady || !configured || status === "disconnected";
+  if (status === "conflict") collabSession?.reportDriveConflict();
+  if (!collabSession) renderCollabIdle();
 }
 
 async function persistDriveFileId(
@@ -610,6 +850,9 @@ function setupDriveIntegration(): EditorDriveIntegration {
     hashBytes: async bytes => sha256Hex(bytes),
     createSnapshotId: () => crypto.randomUUID(),
     onStatus: renderDriveStatus,
+    getLeadershipEpoch: () => collabSession?.leadershipEpoch() ?? "0",
+    canPersistToDrive: () =>
+      collabSession?.canPersistToDrive() ?? {ok: true},
   });
 }
 
@@ -628,6 +871,9 @@ async function boot(): Promise<void> {
   diagnostic.ready = true;
   driveReady = true;
   renderDriveStatus(driveIntegration.getStatus());
+  const fragmentInvite = decodeInviteFragment(window.location.hash);
+  if (fragmentInvite) collabInviteInput.value = window.location.href;
+  renderCollabIdle();
 }
 
 driveIntegration = setupDriveIntegration();
@@ -665,8 +911,16 @@ saveDriveButton.addEventListener("click", () => {
   void driveIntegration.saveToDrive();
 });
 disconnectGoogleButton.addEventListener("click", () => {
+  leaveRoom();
   driveIntegration.disconnect();
 });
+createRoomButton.addEventListener("click", () => void createRoom());
+joinRoomButton.addEventListener("click", () => void joinRoom());
+copyInviteButton.addEventListener("click", () => {
+  if (!activeInvite) return;
+  void navigator.clipboard.writeText(inviteUrl(window.location.href, activeInvite));
+});
+leaveRoomButton.addEventListener("click", leaveRoom);
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);

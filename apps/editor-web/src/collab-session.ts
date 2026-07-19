@@ -75,6 +75,8 @@ export interface CollabSessionOptions {
   ) => void | Promise<void>;
   /** Whether this peer is eligible for leadership (authenticated + Drive verified). */
   eligible?: boolean;
+  /** Re-check Drive state before a follower takes over durable snapshots. */
+  reobserveDriveBeforeLeadership?: () => void | Promise<void>;
   debounceMs?: number;
   onState?: (state: CollabState) => void;
 }
@@ -110,8 +112,20 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let conflict = false;
   let suppressLocal = false;
   let leadership: LeadershipState | null = null;
+  let leadershipReady = true;
+  let leadershipGeneration = 0;
+  let wasLeader = false;
   let localTimer: ReturnType<typeof setTimeout> | null = null;
   let applyPending: Promise<void> = Promise.resolve();
+  let maySeed = false;
+  const pendingTargets = new Map<string, ProjectDocument["targets"][number]>();
+  const pendingTargetDeletions = new Set<string>();
+  const pendingAssets = new Map<string, Uint8Array>();
+  const lastLocalTargetJson = new Map(
+    options.materializeLocal().document.targets.map(
+      target => [target.id, JSON.stringify(target)] as const,
+    ),
+  );
 
   const isSeeded = (): boolean => domain.ydoc.getMap("targets").size > 0;
 
@@ -138,6 +152,49 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
   };
 
+  const capturePendingLocalChanges = (): void => {
+    if (suppressLocal) return;
+    const {document, assets} = options.materializeLocal();
+    const currentIds = new Set(document.targets.map(target => target.id));
+    for (const targetId of lastLocalTargetJson.keys()) {
+      if (!currentIds.has(targetId)) {
+        pendingTargets.delete(targetId);
+        pendingTargetDeletions.add(targetId);
+      }
+    }
+    for (const target of document.targets) {
+      if (lastLocalTargetJson.get(target.id) !== JSON.stringify(target)) {
+        pendingTargetDeletions.delete(target.id);
+        pendingTargets.set(target.id, target);
+      }
+    }
+    const sharedAssets = domain.ydoc.getMap<Uint8Array>("assets");
+    for (const [md5ext, bytes] of assets) {
+      if (!sharedAssets.has(md5ext)) pendingAssets.set(md5ext, bytes);
+    }
+  };
+
+  const pushPendingLocalChanges = (): void => {
+    if (suppressLocal) return;
+    if (!isSeeded()) {
+      if (!maySeed) return;
+      syncLocalToDoc();
+    } else {
+      for (const targetId of pendingTargetDeletions) {
+        domain.deleteTarget(targetId);
+        lastLocalTargetJson.delete(targetId);
+      }
+      for (const target of pendingTargets.values()) {
+        domain.setTarget(target);
+        lastLocalTargetJson.set(target.id, JSON.stringify(target));
+      }
+      for (const [md5ext, bytes] of pendingAssets) domain.putAsset(md5ext, bytes);
+    }
+    pendingTargets.clear();
+    pendingTargetDeletions.clear();
+    pendingAssets.clear();
+  };
+
   const role = (): CollabRole => {
     if (!active) return "solo";
     return leaderMatches(leadership, options.participantId) ? "leader" : "follower";
@@ -159,6 +216,25 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       participants.push({participantId: peerId, eligible: state.eligible !== false});
     }
     leadership = electLeader(options.roomId, participants);
+    const nowLeader = leaderMatches(leadership, options.participantId);
+    if (active && nowLeader && !wasLeader && options.reobserveDriveBeforeLeadership) {
+      leadershipReady = false;
+      const generation = ++leadershipGeneration;
+      Promise.resolve(options.reobserveDriveBeforeLeadership())
+        .then(() => {
+          if (generation === leadershipGeneration) leadershipReady = true;
+        })
+        .catch(() => {
+          if (generation === leadershipGeneration) conflict = true;
+        })
+        .finally(() => {
+          if (generation === leadershipGeneration) emitState();
+        });
+    } else if (!nowLeader) {
+      leadershipGeneration += 1;
+      leadershipReady = true;
+    }
+    wasLeader = nowLeader;
     emitState();
   };
 
@@ -170,6 +246,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         suppressLocal = true;
         try {
           await options.applyRemoteToLocal(result.document, result.assets);
+          lastLocalTargetJson.clear();
+          for (const target of options.materializeLocal().document.targets) {
+            lastLocalTargetJson.set(target.id, JSON.stringify(target));
+          }
         } finally {
           suppressLocal = false;
         }
@@ -178,6 +258,17 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   };
 
   domain.onRemoteChange(() => {
+    if (
+      pendingTargets.size > 0 ||
+      pendingTargetDeletions.size > 0 ||
+      pendingAssets.size > 0
+    ) {
+      if (localTimer) {
+        clearTimeout(localTimer);
+        localTimer = null;
+      }
+      pushPendingLocalChanges();
+    }
     scheduleApplyToLocal();
     emitState();
   });
@@ -187,13 +278,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
   const doLocalPush = (): void => {
     localTimer = null;
-    syncLocalToDoc();
+    pushPendingLocalChanges();
   };
 
   return {
     domain,
     provider,
     start({host}) {
+      maySeed = host;
       provider.setPresence({eligible: selfEligible});
       if (host) syncLocalToDoc();
       provider.connect();
@@ -208,12 +300,17 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       }
       provider.disconnect();
       active = false;
+      maySeed = false;
       leadership = null;
+      leadershipGeneration += 1;
+      leadershipReady = true;
+      wasLeader = false;
       conflict = false;
       emitState();
     },
     noteLocalChange() {
       if (suppressLocal || !active) return;
+      capturePendingLocalChanges();
       if (localTimer) clearTimeout(localTimer);
       localTimer = setTimeout(doLocalPush, debounceMs);
     },
@@ -226,6 +323,21 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         return {ok: false, reason: "Resolve the collaboration conflict before saving to Drive"};
       }
       if (!active) return {ok: true};
+      if (provider.getStatus() !== "connected") {
+        return {
+          ok: false,
+          reason: "Collaboration is disconnected; Drive saving is paused",
+        };
+      }
+      if (
+        leaderMatches(leadership, options.participantId) &&
+        !leadershipReady
+      ) {
+        return {
+          ok: false,
+          reason: "Drive metadata is being re-observed after leader handoff",
+        };
+      }
       if (leaderMatches(leadership, options.participantId)) return {ok: true};
       return {ok: false, reason: "Only the room leader saves to Drive"};
     },

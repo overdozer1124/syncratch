@@ -23,6 +23,18 @@
           <button id="disconnect-google" type="button" disabled>Disconnect</button>
           <span data-testid="drive-status" id="drive-status">Not configured</span>
         </span>
+        <span class="collab-controls">
+          <button id="create-room" type="button" disabled>Create room</button>
+          <input
+            aria-label="Collaboration invite"
+            id="collab-invite"
+            placeholder="Paste collaboration invite"
+          />
+          <button id="join-room" type="button" disabled>Join invite</button>
+          <button id="copy-invite" type="button" disabled>Copy invite</button>
+          <button id="leave-room" type="button" disabled>Leave room</button>
+          <span data-testid="collab-status" id="collab-status">Solo</span>
+        </span>
       </header>
       <section data-testid="scratch-gui" id="scratch-gui"></section>
     </main>

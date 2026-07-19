@@ -120,6 +120,25 @@ describe("ProjectCollaborationDocument materialization", () => {
     expect(targetsRoot.has("stage")).toBe(true);
     expect(targetsRoot.has("s1")).toBe(true);
   });
+
+  it("propagates target deletion through Yjs updates", () => {
+    const source = project([stage(), sprite("s1")]);
+    const sender = new ProjectCollaborationDocument();
+    const receiver = new ProjectCollaborationDocument();
+    sender.loadLocalProject(source, assetsFor(source));
+    receiver.applyRemoteUpdate(sender.encodeState());
+
+    sender.deleteTarget("s1");
+    receiver.applyRemoteUpdate(
+      Y.encodeStateAsUpdate(sender.ydoc, Y.encodeStateVector(receiver.ydoc)),
+    );
+
+    const result = receiver.materialize();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.document.targets.map(target => target.id)).toEqual(["stage"]);
+    }
+  });
 });
 
 describe("different-target concurrent merge", () => {

@@ -65,9 +65,12 @@ export interface EditorDriveDependencies {
 
 export interface EditorDriveIntegration {
   getStatus(): EditorDriveStatus;
+  isConnected(): boolean;
   connect(): Promise<boolean>;
   disconnect(): void;
   openFromDrive(): Promise<boolean>;
+  openCollaborationFile(fileId: string): Promise<boolean>;
+  reobserveCurrentFile(): Promise<boolean>;
   saveToDrive(): Promise<boolean>;
   markLocalChange(): void;
 }
@@ -162,6 +165,9 @@ export function createEditorDriveIntegration(
   return {
     getStatus() {
       return status;
+    },
+    isConnected() {
+      return dependencies.auth.getAccessToken() !== null;
     },
     async connect() {
       if (!dependencies.configured) return false;
@@ -272,6 +278,86 @@ export function createEditorDriveIntegration(
         return true;
       } catch (error) {
         return handleError(error, undefined, operation);
+      } finally {
+        finishOperation(operation);
+      }
+    },
+    async openCollaborationFile(fileId) {
+      if (!dependencies.auth.getAccessToken()) {
+        setStatus("unsynced", "Connect Google before joining a room");
+        return false;
+      }
+      const operation = beginOperation();
+      setStatus("syncing");
+      try {
+        const downloaded = await dependencies.drive.readFile(
+          fileId,
+          operation.controller.signal,
+        );
+        if (!isActive(operation)) return false;
+        await dependencies.importAsNewLocal(
+          downloaded.bytes,
+          projectTitle(downloaded.metadata.name),
+          fileId,
+          operation.controller.signal,
+        );
+        if (!isActive(operation)) return false;
+        observations.set(fileId, {
+          version: downloaded.metadata.version,
+          snapshotId: downloaded.metadata.snapshotId,
+        });
+        boundFiles.set(dependencies.getCurrent().localProjectId, fileId);
+        setStatus("synced");
+        return true;
+      } catch (error) {
+        return handleError(error, undefined, operation);
+      } finally {
+        finishOperation(operation);
+      }
+    },
+    async reobserveCurrentFile() {
+      if (!dependencies.auth.getAccessToken()) return false;
+      const current = dependencies.getCurrent();
+      if (!current.driveFileId) return false;
+      const operation = beginOperation();
+      try {
+        const [bytes, metadata, downloaded] = await Promise.all([
+          dependencies.exportCurrent(),
+          dependencies.drive.getMetadata(
+            current.driveFileId,
+            operation.controller.signal,
+          ),
+          dependencies.drive.readFile(
+            current.driveFileId,
+            operation.controller.signal,
+          ),
+        ]);
+        if (!isActive(operation)) return false;
+        if (dependencies.getCurrent().localProjectId !== current.localProjectId) {
+          return false;
+        }
+        const [localHash, remoteHash] = await Promise.all([
+          dependencies.hashBytes(bytes),
+          dependencies.hashBytes(downloaded.bytes),
+        ]);
+        if (
+          !isActive(operation) ||
+          localHash !== remoteHash ||
+          metadata.stateHash !== localHash
+        ) {
+          throw new DriveConflictError(
+            "Drive content changed during collaboration leader handoff",
+            "pre-write",
+          );
+        }
+        observations.set(current.driveFileId, {
+          version: metadata.version,
+          snapshotId: metadata.snapshotId,
+        });
+        boundFiles.set(current.localProjectId, current.driveFileId);
+        return true;
+      } catch (error) {
+        return handleError(error, current.localProjectId, operation);
       } finally {
         finishOperation(operation);
       }

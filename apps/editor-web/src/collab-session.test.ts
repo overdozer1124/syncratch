@@ -94,6 +94,9 @@ function fakeVm(initial: ProjectDocument) {
       const target = document.targets.find((t) => t.id === id)!;
       target.name = name;
     },
+    deleteTarget(id: string) {
+      document.targets = document.targets.filter(target => target.id !== id);
+    },
     current: () => document,
     lastApplied: () => appliedDocs[appliedDocs.length - 1],
   };
@@ -180,6 +183,89 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(vmB.lastApplied()?.targets.find((t) => t.id === "s1")?.name).toBe("EditedByA");
     expect(nameIn(vmA, "s1")).toBe("EditedByA");
   });
+
+  it("does not overwrite a pending local edit when a remote edit arrives first", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1"), sprite("s2", "S2")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-pending-local",
+      secret: "pending-local-secret-pending-local-123",
+    };
+    const a = createCollabSession({
+      ...common,
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      debounceMs: 100,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    vmB.editTargetName("s2", "PendingByB");
+    b.noteLocalChange();
+    vmA.editTargetName("s1", "FastByA");
+    a.noteLocalChange();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flush(a, b);
+    await new Promise(resolve => setTimeout(resolve, 110));
+    await flush(a, b);
+
+    expect(vmA.current().targets.find(target => target.id === "s2")?.name)
+      .toBe("PendingByB");
+    expect(vmB.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("FastByA");
+  });
+
+  it("propagates a local target deletion to every peer", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1"), sprite("s2", "S2")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-delete-target",
+      secret: "delete-target-secret-delete-target-123",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    vmA.deleteTarget("s2");
+    a.noteLocalChange();
+    await flush(a, b);
+
+    expect(vmA.current().targets.some(target => target.id === "s2")).toBe(false);
+    expect(vmB.current().targets.some(target => target.id === "s2")).toBe(false);
+  });
 });
 
 describe("deterministic leadership and leader-only Drive writes", () => {
@@ -221,6 +307,75 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     await flush(b);
     expect(b.isLeader()).toBe(true);
     expect(b.leadershipEpoch()).not.toBe(epochBefore);
+    expect(b.canPersistToDrive().ok).toBe(true);
+  });
+
+  it("blocks Drive writes while transport is disconnected", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const session = createCollabSession({
+      roomId: "room-disconnected",
+      secret: "disconnected-secret-disconnected-123",
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+
+    session.start({host: true});
+    await flush(session);
+    session.provider.disconnect();
+
+    expect(session.canPersistToDrive()).toEqual({
+      ok: false,
+      reason: "Collaboration is disconnected; Drive saving is paused",
+    });
+  });
+
+  it("re-observes Drive before a newly elected leader may write", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    let releaseObservation!: () => void;
+    const observation = new Promise<void>(resolve => {
+      releaseObservation = resolve;
+    });
+    const common = {
+      roomId: "room-handoff",
+      secret: "handoff-secret-handoff-secret-12345",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+      reobserveDriveBeforeLeadership: () => observation,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+    a.leave();
+    await flush(b);
+
+    expect(b.isLeader()).toBe(true);
+    expect(b.canPersistToDrive()).toEqual({
+      ok: false,
+      reason: "Drive metadata is being re-observed after leader handoff",
+    });
+
+    releaseObservation();
+    await observation;
+    await flush(b);
     expect(b.canPersistToDrive().ok).toBe(true);
   });
 });

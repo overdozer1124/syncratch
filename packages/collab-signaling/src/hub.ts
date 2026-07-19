@@ -24,6 +24,8 @@ export interface SignalingLimits {
   maxTopics: number;
   maxConnections: number;
   idleMs: number;
+  maxMessagesPerWindow: number;
+  rateWindowMs: number;
 }
 
 export const DEFAULT_SIGNALING_LIMITS: SignalingLimits = {
@@ -34,6 +36,8 @@ export const DEFAULT_SIGNALING_LIMITS: SignalingLimits = {
   maxTopics: 2000,
   maxConnections: 500,
   idleMs: 60_000,
+  maxMessagesPerWindow: 120,
+  rateWindowMs: 10_000,
 };
 
 const TOPIC_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -48,6 +52,8 @@ interface Member {
   topic: string;
   peer: string;
   lastSeen: number;
+  rateWindowStartedAt: number;
+  messagesInWindow: number;
 }
 
 function byteLength(raw: string | Uint8Array): number {
@@ -70,7 +76,15 @@ export class SignalingHub {
       conn.close(1013, "connection limit reached");
       return;
     }
-    this.members.set(conn.id, {conn, topic: "", peer: "", lastSeen: this.now()});
+    const connectedAt = this.now();
+    this.members.set(conn.id, {
+      conn,
+      topic: "",
+      peer: "",
+      lastSeen: connectedAt,
+      rateWindowStartedAt: connectedAt,
+      messagesInWindow: 0,
+    });
   }
 
   handleClose(conn: SignalingConnection): void {
@@ -102,7 +116,18 @@ export class SignalingHub {
     }
     const member = this.members.get(conn.id);
     if (!member) return;
-    member.lastSeen = this.now();
+    const now = this.now();
+    member.lastSeen = now;
+    if (now - member.rateWindowStartedAt >= this.limits.rateWindowMs) {
+      member.rateWindowStartedAt = now;
+      member.messagesInWindow = 0;
+    }
+    member.messagesInWindow += 1;
+    if (member.messagesInWindow > this.limits.maxMessagesPerWindow) {
+      conn.close(1008, "message rate exceeded");
+      this.handleClose(conn);
+      return;
+    }
 
     const text = typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8");
     let msg: unknown;

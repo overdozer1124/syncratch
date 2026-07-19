@@ -10,7 +10,8 @@
     "build:e2e": "pnpm prepare:assets && vite build --mode e2e",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:static": "node scripts/verify-static-build.mjs"
   },
   "dependencies": {
     "@blocksync/collab-invite": "workspace:*",

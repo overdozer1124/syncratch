@@ -172,6 +172,13 @@ export class ProjectCollaborationDocument {
     }, LOCAL_ORIGIN);
   }
 
+  /** Delete a target locally and propagate the deletion to every peer. */
+  deleteTarget(targetId: string): void {
+    this.ydoc.transact(() => {
+      this.targets.delete(targetId);
+    }, LOCAL_ORIGIN);
+  }
+
   /** Store an asset by its content address (local origin). Idempotent. */
   putAsset(md5ext: string, bytes: Uint8Array): void {
     this.ydoc.transact(() => {

@@ -119,6 +119,27 @@ describe("editor Drive integration", () => {
     expect(integration.getStatus()).toBe("synced");
   });
 
+  it("opens the exact Drive file from a collaboration invite before joining", async () => {
+    const deps = dependencies();
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(
+      integration.openCollaborationFile("invite-drive-file"),
+    ).resolves.toBe(true);
+
+    expect(deps.drive.readFile).toHaveBeenCalledWith(
+      "invite-drive-file",
+      expect.any(AbortSignal),
+    );
+    expect(deps.importAsNewLocal).toHaveBeenCalledWith(
+      bytes,
+      "Drive project",
+      "invite-drive-file",
+      expect.any(AbortSignal),
+    );
+  });
+
   it("re-observes an existing Drive-backed project on explicit reconnect", async () => {
     const deps = dependencies({
       getCurrent: vi.fn(() => ({
@@ -157,6 +178,59 @@ describe("editor Drive integration", () => {
       expect.objectContaining({
         fileId: "existing-file",
         knownObservation: {version: "12", snapshotId: "snapshot-12"},
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("refreshes the Drive observation before leader handoff writes", async () => {
+    const drive = {
+      ...dependencies().drive,
+      getMetadata: vi.fn()
+        .mockResolvedValueOnce({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: "old-epoch",
+          stateHash: "state-hash",
+          canEdit: true,
+          canDownload: true,
+        })
+        .mockResolvedValueOnce({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "13",
+          headRevisionId: "head-13",
+          snapshotId: "snapshot-13",
+          leadershipEpoch: "new-epoch",
+          stateHash: "state-hash",
+          canEdit: true,
+          canDownload: true,
+        }),
+    };
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive,
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.reobserveCurrentFile()).resolves.toBe(true);
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(deps.drive.updateFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knownObservation: {version: "13", snapshotId: "snapshot-13"},
       }),
       expect.any(AbortSignal),
     );

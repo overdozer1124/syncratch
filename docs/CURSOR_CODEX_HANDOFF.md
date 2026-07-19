@@ -3110,3 +3110,42 @@ Local-First実装進捗: 0%（設計のみ、Stage 0未着手）
 次Task: Stage 0 browser-safe core + versioned LocalProjectRecord contract
 ```
 
+### 2026-07-19 10:25:00 JST — Cursor（Local-First initial release implementation）
+
+```text
+状態: IMPLEMENTED / RELEASE_GATES_GREEN
+作業ブランチ/worktree: feat/local-first-pivot-impl / C:\cursor\NewScratchEditor-local-first-pivot
+Local-First実装進捗: Stage 0〜5 100%
+
+完了:
+- browser-safe Project/SB3 core、LocalProjectRecord、IndexedDB正本
+- 静的Scratch Editor SPA、自動保存、SB3 import/export、障害復旧
+- Google Drive drive.file + Picker、best-effort競合停止
+- Yjs/WebRTC暗号化共同編集、極小signaling、logical leader/handoff
+- 任意Apps Script classroom adapter（roster/invite/room/Drive共有設定のみ）
+- GitHub Pages workflow、OAuth/signaling/無料枠/復旧/リリース手順
+
+安全性修正:
+- pending local edit競合、target rename ID安定化、target deletion伝播
+- production E2E harness非同梱、signaling接続単位レート制限
+- Apps Script Google ID-token認証、CSRF/CORS非Cookie化、class境界再認可、
+  LockService、数式注入拒否、未知エラー一般化、timeout
+- GitHub Pages subpathでfixture/runtime assetをBASE_URL解決
+
+検証:
+- pnpm build: PASS（Community packages + frozen School packages）
+- pnpm test: PASS（全package/gate0）
+- editor-web unit: 70 tests PASS、typecheck PASS
+- editor-web Playwright: 10 tests PASS（実Chromium 2 context WebRTCを含む）
+- classroom-apps-script: 14 tests PASS、typecheck PASS
+- Pages subpath production build + verify:static: PASS
+- git diff --check: PASS
+
+制約:
+- Drive single writerはpartition耐性のある厳密lockではなくbest-effort
+- signalingはTURNではなく、制限ネットワークではlocal edit/exportへdegrade
+- Google実アカウントDrive操作は手動release gate（CIへ認証情報を置かない）
+- Apps Scriptは任意で、停止・quota超過でもCommunity editorを停止しない
+- AI、中央backup、大人数room、新School directoryは初回release対象外
+```
+

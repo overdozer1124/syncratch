@@ -1,0 +1,83 @@
+name: Local-First Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/editor-web/**"
+      - "packages/classroom-apps-script/**"
+      - "packages/collab-*/**"
+      - "packages/collaboration-domain/**"
+      - "packages/google-drive-sync/**"
+      - "packages/project-local-core/**"
+      - "packages/project-store-idb/**"
+      - "packages/sb3-tools/**"
+      - ".github/workflows/local-first-pages.yml"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: local-first-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm gate0:build-vendor-vm
+      - run: pnpm gate0:build-vendor-gui-spike
+      - run: pnpm --filter @blocksync/editor-web test
+      - run: pnpm --filter @blocksync/editor-web typecheck
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts
+      - run: pnpm --filter @blocksync/classroom-apps-script test
+      - run: pnpm --filter @blocksync/collab-invite test
+      - run: pnpm --filter @blocksync/collab-leader test
+      - run: pnpm --filter @blocksync/collaboration-domain test
+      - run: pnpm --filter @blocksync/collab-webrtc test
+      - run: pnpm --filter @blocksync/collab-signaling test
+      - run: pnpm --filter @blocksync/google-drive-sync test
+      - run: pnpm --filter @blocksync/project-local-core test
+      - run: pnpm --filter @blocksync/project-store-idb test
+      - run: pnpm --filter @blocksync/sb3-tools test
+      - run: pnpm --filter @blocksync/editor-web build
+        env:
+          BLOCKSYNC_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_COLLAB_SIGNALING_URL: ${{ vars.BLOCKSYNC_SIGNALING_URL }}
+          VITE_GOOGLE_API_KEY: ${{ vars.BLOCKSYNC_GOOGLE_API_KEY }}
+          VITE_GOOGLE_APP_ID: ${{ vars.BLOCKSYNC_GOOGLE_APP_ID }}
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.BLOCKSYNC_GOOGLE_CLIENT_ID }}
+      - run: pnpm --filter @blocksync/editor-web verify:static
+        env:
+          BLOCKSYNC_BASE_PATH: /${{ github.event.repository.name }}/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/editor-web/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
