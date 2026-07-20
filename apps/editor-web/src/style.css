@@ -49,9 +49,35 @@ body,
 }
 
 #save-status {
-  margin-left: auto;
   min-width: 78px;
   text-align: right;
+}
+
+.project-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0;
+  min-width: 120px;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.status-details {
+  opacity: 0.88;
+  font-size: 0.92em;
+}
+
+.status-secondary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .drive-controls,
@@ -64,7 +90,6 @@ body,
 
 #drive-status,
 #collab-status {
-  margin-left: auto;
   min-width: 108px;
   text-align: right;
 }

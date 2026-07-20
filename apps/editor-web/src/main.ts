@@ -32,6 +32,14 @@ import {
   collectRuntimeAssetBytes,
   type RuntimeAssetTarget,
 } from "./runtime-assets.js";
+import {
+  assetRecordsFromMap,
+  createCorruptRecordRecovery,
+  isMissingAssetError,
+  recoverLoadedRecord,
+  recordHasMissingStoredAssets,
+} from "./local-record-recovery.js";
+import {composeProjectStatus} from "./project-status.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
@@ -177,14 +185,6 @@ interface GoogleBrowserGlobal extends GoogleIdentityGlobal {
 
 declare const GUI: ScratchGuiGlobal;
 
-const statusText: Record<LocalSaveState, string> = {
-  clean: "Saved",
-  dirty: "Unsaved",
-  saving: "Saving…",
-  error: "Save failed",
-  conflict: "Conflict",
-};
-
 function requiredElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) throw new Error(`Missing #${id}`);
@@ -199,6 +199,7 @@ const downloadButton = requiredElement<HTMLButtonElement>("download-project");
 const saveButton = requiredElement<HTMLButtonElement>("save-project");
 const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const saveStatus = requiredElement<HTMLElement>("save-status");
+const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const connectGoogleButton =
   requiredElement<HTMLButtonElement>("connect-google");
 const openDriveButton = requiredElement<HTMLButtonElement>("open-drive");
@@ -232,7 +233,16 @@ let collabSession: CollabSession | null = null;
 let activeInvite: CollabInvite | null = null;
 let collaborationGeneration = 0;
 let collaborationTestGate = false;
+let lastLocalSaveState: LocalSaveState = "clean";
+let lastDriveStatus: EditorDriveStatus = "not-configured";
+let lastDriveMessage: string | undefined;
+let lastCollabState: CollabState | null = null;
+let lastCollabIdleMessage = "Solo";
+let fatalBootError: string | undefined;
+let localOperationError: string | undefined;
+const recoveryAssetOverlay = new Map<string, Uint8Array>();
 const projectSessions = createProjectSessionTracker();
+const corruptRecordRecovery = createCorruptRecordRecovery();
 const assetHashCache = createAssetHashCache(sha256Hex);
 
 const diagnostic = {
@@ -275,6 +285,22 @@ const diagnostic = {
   importSb3: importProject,
   failNextWrite(): void {
     failNextWrite = true;
+  },
+  async corruptStoredAssets(): Promise<void> {
+    if (!hasCurrent || current.assets.length === 0) {
+      throw new Error("No stored assets to corrupt");
+    }
+    const [removed, ...remaining] = current.assets;
+    recoveryAssetOverlay.set(removed.md5ext, removed.bytes);
+    current = await store.createOrReplace({
+      ...current,
+      assets: remaining,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    }, current.revision);
+  },
+  async localProjectIds(): Promise<string[]> {
+    return (await store.list()).map(record => record.localProjectId);
   },
   async configureCollaborationTestGate(driveFileId: string): Promise<void> {
     if (import.meta.env.MODE !== "e2e") {
@@ -359,19 +385,25 @@ function assetMap(record: LocalProjectRecord): Map<string, Uint8Array> {
   );
 }
 
-function assetRecords(
-  document: ProjectDocument,
-  assets: Map<string, Uint8Array>,
-): LocalProjectRecord["assets"] {
-  const required = new Set<string>();
-  for (const target of document.targets) {
-    for (const costume of target.costumes ?? []) required.add(costume.md5ext);
-    for (const sound of target.sounds ?? []) required.add(sound.md5ext);
-  }
-  return [...required].map(md5ext => {
-    const bytes = assets.get(md5ext);
-    if (!bytes) throw new Error(`Missing asset ${md5ext}`);
-    return {md5ext, bytes};
+async function maybeRecoverCorruptRecord(
+  session: ProjectSession,
+): Promise<boolean> {
+  if (!hasCurrent || !projectSessions.isActive(session)) return false;
+  const source = current;
+  const assets = runtimeAssetMap();
+  const document = documentFromVm(assets);
+  return corruptRecordRecovery.recover({
+    current: source,
+    title: titleInput.value,
+    document,
+    assets,
+    localProjectId: crypto.randomUUID(),
+    isActive: () => projectSessions.isActive(session),
+    persist: recovery => store.createOrReplace(recovery, null),
+    remove: recovery => store.delete(recovery.localProjectId),
+    commit(saved) {
+      current = saved;
+    },
   });
 }
 
@@ -385,7 +417,11 @@ function attachLocalStorage(record: LocalProjectRecord): void {
 }
 
 function runtimeAssetMap(): Map<string, Uint8Array> {
-  return collectRuntimeAssetBytes(assetMap(current), vm.runtime.targets);
+  const assets = collectRuntimeAssetBytes(assetMap(current), vm.runtime.targets);
+  for (const [md5ext, bytes] of recoveryAssetOverlay) {
+    assets.set(md5ext, bytes);
+  }
+  return assets;
 }
 
 function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
@@ -397,30 +433,70 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
-  if (failNextWrite) {
-    failNextWrite = false;
-    throw new ProjectStoreTransactionError("Simulated IndexedDB write failure");
-  }
-  const assets = runtimeAssetMap();
-  const document = documentFromVm(assets);
-  const next: LocalProjectRecord = {
-    ...current,
-    title: titleInput.value,
-    revision: current.revision + 1,
-    updatedAt: new Date().toISOString(),
-    document,
-    assets: assetRecords(document, assets),
-    saveState: "clean",
-  };
-  const saved = await store.createOrReplace(next, current.revision);
-  projectSessions.runIfActive(session, () => {
-    current = saved;
+  await projectSessions.runSerialized(session, async isActive => {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw new ProjectStoreTransactionError(
+        "Simulated IndexedDB write failure",
+      );
+    }
+
+    const persistRevision = async (): Promise<void> => {
+      if (!isActive()) return;
+      const source = current;
+      const assets = runtimeAssetMap();
+      const document = documentFromVm(assets);
+      if (!isActive()) return;
+      const next: LocalProjectRecord = {
+        ...source,
+        title: titleInput.value,
+        revision: source.revision + 1,
+        updatedAt: new Date().toISOString(),
+        document,
+        assets: assetRecordsFromMap(document, assets),
+        saveState: "clean",
+      };
+      const saved = await store.createOrReplace(next, source.revision);
+      if (!isActive()) return;
+      current = saved;
+      recoveryAssetOverlay.clear();
+    };
+
+    try {
+      await maybeRecoverCorruptRecord(session);
+      if (!isActive()) return;
+      await persistRevision();
+    } catch (error) {
+      if (!isMissingAssetError(error)) throw error;
+      if (!isActive()) return;
+      if (!await maybeRecoverCorruptRecord(session)) throw error;
+      if (!isActive()) return;
+      await persistRevision();
+    }
   });
 }
 
+function renderProjectStatus(): void {
+  const {primary, details} = composeProjectStatus({
+    local: lastLocalSaveState,
+    drive: lastDriveStatus,
+    driveMessage: lastDriveMessage,
+    collab: lastCollabState,
+    collabIdleMessage: lastCollabIdleMessage,
+    fatalError: fatalBootError,
+    localError: localOperationError,
+  });
+  saveStatus.textContent = primary;
+  saveStatus.title = fatalBootError ?? "";
+  projectStatusDetails.textContent = details ? ` · ${details}` : "";
+  projectStatusDetails.hidden = details.length === 0;
+}
+
 function renderSaveState(state: LocalSaveState): void {
-  saveStatus.textContent = statusText[state];
+  lastLocalSaveState = state;
+  localOperationError = undefined;
   retryButton.hidden = state !== "error" && state !== "conflict";
+  renderProjectStatus();
 }
 
 function installSaveCoordinator(session: ProjectSession): void {
@@ -476,6 +552,8 @@ function renderBootstrapActions(state: CollabState | null): void {
 }
 
 function renderCollabIdle(message = "Solo"): void {
+  lastCollabState = null;
+  lastCollabIdleMessage = message;
   collabStatus.textContent = message;
   const ready = hasCurrent && evaluateCollabReadiness({signalingUrl}).ok;
   createRoomButton.disabled = Boolean(collabSession) || !ready;
@@ -483,9 +561,11 @@ function renderCollabIdle(message = "Solo"): void {
   copyInviteButton.disabled = activeInvite === null;
   leaveRoomButton.disabled = collabSession === null;
   renderBootstrapActions(null);
+  renderProjectStatus();
 }
 
 function renderCollabState(state: CollabState): void {
+  lastCollabState = state;
   const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
   const conflict = state.conflict ? " · conflict; Drive paused" : "";
   const assets =
@@ -504,6 +584,7 @@ function renderCollabState(state: CollabState): void {
   copyInviteButton.disabled = activeInvite === null;
   leaveRoomButton.disabled = false;
   renderBootstrapActions(state);
+  renderProjectStatus();
 }
 
 async function applyCollaborativeProject(
@@ -526,7 +607,7 @@ async function applyCollaborativeProject(
       revision: 0,
       updatedAt: new Date().toISOString(),
       document,
-      assets: assetRecords(document, assets),
+      assets: assetRecordsFromMap(document, assets),
       saveState: "clean",
     };
     return applyGuestInitialProject({
@@ -559,7 +640,7 @@ async function applyCollaborativeProject(
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
     document,
-    assets: assetRecords(document, assets),
+    assets: assetRecordsFromMap(document, assets),
     saveState: "clean",
   };
   const saved = await store.createOrReplace(next, current.revision);
@@ -679,25 +760,34 @@ async function loadRecord(
   driveAutosave?.cancel();
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
-  await loadRecordSafely({
-    candidate,
-    previous,
-    setSuppressed(value) {
-      suppressVmChanges = value;
-    },
-    async load(recordToLoad) {
-      attachLocalStorage(recordToLoad);
-      await vm.loadProject(documentToProjectJson(recordToLoad.document));
-      signal?.throwIfAborted();
-    },
-    commit(loaded) {
-      const session = projectSessions.begin();
-      current = loaded;
-      hasCurrent = true;
-      titleInput.value = loaded.title;
-      installSaveCoordinator(session);
-    },
-  });
+  const session = projectSessions.begin();
+  saveCoordinator?.dispose();
+  try {
+    await loadRecordSafely({
+      candidate,
+      previous,
+      setSuppressed(value) {
+        suppressVmChanges = value;
+      },
+      async load(recordToLoad) {
+        attachLocalStorage(recordToLoad);
+        await vm.loadProject(documentToProjectJson(recordToLoad.document));
+        signal?.throwIfAborted();
+      },
+      commit(loaded) {
+        current = loaded;
+        hasCurrent = true;
+        titleInput.value = loaded.title;
+        installSaveCoordinator(session);
+        if (recordHasMissingStoredAssets(loaded)) {
+          void recoverLoadedRecord({coordinator: saveCoordinator});
+        }
+      },
+    });
+  } catch (error) {
+    if (previous) installSaveCoordinator(session);
+    throw error;
+  }
 }
 
 async function loadFixtureRecord(
@@ -725,7 +815,7 @@ async function loadFixtureRecord(
     revision: 0,
     updatedAt: new Date().toISOString(),
     document,
-    assets: assetRecords(document, assets),
+    assets: assetRecordsFromMap(document, assets),
     saveState: "clean",
   };
 }
@@ -770,7 +860,7 @@ async function importProject(
     revision: 0,
     updatedAt: new Date().toISOString(),
     document: result.document,
-    assets: assetRecords(result.document, result.assets),
+    assets: assetRecordsFromMap(result.document, result.assets),
     saveState: "clean",
     ...(driveFileId ? {driveFileId} : {}),
   };
@@ -901,6 +991,8 @@ function renderDriveStatus(
   status: EditorDriveStatus,
   message?: string,
 ): void {
+  lastDriveStatus = status;
+  lastDriveMessage = message;
   driveStatus.textContent = message
     ? `${driveStatusText[status]}: ${message}`
     : driveStatusText[status];
@@ -920,6 +1012,7 @@ function renderDriveStatus(
   if (status === "conflict") collabSession?.reportDriveConflict();
   if (status === "synced") collabSession?.clearDriveConflict();
   if (!collabSession) renderCollabIdle();
+  else renderProjectStatus();
 }
 
 async function persistDriveFileId(
@@ -1055,7 +1148,8 @@ fileInput.addEventListener("change", async () => {
       file.name.replace(/\.sb3$/i, ""),
     );
   } catch {
-    saveStatus.textContent = "Import failed";
+    localOperationError = "Import failed";
+    renderProjectStatus();
     retryButton.hidden = true;
   } finally {
     fileInput.value = "";
@@ -1110,8 +1204,7 @@ collabDiagnosticsButton.addEventListener("click", () => {
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
-  saveStatus.textContent = "Error";
-  saveStatus.title = diagnostic.error ?? "";
+  fatalBootError = diagnostic.error ?? "Boot failed";
   driveReady = false;
   renderDriveStatus(driveIntegration.getStatus());
 });
