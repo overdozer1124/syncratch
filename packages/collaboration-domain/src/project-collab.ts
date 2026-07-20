@@ -20,6 +20,8 @@
  * feedback loops (onRemoteChange never fires for local edits).
  */
 
+import {sha256} from "@noble/hashes/sha2.js";
+import {bytesToHex} from "@noble/hashes/utils.js";
 import * as Y from "yjs";
 import {
   validateProject,
@@ -52,6 +54,9 @@ export const DEFAULT_PROJECT_COLLAB_LIMITS: ProjectCollabLimits = {
 const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const KEY_SCAN_MAX_NODES = 200_000;
 const KEY_SCAN_MAX_DEPTH = 128;
+const STAGING_RAW_RESULT_CACHE_MAX = 64;
+const STAGING_SEMANTIC_RESULT_CACHE_MAX = 128;
+const STAGING_ORIGIN: unique symbol = Symbol("blocksync-collab-staging");
 
 export interface MaterializeSuccess {
   ok: true;
@@ -134,6 +139,16 @@ export class ProjectCollaborationDocument {
   private readonly meta: Y.Map<unknown>;
   private readonly targets: Y.Map<Y.Map<unknown>>;
   private readonly assets: Y.Map<Uint8Array>;
+  private stagingNovelByteUpperBound: number | null = null;
+  private stagingUpdateChunks: Map<number, Uint8Array> | null = null;
+  private readonly stagingRawResultCache = new Map<string, ApplyRemoteResult>();
+  private readonly stagingSemanticResultCache =
+    new Map<string, ApplyRemoteResult>();
+  private readonly stagingUpdateHandler: (
+    encodedUpdate: Uint8Array,
+    origin: unknown,
+  ) => void;
+  private stagingGuardReleased = false;
 
   constructor(ydoc = new Y.Doc(), limits: ProjectCollabLimits = DEFAULT_PROJECT_COLLAB_LIMITS) {
     this.ydoc = ydoc;
@@ -141,6 +156,101 @@ export class ProjectCollaborationDocument {
     this.meta = ydoc.getMap("meta");
     this.targets = ydoc.getMap<Y.Map<unknown>>("targets");
     this.assets = ydoc.getMap<Uint8Array>("assets");
+    this.stagingUpdateHandler = (
+      encodedUpdate: Uint8Array,
+      origin: unknown,
+    ): void => {
+      if (origin === STAGING_ORIGIN) return;
+      this.stagingRawResultCache.clear();
+      this.stagingSemanticResultCache.clear();
+      if (this.stagingNovelByteUpperBound !== null) {
+        this.stagingNovelByteUpperBound += encodedUpdate.byteLength;
+        this.appendStagingUpdateChunk(encodedUpdate);
+      }
+    };
+    this.ydoc.on("update", this.stagingUpdateHandler);
+  }
+
+  private stagingCacheKey(
+    kind: "raw" | "semantic",
+    update: Uint8Array,
+    maxStagingStateBytes: number,
+  ): string {
+    return `${kind}:${maxStagingStateBytes}:${bytesToHex(sha256(update))}`;
+  }
+
+  private rememberStagingResult(
+    cache: Map<string, ApplyRemoteResult>,
+    maxEntries: number,
+    key: string,
+    result: ApplyRemoteResult,
+  ): ApplyRemoteResult {
+    if (cache.size >= maxEntries) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+    cache.set(key, result);
+    return result;
+  }
+
+  private rememberRawAndSemanticStagingResult(
+    rawKey: string,
+    semanticKey: string,
+    result: ApplyRemoteResult,
+  ): ApplyRemoteResult {
+    this.rememberStagingResult(
+      this.stagingRawResultCache,
+      STAGING_RAW_RESULT_CACHE_MAX,
+      rawKey,
+      result,
+    );
+    return this.rememberStagingResult(
+      this.stagingSemanticResultCache,
+      STAGING_SEMANTIC_RESULT_CACHE_MAX,
+      semanticKey,
+      result,
+    );
+  }
+
+  private appendStagingUpdateChunk(update: Uint8Array): void {
+    if (this.stagingUpdateChunks === null) {
+      this.stagingUpdateChunks = new Map();
+    }
+    let chunk = update;
+    let level = Math.floor(Math.log2(Math.max(1, chunk.byteLength)));
+    while (true) {
+      const existing = this.stagingUpdateChunks.get(level);
+      if (!existing) {
+        this.stagingUpdateChunks.set(level, chunk);
+        return;
+      }
+      this.stagingUpdateChunks.delete(level);
+      chunk = Y.mergeUpdates([existing, chunk]);
+      level = Math.max(
+        level + 1,
+        Math.floor(Math.log2(Math.max(1, chunk.byteLength))),
+      );
+    }
+  }
+
+  private replaceStagingUpdateChunks(update: Uint8Array): void {
+    this.stagingUpdateChunks = new Map();
+    this.appendStagingUpdateChunk(update);
+  }
+
+  /**
+   * Irreversibly release bootstrap-only limit state and its Y.Doc listener.
+   * A collaboration session calls this whenever staging reaches a terminal
+   * phase; subsequent staging updates are rejected.
+   */
+  releaseStagingGuardResources(): void {
+    if (this.stagingGuardReleased) return;
+    this.stagingGuardReleased = true;
+    this.ydoc.off("update", this.stagingUpdateHandler);
+    this.stagingNovelByteUpperBound = null;
+    this.stagingUpdateChunks = null;
+    this.stagingRawResultCache.clear();
+    this.stagingSemanticResultCache.clear();
   }
 
   /** Seed the shared doc from a full local project (local origin). */
@@ -252,23 +362,121 @@ export class ProjectCollaborationDocument {
 
   /**
    * Accept a remote update into a staging document without requiring a complete
-   * asset set. Still enforces decoded-update size and rejects corrupt updates.
+   * asset set. A monotonic novel-byte upper bound admits safely-small updates;
+   * only near-boundary updates require merging the accumulated update chunks.
    */
   tryApplyStagingUpdate(
     update: Uint8Array,
-    maxUpdateBytes = 16 * 1024 * 1024,
+    maxStagingStateBytes = 16 * 1024 * 1024,
   ): ApplyRemoteResult {
-    if (update.byteLength > maxUpdateBytes) {
+    if (this.stagingGuardReleased) {
+      return {
+        accepted: false,
+        issues: [issue("INVALID_DOCUMENT", "staging guard has been released")],
+      };
+    }
+    if (update.byteLength > maxStagingStateBytes) {
       return {
         accepted: false,
         issues: [issue("INVALID_DOCUMENT", "decoded Yjs update exceeds hard limit")],
       };
     }
+    const rawCacheKey = this.stagingCacheKey(
+      "raw",
+      update,
+      maxStagingStateBytes,
+    );
+    const rawCached = this.stagingRawResultCache.get(rawCacheKey);
+    if (rawCached) return rawCached;
+
+    let semanticCacheKey: string | null = null;
     try {
-      Y.applyUpdate(this.ydoc, update, REMOTE_ORIGIN);
-      return {accepted: true};
+      const novelUpdate = Y.diffUpdate(
+        update,
+        Y.encodeStateVector(this.ydoc),
+      );
+      semanticCacheKey = this.stagingCacheKey(
+        "semantic",
+        novelUpdate,
+        maxStagingStateBytes,
+      );
+      const semanticCached =
+        this.stagingSemanticResultCache.get(semanticCacheKey);
+      if (semanticCached) {
+        return this.rememberStagingResult(
+          this.stagingRawResultCache,
+          STAGING_RAW_RESULT_CACHE_MAX,
+          rawCacheKey,
+          semanticCached,
+        );
+      }
+      const isDuplicate = novelUpdate.byteLength === 2 &&
+        novelUpdate[0] === 0 &&
+        novelUpdate[1] === 0;
+      if (
+        this.stagingNovelByteUpperBound === null ||
+        this.stagingUpdateChunks === null
+      ) {
+        const currentState = this.encodeState();
+        this.stagingNovelByteUpperBound = currentState.byteLength;
+        this.replaceStagingUpdateChunks(currentState);
+      }
+      const stagingUpdateChunks = this.stagingUpdateChunks;
+      if (stagingUpdateChunks === null) {
+        throw new Error("staging update chunks were not initialized");
+      }
+      const projectedUpperBound = this.stagingNovelByteUpperBound +
+        (isDuplicate ? 0 : novelUpdate.byteLength);
+
+      if (projectedUpperBound <= maxStagingStateBytes) {
+        if (!isDuplicate) {
+          Y.applyUpdate(this.ydoc, novelUpdate, STAGING_ORIGIN);
+          if (this.stagingGuardReleased) return {accepted: true};
+          this.stagingNovelByteUpperBound = projectedUpperBound;
+          this.appendStagingUpdateChunk(novelUpdate);
+          this.stagingRawResultCache.clear();
+          this.stagingSemanticResultCache.clear();
+        }
+        return this.rememberRawAndSemanticStagingResult(
+          rawCacheKey,
+          semanticCacheKey,
+          {accepted: true},
+        );
+      }
+
+      const exactUpdate = Y.mergeUpdates(
+        isDuplicate
+          ? [...stagingUpdateChunks.values()]
+          : [...stagingUpdateChunks.values(), novelUpdate],
+      );
+      const exactBytes = exactUpdate.byteLength;
+      if (exactBytes > maxStagingStateBytes) {
+        return this.rememberRawAndSemanticStagingResult(
+          rawCacheKey,
+          semanticCacheKey,
+          {
+            accepted: false,
+            issues: [issue("INVALID_DOCUMENT", "cumulative staging state exceeds hard limit")],
+          },
+        );
+      }
+      if (!isDuplicate) {
+        Y.applyUpdate(this.ydoc, novelUpdate, STAGING_ORIGIN);
+        if (this.stagingGuardReleased) return {accepted: true};
+        this.stagingRawResultCache.clear();
+        this.stagingSemanticResultCache.clear();
+      }
+      this.stagingNovelByteUpperBound = exactBytes;
+      this.replaceStagingUpdateChunks(exactUpdate);
+      return this.rememberRawAndSemanticStagingResult(
+        rawCacheKey,
+        semanticCacheKey,
+        {accepted: true},
+      );
     } catch (error) {
-      return {
+      this.stagingRawResultCache.clear();
+      this.stagingSemanticResultCache.clear();
+      const result: ApplyRemoteResult = {
         accepted: false,
         issues: [
           issue(
@@ -277,6 +485,19 @@ export class ProjectCollaborationDocument {
           ),
         ],
       };
+      if (semanticCacheKey !== null) {
+        return this.rememberRawAndSemanticStagingResult(
+          rawCacheKey,
+          semanticCacheKey,
+          result,
+        );
+      }
+      return this.rememberStagingResult(
+        this.stagingRawResultCache,
+        STAGING_RAW_RESULT_CACHE_MAX,
+        rawCacheKey,
+        result,
+      );
     }
   }
 }
