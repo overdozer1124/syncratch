@@ -10,19 +10,26 @@ export interface DriveAutosaveOptions {
   save(): Promise<boolean>;
 }
 
+/**
+ * Background Drive autosave eligibility (stage-1 creator-only gate).
+ * Explicit first backup is authorized separately via canPersistToDrive({explicit:true})
+ * and does not require a persisted file id.
+ */
 export function isDriveAutosaveEligible(input: {
   driveConnected: boolean;
-  collaboration: {
-    status: string;
-    role: string;
-    conflict: boolean;
-  } | null;
+  createdThisRoom: boolean;
+  bootstrapReady: boolean;
+  driveFileId: string | undefined;
+  collaborationConnected: boolean;
+  conflict: boolean;
 }): boolean {
   return Boolean(
     input.driveConnected &&
-    input.collaboration?.status === "connected" &&
-    input.collaboration.role === "leader" &&
-    !input.collaboration.conflict
+    input.createdThisRoom &&
+    input.bootstrapReady &&
+    input.driveFileId &&
+    input.collaborationConnected &&
+    !input.conflict
   );
 }
 

@@ -1,22 +1,27 @@
 import {describe, expect, it, vi} from "vitest";
 import * as Y from "yjs";
+import {sha256Hex} from "@blocksync/collaboration-domain";
 import {createCollabProvider} from "@blocksync/collab-webrtc";
 import {createMemoryMesh} from "@blocksync/collab-webrtc";
 import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
 import {
   createCollabSession,
   evaluateCollabReadiness,
+  type ApplyRemoteContext,
   type CollabSession,
 } from "./collab-session.js";
 
-function costume(assetId: string): CostumeRef {
+const STAGE_BYTES = new Uint8Array([1, 2, 3, 4]);
+const SPRITE_BYTES = new Uint8Array([1, 2, 3, 4]);
+
+function costume(assetId: string, bytes: Uint8Array = SPRITE_BYTES): CostumeRef {
   return {
     kind: "costume",
     name: `${assetId}-c`,
     assetId,
     md5ext: `${assetId}.svg`,
     dataFormat: "svg",
-    contentSha256: "b".repeat(64),
+    contentSha256: sha256Hex(bytes),
     rotationCenterX: 0,
     rotationCenterY: 0,
   };
@@ -30,7 +35,7 @@ function stage(): ScratchTarget {
     blocks: {},
     comments: {},
     currentCostume: 0,
-    costumes: [costume("cccccccccccccccccccccccccccccccc")],
+    costumes: [costume("cccccccccccccccccccccccccccccccc", STAGE_BYTES)],
     sounds: [],
     volume: 100,
     layerOrder: 0,
@@ -50,7 +55,7 @@ function sprite(id: string, name: string): ScratchTarget {
     blocks: {},
     comments: {},
     currentCostume: 0,
-    costumes: [costume(assetId)],
+    costumes: [costume(assetId, SPRITE_BYTES)],
     sounds: [],
     volume: 100,
     layerOrder: 1,
@@ -71,7 +76,9 @@ function project(targets: ScratchTarget[]): ProjectDocument {
 function assetsFor(document: ProjectDocument): Map<string, Uint8Array> {
   const map = new Map<string, Uint8Array>();
   for (const target of document.targets) {
-    for (const c of target.costumes ?? []) map.set(c.md5ext, new Uint8Array([1, 2, 3, 4]));
+    for (const c of target.costumes ?? []) {
+      map.set(c.md5ext, target.isStage ? STAGE_BYTES : SPRITE_BYTES);
+    }
   }
   return map;
 }
@@ -85,7 +92,11 @@ function fakeVm(initial: ProjectDocument) {
     materializeLocal() {
       return {document: structuredClone(document), assets: new Map(assets)};
     },
-    applyRemoteToLocal(doc: ProjectDocument, remoteAssets: Map<string, Uint8Array>) {
+    applyRemoteToLocal(
+      doc: ProjectDocument,
+      remoteAssets: Map<string, Uint8Array>,
+      _context: ApplyRemoteContext,
+    ) {
       document = structuredClone(doc);
       assets = new Map(remoteAssets);
       appliedDocs.push(structuredClone(doc));
@@ -101,7 +112,7 @@ function fakeVm(initial: ProjectDocument) {
       document.targets.push(structuredClone(target));
       if (withAssets) {
         for (const c of target.costumes ?? []) {
-          assets.set(c.md5ext, new Uint8Array([1, 2, 3, 4]));
+          assets.set(c.md5ext, SPRITE_BYTES);
         }
       }
     },
@@ -132,22 +143,61 @@ function sessionFactory(mesh: ReturnType<typeof createMemoryMesh>) {
 }
 
 async function flush(...sessions: CollabSession[]): Promise<void> {
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     await Promise.all(sessions.map((s) => s.flush()));
     await new Promise((r) => setTimeout(r, 0));
   }
 }
 
 describe("evaluateCollabReadiness", () => {
-  it("requires Google, a linked Drive file, and configured signaling", () => {
-    expect(evaluateCollabReadiness({googleConnected: false, driveFileId: "f", signalingUrl: "ws://x"}).ok).toBe(false);
-    expect(evaluateCollabReadiness({googleConnected: true, driveFileId: undefined, signalingUrl: "ws://x"}).ok).toBe(false);
-    expect(evaluateCollabReadiness({googleConnected: true, driveFileId: "f", signalingUrl: ""}).ok).toBe(false);
-    expect(evaluateCollabReadiness({googleConnected: true, driveFileId: "f", signalingUrl: "ws://x"}).ok).toBe(true);
+  it("requires only configured signaling", () => {
+    expect(evaluateCollabReadiness({signalingUrl: ""}).ok).toBe(false);
+    expect(evaluateCollabReadiness({signalingUrl: "ws://x"}).ok).toBe(true);
   });
 });
 
 describe("two-session convergence over WebRTC transport", () => {
+  it("does not report ready when guest application cancels the session", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const hostVm = fakeVm(source);
+    const guestVm = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-canceled-guest",
+      secret: "canceled-guest-secret-canceled-guest-1",
+      debounceMs: 0,
+    };
+    const states: string[] = [];
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    let guest!: CollabSession;
+    guest = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: () => {
+        guest.leave();
+        return false;
+      },
+      onState: state => states.push(state.bootstrapPhase),
+    });
+
+    host.start({host: true});
+    guest.start({host: false});
+    await flush(host, guest);
+
+    expect(guest.getBootstrapPhase()).toBe("idle");
+    expect(states.at(-1)).toBe("idle");
+    expect(states.slice(states.lastIndexOf("idle") + 1)).not.toContain("ready");
+  });
+
   it("merges edits to different sprites and converges both local projects", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
@@ -172,14 +222,12 @@ describe("two-session convergence over WebRTC transport", () => {
       applyRemoteToLocal: vmB.applyRemoteToLocal,
     });
 
-    a.start({host: true});
+    expect(a.start({host: true}).ok).toBe(true);
     b.start({host: false});
     await flush(a, b);
 
-    // B received the full project from A.
     expect(vmB.lastApplied()?.targets.map((t) => t.id).sort()).toEqual(["s1", "s2", "stage"]);
 
-    // Concurrent edits to different sprites.
     vmA.editTargetName("s1", "EditedByA");
     a.noteLocalChange();
     vmB.editTargetName("s2", "EditedByB");
@@ -188,7 +236,6 @@ describe("two-session convergence over WebRTC transport", () => {
 
     const nameIn = (vm: ReturnType<typeof fakeVm>, id: string) =>
       vm.current().targets.find((t) => t.id === id)?.name;
-    // Apply converged state back into each VM by forcing a final sync flush.
     await flush(a, b);
     expect(vmA.lastApplied()?.targets.find((t) => t.id === "s2")?.name).toBe("EditedByB");
     expect(vmB.lastApplied()?.targets.find((t) => t.id === "s1")?.name).toBe("EditedByA");
@@ -231,7 +278,7 @@ describe("two-session convergence over WebRTC transport", () => {
     await flush(a, b);
     expect(vmA.current().targets.some(target => target.id === "bb")).toBe(false);
 
-    vmB.putAsset(baseball.costumes![0]!.md5ext, new Uint8Array([9, 8, 7, 6]));
+    vmB.putAsset(baseball.costumes![0]!.md5ext, SPRITE_BYTES);
     await new Promise(resolve => setTimeout(resolve, 500));
     await flush(a, b);
 
@@ -326,8 +373,8 @@ describe("two-session convergence over WebRTC transport", () => {
   });
 });
 
-describe("deterministic leadership and leader-only Drive writes", () => {
-  it("elects a single leader, shares its epoch, and gates Drive writes", async () => {
+describe("creator-only Drive writes", () => {
+  it("allows only the room creator to persist to Drive", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const source = project([stage(), sprite("s1", "S1")]);
@@ -340,16 +387,13 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     b.start({host: false});
     await flush(a, b);
 
-    // Deterministic: "peer-a" < "peer-b" is leader on both.
-    expect(a.isLeader()).toBe(true);
-    expect(b.isLeader()).toBe(false);
-    expect(a.leadershipEpoch()).toBe(b.leadershipEpoch());
-    expect(a.leadershipEpoch()).not.toBe("0");
+    expect(a.createdThisRoom()).toBe(true);
     expect(a.canPersistToDrive().ok).toBe(true);
     expect(b.canPersistToDrive().ok).toBe(false);
+    expect(b.canPersistToDrive({explicit: true}).ok).toBe(false);
   });
 
-  it("re-elects deterministically with a new epoch when the leader leaves", async () => {
+  it("does not grant Drive writes when the creator leaves", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const common = {roomId: "room-3", secret: "another-secret-another-secret-abc12", debounceMs: 0};
@@ -359,16 +403,14 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     a.start({host: true});
     b.start({host: false});
     await flush(a, b);
-    const epochBefore = b.leadershipEpoch();
 
     a.leave();
     await flush(b);
     expect(b.isLeader()).toBe(true);
-    expect(b.leadershipEpoch()).not.toBe(epochBefore);
-    expect(b.canPersistToDrive().ok).toBe(true);
+    expect(b.canPersistToDrive().ok).toBe(false);
   });
 
-  it("blocks Drive writes while transport is disconnected", async () => {
+  it("blocks background Drive writes while transport is disconnected", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const session = createCollabSession({
@@ -392,7 +434,7 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     expect(session.canPersistToDrive({explicit: true}).ok).toBe(true);
   });
 
-  it("re-observes Drive before a newly elected leader may write", async () => {
+  it("keeps leadership reobserve as diagnostics-only for Drive authorization", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     let releaseObservation!: () => void;
@@ -427,15 +469,12 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     await flush(b);
 
     expect(b.isLeader()).toBe(true);
-    expect(b.canPersistToDrive()).toEqual({
-      ok: false,
-      reason: "Drive metadata is being re-observed after leader handoff",
-    });
-
+    // Guest still cannot write Drive even after becoming diagnostic leader.
+    expect(b.canPersistToDrive().ok).toBe(false);
     releaseObservation();
     await observation;
     await flush(b);
-    expect(b.canPersistToDrive().ok).toBe(true);
+    expect(b.canPersistToDrive().ok).toBe(false);
   });
 
   it("does not reobserve Drive when the initial host becomes leader", async () => {
@@ -473,7 +512,6 @@ describe("deterministic leadership and leader-only Drive writes", () => {
       secret: "guest-race-secret-guest-race-secret",
       debounceMs: 0,
     };
-    // Lexicographic leader is peer-a; guest is peer-b so host wins once both present.
     const host = createCollabSession({
       ...common,
       participantId: "peer-a",
@@ -490,7 +528,6 @@ describe("deterministic leadership and leader-only Drive writes", () => {
       reobserveDriveBeforeLeadership: reobserve,
     });
 
-    // Guest connects alone first (typical join race), then host appears.
     guest.start({host: false});
     await flush(guest);
     host.start({host: true});
@@ -504,7 +541,7 @@ describe("deterministic leadership and leader-only Drive writes", () => {
 });
 
 describe("conflict handling stops automatic Drive saves", () => {
-  it("refuses background writes after conflict but allows explicit leader save", async () => {
+  it("refuses background writes after conflict but allows explicit creator save", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const vm = fakeVm(project([stage(), sprite("s1", "S1")]));
@@ -528,7 +565,6 @@ describe("conflict handling stops automatic Drive saves", () => {
     session.clearDriveConflict();
     expect(session.getState().conflict).toBe(false);
     expect(session.canPersistToDrive().ok).toBe(true);
-    // Local project remains intact.
     expect(vm.current().targets.some((t) => t.id === "s1")).toBe(true);
   });
 });

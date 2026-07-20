@@ -23,6 +23,10 @@ export default defineConfig({
       port: 4173,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
+      env: {
+        ...process.env,
+        VITE_COLLAB_SIGNALING_URL: "ws://127.0.0.1:4455",
+      },
     },
     {
       command: "pnpm --filter @blocksync/collab-signaling start",

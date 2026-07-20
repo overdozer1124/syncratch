@@ -367,9 +367,15 @@ importers:
 
   packages/collaboration-domain:
     dependencies:
+      '@blocksync/project-envelope':
+        specifier: workspace:*
+        version: link:../project-envelope
       '@blocksync/project-schema':
         specifier: workspace:*
         version: link:../project-schema
+      '@noble/hashes':
+        specifier: 2.2.0
+        version: 2.2.0
       yjs:
         specifier: ^13.6.27
         version: 13.6.31

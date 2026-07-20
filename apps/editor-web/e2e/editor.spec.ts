@@ -175,7 +175,9 @@ test("editing, save, and reload stay local after initial static load", async ({
     const url = new URL(request.url());
     const isStaticReload =
       url.origin === "http://127.0.0.1:4173" &&
-      ["document", "script", "stylesheet"].includes(request.resourceType());
+      ["document", "script", "stylesheet", "image", "font", "media"].includes(
+        request.resourceType(),
+      );
     if (isStaticReload) {
       return route.continue();
     }
@@ -218,12 +220,13 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   ]);
 
   await pageA.getByRole("button", {name: "Create room"}).click();
-  await expect(pageA.getByTestId("collab-status")).toContainText("leader");
+  await expect(pageA.getByTestId("collab-status")).toContainText("ready");
   const invite = await pageA.getByLabel("Collaboration invite").inputValue();
+  expect(invite).not.toContain("driveFileId");
   await pageB.getByLabel("Collaboration invite").fill(invite);
   await pageB.getByRole("button", {name: "Join invite"}).click();
   await expect(pageA.getByTestId("collab-status")).toContainText("1 peer");
-  await expect(pageB.getByTestId("collab-status")).toContainText("1 peer");
+  await expect(pageB.getByTestId("collab-status")).toContainText("ready");
 
   await Promise.all([
     pageA.evaluate(() =>
@@ -245,18 +248,14 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     bSeesStageBlock: true,
   });
 
-  const roleA = await pageA.evaluate(() =>
-    window.__blocksyncTask3!.collaborationDebug().state?.role);
-  const leaderPage = roleA === "leader" ? pageA : pageB;
-  const followerPage = roleA === "leader" ? pageB : pageA;
-  await leaderPage.getByRole("button", {name: "Leave room"}).click();
-  await expect(followerPage.getByTestId("collab-status")).toContainText("leader");
-  await followerPage.evaluate(() =>
+  await pageA.getByRole("button", {name: "Leave room"}).click();
+  await expect(pageB.getByTestId("collab-status")).not.toContainText("leader");
+  await pageB.evaluate(() =>
     window.__blocksyncTask3!.createTestBlock("handoff-block"));
-  await expect(followerPage.getByTestId("save-status")).toHaveText("Saved");
-  expect(await followerPage.evaluate(async () =>
+  await expect(pageB.getByTestId("save-status")).toHaveText("Saved");
+  expect(await pageB.evaluate(async () =>
     (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
-  await followerPage.getByRole("button", {name: "Leave room"}).click();
+  await pageB.getByRole("button", {name: "Leave room"}).click();
 
   await Promise.all([
     pageA.waitForFunction(() => window.__blocksyncTask3!.getState().saveState === "clean"),

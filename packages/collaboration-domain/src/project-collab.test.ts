@@ -280,6 +280,28 @@ describe("remote state acceptance guards", () => {
     const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
     expect(outcome.accepted).toBe(false);
   });
+
+  it("rejects forbidden keys in project metadata", () => {
+    const source = project([stage()]);
+    const doc = new ProjectCollaborationDocument();
+    doc.loadLocalProject(source, assetsFor(source));
+    doc.ydoc.getMap("meta").set(
+      "meta",
+      '{"nested":{"constructor":{"polluted":true}}}',
+    );
+
+    const result = doc.materialize();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "INVALID_DOCUMENT",
+          path: "document.meta.nested.constructor",
+        }),
+      ]));
+    }
+  });
 });
 
 describe("content-addressed assets", () => {

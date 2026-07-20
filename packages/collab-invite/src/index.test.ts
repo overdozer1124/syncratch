@@ -20,35 +20,56 @@ function fixedRandom(seed: number): (length: number) => Uint8Array {
 const sample: CollabInvite = {
   roomId: "room-abc",
   secret: "s3cr3t-high-entropy-value",
-  driveFileId: "1AbCdEfGhIjKlMnOpQrStUvWxYz",
 };
+
+function encodeLegacyFragment(invite: CollabInvite & {driveFileId: string}): string {
+  const payload = JSON.stringify(invite);
+  const bytes = new TextEncoder().encode(payload);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  const encoded = btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  return `blocksync-collab=${encoded}`;
+}
 
 describe("createInvite", () => {
   it("derives room id and secret from an injected entropy source only", () => {
-    const a = createInvite(sample.driveFileId, {randomBytes: fixedRandom(1)});
-    const b = createInvite(sample.driveFileId, {randomBytes: fixedRandom(1)});
+    const a = createInvite({randomBytes: fixedRandom(1)});
+    const b = createInvite({randomBytes: fixedRandom(1)});
     expect(a).toEqual(b);
-    expect(a.driveFileId).toBe(sample.driveFileId);
+    expect(a).not.toHaveProperty("driveFileId");
     expect(a.roomId.length).toBeGreaterThanOrEqual(16);
     expect(a.secret.length).toBeGreaterThanOrEqual(32);
   });
 
   it("produces different secrets for different entropy", () => {
-    const a = createInvite(sample.driveFileId, {randomBytes: fixedRandom(1)});
-    const b = createInvite(sample.driveFileId, {randomBytes: fixedRandom(200)});
+    const a = createInvite({randomBytes: fixedRandom(1)});
+    const b = createInvite({randomBytes: fixedRandom(200)});
     expect(a.secret).not.toBe(b.secret);
     expect(a.roomId).not.toBe(b.roomId);
   });
 
-  it("rejects an empty drive file id", () => {
-    expect(() => createInvite("", {randomBytes: fixedRandom(1)})).toThrow();
+  it("creates invites without a Drive file id", () => {
+    const invite = createInvite({randomBytes: fixedRandom(3)});
+    expect(Object.keys(invite).sort()).toEqual(["roomId", "secret"]);
   });
 });
 
 describe("invitation fragment encoding", () => {
-  it("round-trips through a URL fragment", () => {
+  it("round-trips through a URL fragment without a Drive file id", () => {
     const fragment = encodeInviteFragment(sample);
     expect(decodeInviteFragment(fragment)).toEqual(sample);
+    const json = new TextDecoder().decode(
+      Uint8Array.from(
+        atob(
+          fragment
+            .slice("blocksync-collab=".length)
+            .replaceAll("-", "+")
+            .replaceAll("_", "/"),
+        ),
+        c => c.charCodeAt(0),
+      ),
+    );
+    expect(json).not.toContain("driveFileId");
   });
 
   it("tolerates a leading # on decode", () => {
@@ -61,11 +82,18 @@ describe("invitation fragment encoding", () => {
     const parsed = new URL(url);
     expect(parsed.search).toBe("");
     expect(parsed.hash.length).toBeGreaterThan(1);
-    // Secret and file id must not appear before the fragment.
     const beforeHash = url.slice(0, url.indexOf("#"));
     expect(beforeHash).not.toContain(sample.secret);
-    expect(beforeHash).not.toContain(sample.driveFileId);
     expect(parseInviteFromUrl(url)).toEqual(sample);
+  });
+
+  it("strips driveFileId from legacy invite fragments", () => {
+    const legacy = encodeLegacyFragment({
+      ...sample,
+      driveFileId: "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+    });
+    expect(decodeInviteFragment(legacy)).toEqual(sample);
+    expect(decodeInviteFragment(legacy)).not.toHaveProperty("driveFileId");
   });
 
   it("returns null for malformed or foreign fragments", () => {
@@ -95,14 +123,13 @@ describe("deriveSignalingTopic", () => {
     expect(t1).not.toBe(t2);
   });
 
-  it("never leaks the secret or drive file id into the topic", async () => {
+  it("never leaks the secret into the topic", async () => {
     const topic = await deriveSignalingTopic(sample);
     expect(topic).not.toContain(sample.secret);
-    expect(topic).not.toContain(sample.driveFileId);
     expect(topic).not.toContain(sample.roomId);
   });
 
-  it("does not depend on the drive file id", async () => {
+  it("does not depend on a legacy drive file id", async () => {
     const t1 = await deriveSignalingTopic(sample);
     const t2 = await deriveSignalingTopic({...sample, driveFileId: "other"});
     expect(t1).toBe(t2);

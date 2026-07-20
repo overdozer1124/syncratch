@@ -5,36 +5,34 @@ import {
 } from "./drive-autosave.js";
 
 describe("isDriveAutosaveEligible", () => {
-  it("allows only a connected, conflict-free leader with Drive access", () => {
+  it("allows only the ready room creator with a persisted Drive file id", () => {
     expect(isDriveAutosaveEligible({
       driveConnected: true,
-      collaboration: {
-        status: "connected",
-        role: "leader",
-        conflict: false,
-      },
+      createdThisRoom: true,
+      bootstrapReady: true,
+      driveFileId: "file-1",
+      collaborationConnected: true,
+      conflict: false,
     })).toBe(true);
 
-    for (const collaboration of [
-      {status: "connected", role: "follower", conflict: false},
-      {status: "disconnected", role: "leader", conflict: false},
-      {status: "connected", role: "leader", conflict: true},
-      null,
+    for (const input of [
+      {createdThisRoom: false},
+      {bootstrapReady: false},
+      {driveFileId: undefined},
+      {collaborationConnected: false},
+      {conflict: true},
+      {driveConnected: false},
     ] as const) {
       expect(isDriveAutosaveEligible({
         driveConnected: true,
-        collaboration,
+        createdThisRoom: true,
+        bootstrapReady: true,
+        driveFileId: "file-1",
+        collaborationConnected: true,
+        conflict: false,
+        ...input,
       })).toBe(false);
     }
-
-    expect(isDriveAutosaveEligible({
-      driveConnected: false,
-      collaboration: {
-        status: "connected",
-        role: "leader",
-        conflict: false,
-      },
-    })).toBe(false);
   });
 });
 

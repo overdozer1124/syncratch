@@ -96,6 +96,76 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(socket.lastSent()).toEqual({t: "join", topic: TOPIC, peer: "peer-a"});
   });
 
+  it("ignores stale socket events after reconnect", () => {
+    FakeSocket.instances = [];
+    const onStatus = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: fakePeerConnection,
+    });
+    const handlers = {
+      onStatus,
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    };
+
+    transport.connect("peer-a", handlers);
+    const staleSocket = FakeSocket.instances[0]!;
+    staleSocket.open();
+    transport.disconnect();
+    transport.connect("peer-a", handlers);
+    const currentSocket = FakeSocket.instances[1]!;
+    currentSocket.open();
+    staleSocket.fire("close", {});
+    staleSocket.fire("error", {});
+
+    expect(onStatus).toHaveBeenLastCalledWith("connected");
+  });
+
+  it("ignores stale peer close events after reconnect", async () => {
+    FakeSocket.instances = [];
+    const created: ReturnType<typeof fakePeerConnection>[] = [];
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: () => {
+        const pc = fakePeerConnection();
+        created.push(pc);
+        return pc;
+      },
+    });
+    const handlers = {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    };
+
+    transport.connect("peer-a", handlers);
+    FakeSocket.instances[0]!.message({t: "peer", peer: "peer-b"});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const staleChannel = created[0]!.__channel;
+    const staleClose = staleChannel.addEventListener.mock.calls
+      .find(([event]) => event === "close")?.[1] as (() => void);
+
+    transport.disconnect();
+    transport.connect("peer-a", handlers);
+    FakeSocket.instances[1]!.message({t: "peer", peer: "peer-b"});
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const currentChannel = created[1]!.__channel;
+    currentChannel.readyState = "open";
+
+    staleClose();
+    transport.send("peer-b", "current-wire");
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(currentChannel.send).toHaveBeenCalledWith("current-wire");
+  });
+
   it("initiates an encrypted-channel offer to peers that join after us", async () => {
     FakeSocket.instances = [];
     const created: RTCPeerConnection[] = [];
