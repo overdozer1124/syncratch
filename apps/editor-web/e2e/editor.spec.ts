@@ -227,6 +227,12 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   await pageB.getByRole("button", {name: "Join invite"}).click();
   await expect(pageA.getByTestId("collab-status")).toContainText("1 peer");
   await expect(pageB.getByTestId("collab-status")).toContainText("ready");
+  await expect(pageA.getByTestId("project-status-details")).toContainText(
+    "1 peer",
+  );
+  await expect(pageB.getByTestId("project-status-details")).toContainText(
+    "1 peer",
+  );
 
   await Promise.all([
     pageA.evaluate(() =>
