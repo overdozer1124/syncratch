@@ -16,6 +16,7 @@ import {
 } from "@blocksync/project-schema";
 import * as Y from "yjs";
 import {
+  assertSafeKeys,
   DEFAULT_PROJECT_COLLAB_LIMITS,
   type ProjectCollabLimits,
 } from "./project-collab.js";
@@ -126,6 +127,22 @@ export function collectReferencedMd5exts(document: ProjectDocument): string[] {
   return [...ids].sort((a, b) => a.localeCompare(b));
 }
 
+function referenceHashes(
+  document: ProjectDocument,
+  md5ext: string,
+): string[] {
+  const hashes: string[] = [];
+  for (const target of document.targets) {
+    for (const costume of target.costumes ?? []) {
+      if (costume.md5ext === md5ext) hashes.push(costume.contentSha256);
+    }
+    for (const sound of target.sounds ?? []) {
+      if (sound.md5ext === md5ext) hashes.push(sound.contentSha256);
+    }
+  }
+  return hashes;
+}
+
 export function buildAssetManifest(
   document: ProjectDocument,
   assets: Map<string, Uint8Array>,
@@ -175,8 +192,12 @@ export function readBootstrapCheckpoint(ydoc: Y.Doc): BootstrapCheckpoint | null
   if (typeof manifestRaw === "string") {
     try {
       const parsed = JSON.parse(manifestRaw) as unknown;
-      if (Array.isArray(parsed)) {
-        checkpoint.assetManifest = parsed.filter(isBootstrapAsset);
+      if (
+        Array.isArray(parsed) &&
+        parsed.every(isBootstrapAsset) &&
+        new Set(parsed.map(entry => entry.md5ext)).size === parsed.length
+      ) {
+        checkpoint.assetManifest = parsed;
       }
     } catch {
       // leave undefined; validation will reject sealed checkpoints without manifest
@@ -190,7 +211,10 @@ function isBootstrapAsset(value: unknown): value is BootstrapAsset {
   const record = value as Record<string, unknown>;
   return (
     typeof record.md5ext === "string" &&
+    record.md5ext.length > 0 &&
+    !/[\u0000-\u001f\u007f]/.test(record.md5ext) &&
     typeof record.contentSha256 === "string" &&
+    /^[0-9a-f]{64}$/.test(record.contentSha256) &&
     typeof record.byteLength === "number" &&
     Number.isInteger(record.byteLength) &&
     record.byteLength >= 0
@@ -260,6 +284,11 @@ export function runHostPreflight(
       ));
     }
   }
+  const safeKeyIssues: ValidationIssue[] = [];
+  assertSafeKeys(document, safeKeyIssues, "document");
+  for (const item of safeKeyIssues) {
+    issues.push(issue("SAFE_KEY_VIOLATION", item.message, item.path));
+  }
 
   const referenced = collectReferencedMd5exts(document);
   const manifest: BootstrapAsset[] = [];
@@ -280,16 +309,7 @@ export function runHostPreflight(
     }
     totalAssetBytes += bytes.byteLength;
     const digest = sha256Hex(bytes);
-    let refSha: string | undefined;
-    for (const target of document.targets) {
-      for (const costume of target.costumes ?? []) {
-        if (costume.md5ext === md5ext) refSha = costume.contentSha256;
-      }
-      for (const sound of target.sounds ?? []) {
-        if (sound.md5ext === md5ext) refSha = sound.contentSha256;
-      }
-    }
-    if (refSha && refSha !== digest) {
+    if (referenceHashes(document, md5ext).some(hash => hash !== digest)) {
       issues.push(issue(
         "ASSET_HASH_MISMATCH",
         "asset contentSha256 does not match bytes",
@@ -382,7 +402,21 @@ export function validateSealedCheckpoint(
   }
 
   const expectedCount = checkpoint.assetManifest.length;
-  if (!stateVectorContains(Y.encodeStateVector(ydoc), expectedSv)) {
+  let containsExpectedVector: boolean;
+  try {
+    containsExpectedVector = stateVectorContains(
+      Y.encodeStateVector(ydoc),
+      expectedSv,
+    );
+  } catch {
+    return {
+      status: "invalid",
+      issues: [issue("INVALID_DOCUMENT", "sealed checkpoint state vector is invalid")],
+      verifiedAssetCount: 0,
+      expectedAssetCount: expectedCount,
+    };
+  }
+  if (!containsExpectedVector) {
     return {
       status: "incomplete-vector",
       issues: [],
@@ -436,10 +470,13 @@ export function validateSealedCheckpoint(
   const actualSorted = [...actualManifest].sort((a, b) =>
     a.md5ext.localeCompare(b.md5ext)
   );
-  const actualKeys = actualSorted.map(entry => entry.md5ext).join("\0");
-  const expectedKeys = expectedManifest.map(entry => entry.md5ext).join("\0");
+  const manifestKeysMatch =
+    actualSorted.length === expectedManifest.length &&
+    actualSorted.every(
+      (entry, index) => entry.md5ext === expectedManifest[index]?.md5ext,
+    );
 
-  if (actualHash !== checkpoint.documentHash || actualKeys !== expectedKeys) {
+  if (actualHash !== checkpoint.documentHash || !manifestKeysMatch) {
     // Newer content operations may have arrived after the older seal, or the
     // document/manifest identity set does not yet agree.
     return {
@@ -475,16 +512,10 @@ export function validateSealedCheckpoint(
       ));
       continue;
     }
-    let refSha: string | undefined;
-    for (const target of document.targets) {
-      for (const costume of target.costumes ?? []) {
-        if (costume.md5ext === entry.md5ext) refSha = costume.contentSha256;
-      }
-      for (const sound of target.sounds ?? []) {
-        if (sound.md5ext === entry.md5ext) refSha = sound.contentSha256;
-      }
-    }
-    if (refSha && refSha !== digest) {
+    if (
+      referenceHashes(document, entry.md5ext)
+        .some(hash => hash !== digest)
+    ) {
       integrityIssues.push(issue(
         "ASSET_HASH_MISMATCH",
         "asset digest does not match document reference",

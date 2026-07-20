@@ -111,6 +111,41 @@ describe("host preflight", () => {
     mismatched.targets[0]!.costumes![0]!.contentSha256 = "0".repeat(64);
     expect(runHostPreflight(mismatched, assetsFor(mismatched)).ok).toBe(false);
   });
+
+  it("rejects any mismatched reference when an asset key is reused", () => {
+    const source = project([stage()]);
+    const original = source.targets[0]!.costumes![0]!;
+    source.targets[0]!.costumes!.push({
+      ...original,
+      name: "mismatched duplicate",
+      contentSha256: "0".repeat(64),
+    });
+
+    const result = runHostPreflight(source, assetsFor(source));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({code: "ASSET_HASH_MISMATCH"}),
+      ]));
+    }
+  });
+
+  it("rejects forbidden keys anywhere in host document metadata", () => {
+    const source = project([stage()]);
+    source.meta = JSON.parse(
+      '{"nested":{"__proto__":{"polluted":true}}}',
+    ) as ProjectDocument["meta"];
+
+    const result = runHostPreflight(source, assetsFor(source));
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({code: "SAFE_KEY_VIOLATION"}),
+      ]));
+    }
+  });
 });
 
 describe("state vector containment and sealed validation", () => {
@@ -200,5 +235,77 @@ describe("state vector containment and sealed validation", () => {
     guest.applyRemoteUpdate(host.encodeState());
     const result = validateSealedCheckpoint(guest.ydoc, () => guest.materialize());
     expect(result.status).toBe("invalid");
+  });
+
+  it("rejects malformed checkpoint vectors and manifest entries", () => {
+    const host = new ProjectCollaborationDocument();
+    const source = project([stage()]);
+    const assets = assetsFor(source);
+    host.loadLocalProject(source, assets);
+    const preflight = runHostPreflight(source, assets);
+    if (!preflight.ok) throw new Error("preflight");
+    writeBootstrapSealed(host.ydoc, {
+      bootstrapId: "malformed-seal",
+      contentStateVector: "_w",
+      documentHash: preflight.documentHash,
+      assetManifest: preflight.assetManifest,
+      projectTitle: "T",
+    }, LOCAL_ORIGIN);
+
+    const invalidVector = validateSealedCheckpoint(
+      host.ydoc,
+      () => host.materialize(),
+    );
+    expect(invalidVector.status).toBe("invalid");
+
+    const bootstrap = host.ydoc.getMap<unknown>("bootstrap");
+    bootstrap.set("contentStateVector", encodeStateVectorBase64(host.ydoc));
+    bootstrap.set("assetManifest", JSON.stringify([
+      ...preflight.assetManifest,
+      {md5ext: "broken.svg"},
+    ]));
+    const invalidManifest = validateSealedCheckpoint(
+      host.ydoc,
+      () => host.materialize(),
+    );
+    expect(invalidManifest.status).toBe("invalid");
+
+    bootstrap.set("assetManifest", JSON.stringify([{
+      ...preflight.assetManifest[0],
+      md5ext: "first.svg\0second.svg",
+    }]));
+    const controlCharacterManifest = validateSealedCheckpoint(
+      host.ydoc,
+      () => host.materialize(),
+    );
+    expect(controlCharacterManifest.status).toBe("invalid");
+  });
+
+  it("rejects a mismatched duplicate document reference after sealing", () => {
+    const host = new ProjectCollaborationDocument();
+    const source = project([stage()]);
+    const original = source.targets[0]!.costumes![0]!;
+    source.targets[0]!.costumes!.push({
+      ...original,
+      name: "mismatched duplicate",
+      contentSha256: "0".repeat(64),
+    });
+    const assets = assetsFor(source);
+    host.loadLocalProject(source, assets);
+    writeBootstrapSeeding(host.ydoc, "duplicate-ref", LOCAL_ORIGIN);
+    writeBootstrapSealed(host.ydoc, {
+      bootstrapId: "duplicate-ref",
+      contentStateVector: encodeStateVectorBase64(host.ydoc),
+      documentHash: contentHash(source),
+      assetManifest: buildAssetManifest(source, assets),
+      projectTitle: "T",
+    }, LOCAL_ORIGIN);
+
+    const result = validateSealedCheckpoint(host.ydoc, () => host.materialize());
+
+    expect(result.status).toBe("invalid");
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({code: "ASSET_HASH_MISMATCH"}),
+    ]));
   });
 });

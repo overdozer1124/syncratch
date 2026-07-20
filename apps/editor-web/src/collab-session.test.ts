@@ -157,6 +157,47 @@ describe("evaluateCollabReadiness", () => {
 });
 
 describe("two-session convergence over WebRTC transport", () => {
+  it("does not report ready when guest application cancels the session", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const hostVm = fakeVm(source);
+    const guestVm = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-canceled-guest",
+      secret: "canceled-guest-secret-canceled-guest-1",
+      debounceMs: 0,
+    };
+    const states: string[] = [];
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    let guest!: CollabSession;
+    guest = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: () => {
+        guest.leave();
+        return false;
+      },
+      onState: state => states.push(state.bootstrapPhase),
+    });
+
+    host.start({host: true});
+    guest.start({host: false});
+    await flush(host, guest);
+
+    expect(guest.getBootstrapPhase()).toBe("idle");
+    expect(states.at(-1)).toBe("idle");
+    expect(states.slice(states.lastIndexOf("idle") + 1)).not.toContain("ready");
+  });
+
   it("merges edits to different sprites and converges both local projects", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);

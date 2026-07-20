@@ -76,7 +76,11 @@ function issue(code: string, message: string, path?: string): ValidationIssue {
 }
 
 /** Reject prototype-polluting keys and non-plain nested objects. */
-function assertSafeKeys(value: unknown, issues: ValidationIssue[], path: string): void {
+export function assertSafeKeys(
+  value: unknown,
+  issues: ValidationIssue[],
+  path: string,
+): void {
   const stack: Array<{value: unknown; depth: number; path: string}> = [
     {value, depth: 0, path},
   ];
@@ -338,6 +342,7 @@ function materializeAndValidate(
     monitors: parseJsonField<unknown[]>(meta.get("monitors"), []),
     meta: parseJsonField<Record<string, unknown>>(meta.get("meta"), {}),
   };
+  assertSafeKeys(document, issues, "document");
 
   // Assets: typed-array checks + count/byte limits + content-address integrity.
   const assets = new Map<string, Uint8Array>();

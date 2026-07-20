@@ -160,9 +160,10 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     });
   };
 
-  const closePeer = (peerId: string): void => {
+  const closePeer = (peerId: string, expected?: PeerEntry): void => {
     const entry = peerConnections.get(peerId);
     if (!entry) return;
+    if (expected && entry !== expected) return;
     peerConnections.delete(peerId);
     reassemblers.delete(peerId);
     sendTail.delete(peerId);
@@ -177,8 +178,12 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
 
   const attachChannel = (peerId: string, entry: PeerEntry, channel: RTCDataChannel): void => {
     entry.channel = channel;
-    channel.addEventListener("open", () => handlers?.onPeerOpen(peerId));
+    channel.addEventListener("open", () => {
+      if (peerConnections.get(peerId) !== entry) return;
+      handlers?.onPeerOpen(peerId);
+    });
     channel.addEventListener("message", (ev: MessageEvent) => {
+      if (peerConnections.get(peerId) !== entry) return;
       if (typeof ev.data !== "string") return;
       const wire = reassemblerFor(peerId).push(ev.data);
       if (wire !== null) handlers?.onMessage(peerId, wire);
@@ -187,7 +192,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       if (options.onDiagnostic) options.onDiagnostic(`channel-error(${peerId})`);
     });
     channel.addEventListener("close", () => {
-      closePeer(peerId);
+      closePeer(peerId, entry);
     });
   };
 
@@ -196,13 +201,15 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     const entry: PeerEntry = {pc, channel: null, initiator};
     peerConnections.set(peerId, entry);
     pc.addEventListener("icecandidate", (ev: RTCPeerConnectionIceEvent) => {
+      if (peerConnections.get(peerId) !== entry) return;
       if (options.onDiagnostic) options.onDiagnostic(`cand(${peerId})=${ev.candidate ? "1" : "end"}`);
       if (ev.candidate) signal(peerId, {candidate: ev.candidate.toJSON()});
     });
     pc.addEventListener("connectionstatechange", () => {
+      if (peerConnections.get(peerId) !== entry) return;
       if (options.onDiagnostic) options.onDiagnostic(`pc(${peerId})=${pc.connectionState}`);
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-        closePeer(peerId);
+        closePeer(peerId, entry);
       }
     });
     pc.addEventListener("iceconnectionstatechange", () => {
@@ -280,16 +287,24 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       localPeerId = peerId;
       handlers = transportHandlers;
       handlers.onStatus("connecting");
-      socket = makeSocket(signalingUrl);
-      socket.addEventListener("open", () => {
-        socket?.send(JSON.stringify({t: "join", topic, peer: localPeerId}));
-        handlers?.onStatus("connected");
+      const connectionSocket = makeSocket(signalingUrl);
+      const connectionHandlers = transportHandlers;
+      socket = connectionSocket;
+      connectionSocket.addEventListener("open", () => {
+        if (socket !== connectionSocket) return;
+        connectionSocket.send(JSON.stringify({t: "join", topic, peer: localPeerId}));
+        connectionHandlers.onStatus("connected");
       });
-      socket.addEventListener("message", (ev: MessageEvent) => {
+      connectionSocket.addEventListener("message", (ev: MessageEvent) => {
+        if (socket !== connectionSocket) return;
         if (typeof ev.data === "string") onSocketMessage(ev.data);
       });
-      socket.addEventListener("close", () => handlers?.onStatus("disconnected"));
-      socket.addEventListener("error", () => handlers?.onStatus("disconnected"));
+      const disconnected = (): void => {
+        if (socket !== connectionSocket) return;
+        connectionHandlers.onStatus("disconnected");
+      };
+      connectionSocket.addEventListener("close", disconnected);
+      connectionSocket.addEventListener("error", disconnected);
     },
     send(peerId, wire) {
       const channel = peerConnections.get(peerId)?.channel;
@@ -308,12 +323,13 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       for (const peerId of [...peerConnections.keys()]) closePeer(peerId);
       reassemblers.clear();
       sendTail.clear();
+      const closingSocket = socket;
+      socket = null;
       try {
-        socket?.close();
+        closingSocket?.close();
       } catch {
         // ignore
       }
-      socket = null;
       handlers?.onStatus("disconnected");
     },
   };

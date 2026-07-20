@@ -93,6 +93,7 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
   };
   const outgoing = new Set<() => void>();
   let connected = false;
+  let transportStarted = false;
 
   const emit = (event: ProviderEvent): void => {
     for (const listener of listeners[event]) listener();
@@ -136,6 +137,14 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
   const handlers: TransportHandlers = {
     onStatus(next) {
       status = next;
+      if (next === "disconnected" && connected) {
+        connected = false;
+        doc.off("update", onDocUpdate);
+        peers.clear();
+        awareness.clear();
+        emit("peers");
+        emit("awareness");
+      }
       emit("status");
     },
     onPeerOpen(peerId) {
@@ -200,15 +209,21 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
     participantId,
     connect() {
       if (connected) return;
+      if (transportStarted) {
+        transport.disconnect();
+        transportStarted = false;
+      }
       connected = true;
       doc.on("update", onDocUpdate);
+      transportStarted = true;
       transport.connect(participantId, handlers);
     },
     disconnect() {
-      if (!connected) return;
+      if (!transportStarted) return;
       connected = false;
       doc.off("update", onDocUpdate);
       transport.disconnect();
+      transportStarted = false;
       peers.clear();
       awareness.clear();
       emit("peers");
