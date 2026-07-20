@@ -175,7 +175,9 @@ test("editing, save, and reload stay local after initial static load", async ({
     const url = new URL(request.url());
     const isStaticReload =
       url.origin === "http://127.0.0.1:4173" &&
-      ["document", "script", "stylesheet"].includes(request.resourceType());
+      ["document", "script", "stylesheet", "image", "font", "media"].includes(
+        request.resourceType(),
+      );
     if (isStaticReload) {
       return route.continue();
     }
