@@ -275,6 +275,30 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   await Promise.all([contextA.close(), contextB.close()]);
 });
 
+test("corrupt stored assets recover automatically on save", async ({page}) => {
+  await waitUntilReady(page);
+  const originalId = await page.evaluate(
+    () => window.__blocksyncTask3!.getState().localProjectId,
+  );
+  await page.evaluate(() => {
+    window.__blocksyncTask3!.corruptStoredAssets();
+    window.__blocksyncTask3!.createTestBlock("recovered-after-corrupt");
+  });
+
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  expect(
+    await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
+  ).not.toBe(originalId);
+});
+
+test("unified status shows local save as primary with optional secondary details", async ({
+  page,
+}) => {
+  await waitUntilReady(page);
+  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("project-status-details")).toBeHidden();
+});
+
 test("signaling outage leaves local editing and SB3 export available", async ({
   context,
   page,
@@ -312,6 +336,7 @@ declare global {
       exportSb3(): Promise<Uint8Array>;
       importSb3(bytes: Uint8Array, title: string): Promise<void>;
       failNextWrite(): void;
+      corruptStoredAssets(): void;
       configureCollaborationTestGate(driveFileId: string): Promise<void>;
       renameTarget(isStage: boolean, name: string): void;
       targetName(isStage: boolean): string | undefined;
