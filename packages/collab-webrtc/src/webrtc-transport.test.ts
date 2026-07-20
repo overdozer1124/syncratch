@@ -1,6 +1,10 @@
 import {describe, expect, it, vi} from "vitest";
 import * as Y from "yjs";
 import {
+  DATA_CHANNEL_CHUNK_CHARS,
+  createChunkReassembler,
+} from "./data-channel-framing.js";
+import {
   createWebRtcProvider,
   createWebRtcTransport,
   type WebSocketLike,
@@ -40,7 +44,14 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
-function fakePeerConnection(): RTCPeerConnection {
+function fakePeerConnection(): RTCPeerConnection & {
+  __channel: {
+    readyState: string;
+    send: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+} {
   const channel = {
     readyState: "connecting",
     addEventListener: vi.fn(),
@@ -48,6 +59,7 @@ function fakePeerConnection(): RTCPeerConnection {
     close: vi.fn(),
   };
   return {
+    __channel: channel,
     createDataChannel: vi.fn(() => channel),
     createOffer: vi.fn(async () => ({type: "offer", sdp: "fake-offer"})),
     createAnswer: vi.fn(async () => ({type: "answer", sdp: "fake-answer"})),
@@ -57,7 +69,7 @@ function fakePeerConnection(): RTCPeerConnection {
     addEventListener: vi.fn(),
     close: vi.fn(),
     connectionState: "new",
-  } as unknown as RTCPeerConnection;
+  } as unknown as RTCPeerConnection & {__channel: typeof channel};
 }
 
 const TOPIC = "c".repeat(43);
@@ -112,6 +124,49 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(created).toHaveLength(1);
     const offerSignal = socket.sent.find((m) => m.t === "signal" && m.to === "peer-b");
     expect(offerSignal?.data?.description?.type).toBe("offer");
+  });
+
+  it("chunks large data-channel payloads and reassembles on receive", async () => {
+    FakeSocket.instances = [];
+    let pc: ReturnType<typeof fakePeerConnection> | null = null;
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: () => {
+        pc = fakePeerConnection();
+        return pc;
+      },
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: []});
+    socket.message({t: "peer", topic: TOPIC, peer: "peer-b"});
+    await new Promise((r) => setTimeout(r, 0));
+
+    const channel = pc!.__channel;
+    channel.readyState = "open";
+    const wire = "z".repeat(DATA_CHANNEL_CHUNK_CHARS * 2 + 10);
+    transport.send("peer-b", wire);
+
+    // Allow the async send queue to flush.
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(channel.send.mock.calls.length).toBeGreaterThan(1);
+
+    const reassembler = createChunkReassembler();
+    let reassembled: string | null = null;
+    for (const [frame] of channel.send.mock.calls) {
+      reassembled = reassembler.push(frame as string) ?? reassembled;
+    }
+    expect(reassembled).toBe(wire);
   });
 });
 

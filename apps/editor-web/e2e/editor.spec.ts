@@ -132,7 +132,7 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
     await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
   ).toBe(originalId);
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", {name: "Download .sb3"}).click();
+  await page.getByRole("button", {name: "Download to this device"}).click();
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.sb3$/);
 
   await page.locator("#open-file").setInputFiles({
@@ -159,7 +159,7 @@ test("save failure is recoverable and does not disable SB3 download", async ({
 
   await expect(page.getByTestId("save-status")).toHaveText("Save failed");
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", {name: "Download .sb3"}).click();
+  await page.getByRole("button", {name: "Download to this device"}).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.sb3$/);
   expect((await download.createReadStream()).readable).toBe(true);

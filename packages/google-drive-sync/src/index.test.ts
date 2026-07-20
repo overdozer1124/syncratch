@@ -58,8 +58,10 @@ describe("Google authorization", () => {
     let configuredScope = "";
     let callback: (value: {access_token?: string; error?: string}) => void =
       () => undefined;
-    const storageWrites = vi.fn();
-    vi.stubGlobal("localStorage", {setItem: storageWrites});
+    const preference = {
+      isEnabled: vi.fn(() => false),
+      setEnabled: vi.fn(),
+    };
     const auth = createGoogleAuthorization({
       clientId: "client-id",
       loadScripts: async () => undefined,
@@ -79,6 +81,7 @@ describe("Google authorization", () => {
           },
         },
       }),
+      preferenceStore: preference,
     });
 
     await expect(auth.connect()).resolves.toBe("memory-token");
@@ -87,8 +90,109 @@ describe("Google authorization", () => {
       "https://www.googleapis.com/auth/drive.file",
     );
     expect(auth.getAccessToken()).toBe("memory-token");
-    expect(storageWrites).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
+    expect(preference.setEnabled).toHaveBeenCalledWith(true);
+  });
+
+  it("uses a silent prompt so reload can restore without re-consent", async () => {
+    let prompt: string | undefined;
+    let callback: (value: {access_token?: string; error?: string}) => void =
+      () => undefined;
+    const preference = {
+      isEnabled: () => true,
+      setEnabled: vi.fn(),
+    };
+    const auth = createGoogleAuthorization({
+      clientId: "client-id",
+      loadScripts: async () => undefined,
+      getGoogle: () => ({
+        accounts: {
+          oauth2: {
+            initTokenClient(config) {
+              callback = config.callback;
+              return {
+                requestAccessToken(options) {
+                  prompt = options?.prompt;
+                  callback({access_token: "restored-token"});
+                },
+              };
+            },
+          },
+        },
+      }),
+      preferenceStore: preference,
+    });
+
+    expect(auth.canRestoreSession()).toBe(true);
+    await expect(auth.connect()).resolves.toBe("restored-token");
+    expect(prompt).toBe("");
+  });
+
+  it("clears the restore preference on disconnect and failed auth", async () => {
+    let callback: (value: {access_token?: string; error?: string}) => void =
+      () => undefined;
+    let enabled = true;
+    const preference = {
+      isEnabled: () => enabled,
+      setEnabled: vi.fn((value: boolean) => {
+        enabled = value;
+      }),
+    };
+    const revoke = vi.fn();
+    const auth = createGoogleAuthorization({
+      clientId: "client-id",
+      loadScripts: async () => undefined,
+      getGoogle: () => ({
+        accounts: {
+          oauth2: {
+            initTokenClient(config) {
+              callback = config.callback;
+              return {
+                requestAccessToken() {
+                  callback({error: "access_denied"});
+                },
+              };
+            },
+            revoke,
+          },
+        },
+      }),
+      preferenceStore: preference,
+    });
+
+    await expect(auth.connect()).rejects.toBeInstanceOf(
+      DriveAuthenticationError,
+    );
+    expect(preference.setEnabled).toHaveBeenCalledWith(false);
+    expect(enabled).toBe(false);
+
+    enabled = false;
+    callback = () => undefined;
+    const okAuth = createGoogleAuthorization({
+      clientId: "client-id",
+      loadScripts: async () => undefined,
+      getGoogle: () => ({
+        accounts: {
+          oauth2: {
+            initTokenClient(config) {
+              callback = config.callback;
+              return {
+                requestAccessToken() {
+                  callback({access_token: "memory-token"});
+                },
+              };
+            },
+            revoke,
+          },
+        },
+      }),
+      preferenceStore: preference,
+    });
+    await okAuth.connect();
+    expect(enabled).toBe(true);
+    okAuth.disconnect();
+    expect(preference.setEnabled).toHaveBeenCalledWith(false);
+    expect(revoke).toHaveBeenCalledWith("memory-token");
+    expect(okAuth.canRestoreSession()).toBe(false);
   });
 
   it("shares one in-flight token request across concurrent connects", async () => {
@@ -105,6 +209,10 @@ describe("Google authorization", () => {
       getGoogle: () => ({
         accounts: {oauth2: {initTokenClient}},
       }),
+      preferenceStore: {
+        isEnabled: () => false,
+        setEnabled: () => undefined,
+      },
     });
 
     const first = auth.connect();
@@ -166,6 +274,27 @@ describe("Google Picker", () => {
     await Promise.resolve();
     pickerCallback({action: "picked", documents: [{id: "selected-file"}]});
     await expect(selected).resolves.toBe("selected-file");
+  });
+
+  it("forwards invite fileIds into the Picker builder for join", async () => {
+    let seenFileIds: string[] | undefined;
+    const picker = createGooglePicker({
+      apiKey: "api-key",
+      appId: "app-id",
+      initializePicker: async () => undefined,
+      buildPicker: options => {
+        seenFileIds = options.fileIds;
+        queueMicrotask(() =>
+          options.callback({action: "picked", documents: [{id: "invite-file"}]}),
+        );
+        return {setVisible: vi.fn()};
+      },
+    });
+
+    await expect(
+      picker.pickFile("token", {fileIds: ["invite-file"]}),
+    ).resolves.toBe("invite-file");
+    expect(seenFileIds).toEqual(["invite-file"]);
   });
 });
 

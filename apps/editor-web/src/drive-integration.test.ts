@@ -5,6 +5,7 @@ import {
   DriveConflictError,
   DriveFileNotFoundError,
   DriveNetworkError,
+  DrivePermissionError,
 } from "@blocksync/google-drive-sync";
 import {
   LOCAL_PROJECT_FORMAT,
@@ -41,6 +42,7 @@ function dependencies(
       connect: vi.fn(async () => "token"),
       disconnect: vi.fn(),
       getAccessToken: vi.fn(() => "token"),
+      canRestoreSession: vi.fn(() => false),
     },
     picker: {
       pickFile: vi.fn(async () => "drive-file"),
@@ -100,7 +102,25 @@ describe("editor Drive integration", () => {
   });
 
   it("opens a validated Picker-selected file as a new local project", async () => {
-    const deps = dependencies();
+    const deps = dependencies({
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      hashBytes: vi.fn(async () => "opened-hash"),
+    });
     const integration = createEditorDriveIntegration(deps);
     await integration.connect();
 
@@ -119,8 +139,144 @@ describe("editor Drive integration", () => {
     expect(integration.getStatus()).toBe("synced");
   });
 
+  it("saves after open when Drive only bumped version metadata", async () => {
+    const openedBytes = new Uint8Array([80, 75, 3, 4]);
+    const editedBytes = new Uint8Array([80, 75, 3, 5]);
+    const drive = {
+      ...dependencies().drive,
+      readFile: vi.fn(async () => ({
+        bytes: openedBytes,
+        metadata: {
+          id: "drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        },
+      })),
+      getMetadata: vi.fn()
+        .mockResolvedValueOnce({
+          id: "drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        })
+        .mockResolvedValueOnce({
+          id: "drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "6",
+          headRevisionId: "head-6",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        }),
+      updateFile: vi.fn(async input => {
+        if (
+          input.knownObservation.version !== "6" ||
+          input.knownObservation.snapshotId !== null
+        ) {
+          throw new DriveConflictError(
+            "Drive file differs from the last observed version",
+            "pre-write",
+          );
+        }
+        return {
+          fileId: "drive-file",
+          observation: {version: "7", snapshotId: "snapshot-save"},
+        };
+      }),
+    };
+    let current = {
+      localProjectId: "local-1",
+      title: "Drive project",
+      driveFileId: undefined as string | undefined,
+    };
+    const deps = dependencies({
+      drive,
+      getCurrent: vi.fn(() => current),
+      importAsNewLocal: vi.fn(async (_bytes, _title, fileId) => {
+        current = {
+          localProjectId: "local-opened",
+          title: "Drive project",
+          driveFileId: fileId,
+        };
+      }),
+      exportCurrent: vi.fn(async () => editedBytes),
+      hashBytes: vi.fn(async value => {
+        if (value === openedBytes) return "opened-hash";
+        if (value === editedBytes) return "edited-hash";
+        return "other-hash";
+      }),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+    await expect(integration.openFromDrive()).resolves.toBe(true);
+
+    // Simulate picker/Drive metadata bump: same bytes, newer version.
+    drive.readFile.mockResolvedValueOnce({
+      bytes: openedBytes,
+      metadata: {
+        id: "drive-file",
+        name: "Drive project.sb3",
+        mimeType: "application/octet-stream",
+        size: 4,
+        version: "6",
+        headRevisionId: "head-6",
+        snapshotId: null,
+        leadershipEpoch: null,
+        stateHash: null,
+        canEdit: true,
+        canDownload: true,
+      },
+    });
+
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+    expect(drive.updateFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knownObservation: {version: "6", snapshotId: null},
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(integration.getStatus()).toBe("synced");
+  });
+
   it("opens the exact Drive file from a collaboration invite before joining", async () => {
-    const deps = dependencies();
+    const deps = dependencies({
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "invite-drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: "snapshot-drive",
+          leadershipEpoch: "0",
+          stateHash: "hash-drive",
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      hashBytes: vi.fn(async () => "hash-drive"),
+    });
     const integration = createEditorDriveIntegration(deps);
     await integration.connect();
 
@@ -138,6 +294,87 @@ describe("editor Drive integration", () => {
       "invite-drive-file",
       expect.any(AbortSignal),
     );
+  });
+
+  it("asks the guest to pick the shared invite file when drive.file cannot see it yet", async () => {
+    const readFile = vi.fn()
+      .mockRejectedValueOnce(new DriveFileNotFoundError("Google Drive file was not found"))
+      .mockResolvedValue({
+        bytes,
+        metadata: {
+          id: "invite-drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: "snapshot-drive",
+          leadershipEpoch: "0",
+          stateHash: "hash-drive",
+          canEdit: true,
+          canDownload: true,
+        },
+      });
+    const deps = dependencies({
+      picker: {
+        pickFile: vi.fn(async () => "invite-drive-file"),
+      },
+      drive: {
+        ...dependencies().drive,
+        readFile,
+        getMetadata: vi.fn(async () => ({
+          id: "invite-drive-file",
+          name: "Drive project.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "5",
+          headRevisionId: "head-5",
+          snapshotId: "snapshot-drive",
+          leadershipEpoch: "0",
+          stateHash: "hash-drive",
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      hashBytes: vi.fn(async () => "hash-drive"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(
+      integration.openCollaborationFile("invite-drive-file"),
+    ).resolves.toBe(true);
+    expect(deps.picker.pickFile).toHaveBeenCalledWith(
+      "token",
+      {fileIds: ["invite-drive-file"]},
+    );
+    expect(readFile).toHaveBeenCalledTimes(2);
+    expect(deps.importAsNewLocal).toHaveBeenCalled();
+  });
+
+  it("rejects a Picker selection that is not the invited Drive file", async () => {
+    const deps = dependencies({
+      picker: {
+        pickFile: vi.fn(async () => "some-other-file"),
+      },
+      drive: {
+        ...dependencies().drive,
+        readFile: vi.fn(async () => {
+          throw new DrivePermissionError("Google Drive permission denied");
+        }),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(
+      integration.openCollaborationFile("invite-drive-file"),
+    ).resolves.toBe(false);
+    expect(deps.onStatus).toHaveBeenCalledWith(
+      "unsynced",
+      "Wrong Drive file selected. Pick the same file the host shared",
+    );
+    expect(deps.importAsNewLocal).not.toHaveBeenCalled();
   });
 
   it("re-observes an existing Drive-backed project on explicit reconnect", async () => {
@@ -183,6 +420,107 @@ describe("editor Drive integration", () => {
     );
   });
 
+  it("reobserve succeeds when Drive bytes match even if stateHash is missing", async () => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        })),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/x.scratch.sb3",
+            size: 4,
+            version: "12",
+            headRevisionId: "head-12",
+            snapshotId: "snapshot-12",
+            leadershipEpoch: null,
+            stateHash: null,
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
+      },
+      hashBytes: vi.fn(async () => "content-hash"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.reobserveCurrentFile()).resolves.toBe(true);
+  });
+
+  it("reobserve fails clearly when local export differs from Drive", async () => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: null,
+          stateHash: "remote-only",
+          canEdit: true,
+          canDownload: true,
+        })),
+        readFile: vi.fn(async () => ({
+          bytes: new Uint8Array([1, 2, 3, 4]),
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/x.scratch.sb3",
+            size: 4,
+            version: "12",
+            headRevisionId: "head-12",
+            snapshotId: "snapshot-12",
+            leadershipEpoch: null,
+            stateHash: "remote-only",
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
+      },
+      exportCurrent: vi.fn(async () => bytes),
+      hashBytes: vi.fn(async value =>
+        value === bytes ? "local-hash" : "remote-hash",
+      ),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.reobserveCurrentFile()).resolves.toBe(false);
+    expect(deps.onStatus).toHaveBeenCalledWith(
+      "unsynced",
+      "Local project differs from Drive; save before collaborating",
+    );
+  });
+
   it("refreshes the Drive observation before leader handoff writes", async () => {
     const drive = {
       ...dependencies().drive,
@@ -200,7 +538,7 @@ describe("editor Drive integration", () => {
           canEdit: true,
           canDownload: true,
         })
-        .mockResolvedValueOnce({
+        .mockResolvedValue({
           id: "existing-file",
           name: "Local.sb3",
           mimeType: "application/x.scratch.sb3",
@@ -236,13 +574,70 @@ describe("editor Drive integration", () => {
     );
   });
 
-  it.each([
-    ["different", "remote-hash"],
-    ["missing", null],
-  ])("refuses reconnect baseline when remote state hash is %s", async (
-    _label,
-    remoteStateHash,
-  ) => {
+  it("establishes observation on save when the Drive link survived a reload", async () => {
+    const edited = new Uint8Array([80, 75, 3, 5]);
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "9",
+          headRevisionId: "head-9",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        })),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/octet-stream",
+            size: 4,
+            version: "9",
+            headRevisionId: "head-9",
+            snapshotId: null,
+            leadershipEpoch: null,
+            stateHash: null,
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
+        updateFile: vi.fn(async () => ({
+          fileId: "existing-file",
+          observation: {version: "10", snapshotId: "snapshot-save"},
+        })),
+      },
+      hashBytes: vi.fn(async value =>
+        value === bytes ? "remote-hash" : "local-edited-hash"
+      ),
+      exportCurrent: vi.fn(async () => edited),
+    });
+    // Token present, but no open/connect observe in this integration instance.
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+    expect(deps.drive.readFile).toHaveBeenCalled();
+    expect(deps.drive.updateFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        knownObservation: {version: "9", snapshotId: null},
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(integration.getStatus()).toBe("synced");
+  });
+
+  it("refuses reconnect baseline when remote state hash differs", async () => {
     const deps = dependencies({
       getCurrent: vi.fn(() => ({
         localProjectId: "local-1",
@@ -260,7 +655,7 @@ describe("editor Drive integration", () => {
           headRevisionId: "head-12",
           snapshotId: "snapshot-12",
           leadershipEpoch: "0",
-          stateHash: remoteStateHash,
+          stateHash: "remote-hash",
           canEdit: true,
           canDownload: true,
         })),
@@ -270,10 +665,60 @@ describe("editor Drive integration", () => {
     const integration = createEditorDriveIntegration(deps);
 
     await expect(integration.connect()).resolves.toBe(false);
-    await expect(integration.saveToDrive()).resolves.toBe(false);
-
     expect(integration.getStatus()).toBe("conflict");
+
+    // Explicit save may re-baseline; here remote bytes hash as local-hash so
+    // the project is treated as already matching and no upload occurs.
+    await expect(integration.saveToDrive()).resolves.toBe(true);
     expect(deps.drive.updateFile).not.toHaveBeenCalled();
+    expect(integration.getStatus()).toBe("synced");
+  });
+
+  it("reconnects when remote state hash is missing but file bytes still match", async () => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "Local.sb3",
+          mimeType: "application/octet-stream",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: null,
+          leadershipEpoch: null,
+          stateHash: null,
+          canEdit: true,
+          canDownload: true,
+        })),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/octet-stream",
+            size: 4,
+            version: "12",
+            headRevisionId: "head-12",
+            snapshotId: null,
+            leadershipEpoch: null,
+            stateHash: null,
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
+      },
+      hashBytes: vi.fn(async () => "local-hash"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(true);
+    expect(integration.getStatus()).toBe("connected");
   });
 
   it("creates first, then updates only the recorded Drive file", async () => {
@@ -288,6 +733,22 @@ describe("editor Drive integration", () => {
       persistDriveFileId: vi.fn(async fileId => {
         driveFileId = fileId;
       }),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "created-file",
+          name: "Local.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "1",
+          headRevisionId: "head-1",
+          snapshotId: "snapshot-created",
+          leadershipEpoch: "0",
+          stateHash: "state-hash",
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
     });
     const integration = createEditorDriveIntegration(deps);
     await integration.connect();
@@ -423,6 +884,7 @@ describe("editor Drive integration", () => {
         })),
         disconnect: vi.fn(),
         getAccessToken: vi.fn(() => null),
+        canRestoreSession: vi.fn(() => false),
       },
     });
     const integration = createEditorDriveIntegration(deps);
@@ -843,6 +1305,24 @@ describe("leadership epoch and leader-only Drive writes", () => {
       }),
       expect.any(AbortSignal),
     );
+  });
+
+  it("distinguishes automatic and explicit saves in the collaboration gate", async () => {
+    const canPersistToDrive = vi.fn(() => ({
+      ok: false,
+      reason: "Automatic save paused",
+    }));
+    const deps = dependencies({canPersistToDrive});
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.saveToDrive()).resolves.toBe(false);
+    expect(canPersistToDrive).toHaveBeenLastCalledWith({explicit: false});
+
+    await expect(
+      integration.saveToDrive({explicit: true}),
+    ).resolves.toBe(false);
+    expect(canPersistToDrive).toHaveBeenLastCalledWith({explicit: true});
   });
 
   it("refuses to write to Drive when this peer is not the leader", async () => {

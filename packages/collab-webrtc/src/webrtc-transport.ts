@@ -10,6 +10,11 @@
  * still fail on restrictive networks.
  */
 import * as Y from "yjs";
+import {
+  createChunkReassembler,
+  packDataChannelWire,
+  type ChunkReassembler,
+} from "./data-channel-framing.js";
 import {createCollabProvider, type CollabProvider, type CollabProviderOptions} from "./provider.js";
 import type {CollabTransport, TransportHandlers} from "./transport.js";
 
@@ -74,19 +79,115 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   let localPeerId = "";
   let handlers: TransportHandlers | null = null;
   const peerConnections = new Map<string, PeerEntry>();
+  const reassemblers = new Map<string, ChunkReassembler>();
+  const sendTail = new Map<string, Promise<void>>();
+  /** High-water mark before we wait for bufferedamountlow (bytes). */
+  const BUFFER_HIGH = 256 * 1024;
+  const BUFFER_LOW = 64 * 1024;
 
   const signal = (to: string, data: unknown): void => {
     socket?.send(JSON.stringify({t: "signal", topic, to, data}));
+  };
+
+  const reassemblerFor = (peerId: string): ChunkReassembler => {
+    let reassembler = reassemblers.get(peerId);
+    if (!reassembler) {
+      reassembler = createChunkReassembler();
+      reassemblers.set(peerId, reassembler);
+    }
+    return reassembler;
+  };
+
+  const waitForBuffer = (channel: RTCDataChannel): Promise<void> => {
+    const buffered = channel.bufferedAmount ?? 0;
+    if (channel.readyState !== "open" || buffered <= BUFFER_HIGH) {
+      return Promise.resolve();
+    }
+    channel.bufferedAmountLowThreshold = BUFFER_LOW;
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        channel.removeEventListener("bufferedamountlow", finish);
+        channel.removeEventListener("close", finish);
+        resolve();
+      };
+      const timeout = setTimeout(finish, 5_000);
+      channel.addEventListener("bufferedamountlow", finish);
+      channel.addEventListener("close", finish);
+      if ((channel.bufferedAmount ?? 0) <= BUFFER_HIGH) finish();
+    });
+  };
+
+  const sendOnChannel = (
+    peerId: string,
+    channel: RTCDataChannel,
+    wire: string,
+  ): void => {
+    let frames: string[];
+    try {
+      frames = packDataChannelWire(wire);
+    } catch (error) {
+      if (options.onDiagnostic) {
+        options.onDiagnostic(`pack-error=${String(error)}`);
+      }
+      return;
+    }
+
+    const run = async (): Promise<void> => {
+      for (const frame of frames) {
+        if (channel.readyState !== "open") return;
+        await waitForBuffer(channel);
+        if (channel.readyState !== "open") return;
+        try {
+          channel.send(frame);
+        } catch (error) {
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`send-error=${String(error)}`);
+          }
+          return;
+        }
+      }
+    };
+
+    const prev = sendTail.get(peerId) ?? Promise.resolve();
+    const next = prev.then(run, run);
+    sendTail.set(peerId, next);
+    void next.finally(() => {
+      if (sendTail.get(peerId) === next) sendTail.delete(peerId);
+    });
+  };
+
+  const closePeer = (peerId: string): void => {
+    const entry = peerConnections.get(peerId);
+    if (!entry) return;
+    peerConnections.delete(peerId);
+    reassemblers.delete(peerId);
+    sendTail.delete(peerId);
+    try {
+      entry.channel?.close();
+      entry.pc.close();
+    } catch {
+      // ignore teardown errors
+    }
+    handlers?.onPeerClose(peerId);
   };
 
   const attachChannel = (peerId: string, entry: PeerEntry, channel: RTCDataChannel): void => {
     entry.channel = channel;
     channel.addEventListener("open", () => handlers?.onPeerOpen(peerId));
     channel.addEventListener("message", (ev: MessageEvent) => {
-      if (typeof ev.data === "string") handlers?.onMessage(peerId, ev.data);
+      if (typeof ev.data !== "string") return;
+      const wire = reassemblerFor(peerId).push(ev.data);
+      if (wire !== null) handlers?.onMessage(peerId, wire);
+    });
+    channel.addEventListener("error", () => {
+      if (options.onDiagnostic) options.onDiagnostic(`channel-error(${peerId})`);
     });
     channel.addEventListener("close", () => {
-      handlers?.onPeerClose(peerId);
+      closePeer(peerId);
     });
   };
 
@@ -101,7 +202,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     pc.addEventListener("connectionstatechange", () => {
       if (options.onDiagnostic) options.onDiagnostic(`pc(${peerId})=${pc.connectionState}`);
       if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-        handlers?.onPeerClose(peerId);
+        closePeer(peerId);
       }
     });
     pc.addEventListener("iceconnectionstatechange", () => {
@@ -125,19 +226,6 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       });
     }
     return entry;
-  };
-
-  const closePeer = (peerId: string): void => {
-    const entry = peerConnections.get(peerId);
-    if (!entry) return;
-    peerConnections.delete(peerId);
-    try {
-      entry.channel?.close();
-      entry.pc.close();
-    } catch {
-      // ignore teardown errors
-    }
-    handlers?.onPeerClose(peerId);
   };
 
   const onSignal = async (from: string, data: any): Promise<void> => {
@@ -205,15 +293,21 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     },
     send(peerId, wire) {
       const channel = peerConnections.get(peerId)?.channel;
-      if (channel && channel.readyState === "open") channel.send(wire);
+      if (channel && channel.readyState === "open") {
+        sendOnChannel(peerId, channel, wire);
+      }
     },
     broadcast(wire) {
-      for (const entry of peerConnections.values()) {
-        if (entry.channel && entry.channel.readyState === "open") entry.channel.send(wire);
+      for (const [peerId, entry] of peerConnections) {
+        if (entry.channel && entry.channel.readyState === "open") {
+          sendOnChannel(peerId, entry.channel, wire);
+        }
       }
     },
     disconnect() {
       for (const peerId of [...peerConnections.keys()]) closePeer(peerId);
+      reassemblers.clear();
+      sendTail.clear();
       try {
         socket?.close();
       } catch {

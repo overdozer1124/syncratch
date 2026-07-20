@@ -20,3 +20,8 @@ apps/r1-persist-server/data/
 **/*.sqlite
 **/test-results/
 apps/editor-web/public/generated/
+apps/editor-web/public/static/
+apps/editor-web/public/chunks/
+apps/editor-web/public/extension-worker.js
+apps/editor-web/public/extension-worker.js.map
+apps/editor-web/public/extension-worker.js.LICENSE.txt

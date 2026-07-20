@@ -7,16 +7,29 @@ export interface PickerCallbackData {
   documents?: Array<{id?: string}>;
 }
 
+export interface PickFileOptions {
+  /**
+   * When set, the Picker shows only these Drive file IDs (comma-separated
+   * under the hood). Used for collaboration join so guests confirm the
+   * shared invite file instead of browsing Shared drives.
+   */
+  fileIds?: string[];
+}
+
 export interface PickerBuildOptions {
   apiKey: string;
   appId: string;
   accessToken: string;
   mimeType: string;
+  fileIds?: string[];
   callback(data: PickerCallbackData): void;
 }
 
 export interface GooglePicker {
-  pickFile(accessToken: string): Promise<string | null>;
+  pickFile(
+    accessToken: string,
+    options?: PickFileOptions,
+  ): Promise<string | null>;
 }
 
 export interface GooglePickerOptions {
@@ -31,7 +44,7 @@ export interface GooglePickerOptions {
 export function createGooglePicker(options: GooglePickerOptions): GooglePicker {
   let initialized = false;
   return {
-    async pickFile(accessToken) {
+    async pickFile(accessToken, pickOptions = {}) {
       if (!options.apiKey || !options.appId) {
         throw new DriveConfigurationError(
           "Google Picker API key and app ID are required",
@@ -47,6 +60,7 @@ export function createGooglePicker(options: GooglePickerOptions): GooglePicker {
           appId: options.appId,
           accessToken,
           mimeType: SB3_MIME_TYPE,
+          fileIds: pickOptions.fileIds,
           callback(data) {
             if (data.action === "cancel") {
               resolve(null);

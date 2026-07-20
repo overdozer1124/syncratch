@@ -7,6 +7,9 @@ import {
 export const DRIVE_FILE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
 
+/** Non-secret preference only — never store access/refresh tokens here. */
+export const DRIVE_AUTH_PREFERENCE_KEY = "blocksync.driveAuthorized";
+
 const GOOGLE_SCRIPT_SOURCES = [
   "https://accounts.google.com/gsi/client",
   "https://apis.google.com/js/api.js",
@@ -82,16 +85,45 @@ export interface GoogleIdentityGlobal {
   accounts: {oauth2: GoogleOAuth2};
 }
 
+export interface DriveAuthPreferenceStore {
+  isEnabled(): boolean;
+  setEnabled(enabled: boolean): void;
+}
+
+export function createLocalDriveAuthPreferenceStore(
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem"> = localStorage,
+): DriveAuthPreferenceStore {
+  return {
+    isEnabled() {
+      try {
+        return storage.getItem(DRIVE_AUTH_PREFERENCE_KEY) === "1";
+      } catch {
+        return false;
+      }
+    },
+    setEnabled(enabled) {
+      try {
+        if (enabled) storage.setItem(DRIVE_AUTH_PREFERENCE_KEY, "1");
+        else storage.removeItem(DRIVE_AUTH_PREFERENCE_KEY);
+      } catch {
+        // Private mode / quota — restore simply becomes unavailable.
+      }
+    },
+  };
+}
+
 export interface GoogleAuthorization {
   connect(): Promise<string>;
   disconnect(): void;
   getAccessToken(): string | null;
+  canRestoreSession(): boolean;
 }
 
 export interface GoogleAuthorizationOptions {
   clientId: string;
   loadScripts: () => Promise<void>;
   getGoogle: () => GoogleIdentityGlobal | undefined;
+  preferenceStore?: DriveAuthPreferenceStore;
 }
 
 export function createGoogleAuthorization(
@@ -100,8 +132,13 @@ export function createGoogleAuthorization(
   let accessToken: string | null = null;
   let connectPromise: Promise<string> | null = null;
   let generation = 0;
+  const preference =
+    options.preferenceStore ?? createLocalDriveAuthPreferenceStore();
 
   return {
+    canRestoreSession() {
+      return preference.isEnabled() && accessToken === null;
+    },
     async connect() {
       if (connectPromise) return connectPromise;
       if (!options.clientId) {
@@ -117,35 +154,40 @@ export function createGoogleAuthorization(
           );
         }
         return new Promise<string>((resolve, reject) => {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: options.clientId,
-          scope: DRIVE_FILE_SCOPE,
-          callback(response) {
-            if (generation !== connectGeneration) {
+          const client = google.accounts.oauth2.initTokenClient({
+            client_id: options.clientId,
+            scope: DRIVE_FILE_SCOPE,
+            callback(response) {
+              if (generation !== connectGeneration) {
+                reject(new DriveAuthenticationError(
+                  "Google authorization was cancelled",
+                ));
+                return;
+              }
+              if (!response.access_token || response.error) {
+                preference.setEnabled(false);
+                reject(new DriveAuthenticationError(
+                  response.error_description ??
+                    response.error ??
+                    "Google authorization failed",
+                ));
+                return;
+              }
+              accessToken = response.access_token;
+              preference.setEnabled(true);
+              resolve(accessToken);
+            },
+            error_callback(error) {
+              preference.setEnabled(false);
               reject(new DriveAuthenticationError(
-                "Google authorization was cancelled",
+                "Google authorization dialog failed",
+                {cause: error},
               ));
-              return;
-            }
-            if (!response.access_token || response.error) {
-              reject(new DriveAuthenticationError(
-                response.error_description ??
-                  response.error ??
-                  "Google authorization failed",
-              ));
-              return;
-            }
-            accessToken = response.access_token;
-            resolve(accessToken);
-          },
-          error_callback(error) {
-            reject(new DriveAuthenticationError(
-              "Google authorization dialog failed",
-              {cause: error},
-            ));
-          },
-        });
-        client.requestAccessToken({prompt: accessToken ? "" : "consent"});
+            },
+          });
+          // Empty prompt: reuse prior browser grant without consent UI when
+          // possible; Google still shows consent on first authorization.
+          client.requestAccessToken({prompt: ""});
         });
       })().finally(() => {
         connectPromise = null;
@@ -158,6 +200,7 @@ export function createGoogleAuthorization(
         options.getGoogle()?.accounts.oauth2.revoke?.(accessToken);
       }
       accessToken = null;
+      preference.setEnabled(false);
     },
     getAccessToken() {
       return accessToken;

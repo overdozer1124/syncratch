@@ -8,17 +8,19 @@ body,
   font-family: system-ui, sans-serif;
 }
 
+/* In-flow toolbar + flex fill: avoids fixed/padding double-offset that
+   collapsed the Scratch editor body to height 0 (black workspace). */
 #app {
-  display: grid;
-  grid-template-rows: 118px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .toolbar {
-  position: fixed;
-  z-index: 2147483647;
-  inset: 0 0 auto;
+  position: relative;
+  z-index: 200000;
+  flex: 0 0 auto;
   box-sizing: border-box;
-  min-height: 118px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -72,13 +74,24 @@ body,
   width: auto;
 }
 
-#scratch-gui,
+#scratch-gui {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+}
+
 #scratch-gui > div {
+  position: absolute;
+  inset: 0;
   min-height: 0;
   height: 100%;
 }
 
-#scratch-gui {
-  box-sizing: border-box;
-  padding-top: 118px;
+/* Google Picker mounts on document.body with a low default z-index (~1000). */
+.picker-dialog-bg {
+  z-index: 2147483646 !important;
+}
+
+.picker-dialog {
+  z-index: 2147483647 !important;
 }

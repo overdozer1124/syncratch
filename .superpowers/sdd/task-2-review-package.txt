@@ -1,0 +1,2285 @@
+﻿dc3003d docs: report browser-safe core task
+3855971 feat(project): add browser-safe local core
+ .superpowers/sdd/task-2-report.md                  | 117 +++++++++
+ packages/project-envelope/package.json             |   3 +-
+ packages/project-envelope/src/index.ts             |  13 +-
+ packages/project-local-core/package.json           |  25 ++
+ .../src/browser-entrypoints.test.ts                |  73 ++++++
+ packages/project-local-core/src/index.test.ts      |  89 +++++++
+ packages/project-local-core/src/index.ts           | 277 +++++++++++++++++++++
+ packages/project-local-core/tsconfig.json          |   9 +
+ .../project-schema/src/scratch-opcodes-v14.1.0.ts  | 221 ++++++++++++++++
+ packages/project-schema/src/scratch-opcodes.ts     |  21 +-
+ packages/sb3-tools/package.json                    |   5 +-
+ packages/sb3-tools/src/browser.ts                  |  46 ++++
+ packages/sb3-tools/src/canonical-io.ts             |  12 +-
+ .../src/generate-scratch-opcodes.check.test.ts     |   5 +
+ packages/sb3-tools/src/index.ts                    | 168 +------------
+ packages/sb3-tools/src/node.ts                     | 179 +++++++++++++
+ pnpm-lock.yaml                                     | 106 +++++---
+ 17 files changed, 1149 insertions(+), 220 deletions(-)
+diff --git a/.superpowers/sdd/task-2-report.md b/.superpowers/sdd/task-2-report.md
+index cb3f6e9..aae2446 100644
+--- a/.superpowers/sdd/task-2-report.md
++++ b/.superpowers/sdd/task-2-report.md
+@@ -1,10 +1,127 @@
++# Task 2 Report: Browser-safe project and SB3 core
++
++## Status
++
++DONE
++
++The browser-safe Task 2 section at the start of `task-2-brief.md` was implemented. The older SQLite enrollment appendix in the same file was already present in branch history and was not changed.
++
++## Commit baseline
++
++- Starting HEAD: `098693781810c71fed391be1e743ded9a11c469a`
++- Implementation commit: `3855971` (`feat(project): add browser-safe local core`)
++- Task 1 documents, the external Cursor plan, and pre-existing user-owned working-tree files were not staged or changed by this task.
++
++## Implementation
++
++- Replaced reusable Node `crypto` hashing with pinned `@noble/hashes@2.2.0`.
++  - `ProjectEnvelopeV1`, canonical JSON, request material, and public exports were left unchanged.
++  - Existing content/request hash vectors remain byte-for-byte identical.
++  - SB3 SHA-256, stable target IDs, and MD5 asset verification retain their existing vectors.
++- Removed runtime `node:fs`, `node:path`, and `node:url` dependencies from the ProjectDocument opcode validator by embedding the pinned v14.1.0 artifact.
++  - Added a generated-contract equality test to prevent the embedded artifact from drifting from the vendor artifact.
++- Added SB3 package entry points:
++  - `@blocksync/sb3-tools/browser`: normal load/export/canonical/media APIs only.
++  - `@blocksync/sb3-tools/node`: isolated loader.
++  - Existing root exports remain compatible; the isolated loader delegates to the Node entry point.
++- Added `@blocksync/project-local-core`:
++  - `blocksync.local-project/v1`
++  - local project ID, title, non-negative revision, strict UTC `updatedAt`, ProjectDocument, asset `Uint8Array` records, save state, and optional Drive file ID
++  - strict unknown-field rejection, including `organizationId` and `updatedByUserId`
++  - ProjectDocument validation through the existing `validateProject`
++  - typed-array byte identity preservation
++- Added an esbuild browser bundle smoke that executes project hashing and SB3 browser exports, and rejects Node imports or browser-external stubs.
++
++## TDD evidence
++
++### RED
++
++Command:
++
++```text
++pnpm --filter @blocksync/project-local-core test
++```
++
++Observed result: exit 1.
++
++- `@blocksync/sb3-tools/browser` was not exported.
++- `project-envelope` pulled `node:crypto`.
++- ProjectDocument validation pulled `node:fs`, `node:path`, and `node:url`.
++- `project-local-core/src/index.ts` did not exist.
++
++These failures directly represented the missing browser boundary and LocalProjectRecord implementation.
++
++### GREEN
++
++Focused command:
++
++```text
++pnpm --filter @blocksync/project-schema --filter @blocksync/project-envelope --filter @blocksync/project-local-core --filter @blocksync/sb3-tools test
++```
++
++Result: exit 0.
++
++- project-schema: 66 tests passed
++- project-envelope: 18 tests passed
++- sb3-tools: 42 tests passed
++- project-local-core: 14 tests passed
++- Total: 140 tests passed
++
++Affected dependent command:
++
++```text
++pnpm --filter @blocksync/project-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server test
++```
++
++Result: exit 0.
++
++- project-service: 49 tests passed
++- project-store-sqlite: 291 tests passed
++- r1-persist-server: 84 tests passed
++- Total: 424 tests passed
++
++The SB3 suite emitted the existing Scratch VM warnings about no rendering module while loading costumes; no test failed.
++
++## Typecheck and build
++
++Command:
++
++```text
++pnpm --filter @blocksync/project-schema --filter @blocksync/project-envelope --filter @blocksync/project-local-core --filter @blocksync/project-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server typecheck
++```
++
++Result: exit 0 for all six packages/apps.
++
++`@blocksync/sb3-tools` has no separate typecheck script; its `tsc` build passed.
++
++Workspace command:
++
++```text
++pnpm build
++```
++
++Result: exit 0 for all 16 selected workspace projects/apps, including project-schema, project-envelope, sb3-tools, project-local-core, project-service, and project-store-sqlite.
++
++## Self-review
++
++- Confirmed no production `node:` import remains in project-envelope.
++- Confirmed SB3 Node built-ins exist only in `src/node.ts`; the browser bundle smoke contains neither Node imports nor browser-external stubs.
++- Confirmed the old root `loadSb3Isolated` tests still exercise oversize rejection and timeout cleanup.
++- Confirmed `@noble/hashes` is exact-pinned in both package manifests and `pnpm-lock.yaml`.
++- Confirmed the embedded opcode artifact exactly matches the generated vendor contract and added a regression check for future drift.
++- Confirmed `git diff --cached --check` passed before the implementation commit.
++- Independent code review found no Critical issues. Its artifact-drift concern was addressed with the generated-contract equality test. The pre-existing `task-2-brief.md` working-tree change was deliberately excluded from the commit.
++
++## Concerns
++
++None.
+ # Task 2 Report: Failing SQLite Enrollment Contracts
+ 
+ ## Scope completed
+ 
+ - Added the deterministic `openEnrollmentDb` fixture helper inside the SQLite directory repository writes suite.
+ - Added six enrollment behavior contracts:
+   1. successful create, revision bump, and read round-trip;
+   2. duplicate active class attendance number conflict with no second row or revision bump;
+   3. multiple active `null` attendance numbers;
+   4. foreign-workspace class rejection with neither workspace revision changed;
+diff --git a/packages/project-envelope/package.json b/packages/project-envelope/package.json
+index a45e5cb..33d67ed 100644
+--- a/packages/project-envelope/package.json
++++ b/packages/project-envelope/package.json
+@@ -6,17 +6,18 @@
+   "description": "EXPERIMENTAL R1 blocksync.project/v1 envelope and document hashes. No production API stability.",
+   "exports": {
+     ".": "./src/index.ts"
+   },
+   "scripts": {
+     "build": "tsc -p tsconfig.json",
+     "test": "vitest run",
+     "typecheck": "tsc -p tsconfig.json --noEmit"
+   },
+   "dependencies": {
+-    "@blocksync/project-schema": "workspace:*"
++    "@blocksync/project-schema": "workspace:*",
++    "@noble/hashes": "2.2.0"
+   },
+   "devDependencies": {
+     "typescript": "^5.8.3",
+     "vitest": "^3.2.4"
+   }
+ }
+diff --git a/packages/project-envelope/src/index.ts b/packages/project-envelope/src/index.ts
+index ea62339..19b8f0a 100644
+--- a/packages/project-envelope/src/index.ts
++++ b/packages/project-envelope/src/index.ts
+@@ -1,15 +1,16 @@
+ /**
+  * @experimental R1 blocksync.project/v1 envelope helpers.
+  */
+ 
+-import { createHash } from "node:crypto";
++import {sha256} from "@noble/hashes/sha2.js";
++import {bytesToHex} from "@noble/hashes/utils.js";
+ import {
+   emptyProject,
+   isScratchBlock,
+   type BlockMapEntry,
+   type CostumeRef,
+   type ProjectDocument,
+   type ScratchBlock,
+   type ScratchTarget,
+   type SoundRef,
+ } from "@blocksync/project-schema";
+@@ -30,20 +31,26 @@ export interface ProjectEnvelopeV1 {
+   contentHash: string;
+   updatedAt: string;
+   updatedByUserId: string;
+   document: ProjectDocument;
+   /** Set on revisions created after bootstrap (create revision 0 omits this). */
+   revisionMeta?: RevisionMeta;
+ }
+ 
+ export type RequestOp = "save_document" | "restore";
+ 
++const utf8 = new TextEncoder();
++
++function sha256Utf8(value: string): string {
++  return bytesToHex(sha256(utf8.encode(value)));
++}
++
+ function sortKeysDeep(value: unknown): unknown {
+   if (Array.isArray(value)) {
+     return value.map(sortKeysDeep);
+   }
+   if (value !== null && typeof value === "object") {
+     const obj = value as Record<string, unknown>;
+     const out: Record<string, unknown> = {};
+     for (const key of Object.keys(obj).sort()) {
+       out[key] = sortKeysDeep(obj[key]);
+     }
+@@ -183,41 +190,41 @@ export function canonicalizeDocument(doc: ProjectDocument): string {
+ 
+   return JSON.stringify({
+     schemaVersion: doc.schemaVersion,
+     extensions,
+     meta,
+     targets,
+   });
+ }
+ 
+ export function contentHash(doc: ProjectDocument): string {
+-  return createHash("sha256").update(canonicalizeDocument(doc)).digest("hex");
++  return sha256Utf8(canonicalizeDocument(doc));
+ }
+ 
+ export function requestHash(args: {
+   op: RequestOp;
+   schemaVersion: number;
+   contentHash: string;
+   snapshotId?: string;
+ }): string {
+   const material: Record<string, string | number> = {
+     contentHash: args.contentHash,
+     op: args.op,
+     schemaVersion: args.schemaVersion,
+   };
+   if (args.op === "restore") {
+     if (!args.snapshotId) {
+       throw new Error("requestHash restore requires snapshotId");
+     }
+     material.snapshotId = args.snapshotId;
+   }
+-  return createHash("sha256").update(JSON.stringify(material)).digest("hex");
++  return sha256Utf8(JSON.stringify(material));
+ }
+ 
+ export function emptyDocument(): ProjectDocument {
+   return emptyProject();
+ }
+ 
+ export function richFixtureDocument(): ProjectDocument {
+   return {
+     schemaVersion: 1,
+     extensions: ["music"],
+diff --git a/packages/project-local-core/package.json b/packages/project-local-core/package.json
+new file mode 100644
+index 0000000..56ad009
+--- /dev/null
++++ b/packages/project-local-core/package.json
+@@ -0,0 +1,25 @@
++{
++  "name": "@blocksync/project-local-core",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "description": "Browser-safe local project record contracts.",
++  "exports": {
++    ".": "./src/index.ts"
++  },
++  "scripts": {
++    "build": "tsc -p tsconfig.json",
++    "test": "vitest run",
++    "typecheck": "tsc -p tsconfig.json --noEmit"
++  },
++  "dependencies": {
++    "@blocksync/project-schema": "workspace:*"
++  },
++  "devDependencies": {
++    "@blocksync/project-envelope": "workspace:*",
++    "@blocksync/sb3-tools": "workspace:*",
++    "esbuild": "0.28.1",
++    "typescript": "^5.8.3",
++    "vitest": "^3.2.4"
++  }
++}
+diff --git a/packages/project-local-core/src/browser-entrypoints.test.ts b/packages/project-local-core/src/browser-entrypoints.test.ts
+new file mode 100644
+index 0000000..0f57c54
+--- /dev/null
++++ b/packages/project-local-core/src/browser-entrypoints.test.ts
+@@ -0,0 +1,73 @@
++import {build} from "esbuild";
++import {describe, expect, it} from "vitest";
++
++describe("browser entry points", () => {
++  it("bundle without Node built-ins and execute project/SB3 hashing smoke", async () => {
++    const result = await build({
++      stdin: {
++        contents: `
++          import {
++            contentHash,
++            emptyDocument,
++            requestHash,
++          } from "@blocksync/project-envelope";
++          import {
++            exportSb3,
++            loadSb3,
++            sha256Hex,
++            stableTargetId,
++          } from "@blocksync/sb3-tools/browser";
++
++          export function smoke() {
++            const document = emptyDocument();
++            const hash = contentHash(document);
++            return {
++              hash,
++              request: requestHash({
++                op: "save_document",
++                schemaVersion: document.schemaVersion,
++                contentHash: hash,
++              }),
++              bytesHash: sha256Hex(new TextEncoder().encode("abc")),
++              targetId: stableTargetId("Stage", true),
++              sb3Exports: [typeof loadSb3, typeof exportSb3],
++            };
++          }
++        `,
++        resolveDir: process.cwd(),
++        sourcefile: "browser-smoke.ts",
++        loader: "ts",
++      },
++      bundle: true,
++      platform: "browser",
++      format: "esm",
++      target: "es2022",
++      write: false,
++    });
++
++    const bundled = result.outputFiles[0]!.text;
++    expect(bundled).not.toMatch(/(?:from\s*|import\()["']node:/);
++    expect(bundled).not.toContain("__browser_external");
++
++    const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundled).toString("base64")}`;
++    const browserModule = (await import(moduleUrl)) as {
++      smoke(): {
++        hash: string;
++        request: string;
++        bytesHash: string;
++        targetId: string;
++        sb3Exports: string[];
++      };
++    };
++
++    expect(browserModule.smoke()).toEqual({
++      hash: "0cc517f62f40c66b669ccb7c6c3bf49ec257a12cfc3eea4d74a82315181a5475",
++      request:
++        "c8e19ff19f43d2d3786cd59af2b0aefe3d236e0919de208d7865112cb48f8d4b",
++      bytesHash:
++        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
++      targetId: "84cc668768e9d392",
++      sb3Exports: ["function", "function"],
++    });
++  });
++});
+diff --git a/packages/project-local-core/src/index.test.ts b/packages/project-local-core/src/index.test.ts
+new file mode 100644
+index 0000000..7a7932d
+--- /dev/null
++++ b/packages/project-local-core/src/index.test.ts
+@@ -0,0 +1,89 @@
++import {describe, expect, it} from "vitest";
++import {emptyProject} from "@blocksync/project-schema";
++import {
++  LOCAL_PROJECT_FORMAT,
++  validateLocalProjectRecord,
++  type LocalProjectRecord,
++} from "./index.js";
++
++function validRecord(): LocalProjectRecord {
++  return {
++    format: LOCAL_PROJECT_FORMAT,
++    localProjectId: "local-project-1",
++    title: "My project",
++    revision: 2,
++    updatedAt: "2026-07-19T00:00:00.000Z",
++    document: emptyProject(),
++    assets: [
++      {
++        md5ext: "d41d8cd98f00b204e9800998ecf8427e.svg",
++        bytes: new Uint8Array([1, 2, 3]),
++      },
++    ],
++    saveState: "dirty",
++    driveFileId: "drive-file-1",
++  };
++}
++
++describe("validateLocalProjectRecord", () => {
++  it("accepts a complete v1 record and preserves typed-array bytes", () => {
++    const candidate = validRecord();
++
++    const result = validateLocalProjectRecord(candidate);
++
++    expect(result).toEqual({ok: true, value: candidate});
++    if (result.ok) {
++      expect(result.value.assets[0]!.bytes).toBe(candidate.assets[0]!.bytes);
++      expect(result.value.assets[0]!.bytes).toBeInstanceOf(Uint8Array);
++    }
++  });
++
++  it("accepts a record without a Drive file ID", () => {
++    const {driveFileId: _driveFileId, ...candidate} = validRecord();
++
++    expect(validateLocalProjectRecord(candidate).ok).toBe(true);
++  });
++
++  it.each([
++    ["unknown format", {format: "blocksync.local-project/v2"}],
++    ["negative revision", {revision: -1}],
++    ["fractional revision", {revision: 1.5}],
++    ["invalid updatedAt", {updatedAt: "not-a-date"}],
++    ["invalid save state", {saveState: "saved"}],
++    ["malformed assets collection", {assets: {}}],
++    [
++      "malformed asset bytes",
++      {
++        assets: [
++          {
++            md5ext: "d41d8cd98f00b204e9800998ecf8427e.svg",
++            bytes: [1, 2, 3],
++          },
++        ],
++      },
++    ],
++    [
++      "malformed asset key",
++      {assets: [{md5ext: "", bytes: new Uint8Array()}]},
++    ],
++    ["invalid ProjectDocument", {document: {schemaVersion: 1, targets: null}}],
++  ])("rejects %s", (_label, patch) => {
++    expect(
++      validateLocalProjectRecord({...validRecord(), ...patch}),
++    ).toMatchObject({ok: false});
++  });
++
++  it.each(["organizationId", "updatedByUserId"])(
++    "rejects server identity field %s",
++    field => {
++      expect(
++        validateLocalProjectRecord({...validRecord(), [field]: "fake"}),
++      ).toMatchObject({
++        ok: false,
++        issues: expect.arrayContaining([
++          expect.objectContaining({path: field}),
++        ]),
++      });
++    },
++  );
++});
+diff --git a/packages/project-local-core/src/index.ts b/packages/project-local-core/src/index.ts
+new file mode 100644
+index 0000000..5ca4865
+--- /dev/null
++++ b/packages/project-local-core/src/index.ts
+@@ -0,0 +1,277 @@
++import {
++  validateProject,
++  type ProjectDocument,
++} from "@blocksync/project-schema";
++
++export const LOCAL_PROJECT_FORMAT = "blocksync.local-project/v1" as const;
++
++export type LocalProjectSaveState =
++  | "clean"
++  | "dirty"
++  | "saving"
++  | "error"
++  | "conflict";
++
++export interface LocalProjectAssetRecord {
++  md5ext: string;
++  bytes: Uint8Array;
++}
++
++export interface LocalProjectRecord {
++  format: typeof LOCAL_PROJECT_FORMAT;
++  localProjectId: string;
++  title: string;
++  revision: number;
++  updatedAt: string;
++  document: ProjectDocument;
++  assets: LocalProjectAssetRecord[];
++  saveState: LocalProjectSaveState;
++  driveFileId?: string;
++}
++
++export interface LocalProjectValidationIssue {
++  code: string;
++  message: string;
++  path?: string;
++}
++
++export type LocalProjectValidationResult =
++  | {ok: true; value: LocalProjectRecord}
++  | {ok: false; issues: readonly LocalProjectValidationIssue[]};
++
++const TOP_LEVEL_FIELDS = new Set([
++  "format",
++  "localProjectId",
++  "title",
++  "revision",
++  "updatedAt",
++  "document",
++  "assets",
++  "saveState",
++  "driveFileId",
++]);
++
++const SAVE_STATES = new Set<LocalProjectSaveState>([
++  "clean",
++  "dirty",
++  "saving",
++  "error",
++  "conflict",
++]);
++
++function isPlainRecord(value: unknown): value is Record<string, unknown> {
++  if (typeof value !== "object" || value === null || Array.isArray(value)) {
++    return false;
++  }
++  const prototype = Object.getPrototypeOf(value);
++  return prototype === Object.prototype || prototype === null;
++}
++
++function isUtcDateTime(value: unknown): value is string {
++  if (
++    typeof value !== "string" ||
++    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
++  ) {
++    return false;
++  }
++  const time = Date.parse(value);
++  return Number.isFinite(time) && new Date(time).toISOString() === value;
++}
++
++function validationIssue(
++  code: string,
++  message: string,
++  path?: string,
++): LocalProjectValidationIssue {
++  return path === undefined ? {code, message} : {code, message, path};
++}
++
++export function validateLocalProjectRecord(
++  candidate: unknown,
++): LocalProjectValidationResult {
++  if (!isPlainRecord(candidate)) {
++    return {
++      ok: false,
++      issues: [
++        validationIssue(
++          "INVALID_LOCAL_PROJECT",
++          "local project record must be a plain object",
++        ),
++      ],
++    };
++  }
++
++  const issues: LocalProjectValidationIssue[] = [];
++  for (const key of Object.keys(candidate)) {
++    if (!TOP_LEVEL_FIELDS.has(key)) {
++      issues.push(
++        validationIssue(
++          "UNKNOWN_LOCAL_PROJECT_FIELD",
++          `unknown local project field ${key}`,
++          key,
++        ),
++      );
++    }
++  }
++
++  if (candidate.format !== LOCAL_PROJECT_FORMAT) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_FORMAT",
++        `format must be ${LOCAL_PROJECT_FORMAT}`,
++        "format",
++      ),
++    );
++  }
++  if (
++    typeof candidate.localProjectId !== "string" ||
++    candidate.localProjectId.length === 0
++  ) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_ID",
++        "localProjectId must be a non-empty string",
++        "localProjectId",
++      ),
++    );
++  }
++  if (typeof candidate.title !== "string") {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_TITLE",
++        "title must be a string",
++        "title",
++      ),
++    );
++  }
++  if (
++    !Number.isSafeInteger(candidate.revision) ||
++    (candidate.revision as number) < 0
++  ) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_REVISION",
++        "revision must be a non-negative safe integer",
++        "revision",
++      ),
++    );
++  }
++  if (!isUtcDateTime(candidate.updatedAt)) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_UPDATED_AT",
++        "updatedAt must be a UTC date-time with millisecond precision",
++        "updatedAt",
++      ),
++    );
++  }
++  if (
++    typeof candidate.saveState !== "string" ||
++    !SAVE_STATES.has(candidate.saveState as LocalProjectSaveState)
++  ) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_SAVE_STATE",
++        "saveState is not recognized",
++        "saveState",
++      ),
++    );
++  }
++  if (
++    "driveFileId" in candidate &&
++    (typeof candidate.driveFileId !== "string" ||
++      candidate.driveFileId.length === 0)
++  ) {
++    issues.push(
++      validationIssue(
++        "INVALID_DRIVE_FILE_ID",
++        "driveFileId must be a non-empty string when present",
++        "driveFileId",
++      ),
++    );
++  }
++
++  if (!Array.isArray(candidate.assets)) {
++    issues.push(
++      validationIssue(
++        "INVALID_LOCAL_PROJECT_ASSETS",
++        "assets must be an array",
++        "assets",
++      ),
++    );
++  } else {
++    const seen = new Set<string>();
++    candidate.assets.forEach((asset, index) => {
++      const path = `assets[${index}]`;
++      if (!isPlainRecord(asset)) {
++        issues.push(
++          validationIssue(
++            "INVALID_LOCAL_PROJECT_ASSET",
++            "asset must be a plain object",
++            path,
++          ),
++        );
++        return;
++      }
++      for (const key of Object.keys(asset)) {
++        if (key !== "md5ext" && key !== "bytes") {
++          issues.push(
++            validationIssue(
++              "UNKNOWN_LOCAL_PROJECT_ASSET_FIELD",
++              `unknown asset field ${key}`,
++              `${path}.${key}`,
++            ),
++          );
++        }
++      }
++      if (typeof asset.md5ext !== "string" || asset.md5ext.length === 0) {
++        issues.push(
++          validationIssue(
++            "INVALID_LOCAL_PROJECT_ASSET_KEY",
++            "asset md5ext must be a non-empty string",
++            `${path}.md5ext`,
++          ),
++        );
++      } else if (seen.has(asset.md5ext)) {
++        issues.push(
++          validationIssue(
++            "DUPLICATE_LOCAL_PROJECT_ASSET",
++            `duplicate asset ${asset.md5ext}`,
++            `${path}.md5ext`,
++          ),
++        );
++      } else {
++        seen.add(asset.md5ext);
++      }
++      if (!(asset.bytes instanceof Uint8Array)) {
++        issues.push(
++          validationIssue(
++            "INVALID_LOCAL_PROJECT_ASSET_BYTES",
++            "asset bytes must be a Uint8Array",
++            `${path}.bytes`,
++          ),
++        );
++      }
++    });
++  }
++
++  const documentResult = validateProject(
++    candidate.document as ProjectDocument,
++  );
++  if (!documentResult.ok) {
++    for (const issue of documentResult.issues) {
++      issues.push(
++        validationIssue(
++          issue.code,
++          issue.message,
++          issue.path ? `document.${issue.path}` : "document",
++        ),
++      );
++    }
++  }
++
++  if (issues.length > 0) {
++    return {ok: false, issues};
++  }
++  return {ok: true, value: candidate as unknown as LocalProjectRecord};
++}
+diff --git a/packages/project-local-core/tsconfig.json b/packages/project-local-core/tsconfig.json
+new file mode 100644
+index 0000000..7b02c75
+--- /dev/null
++++ b/packages/project-local-core/tsconfig.json
+@@ -0,0 +1,9 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "outDir": "dist",
++    "rootDir": "src"
++  },
++  "include": ["src/**/*"],
++  "exclude": ["src/**/*.test.ts"]
++}
+diff --git a/packages/project-schema/src/scratch-opcodes-v14.1.0.ts b/packages/project-schema/src/scratch-opcodes-v14.1.0.ts
+new file mode 100644
+index 0000000..ef585db
+--- /dev/null
++++ b/packages/project-schema/src/scratch-opcodes-v14.1.0.ts
+@@ -0,0 +1,221 @@
++export const scratchOpcodeArtifact = {
++  vendorTag: "v14.1.0",
++  vendorPin: "7c172e469eb3c21c1e6326ea6cccea60bc14e3a8",
++  allowedExtensionIds: [
++    "music",
++    "pen",
++    "videoSensing",
++    "text2speech",
++    "translate",
++  ],
++  opcodes: [
++    "argument_reporter_boolean",
++    "argument_reporter_string_number",
++    "boolean",
++    "colour_picker",
++    "control_all_at_once",
++    "control_clear_counter",
++    "control_create_clone_of",
++    "control_create_clone_of_menu",
++    "control_delete_this_clone",
++    "control_for_each",
++    "control_forever",
++    "control_get_counter",
++    "control_if",
++    "control_if_else",
++    "control_incr_counter",
++    "control_repeat",
++    "control_repeat_until",
++    "control_start_as_clone",
++    "control_stop",
++    "control_wait",
++    "control_wait_until",
++    "control_while",
++    "data_addtolist",
++    "data_changevariableby",
++    "data_deletealloflist",
++    "data_deleteoflist",
++    "data_hidelist",
++    "data_hidevariable",
++    "data_insertatlist",
++    "data_itemnumoflist",
++    "data_itemoflist",
++    "data_lengthoflist",
++    "data_listcontainsitem",
++    "data_listcontents",
++    "data_replaceitemoflist",
++    "data_setvariableto",
++    "data_showlist",
++    "data_showvariable",
++    "data_variable",
++    "event_broadcast",
++    "event_broadcast_menu",
++    "event_broadcastandwait",
++    "event_whenbackdropswitchesto",
++    "event_whenbroadcastreceived",
++    "event_whenflagclicked",
++    "event_whengreaterthan",
++    "event_whenkeypressed",
++    "event_whenstageclicked",
++    "event_whenthisspriteclicked",
++    "event_whentouchingobject",
++    "looks_backdropnumbername",
++    "looks_backdrops",
++    "looks_changeeffectby",
++    "looks_changesizeby",
++    "looks_changestretchby",
++    "looks_cleargraphiceffects",
++    "looks_costume",
++    "looks_costumenumbername",
++    "looks_goforwardbackwardlayers",
++    "looks_gotofrontback",
++    "looks_hide",
++    "looks_hideallsprites",
++    "looks_nextbackdrop",
++    "looks_nextcostume",
++    "looks_say",
++    "looks_sayforsecs",
++    "looks_seteffectto",
++    "looks_setsizeto",
++    "looks_setstretchto",
++    "looks_show",
++    "looks_size",
++    "looks_switchbackdropto",
++    "looks_switchbackdroptoandwait",
++    "looks_switchcostumeto",
++    "looks_think",
++    "looks_thinkforsecs",
++    "math_angle",
++    "math_integer",
++    "math_number",
++    "math_positive_number",
++    "math_whole_number",
++    "matrix",
++    "motion_align_scene",
++    "motion_changexby",
++    "motion_changeyby",
++    "motion_direction",
++    "motion_glidesecstoxy",
++    "motion_glideto",
++    "motion_glideto_menu",
++    "motion_goto",
++    "motion_goto_menu",
++    "motion_gotoxy",
++    "motion_ifonedgebounce",
++    "motion_movesteps",
++    "motion_pointindirection",
++    "motion_pointtowards",
++    "motion_pointtowards_menu",
++    "motion_scroll_right",
++    "motion_scroll_up",
++    "motion_setrotationstyle",
++    "motion_setx",
++    "motion_sety",
++    "motion_turnleft",
++    "motion_turnright",
++    "motion_xposition",
++    "motion_xscroll",
++    "motion_yposition",
++    "motion_yscroll",
++    "music_changeTempo",
++    "music_getTempo",
++    "music_menu_DRUM",
++    "music_menu_INSTRUMENT",
++    "music_midiPlayDrumForBeats",
++    "music_midiSetInstrument",
++    "music_playDrumForBeats",
++    "music_playNoteForBeats",
++    "music_restForBeats",
++    "music_setInstrument",
++    "music_setTempo",
++    "note",
++    "operator_add",
++    "operator_and",
++    "operator_contains",
++    "operator_divide",
++    "operator_equals",
++    "operator_gt",
++    "operator_join",
++    "operator_length",
++    "operator_letter_of",
++    "operator_lt",
++    "operator_mathop",
++    "operator_mod",
++    "operator_multiply",
++    "operator_not",
++    "operator_or",
++    "operator_random",
++    "operator_round",
++    "operator_subtract",
++    "pen_changePenColorParamBy",
++    "pen_changePenHueBy",
++    "pen_changePenShadeBy",
++    "pen_changePenSizeBy",
++    "pen_clear",
++    "pen_menu_colorParam",
++    "pen_penDown",
++    "pen_penUp",
++    "pen_setPenColorParamTo",
++    "pen_setPenColorToColor",
++    "pen_setPenHueToNumber",
++    "pen_setPenShadeToNumber",
++    "pen_setPenSizeTo",
++    "pen_stamp",
++    "procedures_call",
++    "procedures_definition",
++    "procedures_prototype",
++    "sensing_answer",
++    "sensing_askandwait",
++    "sensing_coloristouchingcolor",
++    "sensing_current",
++    "sensing_dayssince2000",
++    "sensing_distanceto",
++    "sensing_distancetomenu",
++    "sensing_keyoptions",
++    "sensing_keypressed",
++    "sensing_loud",
++    "sensing_loudness",
++    "sensing_mousedown",
++    "sensing_mousex",
++    "sensing_mousey",
++    "sensing_of",
++    "sensing_of_object_menu",
++    "sensing_online",
++    "sensing_resettimer",
++    "sensing_setdragmode",
++    "sensing_timer",
++    "sensing_touchingcolor",
++    "sensing_touchingobject",
++    "sensing_touchingobjectmenu",
++    "sensing_userid",
++    "sensing_username",
++    "sound_beats_menu",
++    "sound_changeeffectby",
++    "sound_changevolumeby",
++    "sound_cleareffects",
++    "sound_effects_menu",
++    "sound_play",
++    "sound_playuntildone",
++    "sound_seteffectto",
++    "sound_setvolumeto",
++    "sound_sounds_menu",
++    "sound_stopallsounds",
++    "sound_volume",
++    "text",
++    "text2speech_menu_languages",
++    "text2speech_menu_voices",
++    "text2speech_setLanguage",
++    "text2speech_setVoice",
++    "text2speech_speakAndWait",
++    "translate_getTranslate",
++    "translate_getViewerLanguage",
++    "translate_menu_languages",
++    "videoSensing_menu_ATTRIBUTE",
++    "videoSensing_menu_SUBJECT",
++    "videoSensing_menu_VIDEO_STATE",
++    "videoSensing_setVideoTransparency",
++    "videoSensing_videoOn",
++    "videoSensing_videoToggle",
++    "videoSensing_whenMotionGreaterThan",
++  ],
++} as const;
+diff --git a/packages/project-schema/src/scratch-opcodes.ts b/packages/project-schema/src/scratch-opcodes.ts
+index a055f2e..d363239 100644
+--- a/packages/project-schema/src/scratch-opcodes.ts
++++ b/packages/project-schema/src/scratch-opcodes.ts
+@@ -1,33 +1,26 @@
+-import { readFileSync } from "node:fs";
+-import { join, dirname } from "node:path";
+-import { fileURLToPath } from "node:url";
++import {scratchOpcodeArtifact} from "./scratch-opcodes-v14.1.0.js";
+ 
+ export interface OpcodeArtifact {
+   vendorTag: string;
+   vendorPin: string;
+   allowedExtensionIds: string[];
+   opcodes: string[];
+ }
+ 
+-const artifactPath = join(
+-  dirname(fileURLToPath(import.meta.url)),
+-  "../../sb3-tools/vendor/scratch-opcodes-v14.1.0.json",
+-);
+-
+-let cached: OpcodeArtifact | null = null;
+-
+ export function loadOpcodeArtifact(): OpcodeArtifact {
+-  if (!cached) {
+-    cached = JSON.parse(readFileSync(artifactPath, "utf8")) as OpcodeArtifact;
+-  }
+-  return cached;
++  return {
++    vendorTag: scratchOpcodeArtifact.vendorTag,
++    vendorPin: scratchOpcodeArtifact.vendorPin,
++    allowedExtensionIds: [...scratchOpcodeArtifact.allowedExtensionIds],
++    opcodes: [...scratchOpcodeArtifact.opcodes],
++  };
+ }
+ 
+ export function allowedOpcodeSet(): ReadonlySet<string> {
+   return new Set(loadOpcodeArtifact().opcodes);
+ }
+ 
+ export function allowedExtensionIdSet(): ReadonlySet<string> {
+   return new Set(loadOpcodeArtifact().allowedExtensionIds);
+ }
+ 
+diff --git a/packages/sb3-tools/package.json b/packages/sb3-tools/package.json
+index 916c147..793e295 100644
+--- a/packages/sb3-tools/package.json
++++ b/packages/sb3-tools/package.json
+@@ -1,26 +1,29 @@
+ {
+   "name": "@blocksync/sb3-tools",
+   "version": "0.0.0",
+   "private": true,
+   "type": "module",
+   "description": "EXPERIMENTAL Gate 0 SB3 load/round-trip tools. No R1 API stability.",
+   "exports": {
+-    ".": "./src/index.ts"
++    ".": "./src/index.ts",
++    "./browser": "./src/browser.ts",
++    "./node": "./src/node.ts"
+   },
+   "scripts": {
+     "build": "tsc -p tsconfig.json",
+     "test": "vitest run"
+   },
+   "dependencies": {
+     "@blocksync/project-assets-fs": "workspace:*",
+     "@blocksync/project-schema": "workspace:*",
++    "@noble/hashes": "2.2.0",
+     "@xmldom/xmldom": "0.8.10",
+     "css-tree": "3.2.1",
+     "jszip": "^3.10.1"
+   },
+   "devDependencies": {
+     "@blocksync/project-envelope": "workspace:*",
+     "@blocksync/scratch-adapter": "workspace:*",
+     "typescript": "^5.8.3",
+     "vitest": "^3.2.4"
+   }
+diff --git a/packages/sb3-tools/src/browser.ts b/packages/sb3-tools/src/browser.ts
+new file mode 100644
+index 0000000..efd6e08
+--- /dev/null
++++ b/packages/sb3-tools/src/browser.ts
+@@ -0,0 +1,46 @@
++export {
++  DEFAULT_LIMITS,
++  declaredUncompressedSize,
++  exportSb3,
++  extractEntryCapped,
++  isUnsafePath,
++  loadSb3,
++  semanticFingerprint,
++  type LoadIssue,
++  type LoadIssueCode,
++  type LoadResult,
++  type Sb3SafetyLimits,
++} from "./index.js";
++export {
++  equivalenceProduction,
++  EquivalenceGraphError,
++  scriptFingerprint,
++  scriptRootFingerprints,
++  stableJson,
++  topLevelPrimitiveFingerprint,
++} from "./equivalence-production.js";
++export {
++  attachAssetSha256,
++  CanonicalImportError,
++  canonicalDataFormat,
++  documentToProjectJson,
++  projectJsonToDocument,
++  sha256Hex,
++  stableTargetId,
++} from "./canonical-io.js";
++export {assertSafeSvgBytes, SvgSafetyError} from "./svg-sanitize.js";
++export {
++  assertValidMp3Bytes,
++  MediaVerifyError,
++  parseWavBytes,
++  verifyMp3RefAgainstBytes,
++  verifyWavRefAgainstBytes,
++} from "./verify-media-bytes.js";
++export {
++  assertValidRasterBytes,
++  RasterVerifyError,
++  parseBmpDimensions,
++  parseGifDimensions,
++  parseJpegDimensions,
++  parsePngDimensions,
++} from "./verify-raster-bytes.js";
+diff --git a/packages/sb3-tools/src/canonical-io.ts b/packages/sb3-tools/src/canonical-io.ts
+index 54e378c..971b150 100644
+--- a/packages/sb3-tools/src/canonical-io.ts
++++ b/packages/sb3-tools/src/canonical-io.ts
+@@ -1,23 +1,26 @@
+-import { createHash } from "node:crypto";
++import {sha256} from "@noble/hashes/sha2.js";
++import {bytesToHex} from "@noble/hashes/utils.js";
+ import type {
+   BlockMapEntry,
+   CostumeRef,
+   ProjectDocument,
+   ScratchBlock,
+   ScratchTarget,
+   SoundRef,
+ } from "@blocksync/project-schema";
+ import {
+   isPrimitiveBlockEntry,
+ } from "@blocksync/project-schema";
+ 
++const utf8 = new TextEncoder();
++
+ export class CanonicalImportError extends Error {
+   constructor(
+     message: string,
+     public readonly path?: string,
+   ) {
+     super(message);
+     this.name = "CanonicalImportError";
+   }
+ }
+ 
+@@ -99,28 +102,25 @@ function canonicalMd5ext(
+   if (canonicalDataFormat(dataFormat) !== suffixLower) {
+     throw new CanonicalImportError(
+       "md5ext suffix must match canonical dataFormat",
+       path,
+     );
+   }
+   return md5ext;
+ }
+ 
+ export function sha256Hex(bytes: Uint8Array): string {
+-  return createHash("sha256").update(bytes).digest("hex");
++  return bytesToHex(sha256(bytes));
+ }
+ 
+ export function stableTargetId(name: string, isStage: boolean): string {
+-  return createHash("sha256")
+-    .update(`${isStage}:${name}`)
+-    .digest("hex")
+-    .slice(0, 16);
++  return sha256Hex(utf8.encode(`${isStage}:${name}`)).slice(0, 16);
+ }
+ 
+ function assertPlainObject(
+   value: unknown,
+   path: string,
+ ): Record<string, unknown> {
+   if (!value || typeof value !== "object" || Array.isArray(value)) {
+     throw new CanonicalImportError(`${path} must be an object`, path);
+   }
+   return value as Record<string, unknown>;
+diff --git a/packages/sb3-tools/src/generate-scratch-opcodes.check.test.ts b/packages/sb3-tools/src/generate-scratch-opcodes.check.test.ts
+index 3bf15f1..c0e9e33 100644
+--- a/packages/sb3-tools/src/generate-scratch-opcodes.check.test.ts
++++ b/packages/sb3-tools/src/generate-scratch-opcodes.check.test.ts
+@@ -1,32 +1,37 @@
+ import { readFileSync } from "node:fs";
+ import { join, dirname } from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { describe, expect, it } from "vitest";
++import {loadOpcodeArtifact} from "@blocksync/project-schema";
+ import {
+   artifactsEqual,
+   generate,
+   stableArtifact,
+ } from "../../../scripts/generate-scratch-opcodes.mjs";
+ 
+ const artifactPath = join(
+   dirname(fileURLToPath(import.meta.url)),
+   "../vendor/scratch-opcodes-v14.1.0.json",
+ );
+ 
+ describe("generate-scratch-opcodes --check contract", () => {
+   it("committed artifact matches regenerated contract", () => {
+     const generated = generate();
+     const existing = JSON.parse(readFileSync(artifactPath, "utf8"));
+     expect(artifactsEqual(generated, existing)).toBe(true);
+   });
+ 
++  it("browser-safe project-schema artifact matches the generated contract", () => {
++    expect(artifactsEqual(generate(), loadOpcodeArtifact())).toBe(true);
++  });
++
+   it("detects vendorPin tampering", () => {
+     const generated = generate();
+     const tampered = { ...generated, vendorPin: "deadbeef".repeat(8) };
+     expect(artifactsEqual(generated, tampered)).toBe(false);
+   });
+ 
+   it("detects allowedExtensionIds tampering", () => {
+     const generated = generate();
+     const tampered = {
+       ...generated,
+diff --git a/packages/sb3-tools/src/index.ts b/packages/sb3-tools/src/index.ts
+index bd3c3fe..55d10c2 100644
+--- a/packages/sb3-tools/src/index.ts
++++ b/packages/sb3-tools/src/index.ts
+@@ -1,21 +1,19 @@
+ /**
+  * @experimental Gate 0 / R1 SB3 helpers — streaming size guards, canonical I/O, media verify.
+  */
+ 
+ /// <reference path="./types/modules.d.ts" />
+ 
+ import JSZip from "jszip";
+-import { createHash } from "node:crypto";
+-import { spawn } from "node:child_process";
+-import { dirname, join } from "node:path";
+-import { fileURLToPath } from "node:url";
++import {md5} from "@noble/hashes/legacy.js";
++import {bytesToHex} from "@noble/hashes/utils.js";
+ import {
+   validateProject,
+   canonicalAssetDataFormat,
+   type ProjectDocument,
+   type ScratchTarget,
+   type ScratchBlock,
+ } from "@blocksync/project-schema";
+ import {
+   attachAssetSha256,
+   CanonicalImportError,
+@@ -178,21 +176,21 @@ export function isUnsafePath(
+   if (n.split("/").includes("..") || n.includes("../")) {
+     return { code: "PATH_TRAVERSAL", message: `Path traversal: ${name}` };
+   }
+   if (pathDepth(n) > limits.maxDepth) {
+     return { code: "BAD_DEPTH", message: `Path too deep: ${name}` };
+   }
+   return null;
+ }
+ 
+ function md5Hex(data: Uint8Array): string {
+-  return createHash("md5").update(data).digest("hex");
++  return bytesToHex(md5(data));
+ }
+ 
+ /** Map jpeg zip entry names to canonical jpg md5ext keys after import normalization. */
+ function registerAssetMd5extAliases(assets: Map<string, Uint8Array>): void {
+   for (const [md5ext, data] of assets) {
+     const dot = md5ext.lastIndexOf(".");
+     if (dot <= 0) continue;
+     if (md5ext.slice(dot + 1).toLowerCase() !== "jpeg") continue;
+     const canonical = `${md5ext.slice(0, dot)}.jpg`;
+     if (!assets.has(canonical)) {
+@@ -694,175 +692,25 @@ export interface Sb3ImportManifestAsset {
+ export interface Sb3ImportManifest {
+   assets: Sb3ImportManifestAsset[];
+   holdingBytesWritten: number;
+ }
+ 
+ export interface LoadSb3IsolatedOutcome extends LoadResult {
+   timedOut: boolean;
+   childPid: number | null;
+   childExited: boolean;
+   exitCode: number | null;
+-  signal: NodeJS.Signals | string | null;
++  signal: string | null;
+   manifest?: Sb3ImportManifest;
+ }
+ 
+ export function loadSb3Isolated(
+   bytes: Uint8Array,
+   partialLimits: Partial<Sb3SafetyLimits> = {},
+   options: LoadSb3IsolatedOptions = {},
+ ): Promise<LoadSb3IsolatedOutcome> {
+-  const heapMb = options.heapMb ?? 64;
+-  const timeoutMs = options.timeoutMs ?? 15_000;
+-  const workerHoldMs = options.workerHoldMs ?? 0;
+-  const manifestHoldMs = options.manifestHoldMs ?? 0;
+-  const worker = join(
+-    dirname(fileURLToPath(import.meta.url)),
+-    "load-sb3-worker.mjs",
++  const nodeEntryPoint = "./node.js";
++  return (import(nodeEntryPoint) as Promise<typeof import("./node.js")>).then(
++    ({loadSb3Isolated: load}) =>
++      load(bytes, partialLimits, options),
+   );
+-
+-  return new Promise((resolve) => {
+-    let settled = false;
+-    let timedOut = false;
+-    const finish = (result: LoadSb3IsolatedOutcome) => {
+-      if (settled) return;
+-      settled = true;
+-      clearTimeout(timer);
+-      try {
+-        child.stdout.removeAllListeners();
+-        child.stderr.removeAllListeners();
+-        child.removeAllListeners();
+-        child.stdin.destroy();
+-      } catch {
+-        /* ignore */
+-      }
+-      resolve(result);
+-    };
+-
+-    const child = spawn(
+-      process.execPath,
+-      [`--max-old-space-size=${heapMb}`, "--import", "tsx", worker],
+-      {
+-        env: {
+-          ...process.env,
+-          GATE0_SB3_LIMITS: JSON.stringify({
+-            ...DEFAULT_LIMITS,
+-            ...partialLimits,
+-          }),
+-          ...(workerHoldMs > 0
+-            ? { GATE0_SB3_WORKER_HOLD_MS: String(workerHoldMs) }
+-            : {}),
+-          ...(manifestHoldMs > 0
+-            ? { GATE0_SB3_MANIFEST_HOLD_MS: String(manifestHoldMs) }
+-            : {}),
+-          ...(options.dataRootReal
+-            ? { GATE0_SB3_DATA_ROOT_REAL: options.dataRootReal }
+-            : {}),
+-          ...(options.holdingBudgetBytes !== undefined
+-            ? {
+-                GATE0_SB3_HOLDING_BUDGET_BYTES: String(
+-                  options.holdingBudgetBytes,
+-                ),
+-              }
+-            : {}),
+-          ...(options.spoolPath
+-            ? { GATE0_SB3_SPOOL_PATH: options.spoolPath }
+-            : {}),
+-          ...(options.holdingDir
+-            ? { GATE0_SB3_HOLDING_DIR: options.holdingDir }
+-            : {}),
+-          ...(options.workerTempDir
+-            ? { GATE0_SB3_WORKER_TEMP_DIR: options.workerTempDir }
+-            : {}),
+-        },
+-        stdio: ["pipe", "pipe", "pipe"],
+-      },
+-    );
+-    const childPid = child.pid ?? null;
+-
+-    const timer = setTimeout(() => {
+-      timedOut = true;
+-      try {
+-        child.kill("SIGKILL");
+-      } catch {
+-        /* ignore */
+-      }
+-    }, timeoutMs);
+-
+-    const out: Buffer[] = [];
+-    const err: Buffer[] = [];
+-    child.stdout.on("data", (d) => out.push(d));
+-    child.stderr.on("data", (d) => err.push(d));
+-    child.on("error", (e) => {
+-      finish({
+-        ok: false,
+-        warnings: [],
+-        issues: [
+-          {
+-            code: "TOO_LARGE",
+-            message: `isolate spawn failed: ${e.message}`,
+-          },
+-        ],
+-        timedOut: false,
+-        childPid,
+-        childExited: true,
+-        exitCode: null,
+-        signal: null,
+-      });
+-    });
+-    child.on("close", (code, signal) => {
+-      if (timedOut) {
+-        finish({
+-          ok: false,
+-          warnings: [],
+-          issues: [
+-            {
+-              code: "TOO_LARGE",
+-              message: `isolate timed out after ${timeoutMs}ms`,
+-            },
+-          ],
+-          timedOut: true,
+-          childPid,
+-          childExited: true,
+-          exitCode: code,
+-          signal,
+-        });
+-        return;
+-      }
+-      const text = Buffer.concat(out).toString("utf8");
+-      try {
+-        const parsed = JSON.parse(text) as LoadResult & {
+-          manifest?: Sb3ImportManifest;
+-        };
+-        finish({
+-          ...parsed,
+-          timedOut: false,
+-          childPid,
+-          childExited: true,
+-          exitCode: code,
+-          signal,
+-        });
+-      } catch {
+-        finish({
+-          ok: false,
+-          warnings: [],
+-          issues: [
+-            {
+-              code: "TOO_LARGE",
+-              message: `isolate exited code=${code} signal=${signal}: ${Buffer.concat(err).toString("utf8") || text}`,
+-            },
+-          ],
+-          timedOut: false,
+-          childPid,
+-          childExited: true,
+-          exitCode: code,
+-          signal,
+-        });
+-      }
+-    });
+-    if (options.spoolPath) {
+-      child.stdin.end();
+-    } else {
+-      child.stdin.write(Buffer.from(bytes));
+-      child.stdin.end();
+-    }
+-  });
+ }
+diff --git a/packages/sb3-tools/src/node.ts b/packages/sb3-tools/src/node.ts
+new file mode 100644
+index 0000000..b461602
+--- /dev/null
++++ b/packages/sb3-tools/src/node.ts
+@@ -0,0 +1,179 @@
++import {spawn} from "node:child_process";
++import {dirname, join} from "node:path";
++import {fileURLToPath} from "node:url";
++import {
++  DEFAULT_LIMITS,
++  type LoadResult,
++  type LoadSb3IsolatedOptions,
++  type LoadSb3IsolatedOutcome,
++  type Sb3ImportManifest,
++  type Sb3SafetyLimits,
++} from "./index.js";
++
++export type {
++  LoadSb3IsolatedOptions,
++  LoadSb3IsolatedOutcome,
++  Sb3ImportManifest,
++} from "./index.js";
++
++export function loadSb3Isolated(
++  bytes: Uint8Array,
++  partialLimits: Partial<Sb3SafetyLimits> = {},
++  options: LoadSb3IsolatedOptions = {},
++): Promise<LoadSb3IsolatedOutcome> {
++  const heapMb = options.heapMb ?? 64;
++  const timeoutMs = options.timeoutMs ?? 15_000;
++  const workerHoldMs = options.workerHoldMs ?? 0;
++  const manifestHoldMs = options.manifestHoldMs ?? 0;
++  const worker = join(
++    dirname(fileURLToPath(import.meta.url)),
++    "load-sb3-worker.mjs",
++  );
++
++  return new Promise(resolve => {
++    let settled = false;
++    let timedOut = false;
++    const finish = (result: LoadSb3IsolatedOutcome) => {
++      if (settled) return;
++      settled = true;
++      clearTimeout(timer);
++      try {
++        child.stdout.removeAllListeners();
++        child.stderr.removeAllListeners();
++        child.removeAllListeners();
++        child.stdin.destroy();
++      } catch {
++        // The child may already have closed all streams.
++      }
++      resolve(result);
++    };
++
++    const child = spawn(
++      process.execPath,
++      [`--max-old-space-size=${heapMb}`, "--import", "tsx", worker],
++      {
++        env: {
++          ...process.env,
++          GATE0_SB3_LIMITS: JSON.stringify({
++            ...DEFAULT_LIMITS,
++            ...partialLimits,
++          }),
++          ...(workerHoldMs > 0
++            ? {GATE0_SB3_WORKER_HOLD_MS: String(workerHoldMs)}
++            : {}),
++          ...(manifestHoldMs > 0
++            ? {GATE0_SB3_MANIFEST_HOLD_MS: String(manifestHoldMs)}
++            : {}),
++          ...(options.dataRootReal
++            ? {GATE0_SB3_DATA_ROOT_REAL: options.dataRootReal}
++            : {}),
++          ...(options.holdingBudgetBytes !== undefined
++            ? {
++                GATE0_SB3_HOLDING_BUDGET_BYTES: String(
++                  options.holdingBudgetBytes,
++                ),
++              }
++            : {}),
++          ...(options.spoolPath
++            ? {GATE0_SB3_SPOOL_PATH: options.spoolPath}
++            : {}),
++          ...(options.holdingDir
++            ? {GATE0_SB3_HOLDING_DIR: options.holdingDir}
++            : {}),
++          ...(options.workerTempDir
++            ? {GATE0_SB3_WORKER_TEMP_DIR: options.workerTempDir}
++            : {}),
++        },
++        stdio: ["pipe", "pipe", "pipe"],
++      },
++    );
++    const childPid = child.pid ?? null;
++
++    const timer = setTimeout(() => {
++      timedOut = true;
++      try {
++        child.kill("SIGKILL");
++      } catch {
++        // The child may have exited between timeout and kill.
++      }
++    }, timeoutMs);
++
++    const out: Buffer[] = [];
++    const err: Buffer[] = [];
++    child.stdout.on("data", data => out.push(data));
++    child.stderr.on("data", data => err.push(data));
++    child.on("error", error => {
++      finish({
++        ok: false,
++        warnings: [],
++        issues: [
++          {
++            code: "TOO_LARGE",
++            message: `isolate spawn failed: ${error.message}`,
++          },
++        ],
++        timedOut: false,
++        childPid,
++        childExited: true,
++        exitCode: null,
++        signal: null,
++      });
++    });
++    child.on("close", (code, signal) => {
++      if (timedOut) {
++        finish({
++          ok: false,
++          warnings: [],
++          issues: [
++            {
++              code: "TOO_LARGE",
++              message: `isolate timed out after ${timeoutMs}ms`,
++            },
++          ],
++          timedOut: true,
++          childPid,
++          childExited: true,
++          exitCode: code,
++          signal,
++        });
++        return;
++      }
++      const text = Buffer.concat(out).toString("utf8");
++      try {
++        const parsed = JSON.parse(text) as LoadResult & {
++          manifest?: Sb3ImportManifest;
++        };
++        finish({
++          ...parsed,
++          timedOut: false,
++          childPid,
++          childExited: true,
++          exitCode: code,
++          signal,
++        });
++      } catch {
++        finish({
++          ok: false,
++          warnings: [],
++          issues: [
++            {
++              code: "TOO_LARGE",
++              message: `isolate exited code=${code} signal=${signal}: ${Buffer.concat(err).toString("utf8") || text}`,
++            },
++          ],
++          timedOut: false,
++          childPid,
++          childExited: true,
++          exitCode: code,
++          signal,
++        });
++      }
++    });
++    if (options.spoolPath) {
++      child.stdin.end();
++    } else {
++      child.stdin.write(Buffer.from(bytes));
++      child.stdin.end();
++    }
++  });
++}
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 85c6907..9e670ff 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -14,34 +14,34 @@ importers:
+         specifier: ^24.0.0
+         version: 24.13.3
+       entities:
+         specifier: ^6.0.1
+         version: 6.0.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/gate0-auth-smoke:
+     dependencies:
+       '@blocksync/google-identity':
+         specifier: workspace:*
+         version: link:../../packages/google-identity
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/gate0-collab-demo:
+     dependencies:
+       '@blocksync/collaboration-domain':
+         specifier: workspace:*
+         version: link:../../packages/collaboration-domain
+       '@blocksync/gate0-collab-server':
+         specifier: workspace:*
+         version: link:../gate0-collab-server
+       '@blocksync/project-schema':
+@@ -58,21 +58,21 @@ importers:
+         specifier: ^8.18.1
+         version: 8.18.1
+       tsx:
+         specifier: ^4.20.3
+         version: 4.23.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/gate0-collab-server:
+     dependencies:
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../../packages/project-schema
+       lib0:
+         specifier: ^0.2.114
+         version: 0.2.117
+       ws:
+@@ -86,21 +86,21 @@ importers:
+         specifier: ^8.18.1
+         version: 8.18.1
+       tsx:
+         specifier: ^4.20.3
+         version: 4.23.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/r1-persist-demo:
+     dependencies:
+       '@blocksync/auth-context':
+         specifier: workspace:*
+         version: link:../../packages/auth-context
+       '@blocksync/project-autosave':
+         specifier: workspace:*
+         version: link:../../packages/project-autosave
+       '@blocksync/project-envelope':
+@@ -123,21 +123,21 @@ importers:
+         version: 1.19.14(hono@4.12.30)
+     devDependencies:
+       tsx:
+         specifier: ^4.20.3
+         version: 4.23.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/r1-persist-server:
+     dependencies:
+       '@blocksync/auth-context':
+         specifier: workspace:*
+         version: link:../../packages/auth-context
+       '@blocksync/google-identity':
+         specifier: workspace:*
+         version: link:../../packages/google-identity
+       '@blocksync/project-assets-fs':
+@@ -184,21 +184,21 @@ importers:
+         specifier: ^1.5.4
+         version: 1.5.4
+       tsx:
+         specifier: ^4.20.3
+         version: 4.23.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/r1-scratch-host:
+     dependencies:
+       '@blocksync/project-autosave':
+         specifier: workspace:*
+         version: link:../../packages/project-autosave
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../../packages/project-schema
+       '@blocksync/sb3-tools':
+@@ -236,135 +236,160 @@ importers:
+         specifier: ^7.6.13
+         version: 7.6.13
+       better-sqlite3:
+         specifier: ^12.11.1
+         version: 12.11.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/auth-context:
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/collaboration-domain:
+     dependencies:
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../project-schema
+       yjs:
+         specifier: ^13.6.27
+         version: 13.6.31
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/google-identity:
+     dependencies:
+       jose:
+         specifier: ^6.0.11
+         version: 6.2.3
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-assets-fs:
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-autosave:
+     dependencies:
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../project-schema
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-envelope:
+     dependencies:
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../project-schema
++      '@noble/hashes':
++        specifier: 2.2.0
++        version: 2.2.0
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
++
++  packages/project-local-core:
++    dependencies:
++      '@blocksync/project-schema':
++        specifier: workspace:*
++        version: link:../project-schema
++    devDependencies:
++      '@blocksync/project-envelope':
++        specifier: workspace:*
++        version: link:../project-envelope
++      '@blocksync/sb3-tools':
++        specifier: workspace:*
++        version: link:../sb3-tools
++      esbuild:
++        specifier: 0.28.1
++        version: 0.28.1
++      typescript:
++        specifier: ^5.8.3
++        version: 5.9.3
++      vitest:
++        specifier: ^3.2.4
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-schema:
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-service:
+     dependencies:
+       '@blocksync/auth-context':
+         specifier: workspace:*
+         version: link:../auth-context
+       '@blocksync/project-envelope':
+         specifier: workspace:*
+         version: link:../project-envelope
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../project-schema
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-snapshots-fs:
+     dependencies:
+       '@blocksync/project-service':
+         specifier: workspace:*
+         version: link:../project-service
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/project-store-sqlite:
+     dependencies:
+       '@blocksync/auth-context':
+         specifier: workspace:*
+         version: link:../auth-context
+       '@blocksync/project-assets-fs':
+         specifier: workspace:*
+         version: link:../project-assets-fs
+       '@blocksync/project-envelope':
+@@ -390,30 +415,33 @@ importers:
+         specifier: ^7.6.13
+         version: 7.6.13
+       tsx:
+         specifier: ^4.20.3
+         version: 4.23.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/sb3-tools:
+     dependencies:
+       '@blocksync/project-assets-fs':
+         specifier: workspace:*
+         version: link:../project-assets-fs
+       '@blocksync/project-schema':
+         specifier: workspace:*
+         version: link:../project-schema
++      '@noble/hashes':
++        specifier: 2.2.0
++        version: 2.2.0
+       '@xmldom/xmldom':
+         specifier: 0.8.10
+         version: 0.8.10
+       css-tree:
+         specifier: 3.2.1
+         version: 3.2.1
+       jszip:
+         specifier: ^3.10.1
+         version: 3.10.1
+     devDependencies:
+@@ -421,55 +449,55 @@ importers:
+         specifier: workspace:*
+         version: link:../project-envelope
+       '@blocksync/scratch-adapter':
+         specifier: workspace:*
+         version: link:../scratch-adapter
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/scratch-adapter:
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/session-service:
+     dependencies:
+       '@blocksync/auth-context':
+         specifier: workspace:*
+         version: link:../auth-context
+       '@blocksync/google-identity':
+         specifier: workspace:*
+         version: link:../google-identity
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   packages/workspace-directory:
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+-        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1)
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+ packages:
+ 
+   '@acemir/cssom@0.9.31':
+     resolution: {integrity: sha512-ZnR3GSaH+/vJ0YlHau21FjfLYjMpYVIzTD8M8vIEQvIGxeOXyXdzCI140rrCY862p/C/BbzWsjc1dgnM9mkoTA==}
+ 
+   '@asamuzakjp/css-color@5.1.11':
+     resolution: {integrity: sha512-KVw6qIiCTUQhByfTd78h2yD1/00waTmm9uy/R7Ck/ctUyAPj+AEDLkQIdJW0T8+qGgj3j5bpNKK7Q3G+LedJWg==}
+     engines: {node: ^20.19.0 || ^22.12.0 || >=24.0.0}
+ 
+@@ -690,20 +718,24 @@ packages:
+ 
+   '@hono/node-server@1.19.14':
+     resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
+     engines: {node: '>=18.14.1'}
+     peerDependencies:
+       hono: ^4
+ 
+   '@jridgewell/sourcemap-codec@1.5.5':
+     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
+ 
++  '@noble/hashes@2.2.0':
++    resolution: {integrity: sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg==}
++    engines: {node: '>= 20.19.0'}
++
+   '@playwright/test@1.61.1':
+     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
+     engines: {node: '>=18'}
+     hasBin: true
+ 
+   '@rollup/rollup-android-arm-eabi@4.62.2':
+     resolution: {integrity: sha512-6o7ZLZK+BeenkZCFNDXqpbjw9bD6nuWonvS/lwQJp7NoVVxm6p3qE7qQ5jGuBjiFsgvqjD8mZAU5oWxTmbOeOg==}
+     cpu: [arm]
+     os: [android]
+ 
+@@ -1589,29 +1621,33 @@ snapshots:
+ 
+   '@esbuild/win32-arm64@0.28.1':
+     optional: true
+ 
+   '@esbuild/win32-ia32@0.28.1':
+     optional: true
+ 
+   '@esbuild/win32-x64@0.28.1':
+     optional: true
+ 
+-  '@exodus/bytes@1.15.1':
++  '@exodus/bytes@1.15.1(@noble/hashes@2.2.0)':
++    optionalDependencies:
++      '@noble/hashes': 2.2.0
+     optional: true
+ 
+   '@hono/node-server@1.19.14(hono@4.12.30)':
+     dependencies:
+       hono: 4.12.30
+ 
+   '@jridgewell/sourcemap-codec@1.5.5': {}
+ 
++  '@noble/hashes@2.2.0': {}
++
+   '@playwright/test@1.61.1':
+     dependencies:
+       playwright: 1.61.1
+ 
+   '@rollup/rollup-android-arm-eabi@4.62.2':
+     optional: true
+ 
+   '@rollup/rollup-android-arm64@4.62.2':
+     optional: true
+ 
+@@ -1811,24 +1847,24 @@ snapshots:
+       source-map-js: 1.2.1
+ 
+   cssstyle@6.2.0:
+     dependencies:
+       '@asamuzakjp/css-color': 5.1.11
+       '@csstools/css-syntax-patches-for-csstree': 1.1.6(css-tree@3.2.1)
+       css-tree: 3.2.1
+       lru-cache: 11.5.2
+     optional: true
+ 
+-  data-urls@7.0.0:
++  data-urls@7.0.0(@noble/hashes@2.2.0):
+     dependencies:
+       whatwg-mimetype: 5.0.0
+-      whatwg-url: 16.0.1
++      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
+     transitivePeerDependencies:
+       - '@noble/hashes'
+     optional: true
+ 
+   debug@4.4.3:
+     dependencies:
+       ms: 2.1.3
+ 
+   decimal.js@10.6.0:
+     optional: true
+@@ -1902,23 +1938,23 @@ snapshots:
+   fsevents@2.3.2:
+     optional: true
+ 
+   fsevents@2.3.3:
+     optional: true
+ 
+   github-from-package@0.0.0: {}
+ 
+   hono@4.12.30: {}
+ 
+-  html-encoding-sniffer@6.0.0:
++  html-encoding-sniffer@6.0.0(@noble/hashes@2.2.0):
+     dependencies:
+-      '@exodus/bytes': 1.15.1
++      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
+     transitivePeerDependencies:
+       - '@noble/hashes'
+     optional: true
+ 
+   http-proxy-agent@7.0.2:
+     dependencies:
+       agent-base: 7.1.4
+       debug: 4.4.3
+     transitivePeerDependencies:
+       - supports-color
+@@ -1944,42 +1980,42 @@ snapshots:
+     optional: true
+ 
+   isarray@1.0.0: {}
+ 
+   isomorphic.js@0.2.5: {}
+ 
+   jose@6.2.3: {}
+ 
+   js-tokens@9.0.1: {}
+ 
+-  jsdom@28.1.0:
++  jsdom@28.1.0(@noble/hashes@2.2.0):
+     dependencies:
+       '@acemir/cssom': 0.9.31
+       '@asamuzakjp/dom-selector': 6.8.1
+       '@bramus/specificity': 2.4.2
+-      '@exodus/bytes': 1.15.1
++      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
+       cssstyle: 6.2.0
+-      data-urls: 7.0.0
++      data-urls: 7.0.0(@noble/hashes@2.2.0)
+       decimal.js: 10.6.0
+-      html-encoding-sniffer: 6.0.0
++      html-encoding-sniffer: 6.0.0(@noble/hashes@2.2.0)
+       http-proxy-agent: 7.0.2
+       https-proxy-agent: 7.0.6
+       is-potential-custom-element-name: 1.0.1
+       parse5: 8.0.1
+       saxes: 6.0.0
+       symbol-tree: 3.2.4
+       tough-cookie: 6.0.2
+       undici: 7.28.0
+       w3c-xmlserializer: 5.0.0
+       webidl-conversions: 8.0.1
+       whatwg-mimetype: 5.0.0
+-      whatwg-url: 16.0.1
++      whatwg-url: 16.0.1(@noble/hashes@2.2.0)
+       xml-name-validator: 5.0.0
+     transitivePeerDependencies:
+       - '@noble/hashes'
+       - supports-color
+     optional: true
+ 
+   jszip@3.10.1:
+     dependencies:
+       lie: 3.3.0
+       pako: 1.0.11
+@@ -2272,21 +2308,21 @@ snapshots:
+       fdir: 6.5.0(picomatch@4.0.5)
+       picomatch: 4.0.5
+       postcss: 8.5.19
+       rollup: 4.62.2
+       tinyglobby: 0.2.17
+     optionalDependencies:
+       '@types/node': 24.13.3
+       fsevents: 2.3.3
+       tsx: 4.23.1
+ 
+-  vitest@3.2.7(@types/node@24.13.3)(jsdom@28.1.0)(tsx@4.23.1):
++  vitest@3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1):
+     dependencies:
+       '@types/chai': 5.2.3
+       '@vitest/expect': 3.2.7
+       '@vitest/mocker': 3.2.7(vite@7.3.6(@types/node@24.13.3)(tsx@4.23.1))
+       '@vitest/pretty-format': 3.2.7
+       '@vitest/runner': 3.2.7
+       '@vitest/snapshot': 3.2.7
+       '@vitest/spy': 3.2.7
+       '@vitest/utils': 3.2.7
+       chai: 5.3.3
+@@ -2299,21 +2335,21 @@ snapshots:
+       tinybench: 2.9.0
+       tinyexec: 0.3.2
+       tinyglobby: 0.2.17
+       tinypool: 1.1.1
+       tinyrainbow: 2.0.0
+       vite: 7.3.6(@types/node@24.13.3)(tsx@4.23.1)
+       vite-node: 3.2.4(@types/node@24.13.3)(tsx@4.23.1)
+       why-is-node-running: 2.3.0
+     optionalDependencies:
+       '@types/node': 24.13.3
+-      jsdom: 28.1.0
++      jsdom: 28.1.0(@noble/hashes@2.2.0)
+     transitivePeerDependencies:
+       - jiti
+       - less
+       - lightningcss
+       - msw
+       - sass
+       - sass-embedded
+       - stylus
+       - sugarss
+       - supports-color
+@@ -2325,23 +2361,23 @@ snapshots:
+     dependencies:
+       xml-name-validator: 5.0.0
+     optional: true
+ 
+   webidl-conversions@8.0.1:
+     optional: true
+ 
+   whatwg-mimetype@5.0.0:
+     optional: true
+ 
+-  whatwg-url@16.0.1:
++  whatwg-url@16.0.1(@noble/hashes@2.2.0):
+     dependencies:
+-      '@exodus/bytes': 1.15.1
++      '@exodus/bytes': 1.15.1(@noble/hashes@2.2.0)
+       tr46: 6.0.0
+       webidl-conversions: 8.0.1
+     transitivePeerDependencies:
+       - '@noble/hashes'
+     optional: true
+ 
+   why-is-node-running@2.3.0:
+     dependencies:
+       siginfo: 2.0.0
+       stackback: 0.0.2

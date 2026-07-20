@@ -19,7 +19,18 @@ await Promise.all([
   access(join(dist, "generated/fixtures/cat-project.json")),
   access(join(dist, "generated/fixtures/assets.b64.json")),
   access(join(dist, "generated/gui/scratch-gui-standalone.js")),
+  access(join(dist, "static/blocks-media/default/zoom-in.svg")),
+  access(join(dist, "chunks")),
+  access(join(dist, "extension-worker.js")),
 ]);
+
+const guiBundle = await readFile(
+  join(dist, "generated/gui/scratch-gui-standalone.js"),
+  "utf8",
+);
+if (!guiBundle.includes("__BLOCKSYNC_GUI_PUBLIC_PATH__")) {
+  throw new Error("GUI bundle was not rewritten for subpath asset loading");
+}
 
 const assetFiles = await readdir(join(dist, "assets"));
 const mainScript = assetFiles.find(file => /^main-.*\.js$/.test(file));

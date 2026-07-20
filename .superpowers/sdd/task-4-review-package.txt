@@ -1,0 +1,3897 @@
+﻿194f446 fix(editor): close Drive disconnect races
+4136e3b fix(editor): secure Drive operation lifecycle
+5b45fdb fix(editor): harden Google Drive synchronization
+df2d91a feat(editor): add Google Drive shared persistence
+ .superpowers/sdd/task-4-report.md              | 102 +++-
+ apps/editor-web/e2e/editor.spec.ts             |  27 +
+ apps/editor-web/index.html                     |   7 +
+ apps/editor-web/package.json                   |   3 +
+ apps/editor-web/src/drive-boot-gate.test.ts    |  17 +
+ apps/editor-web/src/drive-export.test.ts       |  65 +++
+ apps/editor-web/src/drive-export.ts            |  45 ++
+ apps/editor-web/src/drive-file-current.test.ts |  70 +++
+ apps/editor-web/src/drive-file-current.ts      |  32 ++
+ apps/editor-web/src/drive-file-link.test.ts    |  69 +++
+ apps/editor-web/src/drive-file-link.ts         |  35 ++
+ apps/editor-web/src/drive-integration.test.ts  | 741 +++++++++++++++++++++++++
+ apps/editor-web/src/drive-integration.ts       | 382 +++++++++++++
+ apps/editor-web/src/main.ts                    | 250 ++++++++-
+ apps/editor-web/src/style.css                  |  20 +-
+ packages/google-drive-sync/package.json        |  21 +
+ packages/google-drive-sync/src/auth.ts         | 166 ++++++
+ packages/google-drive-sync/src/drive.ts        | 516 +++++++++++++++++
+ packages/google-drive-sync/src/errors.ts       |  88 +++
+ packages/google-drive-sync/src/index.test.ts   | 527 ++++++++++++++++++
+ packages/google-drive-sync/src/index.ts        |  43 ++
+ packages/google-drive-sync/src/picker.ts       |  70 +++
+ packages/google-drive-sync/tsconfig.json       |  10 +
+ packages/google-drive-sync/vite.config.ts      |  11 +
+ pnpm-lock.yaml                                 |  21 +
+ 25 files changed, 3305 insertions(+), 33 deletions(-)
+diff --git a/.superpowers/sdd/task-4-report.md b/.superpowers/sdd/task-4-report.md
+index b9879bc..b06973a 100644
+--- a/.superpowers/sdd/task-4-report.md
++++ b/.superpowers/sdd/task-4-report.md
+@@ -1,39 +1,87 @@
+-# Task 4 Report — Documentation, Handoff, and Final Gates
++# Task 4 report
+ 
+-**Status:** READY_FOR_CODEX_REVIEW
+-**Documentation commit:** `8881045` — `docs(r1): record enrollment update and end slice`
+-**Implementation review target:** `cd83e0445fa2178b91520b9860ebd027a1b21e29` — `feat(store): update and end enrollments with uniqueness`
++## Scope
+ 
+-## Documentation
++- Added browser-only `@blocksync/google-drive-sync` with dependency-injected GIS, Picker, and Drive REST boundaries.
++- Added explicit Drive connect/open/save/disconnect controls to `apps/editor-web`.
++- IndexedDB remains the source of truth. Only `driveFileId` is persisted; access tokens and Drive observations remain memory-only.
+ 
+-- Marked the enrollment update/end design as implemented from the Task 3 SHA.
+-- Recorded the active-only update/end follow-on in the attendance uniqueness design.
+-- Added the Phase 3 Task 4 thin-slice note while keeping broad Task 5 unchecked.
+-- Updated the current state and appended the timestamped Codex handoff log.
+-- Did not modify `docs/ai-platform/`.
++## TDD evidence
+ 
+-## Final gates
++### RED
+ 
+-All commands exited 0:
++- Package tests: failed because `packages/google-drive-sync/src/index.ts` did not exist.
++- Editor integration tests: failed because `drive-integration.ts` and the package entry did not exist.
++- E2E: failed because `drive-status` and Drive controls did not exist.
++- Follow-up RED cycles covered local-change unsynced state, official `multipart/related` upload formatting, reconnect re-observation, uncertain-create duplicate prevention, and local Drive-link CAS retry.
++- Mandatory review-fix RED cycles covered hash-gated reconnect, failed/stale local flush rejection, pre-generated create IDs, bounded stream cancellation, missing response bodies, concurrent connect deduplication, auth-token clearing, active-project switching, shared-drive query flags, octet-stream SB3 validation, and the boot gate.
++- Final security RED cycles covered reserve/create API separation, durable reservation before POST, persistence failure with zero uploads, crash/reload 404 recovery using the same ID, AbortSignal propagation, stream cancellation, and late GIS/Picker/reserve callbacks after disconnect.
++- Final race RED cycles covered an IDB CAS that commits during disconnect and a new-generation save incorrectly joining an aborted old save.
+ 
+-- `pnpm --filter @blocksync/workspace-directory test` — 67 tests passed
+-- `pnpm --filter @blocksync/workspace-directory typecheck`
+-- `pnpm --filter @blocksync/project-store-sqlite test` — 290 tests passed; directory repository contract: 37 tests passed
+-- `pnpm --filter @blocksync/project-store-sqlite typecheck`
+-- `pnpm r1:persist:test`
+-- `git diff --check`
++### GREEN
+ 
+-## Remaining
++- Drive package: 22 tests passed.
++- Editor unit/integration: 49 tests passed, including real fake-IndexedDB create/open/update preservation.
++- Editor E2E: 7 tests passed, including no-config local operation and zero Google requests.
++- SB3 tools: 56 tests passed.
++- Browser local core: 14 tests passed.
++- IndexedDB store: 12 tests passed.
+ 
+-Class-move orchestration, overlap service rules, claim, System Owner transfer, and audit remain open. Pre-existing `.superpowers/sdd/` working-tree changes were left untouched.
++## Google API constraints
+ 
+-## Task 4 review finding fix — 2026-07-18 20:39:48 JST
++Verified against official documentation:
+ 
+-- Corrected the top progress narrative so the approved/main-merged status applies only to prior Directory thin slices.
+-- Replaced the stale next-steps instruction with a Codex review request for the enrollment update/end thin slice; approval, main integration, and next-slice preparation remain blocked on that review.
++- GIS token model: <https://developers.google.com/identity/oauth2/web/guides/use-token-model>
++- Picker web sample: <https://developers.google.com/drive/picker/guides/sample>
++- Drive files get/create/update: <https://developers.google.com/drive/api/reference/rest/v3/files>
++- Drive files.generateIds: <https://developers.google.com/drive/api/reference/rest/v3/files/generateIds>
++- Multipart uploads: <https://developers.google.com/workspace/drive/api/guides/manage-uploads#multipart>
+ 
+-### Evidence
++Implementation constraints:
+ 
+-- `docs/CURSOR_CODEX_HANDOFF.md` now states `READY_FOR_CODEX_REVIEW` and pins the review target to implementation SHA `cd83e0445fa2178b91520b9860ebd027a1b21e29`, not the docs tip.
+-- `git diff --check -- docs/CURSOR_CODEX_HANDOFF.md .superpowers/sdd/task-4-report.md` exited 0.
+-- `docs/ai-platform/` was not modified.
++- OAuth scope is exactly `https://www.googleapis.com/auth/drive.file`.
++- Google scripts load only after explicit Connect Google.
++- Tokens are held only in a closure and are never written to storage, records, URLs, logs, Yjs, or Apps Script.
++- Picker grants access only through user-selected/uploaded files.
++- Drive uploads use `uploadType=multipart` with `multipart/related`, metadata first, and SB3 media second.
++- The adapter separates `reserveFileId()` from `createFile({fileId, ...})`. The editor durably CAS-saves the reserved ID to IndexedDB before any upload POST, then creates with exactly that ID.
++- If durable ID persistence fails, no create POST starts. After a crash, uncertain POST, or metadata 404, explicit Save reuses the persisted ID; it never silently reserves a replacement.
++- Create and update include `supportsAllDrives=true`.
++- Updates fetch `version`, `headRevisionId`, `appProperties`, and capabilities before writing and compare the caller's in-memory observation.
++- Reconnect adopts remote metadata as an observation only when its state hash matches freshly flushed, committed local SB3 bytes. Missing or different remote hashes enter conflict.
++- Drive export uses committed IndexedDB document/assets only after local save state is `clean`; failed/stale flushes and active-project changes stop upload.
++- Metadata is fetched again after writing. Snapshot mismatch is post-write, best-effort conflict detection only. It is not atomic compare-and-swap or a strict distributed lock.
++- Downloads check metadata size, require a readable response body, and stream only through `maxBytes + 1`; overflow cancels immediately. MIME is not trusted: `.sb3` extension, size, and browser-safe `loadSb3` validation are authoritative.
++- A 401/authentication error disconnects GIS and clears the in-memory token. Concurrent connects share one token request.
++- Concurrent explicit Drive saves in the same generation share one in-flight operation, preventing duplicate create IDs/files. A save after disconnect gets a new entry; identity-guarded cleanup from the old promise cannot clear it.
++- Connect/open/save operations carry a generation and AbortController. Disconnect increments the generation, aborts all in-flight Drive fetches/readers, and invalidates late GIS and Picker callbacks.
++- Generation is checked after every asynchronous boundary and before IDB link persistence or status publication, preventing disconnected operations from restoring `connected`/`synced` or starting later writes.
++- If the reserved-ID CAS commits while disconnect aborts the operation, the matching active local project's global record is first advanced to the committed `driveFileId` and revision, then the abort is surfaced. This reconciles memory with durable local state without publishing a Drive status.
++- Drive controls remain disabled until editor boot completes.
++- No background Drive autosave was added.
++
++### Best-effort limits
++
++- Google Drive does not provide an atomic compare-and-swap for this upload flow. A writer can race between preflight metadata and upload.
++- Post-write metadata verification detects a mismatched attempted snapshot after bytes may already have been written.
++- A pre-generated ID preserves file identity across uncertain create outcomes, but it cannot prove whether a failed network response reached Drive.
++- AbortSignal is best-effort at the remote boundary: abort prevents subsequent local actions and asks fetch/stream to cancel, but cannot prove that Google did not receive bytes already transmitted before cancellation.
++- An ID that previously represented a deleted Drive file is never replaced silently. Recreating that same ID may be rejected by Drive, in which case the editor remains unsynced/conflicted and requires explicit resolution.
++
++## Verification
++
++- `pnpm --filter @blocksync/google-drive-sync test`
++- `pnpm --filter @blocksync/google-drive-sync typecheck`
++- `pnpm --filter @blocksync/google-drive-sync build:browser`
++- `pnpm --filter @blocksync/editor-web test`
++- `pnpm --filter @blocksync/editor-web typecheck`
++- `pnpm --filter @blocksync/editor-web build`
++- `pnpm --filter @blocksync/editor-web build:e2e`
++- `pnpm --filter @blocksync/editor-web test:e2e`
++- `pnpm --filter @blocksync/sb3-tools test`
++- `pnpm --filter @blocksync/project-local-core test`
++- `pnpm --filter @blocksync/project-store-idb test`
++- `pnpm build`
++- `pnpm audit --prod` (`No known vulnerabilities found`)
++
++All commands exited successfully. SB3 VM tests emitted their existing no-renderer costume warnings.
+diff --git a/apps/editor-web/e2e/editor.spec.ts b/apps/editor-web/e2e/editor.spec.ts
+index eb423ad..e82ef3c 100644
+--- a/apps/editor-web/e2e/editor.spec.ts
++++ b/apps/editor-web/e2e/editor.spec.ts
+@@ -17,20 +17,47 @@ test("fresh load mounts the standalone GUI and reports local save ready", async
+ }) => {
+   await waitUntilReady(page);
+ 
+   await expect(page.locator('[data-testid="scratch-gui"]')).toBeVisible();
+   await expect(page.getByTestId("save-status")).toHaveText("Saved");
+   expect(
+     await page.evaluate(() => window.__blocksyncTask3?.getState().revision),
+   ).toBe(0);
+ });
+ 
++test("no Google configuration keeps Drive disabled and local editing available", async ({
++  page,
++}) => {
++  const googleRequests: string[] = [];
++  page.on("request", request => {
++    if (
++      request.url().includes("google.com") ||
++      request.url().includes("googleapis.com")
++    ) {
++      googleRequests.push(request.url());
++    }
++  });
++  await waitUntilReady(page);
++
++  await expect(page.getByTestId("drive-status")).toHaveText("Not configured");
++  await expect(
++    page.getByRole("button", {name: "Connect Google"}),
++  ).toBeDisabled();
++  await page.evaluate(
++    id => window.__blocksyncTask3!.createTestBlock(id),
++    "drive-unconfigured-local-block",
++  );
++  await expect(page.getByTestId("save-status")).toHaveText("Saved");
++
++  expect(googleRequests).toEqual([]);
++});
++
+ test("VM block mutation autosaves and survives reload", async ({page}) => {
+   await waitUntilReady(page);
+ 
+   await page.evaluate(
+     id => window.__blocksyncTask3!.createTestBlock(id),
+     TEST_BLOCK_ID,
+   );
+   await expect(page.getByTestId("save-status")).toHaveText("Saved");
+ 
+   await page.reload();
+diff --git a/apps/editor-web/index.html b/apps/editor-web/index.html
+index 2e1b2cd..01d0302 100644
+--- a/apps/editor-web/index.html
++++ b/apps/editor-web/index.html
+@@ -9,17 +9,24 @@
+     <main id="app">
+       <header class="toolbar">
+         <input aria-label="Project title" id="project-title" value="Local project" />
+         <button id="new-project" type="button">New</button>
+         <button id="open-project" type="button">Open .sb3</button>
+         <input id="open-file" type="file" accept=".sb3" hidden />
+         <button id="download-project" type="button">Download .sb3</button>
+         <button id="save-project" type="button">Save</button>
+         <span data-testid="save-status" id="save-status">Starting…</span>
+         <button id="retry-save" type="button" hidden>Retry save</button>
++        <span class="drive-controls">
++          <button id="connect-google" type="button" disabled>Connect Google</button>
++          <button id="open-drive" type="button" disabled>Open from Drive</button>
++          <button id="save-drive" type="button" disabled>Save/sync to Drive</button>
++          <button id="disconnect-google" type="button" disabled>Disconnect</button>
++          <span data-testid="drive-status" id="drive-status">Not configured</span>
++        </span>
+       </header>
+       <section data-testid="scratch-gui" id="scratch-gui"></section>
+     </main>
+     <script src="/generated/gui/scratch-gui-standalone.js"></script>
+     <script type="module" src="/src/main.ts"></script>
+   </body>
+ </html>
+diff --git a/apps/editor-web/package.json b/apps/editor-web/package.json
+index c60353d..6ffa819 100644
+--- a/apps/editor-web/package.json
++++ b/apps/editor-web/package.json
+@@ -6,21 +6,24 @@
+   "scripts": {
+     "prepare:assets": "node scripts/prepare-assets.mjs",
+     "dev": "pnpm prepare:assets && vite",
+     "build": "pnpm prepare:assets && vite build",
+     "build:e2e": "pnpm prepare:assets && vite build --mode e2e",
+     "typecheck": "tsc -p tsconfig.json --noEmit",
+     "test": "vitest run",
+     "test:e2e": "playwright test"
+   },
+   "dependencies": {
++    "@blocksync/google-drive-sync": "workspace:*",
+     "@blocksync/project-local-core": "workspace:*",
+     "@blocksync/project-store-idb": "workspace:*",
+     "@blocksync/sb3-tools": "workspace:*"
+   },
+   "devDependencies": {
+     "@playwright/test": "^1.52.0",
++    "@blocksync/project-schema": "workspace:*",
++    "fake-indexeddb": "^6.2.2",
+     "typescript": "^5.8.3",
+     "vite": "^7.3.6",
+     "vitest": "^3.2.4"
+   }
+ }
+diff --git a/apps/editor-web/src/drive-boot-gate.test.ts b/apps/editor-web/src/drive-boot-gate.test.ts
+new file mode 100644
+index 0000000..b5c7803
+--- /dev/null
++++ b/apps/editor-web/src/drive-boot-gate.test.ts
+@@ -0,0 +1,17 @@
++import {readFile} from "node:fs/promises";
++import {describe, expect, it} from "vitest";
++
++describe("Drive boot gate", () => {
++  it("ships every Drive control disabled before editor boot completes", async () => {
++    const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
++
++    for (const id of [
++      "connect-google",
++      "open-drive",
++      "save-drive",
++      "disconnect-google",
++    ]) {
++      expect(html).toMatch(new RegExp(`<button[^>]*id="${id}"[^>]*disabled`));
++    }
++  });
++});
+diff --git a/apps/editor-web/src/drive-export.test.ts b/apps/editor-web/src/drive-export.test.ts
+new file mode 100644
+index 0000000..63e18bc
+--- /dev/null
++++ b/apps/editor-web/src/drive-export.test.ts
+@@ -0,0 +1,65 @@
++import {describe, expect, it, vi} from "vitest";
++import {
++  LocalDriveSaveError,
++  LocalProjectChangedDuringDriveSaveError,
++  prepareCommittedDriveExport,
++} from "./drive-export.js";
++
++describe("prepareCommittedDriveExport", () => {
++  it.each(["dirty", "saving", "error", "conflict"] as const)(
++    "rejects %s local state before exporting bytes",
++    async state => {
++      const exportCommitted = vi.fn(async () => new Uint8Array([1]));
++
++      await expect(prepareCommittedDriveExport({
++        localProjectId: "local-1",
++        flush: async () => undefined,
++        getSaveState: () => state,
++        getCurrentProjectId: () => "local-1",
++        exportCommitted,
++      })).rejects.toMatchObject({
++        name: "LocalDriveSaveError",
++        state,
++      });
++      expect(exportCommitted).not.toHaveBeenCalled();
++    },
++  );
++
++  it("exports committed bytes only after a clean flush", async () => {
++    const order: string[] = [];
++    const result = await prepareCommittedDriveExport({
++      localProjectId: "local-1",
++      flush: async () => {
++        order.push("flush");
++      },
++      getSaveState: () => "clean",
++      getCurrentProjectId: () => "local-1",
++      exportCommitted: async () => {
++        order.push("export");
++        return new Uint8Array([1, 2, 3]);
++      },
++    });
++
++    expect(result).toEqual(new Uint8Array([1, 2, 3]));
++    expect(order).toEqual(["flush", "export"]);
++  });
++
++  it("rejects when the active project changes during committed export", async () => {
++    let projectId = "local-1";
++
++    await expect(prepareCommittedDriveExport({
++      localProjectId: "local-1",
++      flush: async () => undefined,
++      getSaveState: () => "clean",
++      getCurrentProjectId: () => projectId,
++      exportCommitted: async () => {
++        projectId = "local-2";
++        return new Uint8Array([1]);
++      },
++    })).rejects.toBeInstanceOf(LocalProjectChangedDuringDriveSaveError);
++  });
++
++  it("uses a typed local save error", () => {
++    expect(new LocalDriveSaveError("conflict").state).toBe("conflict");
++  });
++});
+diff --git a/apps/editor-web/src/drive-export.ts b/apps/editor-web/src/drive-export.ts
+new file mode 100644
+index 0000000..623f04f
+--- /dev/null
++++ b/apps/editor-web/src/drive-export.ts
+@@ -0,0 +1,45 @@
++import type {LocalSaveState} from "./save-coordinator.js";
++
++export class LocalDriveSaveError extends Error {
++  constructor(readonly state: Exclude<LocalSaveState, "clean">) {
++    super(`Local project is not committed (${state})`);
++    this.name = "LocalDriveSaveError";
++  }
++}
++
++export class LocalProjectChangedDuringDriveSaveError extends Error {
++  constructor() {
++    super("Active project changed during Drive save");
++    this.name = "LocalProjectChangedDuringDriveSaveError";
++  }
++}
++
++export interface CommittedDriveExportOptions {
++  localProjectId: string;
++  flush(): Promise<void>;
++  getSaveState(): LocalSaveState;
++  getCurrentProjectId(): string;
++  exportCommitted(): Promise<Uint8Array>;
++}
++
++export async function prepareCommittedDriveExport(
++  options: CommittedDriveExportOptions,
++): Promise<Uint8Array> {
++  await options.flush();
++  const stateAfterFlush = options.getSaveState();
++  if (stateAfterFlush !== "clean") {
++    throw new LocalDriveSaveError(stateAfterFlush);
++  }
++  if (options.getCurrentProjectId() !== options.localProjectId) {
++    throw new LocalProjectChangedDuringDriveSaveError();
++  }
++  const bytes = await options.exportCommitted();
++  const stateAfterExport = options.getSaveState();
++  if (stateAfterExport !== "clean") {
++    throw new LocalDriveSaveError(stateAfterExport);
++  }
++  if (options.getCurrentProjectId() !== options.localProjectId) {
++    throw new LocalProjectChangedDuringDriveSaveError();
++  }
++  return bytes;
++}
+diff --git a/apps/editor-web/src/drive-file-current.test.ts b/apps/editor-web/src/drive-file-current.test.ts
+new file mode 100644
+index 0000000..45b7f50
+--- /dev/null
++++ b/apps/editor-web/src/drive-file-current.test.ts
+@@ -0,0 +1,70 @@
++import {describe, expect, it, vi} from "vitest";
++import {
++  LOCAL_PROJECT_FORMAT,
++  type LocalProjectRecord,
++} from "@blocksync/project-local-core";
++import {emptyProject} from "@blocksync/project-schema";
++import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
++
++function record(revision: number, driveFileId?: string): LocalProjectRecord {
++  return {
++    format: LOCAL_PROJECT_FORMAT,
++    localProjectId: "local-1",
++    title: "Local",
++    revision,
++    updatedAt: "2026-07-19T00:00:00.000Z",
++    document: emptyProject(),
++    assets: [],
++    saveState: "clean",
++    ...(driveFileId ? {driveFileId} : {}),
++  };
++}
++
++describe("persistDriveFileIdAndSyncCurrent", () => {
++  it("updates matching global current before surfacing a post-commit abort", async () => {
++    const controller = new AbortController();
++    let current = record(0);
++    const saved = record(1, "reserved-id");
++
++    await expect(persistDriveFileIdAndSyncCurrent({
++      store: {
++        get: async () => record(0),
++        createOrReplace: async () => {
++          controller.abort();
++          return saved;
++        },
++      },
++      driveFileId: "reserved-id",
++      localProjectId: "local-1",
++      signal: controller.signal,
++      getCurrent: () => current,
++      setCurrent: next => {
++        current = next;
++      },
++    })).rejects.toMatchObject({name: "AbortError"});
++
++    expect(current).toEqual(saved);
++  });
++
++  it("surfaces a post-commit abort safely when no project is active", async () => {
++    const controller = new AbortController();
++    const setCurrent = vi.fn();
++
++    await expect(persistDriveFileIdAndSyncCurrent({
++      store: {
++        get: async () => record(0),
++        createOrReplace: async () => {
++          controller.abort();
++          return record(1, "reserved-id");
++        },
++      },
++      driveFileId: "reserved-id",
++      localProjectId: "local-1",
++      signal: controller.signal,
++      getCurrent: () => undefined,
++      setCurrent,
++    })).rejects.toMatchObject({name: "AbortError"});
++
++    expect(setCurrent).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/editor-web/src/drive-file-current.ts b/apps/editor-web/src/drive-file-current.ts
+new file mode 100644
+index 0000000..acc8145
+--- /dev/null
++++ b/apps/editor-web/src/drive-file-current.ts
+@@ -0,0 +1,32 @@
++import type {LocalProjectRecord} from "@blocksync/project-local-core";
++import type {ProjectStore} from "@blocksync/project-store-idb";
++import {persistDriveFileLink} from "./drive-file-link.js";
++
++export interface PersistDriveFileIdAndSyncCurrentOptions {
++  store: Pick<ProjectStore, "get" | "createOrReplace">;
++  driveFileId: string;
++  localProjectId: string;
++  signal?: AbortSignal;
++  getCurrent(): LocalProjectRecord | undefined;
++  setCurrent(record: LocalProjectRecord): void;
++}
++
++export async function persistDriveFileIdAndSyncCurrent(
++  options: PersistDriveFileIdAndSyncCurrentOptions,
++): Promise<void> {
++  const saved = await persistDriveFileLink(
++    options.store,
++    options.localProjectId,
++    options.driveFileId,
++    undefined,
++    options.signal,
++  );
++  const current = options.getCurrent();
++  if (
++    current?.localProjectId === options.localProjectId &&
++    current.revision < saved.revision
++  ) {
++    options.setCurrent(saved);
++  }
++  options.signal?.throwIfAborted();
++}
+diff --git a/apps/editor-web/src/drive-file-link.test.ts b/apps/editor-web/src/drive-file-link.test.ts
+new file mode 100644
+index 0000000..3cdc42c
+--- /dev/null
++++ b/apps/editor-web/src/drive-file-link.test.ts
+@@ -0,0 +1,69 @@
++import {describe, expect, it, vi} from "vitest";
++import {
++  LOCAL_PROJECT_FORMAT,
++  type LocalProjectRecord,
++} from "@blocksync/project-local-core";
++import {ProjectStoreRevisionConflictError} from "@blocksync/project-store-idb";
++import {emptyProject} from "@blocksync/project-schema";
++import {persistDriveFileLink} from "./drive-file-link.js";
++
++function record(revision: number, title: string): LocalProjectRecord {
++  return {
++    format: LOCAL_PROJECT_FORMAT,
++    localProjectId: "local-1",
++    title,
++    revision,
++    updatedAt: "2026-07-19T00:00:00.000Z",
++    document: emptyProject(),
++    assets: [],
++    saveState: "clean",
++  };
++}
++
++describe("persistDriveFileLink", () => {
++  it("retries a local revision conflict and preserves the latest record", async () => {
++    const first = record(1, "before concurrent save");
++    const latest = record(2, "after concurrent save");
++    const get = vi.fn()
++      .mockResolvedValueOnce(first)
++      .mockResolvedValueOnce(latest);
++    const createOrReplace = vi.fn()
++      .mockRejectedValueOnce(new ProjectStoreRevisionConflictError(
++        1,
++        2,
++      ))
++      .mockImplementationOnce(async (next: LocalProjectRecord) => next);
++
++    const saved = await persistDriveFileLink(
++      {get, createOrReplace},
++      "local-1",
++      "drive-1",
++      () => "2026-07-19T01:00:00.000Z",
++    );
++
++    expect(saved).toMatchObject({
++      title: "after concurrent save",
++      revision: 3,
++      driveFileId: "drive-1",
++    });
++    expect(createOrReplace).toHaveBeenCalledTimes(2);
++  });
++
++  it("does not start the IDB write when aborted after reading", async () => {
++    const controller = new AbortController();
++    const get = vi.fn(async () => {
++      controller.abort();
++      return record(1, "current");
++    });
++    const createOrReplace = vi.fn();
++
++    await expect(persistDriveFileLink(
++      {get, createOrReplace},
++      "local-1",
++      "reserved-id",
++      () => "2026-07-19T01:00:00.000Z",
++      controller.signal,
++    )).rejects.toMatchObject({name: "AbortError"});
++    expect(createOrReplace).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/editor-web/src/drive-file-link.ts b/apps/editor-web/src/drive-file-link.ts
+new file mode 100644
+index 0000000..7174eeb
+--- /dev/null
++++ b/apps/editor-web/src/drive-file-link.ts
+@@ -0,0 +1,35 @@
++import type {LocalProjectRecord} from "@blocksync/project-local-core";
++import {
++  ProjectStoreRevisionConflictError,
++  type ProjectStore,
++} from "@blocksync/project-store-idb";
++
++type DriveFileLinkStore = Pick<ProjectStore, "get" | "createOrReplace">;
++
++export async function persistDriveFileLink(
++  store: DriveFileLinkStore,
++  localProjectId: string,
++  driveFileId: string,
++  now: () => string = () => new Date().toISOString(),
++  signal?: AbortSignal,
++): Promise<LocalProjectRecord> {
++  for (let attempt = 0; attempt < 3; attempt += 1) {
++    signal?.throwIfAborted();
++    const record = await store.get(localProjectId);
++    signal?.throwIfAborted();
++    if (record.driveFileId === driveFileId) return record;
++    const next: LocalProjectRecord = {
++      ...record,
++      driveFileId,
++      revision: record.revision + 1,
++      updatedAt: now(),
++    };
++    try {
++      signal?.throwIfAborted();
++      return await store.createOrReplace(next, record.revision);
++    } catch (error) {
++      if (!(error instanceof ProjectStoreRevisionConflictError)) throw error;
++    }
++  }
++  throw new ProjectStoreRevisionConflictError(null, null);
++}
+diff --git a/apps/editor-web/src/drive-integration.test.ts b/apps/editor-web/src/drive-integration.test.ts
+new file mode 100644
+index 0000000..f5d5123
+--- /dev/null
++++ b/apps/editor-web/src/drive-integration.test.ts
+@@ -0,0 +1,741 @@
++import {describe, expect, it, vi} from "vitest";
++import "fake-indexeddb/auto";
++import {
++  DriveAuthenticationError,
++  DriveConflictError,
++  DriveFileNotFoundError,
++  DriveNetworkError,
++} from "@blocksync/google-drive-sync";
++import {
++  LOCAL_PROJECT_FORMAT,
++  type LocalProjectRecord,
++} from "@blocksync/project-local-core";
++import {openProjectStore} from "@blocksync/project-store-idb";
++import {emptyProject} from "@blocksync/project-schema";
++import {
++  createEditorDriveIntegration,
++  type EditorDriveDependencies,
++} from "./drive-integration.js";
++
++const bytes = new Uint8Array([80, 75, 3, 4]);
++
++function localRecord(localProjectId: string): LocalProjectRecord {
++  return {
++    format: LOCAL_PROJECT_FORMAT,
++    localProjectId,
++    title: localProjectId,
++    revision: 0,
++    updatedAt: "2026-07-19T00:00:00.000Z",
++    document: emptyProject(),
++    assets: [],
++    saveState: "clean",
++  };
++}
++
++function dependencies(
++  overrides: Partial<EditorDriveDependencies> = {},
++): EditorDriveDependencies {
++  return {
++    configured: true,
++    auth: {
++      connect: vi.fn(async () => "token"),
++      disconnect: vi.fn(),
++      getAccessToken: vi.fn(() => "token"),
++    },
++    picker: {
++      pickFile: vi.fn(async () => "drive-file"),
++    },
++    drive: {
++      reserveFileId: vi.fn(async () => "created-file"),
++      createFile: vi.fn(async input => ({
++        fileId: input.fileId,
++        observation: {version: "1", snapshotId: "snapshot-created"},
++      })),
++      getMetadata: vi.fn(),
++      readFile: vi.fn(async () => ({
++        bytes,
++        metadata: {
++          id: "drive-file",
++          name: "Drive project.sb3",
++          mimeType: "application/x.scratch.sb3",
++          size: 4,
++          version: "5",
++          headRevisionId: "head-5",
++          snapshotId: "snapshot-drive",
++          leadershipEpoch: "0",
++          stateHash: "hash-drive",
++          canEdit: true,
++          canDownload: true,
++        },
++      })),
++      updateFile: vi.fn(async () => ({
++        fileId: "drive-file",
++        observation: {version: "6", snapshotId: "snapshot-next"},
++      })),
++    },
++    exportCurrent: vi.fn(async () => bytes),
++    getCurrent: vi.fn(() => ({
++      localProjectId: "local-1",
++      title: "Local",
++      driveFileId: undefined,
++    })),
++    importAsNewLocal: vi.fn(async () => undefined),
++    persistDriveFileId: vi.fn(async () => undefined),
++    hashBytes: vi.fn(async () => "state-hash"),
++    createSnapshotId: vi.fn(() => "snapshot-next"),
++    onStatus: vi.fn(),
++    ...overrides,
++  };
++}
++
++describe("editor Drive integration", () => {
++  it("reports not configured without loading or contacting Google", async () => {
++    const deps = dependencies({configured: false});
++    const integration = createEditorDriveIntegration(deps);
++
++    expect(integration.getStatus()).toBe("not-configured");
++    await expect(integration.connect()).resolves.toBe(false);
++    expect(deps.auth.connect).not.toHaveBeenCalled();
++    expect(deps.drive.getMetadata).not.toHaveBeenCalled();
++  });
++
++  it("opens a validated Picker-selected file as a new local project", async () => {
++    const deps = dependencies();
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await expect(integration.openFromDrive()).resolves.toBe(true);
++
++    expect(deps.drive.readFile).toHaveBeenCalledWith(
++      "drive-file",
++      expect.any(AbortSignal),
++    );
++    expect(deps.importAsNewLocal).toHaveBeenCalledWith(
++      bytes,
++      "Drive project",
++      "drive-file",
++      expect.any(AbortSignal),
++    );
++    expect(integration.getStatus()).toBe("synced");
++  });
++
++  it("re-observes an existing Drive-backed project on explicit reconnect", async () => {
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId: "existing-file",
++      })),
++      drive: {
++        ...dependencies().drive,
++        getMetadata: vi.fn(async () => ({
++          id: "existing-file",
++          name: "Local.sb3",
++          mimeType: "application/x.scratch.sb3",
++          size: 4,
++          version: "12",
++          headRevisionId: "head-12",
++          snapshotId: "snapshot-12",
++          leadershipEpoch: "0",
++          stateHash: "hash-12",
++          canEdit: true,
++          canDownload: true,
++        })),
++      },
++      hashBytes: vi.fn(async () => "hash-12"),
++    });
++    const integration = createEditorDriveIntegration(deps);
++
++    await integration.connect();
++    await integration.saveToDrive();
++
++    expect(deps.drive.getMetadata).toHaveBeenCalledWith(
++      "existing-file",
++      expect.any(AbortSignal),
++    );
++    expect(deps.drive.updateFile).toHaveBeenCalledWith(
++      expect.objectContaining({
++        fileId: "existing-file",
++        knownObservation: {version: "12", snapshotId: "snapshot-12"},
++      }),
++      expect.any(AbortSignal),
++    );
++  });
++
++  it.each([
++    ["different", "remote-hash"],
++    ["missing", null],
++  ])("refuses reconnect baseline when remote state hash is %s", async (
++    _label,
++    remoteStateHash,
++  ) => {
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId: "existing-file",
++      })),
++      drive: {
++        ...dependencies().drive,
++        getMetadata: vi.fn(async () => ({
++          id: "existing-file",
++          name: "Local.sb3",
++          mimeType: "application/octet-stream",
++          size: 4,
++          version: "12",
++          headRevisionId: "head-12",
++          snapshotId: "snapshot-12",
++          leadershipEpoch: "0",
++          stateHash: remoteStateHash,
++          canEdit: true,
++          canDownload: true,
++        })),
++      },
++      hashBytes: vi.fn(async () => "local-hash"),
++    });
++    const integration = createEditorDriveIntegration(deps);
++
++    await expect(integration.connect()).resolves.toBe(false);
++    await expect(integration.saveToDrive()).resolves.toBe(false);
++
++    expect(integration.getStatus()).toBe("conflict");
++    expect(deps.drive.updateFile).not.toHaveBeenCalled();
++  });
++
++  it("creates first, then updates only the recorded Drive file", async () => {
++    let driveFileId: string | undefined;
++    const localRecords = new Map([["local-1", {title: "Local"}]]);
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId,
++      })),
++      persistDriveFileId: vi.fn(async fileId => {
++        driveFileId = fileId;
++      }),
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await integration.saveToDrive();
++    await integration.saveToDrive();
++
++    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
++    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
++    expect(deps.persistDriveFileId).toHaveBeenCalledWith(
++      "created-file",
++      "local-1",
++      expect.any(AbortSignal),
++    );
++    expect(deps.drive.createFile).toHaveBeenCalledWith(
++      expect.objectContaining({fileId: "created-file"}),
++      expect.any(AbortSignal),
++    );
++    expect(
++      (deps.persistDriveFileId as ReturnType<typeof vi.fn>).mock
++        .invocationCallOrder[0],
++    ).toBeLessThan(
++      (deps.drive.createFile as ReturnType<typeof vi.fn>).mock
++        .invocationCallOrder[0]!,
++    );
++    expect(deps.drive.updateFile).toHaveBeenCalledWith(
++      expect.objectContaining({
++        fileId: "created-file",
++        knownObservation: {
++          version: "1",
++          snapshotId: "snapshot-created",
++        },
++      }),
++      expect.any(AbortSignal),
++    );
++    expect(localRecords.get("local-1")).toEqual({title: "Local"});
++  });
++
++  it.each([
++    [new DriveConflictError("conflict", "pre-write"), "conflict"],
++    [new DriveNetworkError("offline"), "unsynced"],
++  ] as const)("keeps local actions available after Drive failure", async (
++    error,
++    status,
++  ) => {
++    const deps = dependencies({
++      drive: {
++        ...dependencies().drive,
++        createFile: vi.fn(async () => {
++          throw error;
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await expect(integration.saveToDrive()).resolves.toBe(false);
++
++    expect(integration.getStatus()).toBe(status);
++    expect(deps.persistDriveFileId).toHaveBeenCalledWith(
++      "created-file",
++      "local-1",
++      expect.any(AbortSignal),
++    );
++    await expect(deps.exportCurrent()).resolves.toEqual(bytes);
++  });
++
++  it("does not replace local state when Drive download fails", async () => {
++    const deps = dependencies({
++      drive: {
++        ...dependencies().drive,
++        readFile: vi.fn(async () => {
++          throw new DriveNetworkError("offline");
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await expect(integration.openFromDrive()).resolves.toBe(false);
++
++    expect(deps.importAsNewLocal).not.toHaveBeenCalled();
++    expect(integration.getStatus()).toBe("unsynced");
++  });
++
++  it("does not POST after reserving an ID when durable link persistence fails", async () => {
++    const deps = dependencies({
++      persistDriveFileId: vi.fn(async () => {
++        throw new Error("IndexedDB failed");
++      }),
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await expect(integration.saveToDrive()).resolves.toBe(false);
++
++    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
++    expect(deps.drive.createFile).not.toHaveBeenCalled();
++  });
++
++  it("recreates a missing reserved ID after reload without reserving another ID", async () => {
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId: "reserved-before-crash",
++      })),
++      drive: {
++        ...dependencies().drive,
++        getMetadata: vi.fn(async () => {
++          throw new DriveFileNotFoundError("missing");
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++
++    await expect(integration.connect()).resolves.toBe(true);
++    await expect(integration.saveToDrive()).resolves.toBe(true);
++
++    expect(deps.drive.reserveFileId).not.toHaveBeenCalled();
++    expect(deps.drive.createFile).toHaveBeenCalledWith(
++      expect.objectContaining({fileId: "reserved-before-crash"}),
++      expect.any(AbortSignal),
++    );
++  });
++
++  it("ignores a deferred connect callback after disconnect", async () => {
++    let resolveConnect!: (token: string) => void;
++    const deps = dependencies({
++      auth: {
++        connect: vi.fn(() => new Promise<string>(resolve => {
++          resolveConnect = resolve;
++        })),
++        disconnect: vi.fn(),
++        getAccessToken: vi.fn(() => null),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++
++    const connecting = integration.connect();
++    integration.disconnect();
++    resolveConnect("late-token");
++
++    await expect(connecting).resolves.toBe(false);
++    expect(integration.getStatus()).toBe("disconnected");
++    expect(deps.drive.getMetadata).not.toHaveBeenCalled();
++  });
++
++  it("ignores a deferred Picker result after disconnect", async () => {
++    let resolvePicker!: (fileId: string) => void;
++    const deps = dependencies({
++      picker: {
++        pickFile: vi.fn(() => new Promise<string | null>(resolve => {
++          resolvePicker = resolve;
++        })),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const opening = integration.openFromDrive();
++    integration.disconnect();
++    resolvePicker("late-file");
++
++    await expect(opening).resolves.toBe(false);
++    expect(integration.getStatus()).toBe("disconnected");
++    expect(deps.drive.readFile).not.toHaveBeenCalled();
++    expect(deps.importAsNewLocal).not.toHaveBeenCalled();
++  });
++
++  it("aborts after reserve on disconnect without linking or creating", async () => {
++    let resolveReserve!: (fileId: string) => void;
++    let reserveSignal: AbortSignal | undefined;
++    const deps = dependencies({
++      drive: {
++        ...dependencies().drive,
++        reserveFileId: vi.fn(signal => {
++          reserveSignal = signal;
++          return new Promise<string>(resolve => {
++            resolveReserve = resolve;
++          });
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const saving = integration.saveToDrive();
++    await vi.waitFor(() => expect(deps.drive.reserveFileId).toHaveBeenCalled());
++    integration.disconnect();
++    resolveReserve("late-reserved-id");
++
++    await expect(saving).resolves.toBe(false);
++    expect(reserveSignal?.aborted).toBe(true);
++    expect(deps.persistDriveFileId).not.toHaveBeenCalled();
++    expect(deps.drive.createFile).not.toHaveBeenCalled();
++    expect(integration.getStatus()).toBe("disconnected");
++  });
++
++  it("aborts an in-flight create after the reserved ID is durable", async () => {
++    let createSignal: AbortSignal | undefined;
++    const deps = dependencies({
++      drive: {
++        ...dependencies().drive,
++        createFile: vi.fn((_input, signal) => {
++          createSignal = signal;
++          return new Promise<never>((_resolve, reject) => {
++            signal?.addEventListener("abort", () => {
++              reject(new DOMException("aborted", "AbortError"));
++            }, {once: true});
++          });
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const saving = integration.saveToDrive();
++    await vi.waitFor(() => expect(deps.drive.createFile).toHaveBeenCalled());
++    integration.disconnect();
++
++    await expect(saving).resolves.toBe(false);
++    expect(createSignal?.aborted).toBe(true);
++    expect(deps.persistDriveFileId).toHaveBeenCalledWith(
++      "created-file",
++      "local-1",
++      expect.any(AbortSignal),
++    );
++    expect(integration.getStatus()).toBe("disconnected");
++  });
++
++  it.each([
++    [new Error("IndexedDB failed"), "unsynced"],
++    [new DriveConflictError("stale local revision", "pre-write"), "conflict"],
++  ] as const)("does not upload when local flush/export fails", async (
++    error,
++    expectedStatus,
++  ) => {
++    const deps = dependencies({
++      exportCurrent: vi.fn(async () => {
++        throw error;
++      }),
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await expect(integration.saveToDrive()).resolves.toBe(false);
++
++    expect(integration.getStatus()).toBe(expectedStatus);
++    expect(deps.drive.createFile).not.toHaveBeenCalled();
++    expect(deps.drive.updateFile).not.toHaveBeenCalled();
++  });
++
++  it("disconnects and clears authentication after a Drive auth failure", async () => {
++    const deps = dependencies({
++      drive: {
++        ...dependencies().drive,
++        createFile: vi.fn(async () => {
++          throw new DriveAuthenticationError("expired");
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await integration.saveToDrive();
++
++    expect(deps.auth.disconnect).toHaveBeenCalled();
++    expect(integration.getStatus()).toBe("disconnected");
++  });
++
++  it("aborts before upload when the active project changes during export", async () => {
++    let activeProjectId = "local-1";
++    const onStatus = vi.fn();
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: activeProjectId,
++        title: "Local",
++        driveFileId: undefined,
++      })),
++      exportCurrent: vi.fn(async () => {
++        activeProjectId = "local-2";
++        return bytes;
++      }),
++      onStatus,
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++    onStatus.mockClear();
++
++    await expect(integration.saveToDrive()).resolves.toBe(false);
++
++    expect(deps.drive.createFile).not.toHaveBeenCalled();
++    expect(deps.drive.updateFile).not.toHaveBeenCalled();
++    expect(onStatus).not.toHaveBeenCalled();
++  });
++
++  it("shares one in-flight save so concurrent clicks cannot create duplicates", async () => {
++    let releaseExport!: () => void;
++    const exportPending = new Promise<void>(resolve => {
++      releaseExport = resolve;
++    });
++    const deps = dependencies({
++      exportCurrent: vi.fn(async () => {
++        await exportPending;
++        return bytes;
++      }),
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const first = integration.saveToDrive();
++    const second = integration.saveToDrive();
++    releaseExport();
++
++    await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
++    expect(deps.exportCurrent).toHaveBeenCalledTimes(1);
++    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
++  });
++
++  it("reuses the ID committed during disconnect when reconnecting and saving", async () => {
++    let current = {
++      localProjectId: "local-1",
++      title: "Local",
++      driveFileId: undefined as string | undefined,
++    };
++    let finishCommit!: () => void;
++    const commit = new Promise<void>(resolve => {
++      finishCommit = resolve;
++    });
++    const deps = dependencies({
++      getCurrent: vi.fn(() => current),
++      persistDriveFileId: vi.fn(async (fileId, _localProjectId, signal) => {
++        await commit;
++        current = {...current, driveFileId: fileId};
++        signal?.throwIfAborted();
++      }),
++      drive: {
++        ...dependencies().drive,
++        getMetadata: vi.fn(async () => {
++          throw new DriveFileNotFoundError("missing reserved file");
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const interruptedSave = integration.saveToDrive();
++    await vi.waitFor(() =>
++      expect(deps.persistDriveFileId).toHaveBeenCalledWith(
++        "created-file",
++        "local-1",
++        expect.any(AbortSignal),
++      ),
++    );
++    integration.disconnect();
++    finishCommit();
++    await expect(interruptedSave).resolves.toBe(false);
++
++    await expect(integration.connect()).resolves.toBe(true);
++    await expect(integration.saveToDrive()).resolves.toBe(true);
++
++    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
++    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
++    expect(deps.drive.createFile).toHaveBeenCalledWith(
++      expect.objectContaining({fileId: "created-file"}),
++      expect.any(AbortSignal),
++    );
++  });
++
++  it("starts a new-generation save without joining or clearing the aborted old save", async () => {
++    let releaseOldExport!: () => void;
++    const oldExport = new Promise<void>(resolve => {
++      releaseOldExport = resolve;
++    });
++    let resolveNewCreate!: (result: {
++      fileId: string;
++      observation: {version: string; snapshotId: string};
++    }) => void;
++    const newCreate = new Promise<{
++      fileId: string;
++      observation: {version: string; snapshotId: string};
++    }>(resolve => {
++      resolveNewCreate = resolve;
++    });
++    const deps = dependencies({
++      exportCurrent: vi.fn()
++        .mockImplementationOnce(async () => {
++          await oldExport;
++          return bytes;
++        })
++        .mockResolvedValue(bytes),
++      drive: {
++        ...dependencies().drive,
++        createFile: vi.fn(() => newCreate),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    const oldSave = integration.saveToDrive();
++    await vi.waitFor(() => expect(deps.exportCurrent).toHaveBeenCalledTimes(1));
++    integration.disconnect();
++    await integration.connect();
++    const newSave = integration.saveToDrive();
++    await vi.waitFor(() => expect(deps.drive.createFile).toHaveBeenCalledTimes(1));
++
++    releaseOldExport();
++    await expect(oldSave).resolves.toBe(false);
++    const joinedNewSave = integration.saveToDrive();
++    resolveNewCreate({
++      fileId: "created-file",
++      observation: {version: "1", snapshotId: "snapshot-created"},
++    });
++
++    await expect(Promise.all([newSave, joinedNewSave])).resolves.toEqual([
++      true,
++      true,
++    ]);
++    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
++    expect(deps.drive.createFile).toHaveBeenCalledTimes(1);
++  });
++
++  it("retries an uncertain create only with the same durable reserved ID", async () => {
++    let driveFileId: string | undefined;
++    const conflict = new DriveConflictError(
++      "post-write mismatch",
++      "post-write",
++    );
++    conflict.fileId = "created-file";
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId,
++      })),
++      persistDriveFileId: vi.fn(async fileId => {
++        driveFileId = fileId;
++      }),
++      drive: {
++        ...dependencies().drive,
++        createFile: vi.fn(async () => {
++          throw conflict;
++        }),
++      },
++    });
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++
++    await integration.saveToDrive();
++    await integration.saveToDrive();
++
++    expect(deps.drive.createFile).toHaveBeenCalledTimes(2);
++    expect(deps.drive.reserveFileId).toHaveBeenCalledTimes(1);
++    for (const call of (deps.drive.createFile as ReturnType<typeof vi.fn>).mock
++      .calls) {
++      expect(call[0].fileId).toBe("created-file");
++    }
++    expect(deps.persistDriveFileId).toHaveBeenCalledWith(
++      "created-file",
++      "local-1",
++      expect.any(AbortSignal),
++    );
++    expect(deps.drive.updateFile).not.toHaveBeenCalled();
++  });
++
++  it("marks a synced Drive-backed project unsynced after a local change", async () => {
++    const deps = dependencies();
++    const integration = createEditorDriveIntegration(deps);
++    await integration.connect();
++    await integration.openFromDrive();
++
++    integration.markLocalChange();
++
++    expect(integration.getStatus()).toBe("unsynced");
++  });
++
++  it("preserves IndexedDB records through successful create, update, and open", async () => {
++    const databaseName = `drive-integration-${crypto.randomUUID()}`;
++    const store = await openProjectStore({databaseName});
++    await store.createOrReplace(localRecord("local-1"), null);
++    await store.createOrReplace(localRecord("unrelated"), null);
++    let driveFileId: string | undefined;
++    const deps = dependencies({
++      getCurrent: vi.fn(() => ({
++        localProjectId: "local-1",
++        title: "Local",
++        driveFileId,
++      })),
++      persistDriveFileId: vi.fn(async (fileId, localProjectId) => {
++        const existing = await store.get(localProjectId);
++        await store.createOrReplace({
++          ...existing,
++          driveFileId: fileId,
++          revision: existing.revision + 1,
++        }, existing.revision);
++        driveFileId = fileId;
++      }),
++      importAsNewLocal: vi.fn(async (_bytes, title, fileId) => {
++        await store.createOrReplace({
++          ...localRecord("imported"),
++          title,
++          driveFileId: fileId,
++        }, null);
++      }),
++    });
++    const integration = createEditorDriveIntegration(deps);
++
++    await integration.connect();
++    await integration.saveToDrive();
++    await integration.saveToDrive();
++    await integration.openFromDrive();
++
++    expect((await store.get("local-1")).driveFileId).toBe("created-file");
++    expect((await store.get("unrelated")).title).toBe("unrelated");
++    expect((await store.get("imported")).driveFileId).toBe("drive-file");
++    expect(await store.list()).toHaveLength(3);
++    store.close();
++    await new Promise<void>((resolve, reject) => {
++      const request = indexedDB.deleteDatabase(databaseName);
++      request.onsuccess = () => resolve();
++      request.onerror = () => reject(request.error);
++    });
++  });
++});
+diff --git a/apps/editor-web/src/drive-integration.ts b/apps/editor-web/src/drive-integration.ts
+new file mode 100644
+index 0000000..bf69772
+--- /dev/null
++++ b/apps/editor-web/src/drive-integration.ts
+@@ -0,0 +1,382 @@
++import {
++  DriveAuthenticationError,
++  DriveConflictError,
++  DriveFileNotFoundError,
++  DriveSyncError,
++  type DriveObservation,
++  type DriveRestAdapter,
++  type GoogleAuthorization,
++  type GooglePicker,
++} from "@blocksync/google-drive-sync";
++import {
++  LocalDriveSaveError,
++  LocalProjectChangedDuringDriveSaveError,
++} from "./drive-export.js";
++
++export type EditorDriveStatus =
++  | "not-configured"
++  | "disconnected"
++  | "connected"
++  | "syncing"
++  | "synced"
++  | "unsynced"
++  | "conflict";
++
++export interface CurrentDriveProject {
++  localProjectId: string;
++  title: string;
++  driveFileId?: string;
++}
++
++export interface EditorDriveDependencies {
++  configured: boolean;
++  auth: GoogleAuthorization;
++  picker: GooglePicker;
++  drive: DriveRestAdapter;
++  exportCurrent(): Promise<Uint8Array>;
++  getCurrent(): CurrentDriveProject;
++  importAsNewLocal(
++    bytes: Uint8Array,
++    title: string,
++    driveFileId: string,
++    signal?: AbortSignal,
++  ): Promise<void>;
++  persistDriveFileId(
++    fileId: string,
++    localProjectId: string,
++    signal?: AbortSignal,
++  ): Promise<void>;
++  hashBytes(bytes: Uint8Array): Promise<string>;
++  createSnapshotId(): string;
++  onStatus(status: EditorDriveStatus, message?: string): void;
++}
++
++export interface EditorDriveIntegration {
++  getStatus(): EditorDriveStatus;
++  connect(): Promise<boolean>;
++  disconnect(): void;
++  openFromDrive(): Promise<boolean>;
++  saveToDrive(): Promise<boolean>;
++  markLocalChange(): void;
++}
++
++function projectTitle(fileName: string): string {
++  return fileName.replace(/\.sb3$/i, "") || "Drive project";
++}
++
++export function createEditorDriveIntegration(
++  dependencies: EditorDriveDependencies,
++): EditorDriveIntegration {
++  let status: EditorDriveStatus = dependencies.configured
++    ? "disconnected"
++    : "not-configured";
++  const observations = new Map<string, DriveObservation>();
++  const boundFiles = new Map<string, string>();
++  const pendingCreates = new Set<string>();
++  const controllers = new Set<AbortController>();
++  let generation = 0;
++  let saveInFlight: {
++    generation: number;
++    promise: Promise<boolean>;
++  } | null = null;
++
++  interface Operation {
++    generation: number;
++    controller: AbortController;
++  }
++
++  const beginOperation = (): Operation => {
++    const controller = new AbortController();
++    controllers.add(controller);
++    return {generation, controller};
++  };
++
++  const isActive = (operation: Operation): boolean =>
++    operation.generation === generation && !operation.controller.signal.aborted;
++
++  const finishOperation = (operation: Operation): void => {
++    controllers.delete(operation.controller);
++  };
++
++  const setStatus = (
++    next: EditorDriveStatus,
++    message?: string,
++  ): void => {
++    status = next;
++    dependencies.onStatus(next, message);
++  };
++
++  const disconnectAll = (): void => {
++    generation += 1;
++    for (const controller of controllers) controller.abort();
++    controllers.clear();
++    dependencies.auth.disconnect();
++    observations.clear();
++    boundFiles.clear();
++    pendingCreates.clear();
++    setStatus(dependencies.configured ? "disconnected" : "not-configured");
++  };
++
++  const handleError = (
++    error: unknown,
++    operationProjectId?: string,
++    operation?: Operation,
++  ): false => {
++    if (operation && !isActive(operation)) return false;
++    if (error instanceof DriveAuthenticationError) {
++      disconnectAll();
++      return false;
++    }
++    if (
++      operationProjectId &&
++      dependencies.getCurrent().localProjectId !== operationProjectId
++    ) {
++      return false;
++    }
++    const next =
++      error instanceof DriveConflictError ||
++      (error instanceof LocalDriveSaveError && error.state === "conflict")
++        ? "conflict"
++        : "unsynced";
++    const message = error instanceof DriveSyncError
++      ? error.message
++      : "Google Drive operation failed";
++    setStatus(next, message);
++    return false;
++  };
++
++  setStatus(status);
++
++  return {
++    getStatus() {
++      return status;
++    },
++    async connect() {
++      if (!dependencies.configured) return false;
++      const operation = beginOperation();
++      try {
++        await dependencies.auth.connect();
++        if (!isActive(operation)) return false;
++        const current = dependencies.getCurrent();
++        if (current.driveFileId) {
++          const bytes = await dependencies.exportCurrent();
++          if (!isActive(operation)) return false;
++          if (
++            dependencies.getCurrent().localProjectId !== current.localProjectId
++          ) {
++            setStatus("connected");
++            return true;
++          }
++          const localStateHash = await dependencies.hashBytes(bytes);
++          if (!isActive(operation)) return false;
++          if (
++            dependencies.getCurrent().localProjectId !== current.localProjectId
++          ) {
++            setStatus("connected");
++            return true;
++          }
++          let metadata;
++          try {
++            metadata = await dependencies.drive.getMetadata(
++              current.driveFileId,
++              operation.controller.signal,
++            );
++          } catch (error) {
++            if (
++              error instanceof DriveFileNotFoundError &&
++              isActive(operation)
++            ) {
++              pendingCreates.add(current.driveFileId);
++              boundFiles.set(current.localProjectId, current.driveFileId);
++              setStatus("connected");
++              return true;
++            }
++            throw error;
++          }
++          if (!isActive(operation)) return false;
++          if (
++            metadata.stateHash === null ||
++            metadata.stateHash !== localStateHash
++          ) {
++            throw new DriveConflictError(
++              "Drive content differs from the committed local project; open from Drive to resolve",
++              "pre-write",
++            );
++          }
++          observations.set(current.driveFileId, {
++            version: metadata.version,
++            snapshotId: metadata.snapshotId,
++          });
++          boundFiles.set(current.localProjectId, current.driveFileId);
++        }
++        if (!isActive(operation)) return false;
++        setStatus("connected");
++        return true;
++      } catch (error) {
++        return handleError(error, undefined, operation);
++      } finally {
++        finishOperation(operation);
++      }
++    },
++    disconnect() {
++      disconnectAll();
++    },
++    markLocalChange() {
++      if (status === "synced") setStatus("unsynced");
++    },
++    async openFromDrive() {
++      const accessToken = dependencies.auth.getAccessToken();
++      if (!accessToken) {
++        setStatus("unsynced", "Connect Google before opening Drive");
++        return false;
++      }
++      const operation = beginOperation();
++      setStatus("syncing");
++      try {
++        const fileId = await dependencies.picker.pickFile(accessToken);
++        if (!isActive(operation)) return false;
++        if (fileId === null) {
++          setStatus("connected");
++          return false;
++        }
++        const downloaded = await dependencies.drive.readFile(
++          fileId,
++          operation.controller.signal,
++        );
++        if (!isActive(operation)) return false;
++        await dependencies.importAsNewLocal(
++          downloaded.bytes,
++          projectTitle(downloaded.metadata.name),
++          fileId,
++          operation.controller.signal,
++        );
++        if (!isActive(operation)) return false;
++        observations.set(fileId, {
++          version: downloaded.metadata.version,
++          snapshotId: downloaded.metadata.snapshotId,
++        });
++        boundFiles.set(dependencies.getCurrent().localProjectId, fileId);
++        setStatus("synced");
++        return true;
++      } catch (error) {
++        return handleError(error, undefined, operation);
++      } finally {
++        finishOperation(operation);
++      }
++    },
++    async saveToDrive() {
++      if (saveInFlight?.generation === generation) {
++        return saveInFlight.promise;
++      }
++      const entryGeneration = generation;
++      const promise = (async () => {
++        const operation = beginOperation();
++        try {
++        if (!dependencies.auth.getAccessToken()) {
++          setStatus("unsynced", "Connect Google before saving to Drive");
++          return false;
++        }
++        const current = dependencies.getCurrent();
++        try {
++          const fileId = current.driveFileId ??
++            boundFiles.get(current.localProjectId);
++          const bytes = await dependencies.exportCurrent();
++          if (!isActive(operation)) return false;
++          if (
++            dependencies.getCurrent().localProjectId !== current.localProjectId
++          ) {
++            return false;
++          }
++          const stateHash = await dependencies.hashBytes(bytes);
++          if (!isActive(operation)) return false;
++          if (
++            dependencies.getCurrent().localProjectId !== current.localProjectId
++          ) {
++            return false;
++          }
++          const snapshot = {
++            snapshotId: dependencies.createSnapshotId(),
++            // P2P leadership does not exist yet; explicit solo saves use epoch 0.
++            leadershipEpoch: "0",
++            stateHash,
++          };
++          let targetFileId = fileId;
++          if (!targetFileId) {
++            targetFileId = await dependencies.drive.reserveFileId(
++              operation.controller.signal,
++            );
++            if (!isActive(operation)) return false;
++            if (
++              dependencies.getCurrent().localProjectId !== current.localProjectId
++            ) {
++              return false;
++            }
++            await dependencies.persistDriveFileId(
++              targetFileId,
++              current.localProjectId,
++              operation.controller.signal,
++            );
++            if (!isActive(operation)) return false;
++            if (
++              dependencies.getCurrent().localProjectId !== current.localProjectId
++            ) {
++              return false;
++            }
++            boundFiles.set(current.localProjectId, targetFileId);
++            pendingCreates.add(targetFileId);
++          }
++          if (pendingCreates.has(targetFileId)) {
++            const created = await dependencies.drive.createFile({
++                fileId: targetFileId,
++                name: `${current.title || "Project"}.sb3`,
++                bytes,
++                snapshot,
++              }, operation.controller.signal);
++            if (!isActive(operation)) return false;
++            boundFiles.set(current.localProjectId, created.fileId);
++            observations.set(created.fileId, created.observation);
++            pendingCreates.delete(created.fileId);
++          } else {
++            const knownObservation = observations.get(targetFileId);
++            if (!knownObservation) {
++              throw new DriveConflictError(
++                "Drive version has not been observed in this session",
++                "pre-write",
++              );
++            }
++            const updated = await dependencies.drive.updateFile({
++              fileId: targetFileId,
++              bytes,
++              knownObservation,
++              snapshot,
++            }, operation.controller.signal);
++            if (!isActive(operation)) return false;
++            observations.set(targetFileId, updated.observation);
++          }
++          if (
++            isActive(operation) &&
++            dependencies.getCurrent().localProjectId === current.localProjectId
++          ) {
++            setStatus("synced");
++          }
++          return true;
++        } catch (error) {
++          if (error instanceof LocalProjectChangedDuringDriveSaveError) {
++            return false;
++          }
++          return handleError(error, current.localProjectId, operation);
++        }
++        } finally {
++          finishOperation(operation);
++        }
++      })();
++      const entry = {generation: entryGeneration, promise};
++      saveInFlight = entry;
++      try {
++        return await promise;
++      } finally {
++        if (saveInFlight === entry) saveInFlight = null;
++      }
++    },
++  };
++}
+diff --git a/apps/editor-web/src/main.ts b/apps/editor-web/src/main.ts
+index 85b189f..384d475 100644
+--- a/apps/editor-web/src/main.ts
++++ b/apps/editor-web/src/main.ts
+@@ -8,20 +8,28 @@ import {
+   ProjectStoreTransactionError,
+   type ProjectStore,
+ } from "@blocksync/project-store-idb";
+ import {
+   documentToProjectJson,
+   exportSb3,
+   loadSb3,
+   projectJsonToDocument,
+   sha256Hex,
+ } from "@blocksync/sb3-tools/browser";
++import {
++  createDriveRestAdapter,
++  createGoogleAuthorization,
++  createGooglePicker,
++  loadGoogleScripts,
++  type GoogleIdentityGlobal,
++  type PickerBuildOptions,
++} from "@blocksync/google-drive-sync";
+ import {
+   createSaveCoordinator,
+   type LocalSaveState,
+   type SaveCoordinator,
+ } from "./save-coordinator.js";
+ import {
+   collectRuntimeAssetBytes,
+   type RuntimeAssetTarget,
+ } from "./runtime-assets.js";
+ import {downloadFilename} from "./download-filename.js";
+@@ -29,20 +37,27 @@ import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
+ import {readSb3File} from "./import-file.js";
+ import {loadRecordSafely} from "./load-record.js";
+ import {
+   createProjectSessionTracker,
+   type ProjectSession,
+ } from "./project-session.js";
+ import {
+   createMemoryAssetLoader,
+   type MemoryAssetStorage,
+ } from "./scratch-storage-loader.js";
++import {
++  createEditorDriveIntegration,
++  type EditorDriveIntegration,
++  type EditorDriveStatus,
++} from "./drive-integration.js";
++import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
++import {prepareCommittedDriveExport} from "./drive-export.js";
+ 
+ type ProjectDocument = LocalProjectRecord["document"];
+ 
+ interface VmBlocks {
+   createBlock(block: Record<string, unknown>): void;
+   getBlock(id: string): unknown;
+ }
+ 
+ interface ScratchVm {
+   attachStorage(storage: ScratchStorageInstance): void;
+@@ -77,20 +92,57 @@ interface ScratchGuiGlobal {
+   ): {
+     render(options: {
+       canEditTitle: boolean;
+       canSave: boolean;
+       isEmbedded: boolean;
+       onVmInit(vm: ScratchVm): void;
+     }): void;
+   };
+ }
+ 
++interface GapiGlobal {
++  load(
++    module: string,
++    options: {
++      callback(): void;
++      onerror(): void;
++    },
++  ): void;
++}
++
++interface PickerView {
++  setMimeTypes(mimeTypes: string): void;
++}
++
++interface PickerBuilder {
++  setDeveloperKey(value: string): PickerBuilder;
++  setAppId(value: string): PickerBuilder;
++  setOAuthToken(value: string): PickerBuilder;
++  addView(value: PickerView): PickerBuilder;
++  setCallback(callback: (data: Record<string, unknown>) => void): PickerBuilder;
++  build(): {setVisible(visible: boolean): void};
++}
++
++interface PickerGlobal {
++  Action: {PICKED: string; CANCEL: string};
++  Response: {DOCUMENTS: string};
++  Document: {ID: string};
++  ViewId: {DOCS: string};
++  View: new (viewId: string) => PickerView;
++  DocsUploadView: new () => PickerView;
++  PickerBuilder: new () => PickerBuilder;
++}
++
++interface GoogleBrowserGlobal extends GoogleIdentityGlobal {
++  picker: PickerGlobal;
++}
++
+ declare const GUI: ScratchGuiGlobal;
+ 
+ const statusText: Record<LocalSaveState, string> = {
+   clean: "Saved",
+   dirty: "Unsaved",
+   saving: "Saving…",
+   error: "Save failed",
+   conflict: "Conflict",
+ };
+ 
+@@ -101,27 +153,36 @@ function requiredElement<T extends HTMLElement>(id: string): T {
+ }
+ 
+ const titleInput = requiredElement<HTMLInputElement>("project-title");
+ const newButton = requiredElement<HTMLButtonElement>("new-project");
+ const openButton = requiredElement<HTMLButtonElement>("open-project");
+ const fileInput = requiredElement<HTMLInputElement>("open-file");
+ const downloadButton = requiredElement<HTMLButtonElement>("download-project");
+ const saveButton = requiredElement<HTMLButtonElement>("save-project");
+ const retryButton = requiredElement<HTMLButtonElement>("retry-save");
+ const saveStatus = requiredElement<HTMLElement>("save-status");
++const connectGoogleButton =
++  requiredElement<HTMLButtonElement>("connect-google");
++const openDriveButton = requiredElement<HTMLButtonElement>("open-drive");
++const saveDriveButton = requiredElement<HTMLButtonElement>("save-drive");
++const disconnectGoogleButton =
++  requiredElement<HTMLButtonElement>("disconnect-google");
++const driveStatus = requiredElement<HTMLElement>("drive-status");
+ const guiHost = requiredElement<HTMLElement>("scratch-gui");
+ 
+ let store: ProjectStore;
+ let vm: ScratchVm;
+ let current: LocalProjectRecord;
+ let hasCurrent = false;
+ let saveCoordinator: SaveCoordinator;
++let driveIntegration: EditorDriveIntegration;
++let driveReady = false;
+ let suppressVmChanges = true;
+ let failNextWrite = false;
+ const projectSessions = createProjectSessionTracker();
+ 
+ const diagnostic = {
+   ready: false,
+   error: null as string | null,
+   createTestBlock(id: string): void {
+     const target = vm.runtime.targets.find(candidate => !candidate.isStage);
+     if (!target) throw new Error("Sprite target missing");
+@@ -258,34 +319,39 @@ function installSaveCoordinator(session: ProjectSession): void {
+     onState: state => {
+       projectSessions.runIfActive(session, () => renderSaveState(state));
+     },
+   });
+   renderSaveState("clean");
+ }
+ 
+ function markDirty(): void {
+   if (suppressVmChanges) return;
+   saveCoordinator.markDirty();
++  driveIntegration.markLocalChange();
+ }
+ 
+-async function loadRecord(record: LocalProjectRecord): Promise<void> {
++async function loadRecord(
++  record: LocalProjectRecord,
++  signal?: AbortSignal,
++): Promise<void> {
+   const candidate = structuredClone(record);
+   const previous = hasCurrent ? structuredClone(current) : undefined;
+   await loadRecordSafely({
+     candidate,
+     previous,
+     setSuppressed(value) {
+       suppressVmChanges = value;
+     },
+     async load(recordToLoad) {
+       attachLocalStorage(recordToLoad);
+       await vm.loadProject(documentToProjectJson(recordToLoad.document));
++      signal?.throwIfAborted();
+     },
+     commit(loaded) {
+       const session = projectSessions.begin();
+       current = loaded;
+       hasCurrent = true;
+       titleInput.value = loaded.title;
+       installSaveCoordinator(session);
+     },
+   });
+ }
+@@ -330,39 +396,52 @@ async function createNewProject(): Promise<void> {
+     throw error;
+   }
+ }
+ 
+ async function exportCurrentSb3(): Promise<Uint8Array> {
+   const assets = runtimeAssetMap();
+   const document = documentFromVm(assets);
+   return exportSb3(document, assets);
+ }
+ 
+-async function importProject(bytes: Uint8Array, title: string): Promise<void> {
++async function exportCommittedCurrentSb3(): Promise<Uint8Array> {
++  const committed = structuredClone(current);
++  return exportSb3(committed.document, assetMap(committed));
++}
++
++async function importProject(
++  bytes: Uint8Array,
++  title: string,
++  driveFileId?: string,
++  signal?: AbortSignal,
++): Promise<void> {
+   const result = await loadSb3(bytes);
+   if (!result.ok || !result.document || !result.assets) {
+     const message = result.issues.map(issue => issue.message).join("; ");
+     throw new Error(message || "Invalid SB3");
+   }
+   const record: LocalProjectRecord = {
+     format: LOCAL_PROJECT_FORMAT,
+     localProjectId: crypto.randomUUID(),
+     title,
+     revision: 0,
+     updatedAt: new Date().toISOString(),
+     document: result.document,
+     assets: assetRecords(result.document, result.assets),
+     saveState: "clean",
++    ...(driveFileId ? {driveFileId} : {}),
+   };
++  signal?.throwIfAborted();
+   await store.createOrReplace(record, null);
+   try {
+-    await loadRecord(record);
++    signal?.throwIfAborted();
++    await loadRecord(record, signal);
+   } catch (error) {
+     await store.delete(record.localProjectId).catch(() => undefined);
+     throw error;
+   }
+ }
+ 
+ function download(bytes: Uint8Array): void {
+   const blob = new Blob([bytes as BlobPart], {type: "application/x.scratch.sb3"});
+   const url = URL.createObjectURL(blob);
+   const anchor = document.createElement("a");
+@@ -378,35 +457,188 @@ async function getVm(): Promise<ScratchVm> {
+     const root = GUI.createStandaloneRoot(state, guiHost);
+     root.render({
+       canEditTitle: false,
+       canSave: false,
+       isEmbedded: true,
+       onVmInit: resolve,
+     });
+   });
+ }
+ 
++function googleGlobal(): GoogleBrowserGlobal | undefined {
++  return (window as unknown as {google?: GoogleBrowserGlobal}).google;
++}
++
++function gapiGlobal(): GapiGlobal | undefined {
++  return (window as unknown as {gapi?: GapiGlobal}).gapi;
++}
++
++function buildPicker(options: PickerBuildOptions) {
++  const picker = googleGlobal()?.picker;
++  if (!picker) throw new Error("Google Picker did not initialize");
++  const view = new picker.View(picker.ViewId.DOCS);
++  view.setMimeTypes(options.mimeType);
++  return new picker.PickerBuilder()
++    .setDeveloperKey(options.apiKey)
++    .setAppId(options.appId)
++    .setOAuthToken(options.accessToken)
++    .addView(view)
++    .addView(new picker.DocsUploadView())
++    .setCallback(data => {
++      if (data.action === picker.Action.CANCEL) {
++        options.callback({action: "cancel"});
++        return;
++      }
++      if (data.action !== picker.Action.PICKED) return;
++      const documents = data[picker.Response.DOCUMENTS];
++      const first = Array.isArray(documents) ? documents[0] : undefined;
++      const fileId = typeof first === "object" && first !== null
++        ? (first as Record<string, unknown>)[picker.Document.ID]
++        : undefined;
++      options.callback({
++        action: "picked",
++        documents: [{id: typeof fileId === "string" ? fileId : undefined}],
++      });
++    })
++    .build();
++}
++
++const driveStatusText: Record<EditorDriveStatus, string> = {
++  "not-configured": "Not configured",
++  disconnected: "Disconnected",
++  connected: "Connected",
++  syncing: "Syncing…",
++  synced: "Synced",
++  unsynced: "Unsynced",
++  conflict: "Conflict",
++};
++
++function renderDriveStatus(
++  status: EditorDriveStatus,
++  message?: string,
++): void {
++  driveStatus.textContent = message
++    ? `${driveStatusText[status]}: ${message}`
++    : driveStatusText[status];
++  driveStatus.title = message ?? "";
++  const configured = status !== "not-configured";
++  const connected = !["not-configured", "disconnected", "syncing"]
++    .includes(status);
++  connectGoogleButton.disabled = !driveReady ||
++    !configured || status === "connected" || status === "synced" ||
++    status === "syncing";
++  openDriveButton.disabled = !driveReady || !connected;
++  saveDriveButton.disabled =
++    !driveReady || !connected || status === "conflict";
++  disconnectGoogleButton.disabled =
++    !driveReady || !configured || status === "disconnected";
++}
++
++async function persistDriveFileId(
++  driveFileId: string,
++  localProjectId: string,
++  signal?: AbortSignal,
++): Promise<void> {
++  await persistDriveFileIdAndSyncCurrent({
++    store,
++    driveFileId,
++    localProjectId,
++    signal,
++    getCurrent: () => hasCurrent ? current : undefined,
++    setCurrent: saved => {
++      if (hasCurrent) current = saved;
++    },
++  });
++}
++
++function setupDriveIntegration(): EditorDriveIntegration {
++  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
++  const apiKey = import.meta.env.VITE_GOOGLE_API_KEY?.trim() ?? "";
++  const appId = import.meta.env.VITE_GOOGLE_APP_ID?.trim() ?? "";
++  const configured = Boolean(clientId && apiKey && appId);
++  const scripts = loadGoogleScripts();
++  const auth = createGoogleAuthorization({
++    clientId,
++    loadScripts: scripts,
++    getGoogle: googleGlobal,
++  });
++  const picker = createGooglePicker({
++    apiKey,
++    appId,
++    initializePicker: async () => {
++      await scripts();
++      const gapi = gapiGlobal();
++      if (!gapi) throw new Error("Google API loader did not initialize");
++      await new Promise<void>((resolve, reject) => {
++        gapi.load("picker", {
++          callback: resolve,
++          onerror: () => reject(new Error("Google Picker failed to load")),
++        });
++      });
++    },
++    buildPicker,
++  });
++  const drive = createDriveRestAdapter({
++    fetch: window.fetch.bind(window),
++    getAccessToken: auth.getAccessToken,
++    validateSb3: async bytes => {
++      const loaded = await loadSb3(bytes);
++      return Boolean(loaded.ok && loaded.document && loaded.assets);
++    },
++  });
++  return createEditorDriveIntegration({
++    configured,
++    auth,
++    picker,
++    drive,
++    exportCurrent: async () => {
++      const localProjectId = current.localProjectId;
++      return prepareCommittedDriveExport({
++        localProjectId,
++        flush: () => saveCoordinator.flush(),
++        getSaveState: () => saveCoordinator.getState(),
++        getCurrentProjectId: () => current.localProjectId,
++        exportCommitted: exportCommittedCurrentSb3,
++      });
++    },
++    getCurrent: () => ({
++      localProjectId: current.localProjectId,
++      title: titleInput.value,
++      driveFileId: current.driveFileId,
++    }),
++    importAsNewLocal: importProject,
++    persistDriveFileId,
++    hashBytes: async bytes => sha256Hex(bytes),
++    createSnapshotId: () => crypto.randomUUID(),
++    onStatus: renderDriveStatus,
++  });
++}
++
+ async function boot(): Promise<void> {
+   store = await openProjectStore();
+   vm = await getVm();
+   vm.on("PROJECT_CHANGED", markDirty);
+   const latest = await store.getLatest();
+   if (latest === null) {
+     const initial = await loadFixtureRecord();
+     await store.createOrReplace(initial, null);
+     await loadRecord(initial);
+   } else {
+     await loadRecord(latest);
+   }
+   diagnostic.ready = true;
++  driveReady = true;
++  renderDriveStatus(driveIntegration.getStatus());
+ }
+ 
++driveIntegration = setupDriveIntegration();
++
+ titleInput.addEventListener("input", markDirty);
+ newButton.addEventListener("click", () => void createNewProject());
+ openButton.addEventListener("click", () => fileInput.click());
+ fileInput.addEventListener("change", async () => {
+   const file = fileInput.files?.[0];
+   if (!file) return;
+   try {
+     await importProject(
+       await readSb3File(file),
+       file.name.replace(/\.sb3$/i, ""),
+@@ -416,15 +648,27 @@ fileInput.addEventListener("change", async () => {
+     retryButton.hidden = true;
+   } finally {
+     fileInput.value = "";
+   }
+ });
+ downloadButton.addEventListener("click", () => {
+   void exportCurrentSb3().then(download);
+ });
+ saveButton.addEventListener("click", () => void saveCoordinator.flush());
+ retryButton.addEventListener("click", () => void saveCoordinator.flush());
++connectGoogleButton.addEventListener("click", () => {
++  void driveIntegration.connect();
++});
++openDriveButton.addEventListener("click", () => {
++  void driveIntegration.openFromDrive();
++});
++saveDriveButton.addEventListener("click", () => {
++  void driveIntegration.saveToDrive();
++});
++disconnectGoogleButton.addEventListener("click", () => {
++  driveIntegration.disconnect();
++});
+ 
+ boot().catch(error => {
+   diagnostic.error = error instanceof Error ? error.message : String(error);
+   saveStatus.textContent = "Error";
+ });
+diff --git a/apps/editor-web/src/style.css b/apps/editor-web/src/style.css
+index 28ad0f2..8d39724 100644
+--- a/apps/editor-web/src/style.css
++++ b/apps/editor-web/src/style.css
+@@ -3,30 +3,31 @@ body,
+ #app {
+   margin: 0;
+   width: 100%;
+   height: 100%;
+   overflow: hidden;
+   font-family: system-ui, sans-serif;
+ }
+ 
+ #app {
+   display: grid;
+-  grid-template-rows: 44px minmax(0, 1fr);
++  grid-template-rows: 82px minmax(0, 1fr);
+ }
+ 
+ .toolbar {
+   position: fixed;
+   z-index: 2147483647;
+   inset: 0 0 auto;
+   box-sizing: border-box;
+-  height: 44px;
++  min-height: 82px;
+   display: flex;
++  flex-wrap: wrap;
+   align-items: center;
+   gap: 8px;
+   padding: 6px 10px;
+   background: #4c97ff;
+   color: white;
+ }
+ 
+ .toolbar input,
+ .toolbar button {
+   min-height: 30px;
+@@ -44,20 +45,33 @@ body,
+   background: white;
+   cursor: pointer;
+ }
+ 
+ #save-status {
+   margin-left: auto;
+   min-width: 78px;
+   text-align: right;
+ }
+ 
++.drive-controls {
++  flex-basis: 100%;
++  display: flex;
++  align-items: center;
++  gap: 8px;
++}
++
++#drive-status {
++  margin-left: auto;
++  min-width: 108px;
++  text-align: right;
++}
++
+ #scratch-gui,
+ #scratch-gui > div {
+   min-height: 0;
+   height: 100%;
+ }
+ 
+ #scratch-gui {
+   box-sizing: border-box;
+-  padding-top: 44px;
++  padding-top: 82px;
+ }
+diff --git a/packages/google-drive-sync/package.json b/packages/google-drive-sync/package.json
+new file mode 100644
+index 0000000..fba7c9c
+--- /dev/null
++++ b/packages/google-drive-sync/package.json
+@@ -0,0 +1,21 @@
++{
++  "name": "@blocksync/google-drive-sync",
++  "version": "0.0.0",
++  "private": true,
++  "type": "module",
++  "description": "Browser-only Google Drive .sb3 synchronization.",
++  "exports": {
++    ".": "./src/index.ts"
++  },
++  "scripts": {
++    "build": "tsc -p tsconfig.json",
++    "build:browser": "vite build",
++    "test": "vitest run",
++    "typecheck": "tsc -p tsconfig.json --noEmit"
++  },
++  "devDependencies": {
++    "typescript": "^5.8.3",
++    "vite": "^7.3.6",
++    "vitest": "^3.2.4"
++  }
++}
+diff --git a/packages/google-drive-sync/src/auth.ts b/packages/google-drive-sync/src/auth.ts
+new file mode 100644
+index 0000000..95f242d
+--- /dev/null
++++ b/packages/google-drive-sync/src/auth.ts
+@@ -0,0 +1,166 @@
++import {
++  DriveAuthenticationError,
++  DriveConfigurationError,
++  DriveNetworkError,
++} from "./errors.js";
++
++export const DRIVE_FILE_SCOPE =
++  "https://www.googleapis.com/auth/drive.file";
++
++const GOOGLE_SCRIPT_SOURCES = [
++  "https://accounts.google.com/gsi/client",
++  "https://apis.google.com/js/api.js",
++] as const;
++
++export interface GoogleScriptLoaderOptions {
++  appendScript?: (source: string) => Promise<void>;
++}
++
++function appendDomScript(source: string): Promise<void> {
++  return new Promise((resolve, reject) => {
++    const existing = document.querySelector<HTMLScriptElement>(
++      `script[src="${source}"]`,
++    );
++    if (existing?.dataset.blocksyncLoaded === "true") {
++      resolve();
++      return;
++    }
++    const script = existing ?? document.createElement("script");
++    script.src = source;
++    script.async = true;
++    script.defer = true;
++    script.addEventListener("load", () => {
++      script.dataset.blocksyncLoaded = "true";
++      resolve();
++    }, {once: true});
++    script.addEventListener(
++      "error",
++      () => reject(new DriveNetworkError(`Failed to load ${source}`)),
++      {once: true},
++    );
++    if (!existing) document.head.append(script);
++  });
++}
++
++export function loadGoogleScripts(
++  options: GoogleScriptLoaderOptions = {},
++): () => Promise<void> {
++  const appendScript = options.appendScript ?? appendDomScript;
++  let pending: Promise<void> | undefined;
++  return async () => {
++    pending ??= (async () => {
++      for (const source of GOOGLE_SCRIPT_SOURCES) {
++        await appendScript(source);
++      }
++    })().catch(error => {
++      pending = undefined;
++      throw error;
++    });
++    await pending;
++  };
++}
++
++export interface TokenResponse {
++  access_token?: string;
++  error?: string;
++  error_description?: string;
++}
++
++export interface GoogleOAuth2 {
++  initTokenClient(config: {
++    client_id: string;
++    scope: string;
++    callback(response: TokenResponse): void;
++    error_callback?(error: unknown): void;
++  }): {
++    requestAccessToken(options?: {prompt?: string}): void;
++  };
++  revoke?(accessToken: string, callback?: () => void): void;
++}
++
++export interface GoogleIdentityGlobal {
++  accounts: {oauth2: GoogleOAuth2};
++}
++
++export interface GoogleAuthorization {
++  connect(): Promise<string>;
++  disconnect(): void;
++  getAccessToken(): string | null;
++}
++
++export interface GoogleAuthorizationOptions {
++  clientId: string;
++  loadScripts: () => Promise<void>;
++  getGoogle: () => GoogleIdentityGlobal | undefined;
++}
++
++export function createGoogleAuthorization(
++  options: GoogleAuthorizationOptions,
++): GoogleAuthorization {
++  let accessToken: string | null = null;
++  let connectPromise: Promise<string> | null = null;
++  let generation = 0;
++
++  return {
++    async connect() {
++      if (connectPromise) return connectPromise;
++      if (!options.clientId) {
++        throw new DriveConfigurationError("Google client ID is not configured");
++      }
++      const connectGeneration = generation;
++      connectPromise = (async () => {
++        await options.loadScripts();
++        const google = options.getGoogle();
++        if (!google?.accounts?.oauth2) {
++          throw new DriveConfigurationError(
++            "Google Identity Services did not initialize",
++          );
++        }
++        return new Promise<string>((resolve, reject) => {
++        const client = google.accounts.oauth2.initTokenClient({
++          client_id: options.clientId,
++          scope: DRIVE_FILE_SCOPE,
++          callback(response) {
++            if (generation !== connectGeneration) {
++              reject(new DriveAuthenticationError(
++                "Google authorization was cancelled",
++              ));
++              return;
++            }
++            if (!response.access_token || response.error) {
++              reject(new DriveAuthenticationError(
++                response.error_description ??
++                  response.error ??
++                  "Google authorization failed",
++              ));
++              return;
++            }
++            accessToken = response.access_token;
++            resolve(accessToken);
++          },
++          error_callback(error) {
++            reject(new DriveAuthenticationError(
++              "Google authorization dialog failed",
++              {cause: error},
++            ));
++          },
++        });
++        client.requestAccessToken({prompt: accessToken ? "" : "consent"});
++        });
++      })().finally(() => {
++        connectPromise = null;
++      });
++      return connectPromise;
++    },
++    disconnect() {
++      generation += 1;
++      if (accessToken) {
++        options.getGoogle()?.accounts.oauth2.revoke?.(accessToken);
++      }
++      accessToken = null;
++    },
++    getAccessToken() {
++      return accessToken;
++    },
++  };
++}
+diff --git a/packages/google-drive-sync/src/drive.ts b/packages/google-drive-sync/src/drive.ts
+new file mode 100644
+index 0000000..0e8f747
+--- /dev/null
++++ b/packages/google-drive-sync/src/drive.ts
+@@ -0,0 +1,516 @@
++import {
++  DriveAuthenticationError,
++  DriveConflictError,
++  DriveFileNotFoundError,
++  DriveInvalidFileError,
++  DriveInvalidResponseError,
++  DriveNetworkError,
++  DrivePermissionError,
++  DriveQuotaError,
++  DriveSyncError,
++} from "./errors.js";
++import {SB3_MIME_TYPE} from "./picker.js";
++
++const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
++const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
++const DEFAULT_MAX_SB3_BYTES = 5 * 1024 * 1024;
++const METADATA_FIELDS = [
++  "id",
++  "name",
++  "mimeType",
++  "size",
++  "version",
++  "headRevisionId",
++  "appProperties",
++  "capabilities(canEdit,canDownload)",
++].join(",");
++
++export interface DriveSnapshot {
++  snapshotId: string;
++  leadershipEpoch: string;
++  stateHash: string;
++}
++
++export interface DriveObservation {
++  version: string;
++  snapshotId: string | null;
++}
++
++export interface DriveFileMetadata extends DriveObservation {
++  id: string;
++  name: string;
++  mimeType: string;
++  size: number;
++  headRevisionId: string | null;
++  leadershipEpoch: string | null;
++  stateHash: string | null;
++  canEdit: boolean;
++  canDownload: boolean;
++}
++
++export interface DriveWriteResult {
++  fileId: string;
++  observation: DriveObservation;
++}
++
++export interface CreateDriveFileInput {
++  fileId: string;
++  name: string;
++  bytes: Uint8Array;
++  snapshot: DriveSnapshot;
++}
++
++export interface UpdateDriveFileInput {
++  fileId: string;
++  bytes: Uint8Array;
++  knownObservation: DriveObservation;
++  snapshot: DriveSnapshot;
++}
++
++export interface DriveRestAdapter {
++  getMetadata(fileId: string, signal?: AbortSignal): Promise<DriveFileMetadata>;
++  readFile(fileId: string, signal?: AbortSignal): Promise<{
++    metadata: DriveFileMetadata;
++    bytes: Uint8Array;
++  }>;
++  reserveFileId(signal?: AbortSignal): Promise<string>;
++  createFile(
++    input: CreateDriveFileInput,
++    signal?: AbortSignal,
++  ): Promise<DriveWriteResult>;
++  updateFile(
++    input: UpdateDriveFileInput,
++    signal?: AbortSignal,
++  ): Promise<DriveWriteResult>;
++}
++
++export interface DriveRestAdapterOptions {
++  fetch: typeof fetch;
++  getAccessToken: () => string | null;
++  validateSb3: (bytes: Uint8Array) => Promise<boolean>;
++  maxBytes?: number;
++}
++
++function isRecord(value: unknown): value is Record<string, unknown> {
++  return typeof value === "object" && value !== null && !Array.isArray(value);
++}
++
++function throwIfAborted(signal?: AbortSignal): void {
++  if (!signal?.aborted) return;
++  throw signal.reason instanceof Error
++    ? signal.reason
++    : new DOMException("The operation was aborted", "AbortError");
++}
++
++async function responseError(response: Response): Promise<DriveSyncError> {
++  let reason = "";
++  try {
++    const body: unknown = await response.clone().json();
++    if (isRecord(body) && isRecord(body.error)) {
++      const errors = body.error.errors;
++      if (Array.isArray(errors) && isRecord(errors[0])) {
++        reason = typeof errors[0].reason === "string" ? errors[0].reason : "";
++      }
++    }
++  } catch {
++    // Status remains authoritative when Google returns a non-JSON error page.
++  }
++  if (response.status === 401) {
++    return new DriveAuthenticationError("Google access token expired");
++  }
++  if (
++    response.status === 429 ||
++    ["rateLimitExceeded", "userRateLimitExceeded", "storageQuotaExceeded"]
++      .includes(reason)
++  ) {
++    return new DriveQuotaError("Google Drive quota or rate limit exceeded");
++  }
++  if (response.status === 403) {
++    return new DrivePermissionError("Google Drive permission denied");
++  }
++  if (response.status === 404) {
++    return new DriveFileNotFoundError("Google Drive file was not found");
++  }
++  if (response.status >= 500) {
++    return new DriveNetworkError(
++      `Google Drive service failed (${response.status})`,
++    );
++  }
++  return new DriveInvalidResponseError(
++    `Unexpected Google Drive response (${response.status})`,
++  );
++}
++
++function parseMetadata(value: unknown): DriveFileMetadata {
++  if (!isRecord(value)) {
++    throw new DriveInvalidResponseError("Drive metadata is not an object");
++  }
++  const appProperties = isRecord(value.appProperties)
++    ? value.appProperties
++    : {};
++  const capabilities = isRecord(value.capabilities) ? value.capabilities : {};
++  const size = typeof value.size === "string" ? Number(value.size) : value.size;
++  if (
++    typeof value.id !== "string" ||
++    typeof value.name !== "string" ||
++    typeof value.mimeType !== "string" ||
++    typeof value.version !== "string" ||
++    typeof size !== "number" ||
++    !Number.isSafeInteger(size) ||
++    size < 0
++  ) {
++    throw new DriveInvalidResponseError("Drive metadata fields are invalid");
++  }
++  return {
++    id: value.id,
++    name: value.name,
++    mimeType: value.mimeType,
++    size,
++    version: value.version,
++    headRevisionId: typeof value.headRevisionId === "string"
++      ? value.headRevisionId
++      : null,
++    snapshotId: typeof appProperties.blocksyncSnapshotId === "string"
++      ? appProperties.blocksyncSnapshotId
++      : null,
++    leadershipEpoch:
++      typeof appProperties.blocksyncLeadershipEpoch === "string"
++        ? appProperties.blocksyncLeadershipEpoch
++        : null,
++    stateHash: typeof appProperties.blocksyncStateHash === "string"
++      ? appProperties.blocksyncStateHash
++      : null,
++    canEdit: capabilities.canEdit === true,
++    canDownload: capabilities.canDownload === true,
++  };
++}
++
++function snapshotMetadata(snapshot: DriveSnapshot): Record<string, string> {
++  return {
++    blocksyncSnapshotId: snapshot.snapshotId,
++    blocksyncLeadershipEpoch: snapshot.leadershipEpoch,
++    blocksyncStateHash: snapshot.stateHash,
++  };
++}
++
++function multipartBody(
++  fileId: string | undefined,
++  name: string | undefined,
++  bytes: Uint8Array,
++  snapshot: DriveSnapshot,
++): {body: Blob; contentType: string} {
++  const metadata: Record<string, unknown> = {
++    mimeType: SB3_MIME_TYPE,
++    appProperties: snapshotMetadata(snapshot),
++  };
++  if (fileId !== undefined) metadata.id = fileId;
++  if (name !== undefined) metadata.name = name;
++  const boundary = `blocksync_${crypto.randomUUID().replaceAll("-", "")}`;
++  const body = new Blob([
++    `--${boundary}\r\n`,
++    "Content-Type: application/json; charset=UTF-8\r\n\r\n",
++    JSON.stringify(metadata),
++    `\r\n--${boundary}\r\n`,
++    `Content-Type: ${SB3_MIME_TYPE}\r\n\r\n`,
++    bytes as BlobPart,
++    `\r\n--${boundary}--\r\n`,
++  ]);
++  return {
++    body,
++    contentType: `multipart/related; boundary=${boundary}`,
++  };
++}
++
++export function createDriveRestAdapter(
++  options: DriveRestAdapterOptions,
++): DriveRestAdapter {
++  const maxBytes = options.maxBytes ?? DEFAULT_MAX_SB3_BYTES;
++
++  const authorizedFetch = async (
++    url: string,
++    init: RequestInit = {},
++    signal?: AbortSignal,
++  ): Promise<Response> => {
++    throwIfAborted(signal);
++    const accessToken = options.getAccessToken();
++    if (!accessToken) {
++      throw new DriveAuthenticationError("Google is not connected");
++    }
++    let result: Response;
++    try {
++      result = await options.fetch(url, {
++        ...init,
++        signal,
++        headers: {
++          Authorization: `Bearer ${accessToken}`,
++          ...init.headers,
++        },
++      });
++    } catch (error) {
++      if (signal?.aborted) {
++        throwIfAborted(signal);
++      }
++      throw new DriveNetworkError("Google Drive request failed", {cause: error});
++    }
++    if (!result.ok) throw await responseError(result);
++    return result;
++  };
++
++  const getMetadata = async (
++    fileId: string,
++    signal?: AbortSignal,
++  ): Promise<DriveFileMetadata> => {
++    const query = new URLSearchParams({
++      fields: METADATA_FIELDS,
++      supportsAllDrives: "true",
++    });
++    const result = await authorizedFetch(
++      `${DRIVE_API}/${encodeURIComponent(fileId)}?${query}`,
++      {},
++      signal,
++    );
++    throwIfAborted(signal);
++    try {
++      return parseMetadata(await result.json());
++    } catch (error) {
++      if (error instanceof DriveInvalidResponseError) throw error;
++      throw new DriveInvalidResponseError(
++        "Drive metadata was not valid JSON",
++        {cause: error},
++      );
++    }
++  };
++
++  const reserveFileId = async (signal?: AbortSignal): Promise<string> => {
++    const query = new URLSearchParams({
++      count: "1",
++      space: "drive",
++      type: "files",
++    });
++    const result = await authorizedFetch(
++      `${DRIVE_API}/generateIds?${query}`,
++      {},
++      signal,
++    );
++    throwIfAborted(signal);
++    let value: unknown;
++    try {
++      value = await result.json();
++    } catch (error) {
++      throw new DriveInvalidResponseError(
++        "Drive generated ID response was not valid JSON",
++        {cause: error},
++      );
++    }
++    if (
++      !isRecord(value) ||
++      !Array.isArray(value.ids) ||
++      typeof value.ids[0] !== "string"
++    ) {
++      throw new DriveInvalidResponseError(
++        "Drive generated ID response has no file ID",
++      );
++    }
++    return value.ids[0];
++  };
++
++  const confirmAttempt = async (
++    fileId: string,
++    attemptedSnapshotId: string,
++    signal?: AbortSignal,
++  ): Promise<DriveWriteResult> => {
++    try {
++      const after = await getMetadata(fileId, signal);
++      throwIfAborted(signal);
++      if (after.snapshotId !== attemptedSnapshotId) {
++        throw new DriveConflictError(
++          "Drive changed during upload; automatic saves are stopped",
++          "post-write",
++        );
++      }
++      return {
++        fileId,
++        observation: {
++          version: after.version,
++          snapshotId: after.snapshotId,
++        },
++      };
++    } catch (error) {
++      if (error instanceof DriveSyncError) error.fileId ??= fileId;
++      throw error;
++    }
++  };
++
++  return {
++    getMetadata,
++    reserveFileId,
++    async readFile(fileId, signal) {
++      const metadata = await getMetadata(fileId, signal);
++      throwIfAborted(signal);
++      if (!metadata.canDownload) {
++        throw new DrivePermissionError("Drive file cannot be downloaded");
++      }
++      if (
++        metadata.size > maxBytes ||
++        !metadata.name.toLowerCase().endsWith(".sb3")
++      ) {
++        throw new DriveInvalidFileError(
++          "Selected Drive file is not a supported .sb3",
++        );
++      }
++      const query = new URLSearchParams({alt: "media", supportsAllDrives: "true"});
++      const result = await authorizedFetch(
++        `${DRIVE_API}/${encodeURIComponent(fileId)}?${query}`,
++        {},
++        signal,
++      );
++      throwIfAborted(signal);
++      const declaredSize = Number(result.headers.get("content-length"));
++      if (
++        Number.isFinite(declaredSize) &&
++        declaredSize > maxBytes
++      ) {
++        throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
++      }
++      if (!result.body) {
++        throw new DriveInvalidFileError(
++          "Drive download has no readable response body",
++        );
++      }
++      const reader = result.body.getReader();
++      const cancelOnAbort = (): void => {
++        void reader.cancel(signal?.reason).catch(() => undefined);
++      };
++      signal?.addEventListener("abort", cancelOnAbort, {once: true});
++      const chunks: Uint8Array[] = [];
++      let total = 0;
++      try {
++        while (true) {
++          throwIfAborted(signal);
++          const {done, value} = await reader.read();
++          throwIfAborted(signal);
++          if (done) break;
++          total += value.byteLength;
++          if (total > maxBytes) {
++            await reader.cancel();
++            throw new DriveInvalidFileError(
++              "Drive .sb3 exceeds the size limit",
++            );
++          }
++          chunks.push(value);
++        }
++      } finally {
++        signal?.removeEventListener("abort", cancelOnAbort);
++      }
++      if (total !== metadata.size) {
++        throw new DriveInvalidFileError("Drive .sb3 size is invalid");
++      }
++      const bytes = new Uint8Array(total);
++      let offset = 0;
++      for (const chunk of chunks) {
++        bytes.set(chunk, offset);
++        offset += chunk.byteLength;
++      }
++      if (!await options.validateSb3(bytes)) {
++        throw new DriveInvalidFileError("Drive file is not a valid .sb3");
++      }
++      return {metadata, bytes};
++    },
++    async createFile(input, signal) {
++      if (input.bytes.byteLength > maxBytes) {
++        throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
++      }
++      const fileId = input.fileId;
++      try {
++        const query = new URLSearchParams({
++          uploadType: "multipart",
++          supportsAllDrives: "true",
++        });
++        const multipart = multipartBody(
++          fileId,
++          input.name,
++          input.bytes,
++          input.snapshot,
++        );
++        const result = await authorizedFetch(`${DRIVE_UPLOAD_API}?${query}`, {
++          method: "POST",
++          headers: {"Content-Type": multipart.contentType},
++          body: multipart.body,
++        }, signal);
++        throwIfAborted(signal);
++        let value: unknown;
++        try {
++          value = await result.json();
++        } catch (error) {
++          throw new DriveInvalidResponseError(
++            "Drive create response was not valid JSON",
++            {cause: error},
++          );
++        }
++        if (!isRecord(value) || value.id !== fileId) {
++          throw new DriveInvalidResponseError(
++            "Drive create response did not confirm the reserved file ID",
++          );
++        }
++        return await confirmAttempt(
++          fileId,
++          input.snapshot.snapshotId,
++          signal,
++        );
++      } catch (error) {
++        const typed = error instanceof DriveSyncError
++          ? error
++          : new DriveInvalidResponseError(
++            "Drive create response could not be processed",
++            {cause: error},
++          );
++        typed.fileId ??= fileId;
++        throw typed;
++      }
++    },
++    async updateFile(input, signal) {
++      if (input.bytes.byteLength > maxBytes) {
++        throw new DriveInvalidFileError("Drive .sb3 exceeds the size limit");
++      }
++      const before = await getMetadata(input.fileId, signal);
++      throwIfAborted(signal);
++      if (!before.canEdit) {
++        throw new DrivePermissionError("Drive file is no longer editable");
++      }
++      if (
++        before.version !== input.knownObservation.version ||
++        before.snapshotId !== input.knownObservation.snapshotId
++      ) {
++        throw new DriveConflictError(
++          "Drive file differs from the last observed version",
++          "pre-write",
++        );
++      }
++      const query = new URLSearchParams({
++        uploadType: "multipart",
++        supportsAllDrives: "true",
++      });
++      const multipart = multipartBody(
++        undefined,
++        undefined,
++        input.bytes,
++        input.snapshot,
++      );
++      await authorizedFetch(
++        `${DRIVE_UPLOAD_API}/${encodeURIComponent(input.fileId)}?${query}`,
++        {
++          method: "PATCH",
++          headers: {"Content-Type": multipart.contentType},
++          body: multipart.body,
++        },
++        signal,
++      );
++      throwIfAborted(signal);
++      return confirmAttempt(
++        input.fileId,
++        input.snapshot.snapshotId,
++        signal,
++      );
++    },
++  };
++}
+diff --git a/packages/google-drive-sync/src/errors.ts b/packages/google-drive-sync/src/errors.ts
+new file mode 100644
+index 0000000..aa729e1
+--- /dev/null
++++ b/packages/google-drive-sync/src/errors.ts
+@@ -0,0 +1,88 @@
++export type DriveErrorCode =
++  | "configuration"
++  | "authentication"
++  | "permission"
++  | "quota"
++  | "network"
++  | "invalid-file"
++  | "invalid-response"
++  | "conflict";
++
++export class DriveSyncError extends Error {
++  fileId?: string;
++
++  constructor(
++    message: string,
++    readonly code: DriveErrorCode,
++    options?: ErrorOptions,
++  ) {
++    super(message, options);
++    this.name = "DriveSyncError";
++  }
++}
++
++export class DriveConfigurationError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "configuration", options);
++    this.name = "DriveConfigurationError";
++  }
++}
++
++export class DriveAuthenticationError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "authentication", options);
++    this.name = "DriveAuthenticationError";
++  }
++}
++
++export class DrivePermissionError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "permission", options);
++    this.name = "DrivePermissionError";
++  }
++}
++
++export class DriveQuotaError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "quota", options);
++    this.name = "DriveQuotaError";
++  }
++}
++
++export class DriveNetworkError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "network", options);
++    this.name = "DriveNetworkError";
++  }
++}
++
++export class DriveInvalidFileError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "invalid-file", options);
++    this.name = "DriveInvalidFileError";
++  }
++}
++
++export class DriveFileNotFoundError extends DriveInvalidFileError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, options);
++    this.name = "DriveFileNotFoundError";
++  }
++}
++
++export class DriveInvalidResponseError extends DriveSyncError {
++  constructor(message: string, options?: ErrorOptions) {
++    super(message, "invalid-response", options);
++    this.name = "DriveInvalidResponseError";
++  }
++}
++
++export class DriveConflictError extends DriveSyncError {
++  constructor(
++    message: string,
++    readonly phase: "pre-write" | "post-write",
++  ) {
++    super(message, "conflict");
++    this.name = "DriveConflictError";
++  }
++}
+diff --git a/packages/google-drive-sync/src/index.test.ts b/packages/google-drive-sync/src/index.test.ts
+new file mode 100644
+index 0000000..4083253
+--- /dev/null
++++ b/packages/google-drive-sync/src/index.test.ts
+@@ -0,0 +1,527 @@
++import {describe, expect, it, vi} from "vitest";
++import {
++  DRIVE_FILE_SCOPE,
++  DriveAuthenticationError,
++  DriveConflictError,
++  DriveFileNotFoundError,
++  DriveInvalidFileError,
++  DriveNetworkError,
++  DrivePermissionError,
++  DriveQuotaError,
++  createDriveRestAdapter,
++  createGoogleAuthorization,
++  createGooglePicker,
++  loadGoogleScripts,
++} from "./index.js";
++
++const validSb3 = new Uint8Array([80, 75, 3, 4]);
++
++function response(
++  status: number,
++  body: unknown,
++  headers: Record<string, string> = {},
++): Response {
++  return new Response(
++    body instanceof Uint8Array ? body : JSON.stringify(body),
++    {
++      status,
++      headers: {
++        "content-type": body instanceof Uint8Array
++          ? "application/x.scratch.sb3"
++          : "application/json",
++        ...headers,
++      },
++    },
++  );
++}
++
++function metadata(overrides: Record<string, unknown> = {}) {
++  return {
++    id: "file-1",
++    name: "Project.sb3",
++    mimeType: "application/x.scratch.sb3",
++    size: "4",
++    version: "7",
++    headRevisionId: "head-7",
++    appProperties: {
++      blocksyncSnapshotId: "snapshot-1",
++      blocksyncLeadershipEpoch: "3",
++      blocksyncStateHash: "hash-1",
++    },
++    capabilities: {canEdit: true, canDownload: true},
++    ...overrides,
++  };
++}
++
++describe("Google authorization", () => {
++  it("requests exactly drive.file and retains the token only in memory", async () => {
++    let configuredScope = "";
++    let callback: (value: {access_token?: string; error?: string}) => void =
++      () => undefined;
++    const storageWrites = vi.fn();
++    vi.stubGlobal("localStorage", {setItem: storageWrites});
++    const auth = createGoogleAuthorization({
++      clientId: "client-id",
++      loadScripts: async () => undefined,
++      getGoogle: () => ({
++        accounts: {
++          oauth2: {
++            initTokenClient(config) {
++              configuredScope = config.scope;
++              callback = config.callback;
++              return {
++                requestAccessToken() {
++                  callback({access_token: "memory-token"});
++                },
++              };
++            },
++            revoke: vi.fn(),
++          },
++        },
++      }),
++    });
++
++    await expect(auth.connect()).resolves.toBe("memory-token");
++    expect(configuredScope).toBe(DRIVE_FILE_SCOPE);
++    expect(DRIVE_FILE_SCOPE).toBe(
++      "https://www.googleapis.com/auth/drive.file",
++    );
++    expect(auth.getAccessToken()).toBe("memory-token");
++    expect(storageWrites).not.toHaveBeenCalled();
++    vi.unstubAllGlobals();
++  });
++
++  it("shares one in-flight token request across concurrent connects", async () => {
++    let callback: (value: {access_token?: string; error?: string}) => void =
++      () => undefined;
++    const requestAccessToken = vi.fn();
++    const initTokenClient = vi.fn(config => {
++      callback = config.callback;
++      return {requestAccessToken};
++    });
++    const auth = createGoogleAuthorization({
++      clientId: "client-id",
++      loadScripts: async () => undefined,
++      getGoogle: () => ({
++        accounts: {oauth2: {initTokenClient}},
++      }),
++    });
++
++    const first = auth.connect();
++    const second = auth.connect();
++    await Promise.resolve();
++    callback({access_token: "shared-token"});
++
++    await expect(Promise.all([first, second])).resolves.toEqual([
++      "shared-token",
++      "shared-token",
++    ]);
++    expect(initTokenClient).toHaveBeenCalledTimes(1);
++    expect(requestAccessToken).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe("Google script loading", () => {
++  it("does not add scripts until explicitly requested and loads each once", async () => {
++    const appended: string[] = [];
++    const loader = loadGoogleScripts({
++      appendScript: async source => {
++        appended.push(source);
++      },
++    });
++
++    expect(appended).toEqual([]);
++    await loader();
++    await loader();
++
++    expect(appended).toEqual([
++      "https://accounts.google.com/gsi/client",
++      "https://apis.google.com/js/api.js",
++    ]);
++  });
++});
++
++describe("Google Picker", () => {
++  it("returns null on cancellation and the selected file ID on pick", async () => {
++    let pickerCallback: (data: Record<string, unknown>) => void =
++      () => undefined;
++    const picker = createGooglePicker({
++      apiKey: "api-key",
++      appId: "app-id",
++      initializePicker: async () => undefined,
++      buildPicker: options => {
++        pickerCallback = options.callback;
++        expect(options.mimeType).toBe("application/x.scratch.sb3");
++        expect(options.accessToken).toBe("token");
++        return {setVisible: vi.fn()};
++      },
++    });
++
++    const cancelled = picker.pickFile("token");
++    await Promise.resolve();
++    pickerCallback({action: "cancel"});
++    await expect(cancelled).resolves.toBeNull();
++
++    const selected = picker.pickFile("token");
++    await Promise.resolve();
++    pickerCallback({action: "picked", documents: [{id: "selected-file"}]});
++    await expect(selected).resolves.toBe("selected-file");
++  });
++});
++
++describe("Drive REST adapter", () => {
++  it("creates with multipart metadata/media and reads validated SB3 bytes", async () => {
++    const fetch = vi.fn()
++      .mockResolvedValueOnce(response(200, {
++        ids: ["reserved-id"],
++        space: "drive",
++        kind: "drive#generatedIds",
++      }))
++      .mockResolvedValueOnce(response(200, {id: "reserved-id"}))
++      .mockResolvedValueOnce(response(200, metadata({
++        id: "reserved-id",
++        version: "1",
++        appProperties: {blocksyncSnapshotId: "snapshot-new"},
++      })))
++      .mockResolvedValueOnce(response(200, metadata({
++        mimeType: "application/octet-stream",
++      })))
++      .mockResolvedValueOnce(response(200, validSb3, {"content-length": "4"}));
++    const validateSb3 = vi.fn(async () => true);
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3,
++    });
++    const signal = new AbortController().signal;
++
++    const reservedFileId = await drive.reserveFileId(signal);
++    const created = await drive.createFile({
++      fileId: reservedFileId,
++      name: "Project.sb3",
++      bytes: validSb3,
++      snapshot: {
++        snapshotId: "snapshot-new",
++        leadershipEpoch: "4",
++        stateHash: "hash-new",
++      },
++    }, signal);
++    const downloaded = await drive.readFile("file-1", signal);
++
++    expect(fetch.mock.calls[0]![0]).toBe(
++      "https://www.googleapis.com/drive/v3/files/generateIds?count=1&space=drive&type=files",
++    );
++    expect(fetch.mock.calls[1]![0]).toBe(
++      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
++    );
++    expect(fetch.mock.calls[1]![1]).toMatchObject({
++      method: "POST",
++      headers: {
++        Authorization: "Bearer token",
++        "Content-Type": expect.stringMatching(
++          /^multipart\/related; boundary=/,
++        ),
++      },
++    });
++    const createBody = await (fetch.mock.calls[1]![1].body as Blob).text();
++    expect(createBody).toContain('"id":"reserved-id"');
++    expect(createBody).toContain('"name":"Project.sb3"');
++    expect(createBody).toContain('"blocksyncSnapshotId":"snapshot-new"');
++    expect(createBody).toContain("Content-Type: application/json; charset=UTF-8");
++    expect(createBody).toContain(
++      "Content-Type: application/x.scratch.sb3",
++    );
++    expect(created.fileId).toBe("reserved-id");
++    expect(downloaded.bytes).toEqual(validSb3);
++    expect(validateSb3).toHaveBeenCalledWith(validSb3);
++    expect(fetch.mock.calls.every(call => call[1]?.signal === signal)).toBe(true);
++  });
++
++  it("updates only after matching observation and checks attempted snapshot after write", async () => {
++    const fetch = vi.fn()
++      .mockResolvedValueOnce(response(200, metadata()))
++      .mockResolvedValueOnce(response(200, {id: "file-1"}))
++      .mockResolvedValueOnce(response(200, metadata({
++        version: "8",
++        appProperties: {blocksyncSnapshotId: "snapshot-2"},
++      })));
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++    const signal = new AbortController().signal;
++
++    await drive.updateFile({
++      fileId: "file-1",
++      bytes: validSb3,
++      knownObservation: {version: "7", snapshotId: "snapshot-1"},
++      snapshot: {
++        snapshotId: "snapshot-2",
++        leadershipEpoch: "4",
++        stateHash: "hash-2",
++      },
++    }, signal);
++
++    expect(fetch.mock.calls[1]![0]).toBe(
++      "https://www.googleapis.com/upload/drive/v3/files/file-1?uploadType=multipart&supportsAllDrives=true",
++    );
++    expect(fetch.mock.calls[1]![1].method).toBe("PATCH");
++    expect(fetch.mock.calls.every(call => call[1]?.signal === signal)).toBe(true);
++  });
++
++  it("refuses a pre-write observation conflict without uploading", async () => {
++    const fetch = vi.fn().mockResolvedValue(
++      response(200, metadata({version: "8"})),
++    );
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    await expect(drive.updateFile({
++      fileId: "file-1",
++      bytes: validSb3,
++      knownObservation: {version: "7", snapshotId: "snapshot-1"},
++      snapshot: {
++        snapshotId: "snapshot-2",
++        leadershipEpoch: "4",
++        stateHash: "hash-2",
++      },
++    })).rejects.toBeInstanceOf(DriveConflictError);
++    expect(fetch).toHaveBeenCalledTimes(1);
++  });
++
++  it("reports post-write mismatch as best-effort conflict detection", async () => {
++    const fetch = vi.fn()
++      .mockResolvedValueOnce(response(200, metadata()))
++      .mockResolvedValueOnce(response(200, {id: "file-1"}))
++      .mockResolvedValueOnce(response(200, metadata({
++        version: "8",
++        appProperties: {blocksyncSnapshotId: "other-writer"},
++      })));
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    await expect(drive.updateFile({
++      fileId: "file-1",
++      bytes: validSb3,
++      knownObservation: {version: "7", snapshotId: "snapshot-1"},
++      snapshot: {
++        snapshotId: "snapshot-2",
++        leadershipEpoch: "4",
++        stateHash: "hash-2",
++      },
++    })).rejects.toMatchObject({
++      name: "DriveConflictError",
++      phase: "post-write",
++    });
++  });
++
++  it.each([
++    ["POST", response(500, {})],
++    ["JSON", response(200, {})],
++  ])("attaches a reserved file ID when create %s fails", async (
++    _phase,
++    createResponse,
++  ) => {
++    const fetch = vi.fn().mockResolvedValueOnce(createResponse);
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    await expect(drive.createFile({
++      fileId: "reserved-id",
++      name: "Project.sb3",
++      bytes: validSb3,
++      snapshot: {
++        snapshotId: "snapshot-new",
++        leadershipEpoch: "0",
++        stateHash: "hash-new",
++      },
++    })).rejects.toMatchObject({fileId: "reserved-id"});
++  });
++
++  it("attaches the reserved file ID when create confirmation fails", async () => {
++    const fetch = vi.fn()
++      .mockResolvedValueOnce(response(200, {id: "reserved-id"}))
++      .mockResolvedValueOnce(response(200, metadata({
++        id: "reserved-id",
++        appProperties: {blocksyncSnapshotId: "other"},
++      })));
++    const drive = createDriveRestAdapter({
++      fetch,
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    await expect(drive.createFile({
++      fileId: "reserved-id",
++      name: "Project.sb3",
++      bytes: validSb3,
++      snapshot: {
++        snapshotId: "snapshot-new",
++        leadershipEpoch: "0",
++        stateHash: "hash-new",
++      },
++    })).rejects.toMatchObject({
++      fileId: "reserved-id",
++      phase: "post-write",
++    });
++  });
++
++  it.each([
++    [401, {}, DriveAuthenticationError],
++    [403, {}, DrivePermissionError],
++    [403, {error: {errors: [{reason: "userRateLimitExceeded"}]}}, DriveQuotaError],
++    [404, {}, DriveFileNotFoundError],
++    [429, {}, DriveQuotaError],
++    [500, {}, DriveNetworkError],
++  ])("maps HTTP %i failures", async (status, body, errorType) => {
++    const drive = createDriveRestAdapter({
++      fetch: vi.fn(async () => response(status, body)),
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++    await expect(drive.getMetadata("file-1")).rejects.toBeInstanceOf(errorType);
++  });
++
++  it("maps fetch rejection to a network error", async () => {
++    const drive = createDriveRestAdapter({
++      fetch: vi.fn(async () => {
++        throw new TypeError("offline");
++      }),
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++    await expect(drive.getMetadata("file-1")).rejects.toBeInstanceOf(
++      DriveNetworkError,
++    );
++  });
++
++  it("rejects oversized and invalid downloads before returning bytes", async () => {
++    const validateSb3 = vi.fn(async () => false);
++    const oversizedFetch = vi.fn()
++      .mockResolvedValueOnce(response(200, metadata({size: "5242881"})));
++    const oversized = createDriveRestAdapter({
++      fetch: oversizedFetch,
++      getAccessToken: () => "token",
++      validateSb3,
++    });
++    await expect(oversized.readFile("file-1")).rejects.toBeInstanceOf(
++      DriveInvalidFileError,
++    );
++    expect(oversizedFetch).toHaveBeenCalledTimes(1);
++
++    const invalid = createDriveRestAdapter({
++      fetch: vi.fn()
++        .mockResolvedValueOnce(response(200, metadata()))
++        .mockResolvedValueOnce(response(200, validSb3, {"content-length": "4"})),
++      getAccessToken: () => "token",
++      validateSb3,
++    });
++    await expect(invalid.readFile("file-1")).rejects.toBeInstanceOf(
++      DriveInvalidFileError,
++    );
++  });
++
++  it("cancels a download stream immediately after the cap is exceeded", async () => {
++    const cancelled = vi.fn();
++    const body = new ReadableStream<Uint8Array>({
++      start(controller) {
++        controller.enqueue(new Uint8Array([1, 2, 3]));
++        controller.enqueue(new Uint8Array([4, 5, 6]));
++      },
++      cancel: cancelled,
++    });
++    const download = new Response(body, {
++      headers: {"content-length": "1"},
++    });
++    const arrayBuffer = vi.spyOn(download, "arrayBuffer");
++    const drive = createDriveRestAdapter({
++      fetch: vi.fn()
++        .mockResolvedValueOnce(response(200, metadata({size: "4"})))
++        .mockResolvedValueOnce(download),
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++      maxBytes: 4,
++    });
++
++    await expect(drive.readFile("file-1")).rejects.toBeInstanceOf(
++      DriveInvalidFileError,
++    );
++    expect(cancelled).toHaveBeenCalled();
++    expect(arrayBuffer).not.toHaveBeenCalled();
++  });
++
++  it("rejects download responses without a readable body", async () => {
++    const download = response(200, validSb3);
++    Object.defineProperty(download, "body", {value: null});
++    const arrayBuffer = vi.spyOn(download, "arrayBuffer");
++    const drive = createDriveRestAdapter({
++      fetch: vi.fn()
++        .mockResolvedValueOnce(response(200, metadata()))
++        .mockResolvedValueOnce(download),
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    await expect(drive.readFile("file-1")).rejects.toBeInstanceOf(
++      DriveInvalidFileError,
++    );
++    expect(arrayBuffer).not.toHaveBeenCalled();
++  });
++
++  it("cancels an in-flight download stream when its signal aborts", async () => {
++    let secondReadStarted!: () => void;
++    const firstChunkReady = new Promise<void>(resolve => {
++      secondReadStarted = resolve;
++    });
++    let finishRead!: (value: {done: true; value?: undefined}) => void;
++    const pendingRead = new Promise<{done: true; value?: undefined}>(resolve => {
++      finishRead = resolve;
++    });
++    const cancelled = vi.fn(async () => {
++      finishRead({done: true});
++    });
++    const reader = {
++      read: vi.fn()
++        .mockResolvedValueOnce({
++          done: false,
++          value: new Uint8Array([1]),
++        })
++        .mockImplementationOnce(() => {
++          secondReadStarted();
++          return pendingRead;
++        }),
++      cancel: cancelled,
++    };
++    const download = {
++      ok: true,
++      status: 200,
++      headers: new Headers(),
++      body: {getReader: () => reader},
++    } as unknown as Response;
++    const controller = new AbortController();
++    const drive = createDriveRestAdapter({
++      fetch: vi.fn()
++        .mockResolvedValueOnce(response(200, metadata({size: "4"})))
++        .mockResolvedValueOnce(download),
++      getAccessToken: () => "token",
++      validateSb3: async () => true,
++    });
++
++    const reading = drive.readFile("file-1", controller.signal);
++    await firstChunkReady;
++    controller.abort();
++
++    await expect(reading).rejects.toMatchObject({name: "AbortError"});
++    expect(cancelled).toHaveBeenCalled();
++  });
++});
+diff --git a/packages/google-drive-sync/src/index.ts b/packages/google-drive-sync/src/index.ts
+new file mode 100644
+index 0000000..71edbd2
+--- /dev/null
++++ b/packages/google-drive-sync/src/index.ts
+@@ -0,0 +1,43 @@
++export {
++  DRIVE_FILE_SCOPE,
++  createGoogleAuthorization,
++  loadGoogleScripts,
++  type GoogleAuthorization,
++  type GoogleAuthorizationOptions,
++  type GoogleIdentityGlobal,
++  type GoogleOAuth2,
++  type GoogleScriptLoaderOptions,
++  type TokenResponse,
++} from "./auth.js";
++export {
++  createDriveRestAdapter,
++  type CreateDriveFileInput,
++  type DriveFileMetadata,
++  type DriveObservation,
++  type DriveRestAdapter,
++  type DriveRestAdapterOptions,
++  type DriveSnapshot,
++  type DriveWriteResult,
++  type UpdateDriveFileInput,
++} from "./drive.js";
++export {
++  DriveAuthenticationError,
++  DriveConfigurationError,
++  DriveConflictError,
++  DriveFileNotFoundError,
++  DriveInvalidFileError,
++  DriveInvalidResponseError,
++  DriveNetworkError,
++  DrivePermissionError,
++  DriveQuotaError,
++  DriveSyncError,
++  type DriveErrorCode,
++} from "./errors.js";
++export {
++  SB3_MIME_TYPE,
++  createGooglePicker,
++  type GooglePicker,
++  type GooglePickerOptions,
++  type PickerBuildOptions,
++  type PickerCallbackData,
++} from "./picker.js";
+diff --git a/packages/google-drive-sync/src/picker.ts b/packages/google-drive-sync/src/picker.ts
+new file mode 100644
+index 0000000..79b1e96
+--- /dev/null
++++ b/packages/google-drive-sync/src/picker.ts
+@@ -0,0 +1,70 @@
++import {DriveConfigurationError} from "./errors.js";
++
++export const SB3_MIME_TYPE = "application/x.scratch.sb3";
++
++export interface PickerCallbackData {
++  action?: string;
++  documents?: Array<{id?: string}>;
++}
++
++export interface PickerBuildOptions {
++  apiKey: string;
++  appId: string;
++  accessToken: string;
++  mimeType: string;
++  callback(data: PickerCallbackData): void;
++}
++
++export interface GooglePicker {
++  pickFile(accessToken: string): Promise<string | null>;
++}
++
++export interface GooglePickerOptions {
++  apiKey: string;
++  appId: string;
++  initializePicker: () => Promise<void>;
++  buildPicker: (options: PickerBuildOptions) => {
++    setVisible(visible: boolean): void;
++  };
++}
++
++export function createGooglePicker(options: GooglePickerOptions): GooglePicker {
++  let initialized = false;
++  return {
++    async pickFile(accessToken) {
++      if (!options.apiKey || !options.appId) {
++        throw new DriveConfigurationError(
++          "Google Picker API key and app ID are required",
++        );
++      }
++      if (!initialized) {
++        await options.initializePicker();
++        initialized = true;
++      }
++      return new Promise<string | null>((resolve, reject) => {
++        const picker = options.buildPicker({
++          apiKey: options.apiKey,
++          appId: options.appId,
++          accessToken,
++          mimeType: SB3_MIME_TYPE,
++          callback(data) {
++            if (data.action === "cancel") {
++              resolve(null);
++              return;
++            }
++            if (data.action !== "picked") return;
++            const fileId = data.documents?.[0]?.id;
++            if (!fileId) {
++              reject(new DriveConfigurationError(
++                "Google Picker returned no file ID",
++              ));
++              return;
++            }
++            resolve(fileId);
++          },
++        });
++        picker.setVisible(true);
++      });
++    },
++  };
++}
+diff --git a/packages/google-drive-sync/tsconfig.json b/packages/google-drive-sync/tsconfig.json
+new file mode 100644
+index 0000000..2aa5024
+--- /dev/null
++++ b/packages/google-drive-sync/tsconfig.json
+@@ -0,0 +1,10 @@
++{
++  "extends": "../../tsconfig.base.json",
++  "compilerOptions": {
++    "lib": ["ES2022", "DOM"],
++    "outDir": "dist",
++    "rootDir": "src"
++  },
++  "include": ["src/**/*"],
++  "exclude": ["src/**/*.test.ts"]
++}
+diff --git a/packages/google-drive-sync/vite.config.ts b/packages/google-drive-sync/vite.config.ts
+new file mode 100644
+index 0000000..4fc5f54
+--- /dev/null
++++ b/packages/google-drive-sync/vite.config.ts
+@@ -0,0 +1,11 @@
++import {defineConfig} from "vite";
++
++export default defineConfig({
++  build: {
++    lib: {
++      entry: "src/index.ts",
++      formats: ["es"],
++      fileName: "google-drive-sync",
++    },
++  },
++});
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index d83ffe9..41585ad 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -18,33 +18,42 @@ importers:
+         version: 6.0.1
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+   apps/editor-web:
+     dependencies:
++      '@blocksync/google-drive-sync':
++        specifier: workspace:*
++        version: link:../../packages/google-drive-sync
+       '@blocksync/project-local-core':
+         specifier: workspace:*
+         version: link:../../packages/project-local-core
+       '@blocksync/project-store-idb':
+         specifier: workspace:*
+         version: link:../../packages/project-store-idb
+       '@blocksync/sb3-tools':
+         specifier: workspace:*
+         version: link:../../packages/sb3-tools
+     devDependencies:
++      '@blocksync/project-schema':
++        specifier: workspace:*
++        version: link:../../packages/project-schema
+       '@playwright/test':
+         specifier: ^1.52.0
+         version: 1.61.1
++      fake-indexeddb:
++        specifier: ^6.2.2
++        version: 6.2.5
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vite:
+         specifier: ^7.3.6
+         version: 7.3.6(@types/node@24.13.3)(tsx@4.23.1)
+       vitest:
+         specifier: ^3.2.4
+         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
+@@ -288,20 +297,32 @@ importers:
+         specifier: ^13.6.27
+         version: 13.6.31
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:
+         specifier: ^3.2.4
+         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+ 
++  packages/google-drive-sync:
++    devDependencies:
++      typescript:
++        specifier: ^5.8.3
++        version: 5.9.3
++      vite:
++        specifier: ^7.3.6
++        version: 7.3.6(@types/node@24.13.3)(tsx@4.23.1)
++      vitest:
++        specifier: ^3.2.4
++        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
++
+   packages/google-identity:
+     dependencies:
+       jose:
+         specifier: ^6.0.11
+         version: 6.2.3
+     devDependencies:
+       typescript:
+         specifier: ^5.8.3
+         version: 5.9.3
+       vitest:

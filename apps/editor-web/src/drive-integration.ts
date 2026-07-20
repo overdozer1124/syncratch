@@ -2,6 +2,7 @@ import {
   DriveAuthenticationError,
   DriveConflictError,
   DriveFileNotFoundError,
+  DrivePermissionError,
   DriveSyncError,
   type DriveObservation,
   type DriveRestAdapter,
@@ -60,23 +61,31 @@ export interface EditorDriveDependencies {
    * Only the current room leader may write; solo operation always may. When it
    * returns not-ok the save is refused without claiming remote save success.
    */
-  canPersistToDrive?(): {ok: boolean; reason?: string};
+  canPersistToDrive?(options?: {explicit?: boolean}): {
+    ok: boolean;
+    reason?: string;
+  };
 }
 
 export interface EditorDriveIntegration {
   getStatus(): EditorDriveStatus;
   isConnected(): boolean;
   connect(): Promise<boolean>;
+  tryRestoreSession(): Promise<boolean>;
   disconnect(): void;
   openFromDrive(): Promise<boolean>;
   openCollaborationFile(fileId: string): Promise<boolean>;
   reobserveCurrentFile(): Promise<boolean>;
-  saveToDrive(): Promise<boolean>;
+  saveToDrive(options?: {explicit?: boolean}): Promise<boolean>;
   markLocalChange(): void;
 }
 
 function projectTitle(fileName: string): string {
   return fileName.replace(/\.sb3$/i, "") || "Drive project";
+}
+
+interface TrackedObservation extends DriveObservation {
+  contentHash: string;
 }
 
 export function createEditorDriveIntegration(
@@ -85,7 +94,7 @@ export function createEditorDriveIntegration(
   let status: EditorDriveStatus = dependencies.configured
     ? "disconnected"
     : "not-configured";
-  const observations = new Map<string, DriveObservation>();
+  const observations = new Map<string, TrackedObservation>();
   const boundFiles = new Map<string, string>();
   const pendingCreates = new Set<string>();
   const controllers = new Set<AbortController>();
@@ -94,6 +103,20 @@ export function createEditorDriveIntegration(
     generation: number;
     promise: Promise<boolean>;
   } | null = null;
+
+  const trackObservation = (
+    fileId: string,
+    observation: DriveObservation,
+    contentHash: string,
+  ): TrackedObservation => {
+    const tracked = {
+      version: observation.version,
+      snapshotId: observation.snapshotId,
+      contentHash,
+    };
+    observations.set(fileId, tracked);
+    return tracked;
+  };
 
   interface Operation {
     generation: number;
@@ -169,6 +192,11 @@ export function createEditorDriveIntegration(
     isConnected() {
       return dependencies.auth.getAccessToken() !== null;
     },
+    async tryRestoreSession() {
+      if (!dependencies.configured) return false;
+      if (!dependencies.auth.canRestoreSession()) return false;
+      return this.connect();
+    },
     async connect() {
       if (!dependencies.configured) return false;
       const operation = beginOperation();
@@ -212,19 +240,32 @@ export function createEditorDriveIntegration(
             throw error;
           }
           if (!isActive(operation)) return false;
-          if (
-            metadata.stateHash === null ||
-            metadata.stateHash !== localStateHash
-          ) {
-            throw new DriveConflictError(
-              "Drive content differs from the committed local project; open from Drive to resolve",
-              "pre-write",
+          if (metadata.stateHash !== localStateHash) {
+            if (metadata.stateHash !== null) {
+              throw new DriveConflictError(
+                "Drive content differs from the committed local project; open from Drive to resolve",
+                "pre-write",
+              );
+            }
+            const downloaded = await dependencies.drive.readFile(
+              current.driveFileId,
+              operation.controller.signal,
             );
+            if (!isActive(operation)) return false;
+            const remoteHash = await dependencies.hashBytes(downloaded.bytes);
+            if (!isActive(operation)) return false;
+            if (remoteHash !== localStateHash) {
+              throw new DriveConflictError(
+                "Drive content differs from the committed local project; open from Drive to resolve",
+                "pre-write",
+              );
+            }
           }
-          observations.set(current.driveFileId, {
-            version: metadata.version,
-            snapshotId: metadata.snapshotId,
-          });
+          trackObservation(
+            current.driveFileId,
+            metadata,
+            localStateHash,
+          );
           boundFiles.set(current.localProjectId, current.driveFileId);
         }
         if (!isActive(operation)) return false;
@@ -269,10 +310,16 @@ export function createEditorDriveIntegration(
           operation.controller.signal,
         );
         if (!isActive(operation)) return false;
-        observations.set(fileId, {
-          version: downloaded.metadata.version,
-          snapshotId: downloaded.metadata.snapshotId,
-        });
+        const contentHash = await dependencies.hashBytes(downloaded.bytes);
+        if (!isActive(operation)) return false;
+        // Re-read metadata after Picker/download; Drive may bump version when
+        // drive.file access is granted without changing file bytes.
+        const fresh = await dependencies.drive.getMetadata(
+          fileId,
+          operation.controller.signal,
+        );
+        if (!isActive(operation)) return false;
+        trackObservation(fileId, fresh, contentHash);
         boundFiles.set(dependencies.getCurrent().localProjectId, fileId);
         setStatus("synced");
         return true;
@@ -283,17 +330,60 @@ export function createEditorDriveIntegration(
       }
     },
     async openCollaborationFile(fileId) {
-      if (!dependencies.auth.getAccessToken()) {
+      const accessToken = dependencies.auth.getAccessToken();
+      if (!accessToken) {
         setStatus("unsynced", "Connect Google before joining a room");
         return false;
       }
       const operation = beginOperation();
       setStatus("syncing");
       try {
-        const downloaded = await dependencies.drive.readFile(
-          fileId,
-          operation.controller.signal,
-        );
+        // drive.file scope cannot read an arbitrary shared fileId until this
+        // Google account has opened that file with this app (Picker). Try the
+        // invite id first; on not-found/permission, require an explicit pick of
+        // the same file so the app becomes authorized for it.
+        let downloaded: Awaited<
+          ReturnType<DriveRestAdapter["readFile"]>
+        >;
+        try {
+          downloaded = await dependencies.drive.readFile(
+            fileId,
+            operation.controller.signal,
+          );
+        } catch (error) {
+          if (
+            !(error instanceof DriveFileNotFoundError) &&
+            !(error instanceof DrivePermissionError)
+          ) {
+            throw error;
+          }
+          setStatus(
+            "syncing",
+            "Pick the Drive file the host shared with this Google account",
+          );
+          const pickedId = await dependencies.picker.pickFile(accessToken, {
+            fileIds: [fileId],
+          });
+          if (!isActive(operation)) return false;
+          if (pickedId === null) {
+            setStatus(
+              "unsynced",
+              "Join cancelled. Share the host file, then Join and pick it",
+            );
+            return false;
+          }
+          if (pickedId !== fileId) {
+            setStatus(
+              "unsynced",
+              "Wrong Drive file selected. Pick the same file the host shared",
+            );
+            return false;
+          }
+          downloaded = await dependencies.drive.readFile(
+            fileId,
+            operation.controller.signal,
+          );
+        }
         if (!isActive(operation)) return false;
         await dependencies.importAsNewLocal(
           downloaded.bytes,
@@ -302,10 +392,14 @@ export function createEditorDriveIntegration(
           operation.controller.signal,
         );
         if (!isActive(operation)) return false;
-        observations.set(fileId, {
-          version: downloaded.metadata.version,
-          snapshotId: downloaded.metadata.snapshotId,
-        });
+        const contentHash = await dependencies.hashBytes(downloaded.bytes);
+        if (!isActive(operation)) return false;
+        const fresh = await dependencies.drive.getMetadata(
+          fileId,
+          operation.controller.signal,
+        );
+        if (!isActive(operation)) return false;
+        trackObservation(fileId, fresh, contentHash);
         boundFiles.set(dependencies.getCurrent().localProjectId, fileId);
         setStatus("synced");
         return true;
@@ -340,20 +434,18 @@ export function createEditorDriveIntegration(
           dependencies.hashBytes(bytes),
           dependencies.hashBytes(downloaded.bytes),
         ]);
-        if (
-          !isActive(operation) ||
-          localHash !== remoteHash ||
-          metadata.stateHash !== localHash
-        ) {
-          throw new DriveConflictError(
-            "Drive content changed during collaboration leader handoff",
-            "pre-write",
+        if (!isActive(operation)) return false;
+        // Content must match Drive. App-property stateHash may be null/stale
+        // (Chromebook upload, older saves) even when bytes match — do not
+        // treat that as a conflict.
+        if (localHash !== remoteHash) {
+          setStatus(
+            "unsynced",
+            "Local project differs from Drive; save before collaborating",
           );
+          return false;
         }
-        observations.set(current.driveFileId, {
-          version: metadata.version,
-          snapshotId: metadata.snapshotId,
-        });
+        trackObservation(current.driveFileId, metadata, localHash);
         boundFiles.set(current.localProjectId, current.driveFileId);
         return true;
       } catch (error) {
@@ -362,7 +454,7 @@ export function createEditorDriveIntegration(
         finishOperation(operation);
       }
     },
-    async saveToDrive() {
+    async saveToDrive(saveOptions) {
       if (saveInFlight?.generation === generation) {
         return saveInFlight.promise;
       }
@@ -374,7 +466,9 @@ export function createEditorDriveIntegration(
           setStatus("unsynced", "Connect Google before saving to Drive");
           return false;
         }
-        const writeGate = dependencies.canPersistToDrive?.();
+        const writeGate = dependencies.canPersistToDrive?.({
+          explicit: saveOptions?.explicit === true,
+        });
         if (writeGate && !writeGate.ok) {
           setStatus(
             "unsynced",
@@ -441,24 +535,89 @@ export function createEditorDriveIntegration(
               }, operation.controller.signal);
             if (!isActive(operation)) return false;
             boundFiles.set(current.localProjectId, created.fileId);
-            observations.set(created.fileId, created.observation);
+            trackObservation(
+              created.fileId,
+              created.observation,
+              stateHash,
+            );
             pendingCreates.delete(created.fileId);
           } else {
-            const knownObservation = observations.get(targetFileId);
+            let knownObservation = observations.get(targetFileId);
+            const latest = await dependencies.drive.getMetadata(
+              targetFileId,
+              operation.controller.signal,
+            );
+            if (!isActive(operation)) return false;
             if (!knownObservation) {
-              throw new DriveConflictError(
-                "Drive version has not been observed in this session",
-                "pre-write",
+              // Reload/HMR drops in-memory observations while IndexedDB still
+              // has driveFileId. Re-baseline from Drive, then save local edits.
+              if (latest.stateHash === stateHash) {
+                trackObservation(targetFileId, latest, stateHash);
+                setStatus("synced");
+                return true;
+              }
+              const remote = await dependencies.drive.readFile(
+                targetFileId,
+                operation.controller.signal,
+              );
+              if (!isActive(operation)) return false;
+              const remoteHash = await dependencies.hashBytes(remote.bytes);
+              if (!isActive(operation)) return false;
+              if (remoteHash === stateHash) {
+                trackObservation(targetFileId, latest, stateHash);
+                setStatus("synced");
+                return true;
+              }
+              knownObservation = trackObservation(
+                targetFileId,
+                latest,
+                remoteHash,
+              );
+            } else if (
+              latest.version !== knownObservation.version ||
+              latest.snapshotId !== knownObservation.snapshotId
+            ) {
+              if (latest.stateHash === stateHash) {
+                trackObservation(targetFileId, latest, stateHash);
+                setStatus("synced");
+                return true;
+              }
+              const remote = await dependencies.drive.readFile(
+                targetFileId,
+                operation.controller.signal,
+              );
+              if (!isActive(operation)) return false;
+              const remoteHash = await dependencies.hashBytes(remote.bytes);
+              if (!isActive(operation)) return false;
+              if (remoteHash === stateHash) {
+                trackObservation(targetFileId, latest, stateHash);
+                setStatus("synced");
+                return true;
+              }
+              if (remoteHash !== knownObservation.contentHash) {
+                throw new DriveConflictError(
+                  "Drive file differs from the last observed version",
+                  "pre-write",
+                );
+              }
+              // Metadata-only drift (e.g. Picker grant); keep writing local edits.
+              knownObservation = trackObservation(
+                targetFileId,
+                latest,
+                knownObservation.contentHash,
               );
             }
             const updated = await dependencies.drive.updateFile({
               fileId: targetFileId,
               bytes,
-              knownObservation,
+              knownObservation: {
+                version: knownObservation.version,
+                snapshotId: knownObservation.snapshotId,
+              },
               snapshot,
             }, operation.controller.signal);
             if (!isActive(operation)) return false;
-            observations.set(targetFileId, updated.observation);
+            trackObservation(targetFileId, updated.observation, stateHash);
           }
           if (
             isActive(operation) &&

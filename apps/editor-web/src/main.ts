@@ -52,6 +52,11 @@ import {
   type EditorDriveIntegration,
   type EditorDriveStatus,
 } from "./drive-integration.js";
+import {
+  createDriveAutosave,
+  isDriveAutosaveEligible,
+  type DriveAutosave,
+} from "./drive-autosave.js";
 import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
 import {prepareCommittedDriveExport} from "./drive-export.js";
 import {
@@ -105,7 +110,7 @@ interface ScratchStorageInstance extends MemoryAssetStorage {
 
 interface ScratchGuiGlobal {
   ScratchStorage: new () => ScratchStorageInstance;
-  EditorState: new (options: {isEmbedded: boolean}) => unknown;
+  EditorState: new (options?: {isEmbedded?: boolean}) => unknown;
   createStandaloneRoot(
     state: unknown,
     element: HTMLElement,
@@ -113,7 +118,7 @@ interface ScratchGuiGlobal {
     render(options: {
       canEditTitle: boolean;
       canSave: boolean;
-      isEmbedded: boolean;
+      isEmbedded?: boolean;
       onVmInit(vm: ScratchVm): void;
     }): void;
   };
@@ -130,13 +135,22 @@ interface GapiGlobal {
 }
 
 interface PickerView {
-  setMimeTypes(mimeTypes: string): void;
+  setMimeTypes(mimeTypes: string): PickerView;
+}
+
+interface DocsView extends PickerView {
+  setIncludeFolders(include: boolean): DocsView;
+  setEnableDrives(enabled: boolean): DocsView;
+  setOwnedByMe(ownedByMe: boolean): DocsView;
+  setFileIds(fileIds: string): DocsView;
 }
 
 interface PickerBuilder {
   setDeveloperKey(value: string): PickerBuilder;
   setAppId(value: string): PickerBuilder;
   setOAuthToken(value: string): PickerBuilder;
+  setOrigin(value: string): PickerBuilder;
+  enableFeature(feature: string): PickerBuilder;
   addView(value: PickerView): PickerBuilder;
   setCallback(callback: (data: Record<string, unknown>) => void): PickerBuilder;
   build(): {setVisible(visible: boolean): void};
@@ -147,7 +161,9 @@ interface PickerGlobal {
   Response: {DOCUMENTS: string};
   Document: {ID: string};
   ViewId: {DOCS: string};
+  Feature: {SUPPORT_DRIVES: string};
   View: new (viewId: string) => PickerView;
+  DocsView: new () => DocsView;
   DocsUploadView: new () => PickerView;
   PickerBuilder: new () => PickerBuilder;
 }
@@ -201,6 +217,7 @@ let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
 let driveIntegration: EditorDriveIntegration;
+let driveAutosave: DriveAutosave;
 let driveReady = false;
 let suppressVmChanges = true;
 let failNextWrite = false;
@@ -408,7 +425,11 @@ function installSaveCoordinator(session: ProjectSession): void {
 function markDirty(): void {
   if (suppressVmChanges) return;
   saveCoordinator.markDirty();
-  driveIntegration.markLocalChange();
+  // Followers never write Drive; collab edits must not flip Drive to Unsynced.
+  if (!collabSession || collabSession.isLeader()) {
+    driveIntegration.markLocalChange();
+    driveAutosave?.noteChange();
+  }
   collabSession?.noteLocalChange();
 }
 
@@ -441,6 +462,7 @@ function renderCollabState(state: CollabState): void {
   const conflict = state.conflict ? " · conflict; Drive paused" : "";
   collabStatus.textContent =
     `${state.status} · ${peers} · ${state.role}${conflict}`;
+  driveAutosave?.eligibilityChanged();
   createRoomButton.disabled = true;
   joinRoomButton.disabled = true;
   copyInviteButton.disabled = activeInvite === null;
@@ -487,13 +509,23 @@ async function startCollaboration(
       ...config,
       signalingUrl,
       topic,
+      onDiagnostic: message => {
+        console.info(`[collab:${participantId}] ${message}`);
+      },
     }),
     materializeLocal: () => {
       const assets = runtimeAssetMap();
       return {document: documentFromVm(assets), assets};
     },
-    applyRemoteToLocal: (document, assets) =>
-      applyCollaborativeProject(generation, invite, document, assets),
+    applyRemoteToLocal: async (document, assets) => {
+      await applyCollaborativeProject(generation, invite, document, assets);
+      // A follower edit changes the leader's durable snapshot too. The VM load
+      // is suppressed, so explicitly mark and schedule the leader's Drive copy.
+      if (collabSession?.isLeader()) {
+        driveIntegration.markLocalChange();
+        driveAutosave.noteChange();
+      }
+    },
     reobserveDriveBeforeLeadership: async () => {
       if (collaborationTestGate) return;
       if (!await driveIntegration.reobserveCurrentFile()) {
@@ -509,23 +541,33 @@ async function startCollaboration(
 }
 
 async function createRoom(): Promise<void> {
-  const readiness = evaluateCollabReadiness({
-    googleConnected: collaborationTestGate || driveIntegration.isConnected(),
-    driveFileId: current.driveFileId,
-    signalingUrl,
-  });
-  if (!readiness.ok) {
-    renderCollabIdle(readiness.reason);
-    return;
+  try {
+    const readiness = evaluateCollabReadiness({
+      googleConnected: collaborationTestGate || driveIntegration.isConnected(),
+      driveFileId: current.driveFileId,
+      signalingUrl,
+    });
+    if (!readiness.ok) {
+      renderCollabIdle(readiness.reason);
+      return;
+    }
+    if (!collaborationTestGate) {
+      // Align Drive with the local project before hosting. A fresh save also
+      // refreshes the observation used by later leader writes — avoid the
+      // brittle export-vs-Drive byte check that blocked Create room when
+      // appProperties.stateHash was missing or SB3 bytes differed slightly.
+      renderCollabIdle("Saving to Drive before creating room…");
+      if (!await driveIntegration.saveToDrive({explicit: true})) {
+        renderCollabIdle("Could not save to Drive before creating a room");
+        return;
+      }
+    }
+    await startCollaboration(createInvite(current.driveFileId!), true);
+  } catch (error) {
+    renderCollabIdle(
+      error instanceof Error ? error.message : "Could not create room",
+    );
   }
-  if (
-    !collaborationTestGate &&
-    !await driveIntegration.reobserveCurrentFile()
-  ) {
-    renderCollabIdle("Drive access check failed");
-    return;
-  }
-  await startCollaboration(createInvite(current.driveFileId!), true);
 }
 
 function inviteFromInput(): CollabInvite | null {
@@ -535,31 +577,41 @@ function inviteFromInput(): CollabInvite | null {
 }
 
 async function joinRoom(): Promise<void> {
-  const invite = inviteFromInput();
-  if (!invite) {
-    renderCollabIdle("Invalid collaboration invite");
-    return;
-  }
-  const readiness = evaluateCollabReadiness({
-    googleConnected: collaborationTestGate || driveIntegration.isConnected(),
-    driveFileId: invite.driveFileId,
-    signalingUrl,
-  });
-  if (!readiness.ok) {
-    renderCollabIdle(readiness.reason);
-    return;
-  }
-  if (!collaborationTestGate) {
-    const opened = await driveIntegration.openCollaborationFile(invite.driveFileId);
-    if (!opened) {
-      renderCollabIdle("Unable to read the invited Drive file");
+  try {
+    const invite = inviteFromInput();
+    if (!invite) {
+      renderCollabIdle("Invalid collaboration invite");
       return;
     }
+    const readiness = evaluateCollabReadiness({
+      googleConnected: collaborationTestGate || driveIntegration.isConnected(),
+      driveFileId: invite.driveFileId,
+      signalingUrl,
+    });
+    if (!readiness.ok) {
+      renderCollabIdle(readiness.reason);
+      return;
+    }
+    if (!collaborationTestGate) {
+      renderCollabIdle("Opening shared Drive file for this Google account…");
+      const opened = await driveIntegration.openCollaborationFile(invite.driveFileId);
+      if (!opened) {
+        renderCollabIdle(
+          "Share the host Drive file with this account, Join again, and pick that same file",
+        );
+        return;
+      }
+    }
+    await startCollaboration(invite, false);
+  } catch (error) {
+    renderCollabIdle(
+      error instanceof Error ? error.message : "Could not join room",
+    );
   }
-  await startCollaboration(invite, false);
 }
 
 function leaveRoom(): void {
+  driveAutosave?.cancel();
   collaborationGeneration += 1;
   collabSession?.leave();
   collabSession = null;
@@ -571,6 +623,7 @@ async function loadRecord(
   record: LocalProjectRecord,
   signal?: AbortSignal,
 ): Promise<void> {
+  driveAutosave?.cancel();
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
   await loadRecordSafely({
@@ -691,12 +744,13 @@ function download(bytes: Uint8Array): void {
 
 async function getVm(): Promise<ScratchVm> {
   return new Promise(resolve => {
-    const state = new GUI.EditorState({isEmbedded: true});
+    // Full editor (not embedded/player-only) so students can edit blocks.
+    // EditorState requires a params object — undefined crashes boot.
+    const state = new GUI.EditorState({});
     const root = GUI.createStandaloneRoot(state, guiHost);
     root.render({
       canEditTitle: false,
       canSave: false,
-      isEmbedded: true,
       onVmInit: resolve,
     });
   });
@@ -710,17 +764,48 @@ function gapiGlobal(): GapiGlobal | undefined {
   return (window as unknown as {gapi?: GapiGlobal}).gapi;
 }
 
+function raisePickerAboveEditor(): void {
+  for (const el of document.querySelectorAll<HTMLElement>(
+    ".picker-dialog, .picker-dialog-bg",
+  )) {
+    el.style.zIndex = "2147483647";
+  }
+}
+
 function buildPicker(options: PickerBuildOptions) {
   const picker = googleGlobal()?.picker;
   if (!picker) throw new Error("Google Picker did not initialize");
-  const view = new picker.View(picker.ViewId.DOCS);
-  view.setMimeTypes(options.mimeType);
-  return new picker.PickerBuilder()
+  // Do not filter by MIME: Chromebook/Drive uploads rarely use
+  // application/x.scratch.sb3. Invalid picks are rejected on download.
+  void options.mimeType;
+  const builder = new picker.PickerBuilder()
+    .enableFeature(picker.Feature.SUPPORT_DRIVES)
     .setDeveloperKey(options.apiKey)
     .setAppId(options.appId)
     .setOAuthToken(options.accessToken)
-    .addView(view)
-    .addView(new picker.DocsUploadView())
+    .setOrigin(window.location.origin);
+
+  if (options.fileIds && options.fileIds.length > 0) {
+    // Collaboration join: show only the invited file. Avoid setEnableDrives —
+    // that mode is Shared drives only and hid "Shared with me".
+    builder.addView(
+      new picker.DocsView().setFileIds(options.fileIds.join(",")),
+    );
+  } else {
+    // Open: My Drive first, then Shared with me, then Shared drives.
+    // setEnableDrives(true) means shared-drives-only, so keep it as a tab.
+    builder
+      .addView(new picker.DocsView().setIncludeFolders(true))
+      .addView(new picker.DocsView().setOwnedByMe(false))
+      .addView(
+        new picker.DocsView()
+          .setIncludeFolders(true)
+          .setEnableDrives(true),
+      )
+      .addView(new picker.DocsUploadView());
+  }
+
+  const built = builder
     .setCallback(data => {
       if (data.action === picker.Action.CANCEL) {
         options.callback({action: "cancel"});
@@ -734,10 +819,19 @@ function buildPicker(options: PickerBuildOptions) {
         : undefined;
       options.callback({
         action: "picked",
-        documents: [{id: typeof fileId === "string" ? fileId : undefined}],
+        documents: typeof fileId === "string" ? [{id: fileId}] : [],
       });
     })
     .build();
+  return {
+    setVisible(visible: boolean) {
+      built.setVisible(visible);
+      if (visible) {
+        raisePickerAboveEditor();
+        requestAnimationFrame(raisePickerAboveEditor);
+      }
+    },
+  };
 }
 
 const driveStatusText: Record<EditorDriveStatus, string> = {
@@ -765,11 +859,13 @@ function renderDriveStatus(
     !configured || status === "connected" || status === "synced" ||
     status === "syncing";
   openDriveButton.disabled = !driveReady || !connected;
-  saveDriveButton.disabled =
-    !driveReady || !connected || status === "conflict";
+  // Keep Save enabled during conflict so the user can explicitly retry after
+  // re-baselining; automatic background writes remain gated elsewhere.
+  saveDriveButton.disabled = !driveReady || !connected;
   disconnectGoogleButton.disabled =
     !driveReady || !configured || status === "disconnected";
   if (status === "conflict") collabSession?.reportDriveConflict();
+  if (status === "synced") collabSession?.clearDriveConflict();
   if (!collabSession) renderCollabIdle();
 }
 
@@ -851,8 +947,8 @@ function setupDriveIntegration(): EditorDriveIntegration {
     createSnapshotId: () => crypto.randomUUID(),
     onStatus: renderDriveStatus,
     getLeadershipEpoch: () => collabSession?.leadershipEpoch() ?? "0",
-    canPersistToDrive: () =>
-      collabSession?.canPersistToDrive() ?? {ok: true},
+    canPersistToDrive: options =>
+      collabSession?.canPersistToDrive(options) ?? {ok: true},
   });
 }
 
@@ -871,12 +967,24 @@ async function boot(): Promise<void> {
   diagnostic.ready = true;
   driveReady = true;
   renderDriveStatus(driveIntegration.getStatus());
+  await driveIntegration.tryRestoreSession();
   const fragmentInvite = decodeInviteFragment(window.location.hash);
   if (fragmentInvite) collabInviteInput.value = window.location.href;
   renderCollabIdle();
 }
 
 driveIntegration = setupDriveIntegration();
+driveAutosave = createDriveAutosave({
+  delayMs: 2_000,
+  isEligible: () =>
+    hasCurrent &&
+    Boolean(current.driveFileId) &&
+    isDriveAutosaveEligible({
+      driveConnected: driveIntegration.isConnected(),
+      collaboration: collabSession?.getState() ?? null,
+    }),
+  save: () => driveIntegration.saveToDrive({explicit: false}),
+});
 
 titleInput.addEventListener("input", markDirty);
 newButton.addEventListener("click", () => void createNewProject());
@@ -908,9 +1016,11 @@ openDriveButton.addEventListener("click", () => {
   void driveIntegration.openFromDrive();
 });
 saveDriveButton.addEventListener("click", () => {
-  void driveIntegration.saveToDrive();
+  driveAutosave.cancel();
+  void driveIntegration.saveToDrive({explicit: true});
 });
 disconnectGoogleButton.addEventListener("click", () => {
+  driveAutosave.cancel();
   leaveRoom();
   driveIntegration.disconnect();
 });
@@ -925,4 +1035,7 @@ leaveRoomButton.addEventListener("click", leaveRoom);
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
   saveStatus.textContent = "Error";
+  saveStatus.title = diagnostic.error ?? "";
+  driveReady = false;
+  renderDriveStatus(driveIntegration.getStatus());
 });

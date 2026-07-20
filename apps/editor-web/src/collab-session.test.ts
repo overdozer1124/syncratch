@@ -1,4 +1,4 @@
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import * as Y from "yjs";
 import {createCollabProvider} from "@blocksync/collab-webrtc";
 import {createMemoryMesh} from "@blocksync/collab-webrtc";
@@ -97,6 +97,17 @@ function fakeVm(initial: ProjectDocument) {
     deleteTarget(id: string) {
       document.targets = document.targets.filter(target => target.id !== id);
     },
+    addTarget(target: ScratchTarget, withAssets = true) {
+      document.targets.push(structuredClone(target));
+      if (withAssets) {
+        for (const c of target.costumes ?? []) {
+          assets.set(c.md5ext, new Uint8Array([1, 2, 3, 4]));
+        }
+      }
+    },
+    putAsset(md5ext: string, bytes: Uint8Array) {
+      assets.set(md5ext, bytes);
+    },
     current: () => document,
     lastApplied: () => appliedDocs[appliedDocs.length - 1],
   };
@@ -182,6 +193,53 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(vmA.lastApplied()?.targets.find((t) => t.id === "s2")?.name).toBe("EditedByB");
     expect(vmB.lastApplied()?.targets.find((t) => t.id === "s1")?.name).toBe("EditedByA");
     expect(nameIn(vmA, "s1")).toBe("EditedByA");
+  });
+
+  it("defers a new sprite until costume bytes exist, then syncs both peers", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-sprite-asset",
+      secret: "sprite-asset-secret-sprite-asset-1234",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    const baseball = sprite("bb", "Baseball");
+    vmB.addTarget(baseball, false);
+    b.noteLocalChange();
+    await flush(a, b);
+    expect(vmA.current().targets.some(target => target.id === "bb")).toBe(false);
+
+    vmB.putAsset(baseball.costumes![0]!.md5ext, new Uint8Array([9, 8, 7, 6]));
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await flush(a, b);
+
+    expect(vmA.lastApplied()?.targets.some(target => target.id === "bb")).toBe(true);
+    const materialized = a.domain.materialize();
+    expect(materialized.ok).toBe(true);
+    if (!materialized.ok) throw new Error("expected materialize ok");
+    expect(materialized.assets.has(baseball.costumes![0]!.md5ext)).toBe(true);
   });
 
   it("does not overwrite a pending local edit when a remote edit arrives first", async () => {
@@ -331,6 +389,7 @@ describe("deterministic leadership and leader-only Drive writes", () => {
       ok: false,
       reason: "Collaboration is disconnected; Drive saving is paused",
     });
+    expect(session.canPersistToDrive({explicit: true}).ok).toBe(true);
   });
 
   it("re-observes Drive before a newly elected leader may write", async () => {
@@ -378,10 +437,74 @@ describe("deterministic leadership and leader-only Drive writes", () => {
     await flush(b);
     expect(b.canPersistToDrive().ok).toBe(true);
   });
+
+  it("does not reobserve Drive when the initial host becomes leader", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const reobserve = vi.fn(async () => undefined);
+    const session = createCollabSession({
+      roomId: "room-host",
+      secret: "host-secret-host-secret-host-secret",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+      reobserveDriveBeforeLeadership: reobserve,
+    });
+
+    session.start({host: true});
+    await flush(session);
+
+    expect(reobserve).not.toHaveBeenCalled();
+    expect(session.isLeader()).toBe(true);
+    expect(session.getState().conflict).toBe(false);
+    expect(session.canPersistToDrive().ok).toBe(true);
+  });
+
+  it("does not reobserve when a guest briefly self-elects before seeing the host", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const reobserve = vi.fn(async () => {
+      throw new Error("should not run on guest join");
+    });
+    const common = {
+      roomId: "room-guest-race",
+      secret: "guest-race-secret-guest-race-secret",
+      debounceMs: 0,
+    };
+    // Lexicographic leader is peer-a; guest is peer-b so host wins once both present.
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+      reobserveDriveBeforeLeadership: reobserve,
+    });
+
+    // Guest connects alone first (typical join race), then host appears.
+    guest.start({host: false});
+    await flush(guest);
+    host.start({host: true});
+    await flush(host, guest);
+
+    expect(reobserve).not.toHaveBeenCalled();
+    expect(guest.isLeader()).toBe(false);
+    expect(guest.getState().conflict).toBe(false);
+    expect(guest.getState().role).toBe("follower");
+  });
 });
 
 describe("conflict handling stops automatic Drive saves", () => {
-  it("refuses further Drive writes after a reported conflict without losing local data", async () => {
+  it("refuses background writes after conflict but allows explicit leader save", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const vm = fakeVm(project([stage(), sprite("s1", "S1")]));
@@ -400,7 +523,11 @@ describe("conflict handling stops automatic Drive saves", () => {
 
     session.reportDriveConflict();
     expect(session.canPersistToDrive().ok).toBe(false);
+    expect(session.canPersistToDrive({explicit: true}).ok).toBe(true);
     expect(session.getState().conflict).toBe(true);
+    session.clearDriveConflict();
+    expect(session.getState().conflict).toBe(false);
+    expect(session.canPersistToDrive().ok).toBe(true);
     // Local project remains intact.
     expect(vm.current().targets.some((t) => t.id === "s1")).toBe(true);
   });

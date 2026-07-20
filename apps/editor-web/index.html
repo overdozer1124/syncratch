@@ -10,16 +10,16 @@
       <header class="toolbar">
         <input aria-label="Project title" id="project-title" value="Local project" />
         <button id="new-project" type="button">New</button>
-        <button id="open-project" type="button">Open .sb3</button>
+        <button id="open-project" type="button">Open on this device</button>
         <input id="open-file" type="file" accept=".sb3" hidden />
-        <button id="download-project" type="button">Download .sb3</button>
-        <button id="save-project" type="button">Save</button>
+        <button id="download-project" type="button">Download to this device</button>
+        <button id="save-project" type="button">Save locally</button>
         <span data-testid="save-status" id="save-status">Starting…</span>
         <button id="retry-save" type="button" hidden>Retry save</button>
         <span class="drive-controls">
           <button id="connect-google" type="button" disabled>Connect Google</button>
-          <button id="open-drive" type="button" disabled>Open from Drive</button>
-          <button id="save-drive" type="button" disabled>Save/sync to Drive</button>
+          <button id="open-drive" type="button" disabled>Open Google Drive</button>
+          <button id="save-drive" type="button" disabled>Save to Google Drive</button>
           <button id="disconnect-google" type="button" disabled>Disconnect</button>
           <span data-testid="drive-status" id="drive-status">Not configured</span>
         </span>
@@ -38,6 +38,14 @@
       </header>
       <section data-testid="scratch-gui" id="scratch-gui"></section>
     </main>
+    <script>
+      // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
+      (function () {
+        var base = new URL("./", document.baseURI || location.href).pathname;
+        if (!base.endsWith("/")) base += "/";
+        window.__BLOCKSYNC_GUI_PUBLIC_PATH__ = base;
+      })();
+    </script>
     <script src="/generated/gui/scratch-gui-standalone.js"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>

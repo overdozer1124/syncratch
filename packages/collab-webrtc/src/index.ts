@@ -29,6 +29,14 @@ export {
   type WebSocketFactory,
   type WebSocketLike,
 } from "./webrtc-transport.js";
+export {
+  DATA_CHANNEL_CHUNK_CHARS,
+  DATA_CHANNEL_MAX_CHUNKS,
+  createChunkReassembler,
+  packDataChannelWire,
+  type ChunkReassembler,
+  type DataChannelFrame,
+} from "./data-channel-framing.js";
 export type {
   CollabTransport,
   ConnectionStatus,

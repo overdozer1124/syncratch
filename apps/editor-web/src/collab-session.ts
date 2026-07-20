@@ -86,7 +86,8 @@ export interface CollabSession {
   leave(): void;
   noteLocalChange(): void;
   reportDriveConflict(): void;
-  canPersistToDrive(): {ok: boolean; reason?: string};
+  clearDriveConflict(): void;
+  canPersistToDrive(options?: {explicit?: boolean}): {ok: boolean; reason?: string};
   leadershipEpoch(): string;
   isLeader(): boolean;
   getState(): CollabState;
@@ -115,6 +116,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let leadershipReady = true;
   let leadershipGeneration = 0;
   let wasLeader = false;
+  /** True after this peer has been a non-leader in the room (real follower). */
+  let seenAsFollower = false;
   let localTimer: ReturnType<typeof setTimeout> | null = null;
   let applyPending: Promise<void> = Promise.resolve();
   let maySeed = false;
@@ -174,25 +177,77 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
   };
 
+  const targetAssetIds = (
+    target: ProjectDocument["targets"][number],
+  ): string[] => [
+    ...(target.costumes ?? []).map(costume => costume.md5ext),
+    ...(target.sounds ?? []).map(sound => sound.md5ext),
+  ];
+
+  let assetRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let applyTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleAssetRetry = (): void => {
+    if (assetRetryTimer) return;
+    assetRetryTimer = setTimeout(() => {
+      assetRetryTimer = null;
+      capturePendingLocalChanges();
+      pushPendingLocalChanges();
+    }, 400);
+  };
+
   const pushPendingLocalChanges = (): void => {
     if (suppressLocal) return;
+    const {assets} = options.materializeLocal();
     if (!isSeeded()) {
       if (!maySeed) return;
+      // Avoid seeding a project whose costumes/sounds are still loading.
+      const local = options.materializeLocal();
+      const missing = local.document.targets.some(target =>
+        targetAssetIds(target).some(md5ext => !local.assets.has(md5ext)),
+      );
+      if (missing) {
+        scheduleAssetRetry();
+        return;
+      }
       syncLocalToDoc();
-    } else {
-      for (const targetId of pendingTargetDeletions) {
-        domain.deleteTarget(targetId);
-        lastLocalTargetJson.delete(targetId);
+      return;
+    }
+    for (const targetId of pendingTargetDeletions) {
+      domain.deleteTarget(targetId);
+      lastLocalTargetJson.delete(targetId);
+    }
+    pendingTargetDeletions.clear();
+
+    // Publish assets before targets so peers never materialize MISSING_ASSET.
+    for (const [md5ext, bytes] of pendingAssets) domain.putAsset(md5ext, bytes);
+    pendingAssets.clear();
+    const sharedAssets = domain.ydoc.getMap<Uint8Array>("assets");
+    for (const [md5ext, bytes] of assets) {
+      if (!sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
+    }
+
+    const deferred = new Map<string, ProjectDocument["targets"][number]>();
+    for (const [targetId, target] of pendingTargets) {
+      const needed = targetAssetIds(target);
+      const ready = needed.every(
+        md5ext => sharedAssets.has(md5ext) || assets.has(md5ext),
+      );
+      if (!ready) {
+        deferred.set(targetId, target);
+        continue;
       }
-      for (const target of pendingTargets.values()) {
-        domain.setTarget(target);
-        lastLocalTargetJson.set(target.id, JSON.stringify(target));
+      for (const md5ext of needed) {
+        const bytes = assets.get(md5ext);
+        if (bytes && !sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
       }
-      for (const [md5ext, bytes] of pendingAssets) domain.putAsset(md5ext, bytes);
+      domain.setTarget(target);
+      lastLocalTargetJson.set(targetId, JSON.stringify(target));
     }
     pendingTargets.clear();
-    pendingTargetDeletions.clear();
-    pendingAssets.clear();
+    for (const [targetId, target] of deferred) {
+      pendingTargets.set(targetId, target);
+    }
+    if (pendingTargets.size > 0) scheduleAssetRetry();
   };
 
   const role = (): CollabRole => {
@@ -217,7 +272,15 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     leadership = electLeader(options.roomId, participants);
     const nowLeader = leaderMatches(leadership, options.participantId);
-    if (active && nowLeader && !wasLeader && options.reobserveDriveBeforeLeadership) {
+    // Guests briefly elect themselves leader before the host's awareness
+    // arrives. Only reobserve on a real follower→leader handoff.
+    if (
+      active &&
+      nowLeader &&
+      !wasLeader &&
+      seenAsFollower &&
+      options.reobserveDriveBeforeLeadership
+    ) {
       leadershipReady = false;
       const generation = ++leadershipGeneration;
       Promise.resolve(options.reobserveDriveBeforeLeadership())
@@ -225,20 +288,29 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           if (generation === leadershipGeneration) leadershipReady = true;
         })
         .catch(() => {
-          if (generation === leadershipGeneration) conflict = true;
+          if (generation === leadershipGeneration) {
+            conflict = true;
+            // Do not leave leadershipReady=false forever — that blocked Save
+            // even after the handoff check finished (failed).
+            leadershipReady = true;
+          }
         })
         .finally(() => {
           if (generation === leadershipGeneration) emitState();
         });
     } else if (!nowLeader) {
+      seenAsFollower = true;
       leadershipGeneration += 1;
       leadershipReady = true;
+      // Drop false conflicts from the solo-elect join race; followers do not
+      // write Drive anyway.
+      if (conflict) conflict = false;
     }
     wasLeader = nowLeader;
     emitState();
   };
 
-  const scheduleApplyToLocal = (): void => {
+  const runApplyToLocal = (): void => {
     applyPending = applyPending
       .then(async () => {
         const result = domain.materialize();
@@ -255,6 +327,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
       })
       .catch(() => undefined);
+  };
+
+  const scheduleApplyToLocal = (): void => {
+    // Coalesce rapid Yjs updates (block drags) so we don't thrash the VM /
+    // IndexedDB reload path hard enough to drop the WebRTC peer.
+    if (applyTimer) clearTimeout(applyTimer);
+    applyTimer = setTimeout(() => {
+      applyTimer = null;
+      runApplyToLocal();
+    }, Math.max(debounceMs, 100));
   };
 
   domain.onRemoteChange(() => {
@@ -290,6 +372,11 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       if (host) syncLocalToDoc();
       provider.connect();
       active = true;
+      // Host already aligned/saved Drive before Create room. Treat them as
+      // already-leader so the first elect does not run handoff reobserve
+      // (re-export bytes often differ slightly from the just-saved SB3 and
+      // falsely marked conflict / Unsynced).
+      if (host) wasLeader = true;
       recomputeLeadership();
       emitState();
     },
@@ -298,6 +385,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         clearTimeout(localTimer);
         localTimer = null;
       }
+      if (assetRetryTimer) {
+        clearTimeout(assetRetryTimer);
+        assetRetryTimer = null;
+      }
+      if (applyTimer) {
+        clearTimeout(applyTimer);
+        applyTimer = null;
+      }
       provider.disconnect();
       active = false;
       maySeed = false;
@@ -305,6 +400,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       leadershipGeneration += 1;
       leadershipReady = true;
       wasLeader = false;
+      seenAsFollower = false;
       conflict = false;
       emitState();
     },
@@ -318,12 +414,38 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       conflict = true;
       emitState();
     },
-    canPersistToDrive() {
-      if (conflict) {
-        return {ok: false, reason: "Resolve the collaboration conflict before saving to Drive"};
-      }
+    clearDriveConflict() {
+      if (!conflict) return;
+      conflict = false;
+      emitState();
+    },
+    canPersistToDrive(persistOptions) {
+      const explicit = persistOptions?.explicit === true;
       if (!active) return {ok: true};
+      // Automatic/background writes stay paused after conflict. Explicit Save
+      // (toolbar button / create-room alignment) must remain available to the
+      // leader so the deadlock "conflict → cannot save → cannot clear" ends.
+      if (conflict) {
+        if (!explicit) {
+          return {
+            ok: false,
+            reason: "Resolve the collaboration conflict before saving to Drive",
+          };
+        }
+        if (!leaderMatches(leadership, options.participantId)) {
+          return {ok: false, reason: "Only the room leader saves to Drive"};
+        }
+        return {ok: true};
+      }
       if (provider.getStatus() !== "connected") {
+        // Explicit Save must still work after a WebRTC drop so local/Drive
+        // recovery is possible; background writes stay paused.
+        if (
+          explicit &&
+          leaderMatches(leadership, options.participantId)
+        ) {
+          return {ok: true};
+        }
         return {
           ok: false,
           reason: "Collaboration is disconnected; Drive saving is paused",
@@ -360,6 +482,11 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       if (localTimer) {
         clearTimeout(localTimer);
         doLocalPush();
+      }
+      if (applyTimer) {
+        clearTimeout(applyTimer);
+        applyTimer = null;
+        runApplyToLocal();
       }
       await provider.flush();
       await applyPending;

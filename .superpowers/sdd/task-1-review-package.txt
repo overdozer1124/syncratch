@@ -1,0 +1,550 @@
+﻿0986937 docs: correct Drive conflict guarantees
+d673904 docs: fix pivot verification whitespace
+3fe9406 docs: report local-first pivot completion
+a85264f docs: define local-first product pivot
+ .superpowers/sdd/task-1-report.md                  |  97 ++++++++
+ docs/CURSOR_CODEX_HANDOFF.md                       |  75 +++++--
+ ...05\350\250\210\347\224\273\346\233\270_v1.2.md" |   6 +
+ .../2026-07-16-r1-workspace-roster-access-plan.md  |   6 +-
+ ...026-07-19-blocksync-local-first-pivot-design.md | 244 +++++++++++++++++++++
+ 5 files changed, 406 insertions(+), 22 deletions(-)
+diff --git a/.superpowers/sdd/task-1-report.md b/.superpowers/sdd/task-1-report.md
+new file mode 100644
+index 0000000..565fc54
+--- /dev/null
++++ b/.superpowers/sdd/task-1-report.md
+@@ -0,0 +1,97 @@
++# Task 1 Completion Report
++
++## Result
++
++- Status: `DONE`
++- Implementation commit: `a85264ffdadcc2d626bca54ff35403742ddd89f8`
++- Commit message: `docs: define local-first product pivot`
++- Branch: `feat/local-first-pivot-impl`
++- Completed at: 2026-07-19 04:28 JST
++
++## Changed files
++
++- `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md`
++  - Local-First を Community の主系として定義。
++  - 製品境界、対象外、構成・データフロー、障害時 semantics、privacy/OAuth、段階 delivery、runtime 分離、server 資産の扱い、受け入れ基準を記録。
++  - IndexedDB の `LocalProjectRecord` を `ProjectEnvelopeV1` から分離し、fake organization/user 値を禁止。
++  - 初期版では current leadership epoch の leader だけを durable Drive snapshot writer と記載したが、後段の fix report により best-effort logical writer へ訂正。
++- `docs/CURSOR_CODEX_HANDOFF.md`
++  - Primary roadmap、School Server freeze、進捗計算、現在状態、次 slice を Local-First 向けに更新。
++  - Stage 0 browser-safe core を次の実装 slice として記録。
++  - 過去ログを保持し、末尾へ pivot 記録を追記。
++- `docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md`
++  - 冒頭へ frozen / superseded notice を追加。
++  - 歴史的本文は変更せず保持。
++- `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md`
++  - 冒頭へ任意 School/self-hosted track の履歴仕様である旨を追加。
++  - 歴史的本文は全面改稿せず保持。
++
++## Requirement review
++
++- Solo editing: login-free、IndexedDB source of truth、`.sb3` import/export を明記。
++- Drive: Google login、`drive.file` のみ、Google Picker による明示選択を明記。
++- Collaboration: Yjs/WebRTC、best-effort logical writer、正常退出 handoff、異常退出再選出、事後 conflict detection を明記（初期 single-writer 保証は後段 fix report で訂正）。
++- Apps Script: roster、invitation、room metadata、Drive permission setup の任意 control plane に限定し、Yjs relay と project payload 保存を禁止。
++- Frozen track: `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit を buildable な School/self-hosted track として保持。
++- Non-goals: AI、中央バックアップ、大規模 room、新規 school-directory を初回 release から除外。
++- Compatibility: published `ProjectEnvelopeV1` bytes/canonicalization/hash contract の不変を明記。
++- Migration: existing server work と pending Person/link claim + audit を凍結し、自動移行や fake IDs を禁止。
++- Stages: browser-safe core、local MVP、Drive、P2P、optional Apps Script、release gates を順序付きで定義。
++
++## Verification
++
++- `git diff --check HEAD~3..HEAD`: PASS（全 3 commit の最終差分を検査）。
++- 変更対象確認: implementation commit は上記 4 文書のみ。source code と external Cursor plan file は未変更。
++- Primary-roadmap contradiction scan: 変更文書に Workspace/roster を active primary roadmap とする未注記の記述なし。旧 plan と v1.2 の本文は冒頭 notice により historical frozen scope と明示。
++- Placeholder scan: 新規設計書に `TBD`、`TODO`、`FIXME`、`XXX`、`PLACEHOLDER` なし。
++- Drive ownership scan: 初期確認は current leader の厳密な単独書き込みを前提としていたため、後段 fix report の pre/post-write 事後検出レビューで置換。
++- Content self-review: brief の Required decisions、Design contents、Constraints、Verification を項目ごとに照合し、欠落なし。
++- Documentation-only task のため build/test suite は未実行。
++- 既存未コミットファイル `.superpowers/sdd/task-1-brief.md` は上書き・編集・commit せず保持。
++
++## Concerns
++
++初期報告時はなし。Drive concurrency の Important finding と訂正結果は以下の fix report を参照。
++
++## Fix report — Drive concurrency guarantee
++
++### Result
++
++- Status: `DONE_WITH_CONCERNS`
++- Fixed at: 2026-07-19 04:38 JST
++- Trigger: review Important finding on Google Drive API v3 concurrency semantics
++
++### Finding verification
++
++- Google Drive API v3 `File.version` is output-only and monotonically increasing.
++- `File.headRevisionId` is output-only and available for binary Drive content.
++- The documented `files.update` parameters do not provide a `version` or `headRevisionId` equality precondition.
++- Therefore, the prior Drive version precondition could not provide atomic compare-and-swap or strict split-brain rejection. The corrected design treats pre/post-write values as observations for post-write conflict detection only.
++
++### Changes
++
++- `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md`
++  - Replaced strict single-writer language with best-effort logical leader election.
++  - Added app-level `snapshotId`, `leadershipEpoch`, `yjsStateVector`, and `yjsStateHash`.
++  - Added pre/post-write retrieval of Drive `headRevisionId` / `version` and app metadata, explicitly classified as non-atomic post-write detection.
++  - Documented that a race can pass immediate pre/post checks; reconnect, handoff, and the next save repeat detection without promising immediate or complete conflict detection.
++  - On conflict or split-brain suspicion, stops automatic Drive saves, retains both IndexedDB copies and available Drive revisions, and requires Yjs reconvergence plus user confirmation before resaving.
++  - Prohibits automatic fallback overwrite into another file and keeps Apps Script optional rather than a required lock service.
++  - Aligned failure semantics, Stage 2/3 gates, and acceptance criteria.
++- `docs/CURSOR_CODEX_HANDOFF.md`
++  - Recorded the corrected guarantee level and superseded the prior sole-writer claim.
++
++### Verification
++
++- Official Drive API v3 resource documentation: `version` and `headRevisionId` are output-only.
++- Official `files.update` documentation: no `version` / `headRevisionId` match precondition parameter is documented.
++- Contradiction scan: no active design statement claims Drive version precondition, atomic Drive CAS, strict distributed lock, immediate/complete conflict detection, or guaranteed split-brain rejection.
++- Required metadata scan: all four app-level snapshot fields appear in leader semantics, Stage 2, and acceptance criteria.
++- Recovery scan: automatic save stop, both IndexedDB copies, Drive revisions, Yjs reconvergence, user confirmation, no automatic alternate-file overwrite, and optional Apps Script are covered.
++- `git diff --check`: PASS.
++- Documentation-only correction; source-code tests are not applicable and were not run.
++- Existing untracked `.superpowers/sdd/task-1-brief.md` and `.superpowers/sdd/task-1-review-package.txt` were not modified or committed.
++
++### Concern
++
++Drive revision retention remains subject to Google Drive limits and policy; IndexedDB copies and `.sb3` export remain the primary recovery guarantees.
+diff --git a/docs/CURSOR_CODEX_HANDOFF.md b/docs/CURSOR_CODEX_HANDOFF.md
+index d1361f1..80bdf96 100644
+--- a/docs/CURSOR_CODEX_HANDOFF.md
++++ b/docs/CURSOR_CODEX_HANDOFF.md
+@@ -1,15 +1,17 @@
+ # Cursor ↔ Codex 作業引き継ぎ
+ 
+ このファイルを、BlockSync AI 実装とレビューの唯一の引き継ぎ台帳として使用する。
+ ユーザーが回答をコピー＆ペーストする必要はない。Cursor と Codex は作業開始時に必ずこのファイルと Git の実状態を読み、作業終了時にこのファイルを更新する。
+ 
++> **Primary roadmap pivot (2026-07-19):** Community の主系は `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` の Local-First track。従来の School Server track は実装・証跡を保持し、buildable な状態で凍結する。
++
+ ## 運用ルール
+ 
+ 1. Cursor/Codex は作業前に、このファイル、`git status --short`、`git rev-parse HEAD` を確認する。
+ 2. 実装担当は作業完了時に「現在の状態」を更新し、作業ログへ結果を追記する。
+ 3. 実装担当が `READY_FOR_CODEX_REVIEW` にした後、ユーザーは Codex に「作業完了」とだけ伝えればよい。
+ 4. Codex はこのファイルと実際の差分・テストを確認し、`GO` または `NO_GO` を記録する。
+ 5. Codex が `CHANGES_REQUESTED` にした後、ユーザーは Cursor に「作業完了」とだけ伝えればよい。Cursor は本ファイルの指摘を読んで修正する。
+ 6. チャット本文ではなく、Git・コード・テスト結果が最終的な証拠である。
+ 7. 作業終了報告には、必ずJSTタイムスタンプと全体進捗率を含める。
+ 8. 過去の作業ログは削除せず、末尾へ追記する。
+@@ -24,51 +26,48 @@
+    - 生成物（manifest.json / snapshot bytes）は実ファイルを読む。
+ 2. **網羅性を突き合わせる。** 「行のあるテーブル / 列」が成果物（manifest・contract test・policy doc）に**表現されているか、または除外理由が明記されているか**を1件ずつ確認する。表現も除外理由も無い項目は指摘とする。
+ 3. **敵対的に問う。**「この migration がこの行/列を書き換えたら、この成果物は検出できるか？」を各テーブルで自問する。検出不能な evidence は不足指摘とする。
+ 4. **例外・失敗経路を辿る。** open/close・確保/解放・rename/crash 境界で resource leak / 中間状態が残らないか（`try/finally`、fail-closed）を確認する。
+ 5. **除外は必ず正当化する。** PII・秘密値・監査タイムスタンプ等をあえて含めない場合、その根拠（例: `databaseSha256` が全バイトを pin、PII 非記録ポリシー）を台帳に残す。
+ 6. **過去の外部指摘をチェックリスト化する。** Codex が過去に出した指摘カテゴリ（不完全 manifest、close 漏れ、fail-open、二重計上、TOCTOU 等）を再発防止項目として毎回当てる。
+ 7. **多段自己レビュー。** 修正後に同一ルーブリックで再走し、新規 findings ゼロを確認してから提出する。
+ 
+ ## 進捗の計算方法
+ 
+-- **前スライス（〜 Legacy Organization/User Backfill）:** 完了済みとして凍結（各100%、Backfill main `0ba3fe4`）。
+-- **前スライス（Workspace Directory Repositories・薄い Task 4/5）:** identity/membership + constraint mapping 実装完了。
+-- **前 Directory thin slices:** P1 CAS/BOLA 修正を含め Codex 正式承認・main 統合済み（実装 `76e22f3`）。
+-- **現行スライス（enrollment update/end thin slice）:** patch runtime validation修正を含めCodex正式承認済み。実装進捗・正式承認進捗ともに **100%**（実装 `eb87474`）。
+-- Cursor内正式GOまたは Codex 正式承認済み Task のみ完了として数える。
+-- 後続スライスの進捗は、実装着手後から正式承認まで別に計上する。class-move orchestration、overlap service rule、claim、System Owner transfer、audit は未実装。
++- **Local-First primary track:** 新しい主ロードマップ。設計確定後、Stage 0（browser-safe core）から進捗を計上する。
++- **Frozen School/self-hosted track:** Legacy Organization/User Backfill、Workspace Directory Repositories、Directory thin slices、enrollment update/end までの正式承認済み実装と進捗を保持する。
++- class-move orchestration、overlap service rule、claim、System Owner transfer、Person/link claim、audit は未実装のまま凍結し、主系進捗へ含めない。
++- `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit は buildable を維持するが、Community runtime の必須依存にはしない。
+ 
+ ## 現在の状態
+ 
+ | 項目 | 値 |
+ |---|---|
+-| 最終更新 | 2026-07-18 21:10:00 JST |
++| 最終更新 | 2026-07-19 04:38:00 JST |
+ | 更新者 | Cursor |
+-| ワークフロー状態 | `GO` / main 統合完了 |
++| ワークフロー状態 | `PIVOT_DESIGN_READY` |
+ | 現在の担当 | Cursor |
+-| 現在のTask | Directory enrollment update/end — 正式承認・main 統合完了 |
+-| 全体進捗 | Backfill **100%** / prior Directory thin slices **100%** / enrollment update/end **100%**（正式承認・main 統合済み） / Task 5 remains open |
+-| 実装SHA | `eb87474c05d0bdbece7a87ec0b8fd03b987f4d68`（fix(store): reject invalid enrollment update patch bodies） |
+-| 統合記録SHA | `3c5b92eeafd52bfd19e1b3df3da288a20b9a52ef`（feat tip merged to main） |
+-| 作業ブランチ | `main` |
+-| 作業worktree | `C:\cursor\NewScratchEditor` |
+-| 設計 | enrollment update/end + attendance uniqueness（Approved） |
+-| 計画 | Phase 3 Task 4 thin slice = 完了; broad Task 5 remains unchecked |
+-| 前スライス | Directory thin slices + enrollment update/end = 正式承認・main 統合済み |
+-| 次Task | 承認済み計画に従い次スライスを準備（class-move / overlap / claim / System Owner transfer / audit）。承認済み設計なしに先行着手しない |
+-| レビュー運用 | **GO（Codex 正式承認）・main 統合済み** |
+-| 未解決（スライス外） | class-move orchestration / overlap service / claim / System Owner transfer / audit |
++| 現在のTask | Local-First pivot specification |
++| Primary track | Local-First Community runtime |
++| Local-First実装進捗 | **0%**（設計確定、Stage 0 未着手） |
++| Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
++| 作業ブランチ | `feat/local-first-pivot-impl` |
++| 作業worktree | `C:\cursor\NewScratchEditor-local-first-pivot` |
++| 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
++| Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
++| 次Task | Stage 0 browser-safe core：V1 contract/hashを凍結したブラウザー安全境界と versioned LocalProjectRecord contract |
++| Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
++| School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
+ 
+ ## Cursorが次に行う作業
+ 
+-Enrollment update/end は正式承認・main 統合完了。次スライスの設計/計画準備を待つ。
++Local-First Stage 0 の実装計画を作成する。ProjectDocument validation、canonicalization、SHA-256 をブラウザー安全にし、既存 `ProjectEnvelopeV1` bytes/hash test vector を不変に保つ。versioned `LocalProjectRecord` contract は organization/user の偽値を持たせず、IndexedDB・Drive・Yjs・UI の実装は後続 stage へ分離する。
+ 
+ ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
+ 
+ ```text
+ 最終更新: 2026-07-17 15:59:32 JST
+ 更新者: Cursor
+ 状態: READY_FOR_CODEX_REVIEW
+ 対象Task: Workspace Migration Fixtures（plan Tasks 1〜4）
+ 全体進捗: 0%
+ 基準SHA: bca7840101ed5318c6bc75ad540a690428eb62ff
+@@ -3070,10 +3069,44 @@ P1: 解消。null/array等の非object bodyをDIRECTORY_INVALIDへ正規化し
+ 統合: feat/r1-directory-enrollment-patch-validation → main（fast-forward）
+ 実装SHA（正式承認）: eb87474c05d0bdbece7a87ec0b8fd03b987f4d68
+ 承認時 tip: 3c5b92eeafd52bfd19e1b3df3da288a20b9a52ef
+ 検証: workspace-directory 67 PASS; directory contract 38 PASS
+ 作業ブランチ/worktree: 削除予定
+ 未解決（スライス外）:
+ - class-move / overlap / claim / System Owner transfer / audit
+ 次の担当: Cursor（次スライス準備）
+ ```
+ 
++### 2026-07-19 04:28:00 JST — Cursor（Local-First primary roadmap pivot）
++
++```text
++状態: PIVOT_DESIGN_READY
++対象: Local-First Community primary track
++Local-First実装進捗: 0%（設計のみ、Stage 0未着手）
++作業ブランチ/worktree: feat/local-first-pivot-impl / C:\cursor\NewScratchEditor-local-first-pivot
++決定:
++- login-free solo editing + IndexedDB source of truth + .sb3 import/export
++- Google Drive sharing uses drive.file + Picker
++- Yjs/WebRTC live edits; elected leader is the sole durable Drive snapshot writer（04:38 correctionで superseded: best-effort logical writer、strict lockなし）
++- Apps Script is optional classroom control plane and never carries project payload/Yjs updates
++- School Server track remains buildable but frozen
++次Task: Stage 0 browser-safe core + versioned LocalProjectRecord contract
++凍結: pending Person/link claim、audit、class-move、overlap、System Owner transfer
++```
++
++### 2026-07-19 04:38:00 JST — Cursor（Drive concurrency guarantee correction）
++
++```text
++状態: PIVOT_DESIGN_READY / IMPORTANT_FINDING_FIXED
++対象: Drive snapshot concurrency semantics
++Local-First実装進捗: 0%（設計のみ、Stage 0未着手）
++修正:
++- File.version / headRevisionId は output-only observation。files.update の atomic CAS として扱わない
++- WebRTC leader は best-effort logical single writer。partition時のstrict lockを保証しない
++- snapshotId / leadershipEpoch / yjsStateVector / yjsStateHash をDrive snapshotへ記録
++- pre/post-write・再接続時の観測でbest-effort事後検出。atomic CAS・即時/全競合検出は保証しない
++- 競合・split-brain疑いを観測したclientから自動Drive保存を停止し、再接続時に停止状態へ収束
++- local IndexedDB copiesと利用可能なDrive revisionsを保持し、Yjs再収束 + 利用者確認後のみ再保存
++- 別ファイルへの自動退避なし。Apps Scriptは必須lock serviceにしない
++次Task: Stage 0 browser-safe core + versioned LocalProjectRecord contract
++```
++
+diff --git "a/docs/specification/BlockSync-AI_\343\202\267\343\202\271\343\203\206\343\203\240\344\273\225\346\247\230\346\233\270\343\203\273\345\256\237\350\243\205\350\250\210\347\224\273\346\233\270_v1.2.md" "b/docs/specification/BlockSync-AI_\343\202\267\343\202\271\343\203\206\343\203\240\344\273\225\346\247\230\346\233\270\343\203\273\345\256\237\350\243\205\350\250\210\347\224\273\346\233\270_v1.2.md"
+index f9bd888..2b63b0d 100644
+--- "a/docs/specification/BlockSync-AI_\343\202\267\343\202\271\343\203\206\343\203\240\344\273\225\346\247\230\346\233\270\343\203\273\345\256\237\350\243\205\350\250\210\347\224\273\346\233\270_v1.2.md"
++++ "b/docs/specification/BlockSync-AI_\343\202\267\343\202\271\343\203\206\343\203\240\344\273\225\346\247\230\346\233\270\343\203\273\345\256\237\350\243\205\350\250\210\347\224\273\346\233\270_v1.2.md"
+@@ -1,16 +1,22 @@
+ # BlockSync AI
+ 
+ # AI・共同編集・可視化デバッグ対応 Scratch互換プログラミングエディター
+ 
+ ## システム仕様書・実装計画書 v1.2
+ 
++> **文書状態 — 任意 School/self-hosted track の履歴仕様（2026-07-19）**
++>
++> 本 v1.2 は、サーバー永続化、Workspace、Person、学校名簿、RBAC、監査を備える任意の School/self-hosted track を記述する履歴仕様として保持する。Community の主ロードマップではなく、主系は `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` の Local-First 設計へ移行した。
++>
++> 既存の School Server 実装と本書本文は削除・全面改稿せず buildable な将来 track として凍結する。以下にある Release 1 の Workspace/名簿優先順、サーバー正本、AI、集中バックアップ、大規模共同編集の記述は Local-First 初回リリースの要求ではない。
++
+ ---
+ 
+ ## 0. 文書管理
+ 
+ | 項目 | 内容 |
+ |---|---|
+ | 文書状態 | Release 1 基盤更新版 |
+ | 対象読者 | 開発者、個人利用者、児童生徒、教師、学校関係者、システム運用者 |
+ | 基準日 | 2026年7月16日 |
+ | 前版 | v1.1 |
+diff --git a/docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md b/docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md
+index d979631..11af6b1 100644
+--- a/docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md
++++ b/docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md
+@@ -1,13 +1,17 @@
+ # R1 Workspace, Roster & Scoped Access Implementation Plan
+ 
+-> **Status:** Approved execution roadmap — implement through the linked detailed subplans
++> **STATUS — FROZEN / SUPERSEDED AS PRIMARY ROADMAP (2026-07-19)**
++>
++> This historical plan now belongs to the optional School/self-hosted track. The Local-First Community direction in `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` supersedes it as the active primary roadmap.
++>
++> Preserve the completed implementation and evidence, and keep `r1-persist-server`, SQLite GC, Workspace/Person/roster/RBAC/audit packages buildable. Do not continue unchecked tasks—including the pending Person/link-claim and audit work—until the School/self-hosted track is explicitly resumed. This notice changes status only; the historical plan below is intentionally preserved.
+ >
+ > **Design:** `docs/superpowers/specs/2026-07-16-r1-workspace-roster-access-design.md` (approved at `3dda2b8`)
+ >
+ > **Master specification:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md`
+ >
+ > **Execution order:** Finish the approved Scratch/SB3 slice, then execute this plan before realtime collaboration or AI product work.
+ 
+ **Goal:** Ship the full initial foundation for Person/UserAccount separation, multi-workspace membership, schools, years, grades, classes, attendance numbers, roster import, scoped access and a minimal management UI without making school setup mandatory for personal/casual use.
+ 
+ **Architecture:** Keep authentication user-centric and authorization resource/workspace-centric. Reuse the existing ports/adapters boundary, one shared SQLite connection, synchronous transactions, Hono security middleware and durable project ACL. Add versioned migrations and preserve all accepted V1 hashes.
+diff --git a/docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md b/docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md
+new file mode 100644
+index 0000000..9ec25b1
+--- /dev/null
++++ b/docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md
+@@ -0,0 +1,244 @@
++# BlockSync Local-First Pivot Design
++
++**Status:** Primary product direction
++
++**Date:** 2026-07-19
++
++**Supersedes as primary roadmap:** `docs/specification/BlockSync-AI_システム仕様書・実装計画書_v1.2.md` and `docs/superpowers/plans/2026-07-16-r1-workspace-roster-access-plan.md`
++
++**Compatibility constraint:** Published `ProjectEnvelopeV1` bytes, canonicalization, and hash contract remain unchanged.
++
++## 1. Decision
++
++BlockSync Community の主系を、ログイン不要で開始できる Local-First エディターへ切り替える。単独編集の正本はブラウザー内の IndexedDB に置き、`.sb3` を常に入出力できる。Google Drive 共有とリアルタイム共同編集を選んだ場合だけ Google ログインを要求する。
++
++既存の `apps/r1-persist-server`、SQLite 永続化・GC、Workspace、Person、名簿、RBAC、監査の実装と文書は削除しない。これらは buildable な将来の School/self-hosted track として凍結し、Community 初回リリースの実行時依存および実装順序から外す。
++
++## 2. Product boundaries
++
++### 2.1 First Local-First release
++
++- ログイン不要の単独編集。
++- IndexedDB を正本とするローカルプロジェクトの作成、再開、自動保存。
++- `.sb3` の読み込みと書き出し。Drive、共同編集、補助サービスの障害中も書き出せる。
++- Google ログイン後、Google Picker で利用者が明示的に選んだ Drive ファイルの作成またはオープン。
++- Yjs/WebRTC による少人数のライブ編集。
++- best-effort で選出された論理 leader による通常時の Drive snapshot 書き込みと、退出時の leadership handoff。これは厳密な分散ロックではない。
++- 任意導入の Apps Script によるクラス名簿、招待、ルームメタデータ、Drive 権限設定の補助。
++
++### 2.2 Non-goals
++
++初回 Local-First release には、次を含めない。
++
++- AI 支援または AI オーケストレーター。
++- 中央サーバーへの作品正本、更新ログ、スナップショット、バックアップの保存。
++- 大規模ルーム、多数参加者向け relay、集中型 collaboration gateway。
++- 新規の学校ディレクトリ、Person、名簿、Workspace、RBAC、監査機能。
++- `r1-persist-server` または SQLite を Community 利用の必須バックエンドにすること。
++- Apps Script を Yjs update の relay またはプロジェクト payload の保管場所にすること。
++- Drive 全体の検索、一覧化、バックアップ、管理者による一括取得。
++
++## 3. Data ownership and compatibility
++
++### 3.1 Local source of truth
++
++単独編集では、各プロジェクトを独立した `LocalProjectRecord` として IndexedDB に保存する。論理フィールドは local project ID、表示名、ProjectDocument、素材 blob、ローカル revision、更新時刻、保存状態、および選択済み Drive file ID（存在する場合）である。
++
++`LocalProjectRecord` は `ProjectEnvelopeV1` ではない。存在しない organization または user を表す偽値を作って `organizationId` や `updatedByUserId` へ格納してはならない。ローカル record から既存サーバー envelope への変換が将来必要になった場合は、明示的な migration/import 境界と実在する主体を要求する。
++
++### 3.2 Published envelope contract
++
++`ProjectEnvelopeV1` のフィールド、canonical JSON、`contentHash`、request hash、既存 fixture、および受理済み bytes は変更しない。ブラウザー安全化では既存 test vector と同一結果を返す実装境界を追加できるが、V1 の再直列化、`organizationId` の改名、または hash 対象の変更は行わない。
++
++`.sb3` は相互運用用の入出力形式であり、ローカル編集 record や Yjs update log そのものではない。書き出し時には現在のローカル状態から生成し、共同編集メタデータ、Google token、参加者情報、名簿情報を埋め込まない。
++
++## 4. Components and data flow
++
++```text
++                         optional Google login
++                                  │
++                                  ▼
++┌───────────────────────────────────────────────────────────┐
++│ Browser / Community runtime                               │
++│ Scratch host ⇄ browser-safe project core ⇄ Y.Doc         │
++│       │                    │                    │           │
++│       │                    ▼                    ▼           │
++│       │              IndexedDB (source)   WebRTC peers     │
++│       │                    │                    │           │
++│       └────────────── .sb3 import/export       │           │
++│                            │                    │           │
++│                 best-effort leader ◄───────────┘           │
++└────────────────────────────┼───────────────────────────────┘
++                             │ Drive API (`drive.file`)
++                             ▼
++                 Picker-selected shared Drive file
++                       (durable snapshots)
++
++Optional classroom control plane:
++Apps Script ─ roster / invitations / room metadata / Drive permissions
++            ─ never project payloads or live Yjs updates
++
++Frozen School/self-hosted track:
++r1-persist-server ─ SQLite / GC / Workspace / roster / RBAC / audit
++                  ─ buildable, but not a Community runtime dependency
++```
++
++### 4.1 Solo flow
++
++1. 利用者はログインせずローカルプロジェクトを作成するか `.sb3` を読み込む。
++2. 編集操作を ProjectDocument に反映し、同一端末の IndexedDB transaction へ保存する。
++3. UI はメモリ上の未保存状態と IndexedDB 保存済み状態を区別する。
++4. 利用者は任意の時点で現在状態を `.sb3` として書き出す。
++
++### 4.2 Drive sharing flow
++
++1. 利用者が共有を選択した時点で Google ログインを開始する。
++2. Google Picker で、アプリが作成したファイルまたは利用者が明示的に選択したファイルだけを取得する。
++3. Drive snapshot をローカル record/Y.Doc へ読み込み、ローカル copy を即座に保持する。
++4. 参加者間のライブ変更は Yjs/WebRTC で交換する。
++5. 通常時は current leader が Y.Doc の一貫した snapshot を共有 Drive ファイルへ書く。ネットワーク分断中の重複 leader を厳密には排除できないため、競合は app-level metadata と Drive の観測値で事後検出する。
++
++### 4.3 Leader ownership and handoff
++
++- 各 room は participant ID と leadership epoch を持ち、同期済みで Drive 書き込み権限を持つ参加者から 1 台を current leader として合意する。これは通常時の重複書き込みを減らす **best-effort の論理的 single writer** であり、partition や同時再選出を排除する厳密な分散ロックではない。
++- 通常時は current leader だけが Drive 保存を試み、他の peer は Yjs update を交換して各自の IndexedDB に保存する。ただし、この役割分担だけで split-brain 時の Drive 同時更新を拒否できるとは主張しない。
++- 各 Drive snapshot は app-level の `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` を payload metadata に含める。各 peer は対応する snapshot metadata と Drive の `headRevisionId` / `version` 観測値をローカルにも記録する。
++- leader は debounce 後、明示保存時、重要な lifecycle 境界、および正常退出前に snapshot を書く。書き込み前に Drive の `headRevisionId` / `version` と現行 snapshot metadata を再取得し、既知値との差があれば書き込まず競合状態へ移る。
++- Drive API v3 の `File.version` と `headRevisionId` は output-only の観測値であり、`files.update` にそれらの一致を原子的に強制する条件はない。書き込み前の一致確認から update までには競合窓が残るため、これを atomic compare-and-swap または split-brain 拒否とは扱わない。
++- update 後にも Drive の `headRevisionId` / `version` と保存された app-level snapshot metadata を再取得する。期待した `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` と一致しない、観測値が想定外に進んだ、または別 peer の snapshot が見つかった場合は、競合または split-brain 疑いとして扱う。この検査は **事後検出** であり、同時書き込みの防止ではない。
++- 前後検査でも、writer A の post-read 後に writer B が上書きする等の競合を即時には観測できない。再接続時、leadership handoff 時、次回保存前にも同じ照合を繰り返して検出機会を作るが、全競合の即時検出は保証しない。
++- 正常退出では、leader が競合なしを確認できる場合に未保存 snapshot を flush し、次の eligible peer へ epoch と最新観測値を渡し、受領確認後に退出する。突然の切断では残存 peer が新 epoch の leader を best-effort で再選出する。
++- 競合または split-brain 疑いを検出したら、自動 Drive 保存を直ちに停止する。両 peer の IndexedDB copy と、利用可能な競合 Drive revision ID・snapshot metadata を recovery candidate として保持し、Drive revision を削除しない。保持可能な binary revision は Drive の制限内で `keepForever` の対象とする。
++- 復旧では各 recovery candidate を別々に読み、Yjs で再収束した結果と差分を利用者に提示する。利用者の明示確認後にのみ current leader が同じ Picker-selected file へ新 snapshot を保存して自動保存を再開する。別ファイルへの自動作成・自動上書きで競合から逃げない。
++- leader が存在しない、誰も Drive 書き込み権限を持たない、または競合停止中は Drive 永続化を停止するが、各 peer の IndexedDB 保存と `.sb3` 書き出しは継続する。
++- Apps Script は roster、invitation、room metadata、Drive permission setup の任意補助に留め、leader election または Drive 書き込みの必須 lock service にしない。
++
++## 5. Failure semantics
++
++「外部機能の障害でローカル作品を取り出せなくしない」を最優先の不変条件とする。
++
++| Failure | Required behavior |
++|---|---|
++| IndexedDB write failure | メモリ上の dirty 状態を破棄せず、保存失敗を明示し、可能な限り即時 `.sb3` download を提示する。保存済み record を部分更新で壊さない。 |
++| Drive unavailable、token expiry、quota、permission loss | ローカル編集を継続し、未同期状態を表示する。自動的に別ファイルへ書かない。再認証または Picker による再選択を求めつつ `.sb3` export を維持する。 |
++| WebRTC peer failure | 到達可能な peer とローカル編集を継続する。切断 peer の未受信変更を保存済みと表示しない。各端末のローカル copy は export 可能なままにする。 |
++| Signaling unavailable | 新規接続・再接続だけを停止する。既存 data channel とローカル編集は継続し、中央 relay へ切り替えない。 |
++| Apps Script unavailable | 名簿、招待、room metadata、権限自動設定だけを degraded とする。エディター、IndexedDB、既存 WebRTC room、Drive 直接保存、`.sb3` export を停止しない。 |
++| Leader departure or crash | 正常時は競合なしを確認して flush + handoff、異常時は epoch を進めて best-effort で再選出する。厳密な lock 成立を仮定せず、Drive 保存不能でもローカル保存と export は継続する。 |
++| Concurrent Drive update / split-brain suspicion | 前後の `headRevisionId` / `version` と app-level snapshot metadata による事後検出である。検出時は自動 Drive 保存を停止し、両方の IndexedDB copy と利用可能な Drive revisions を保持する。Yjs 再収束と利用者確認後だけ再保存し、別ファイルへ自動退避しない。 |
++
++Drive、WebRTC、signaling、Apps Script の障害画面には、ローカルに保存された最終時刻、未同期状態、および `.sb3` 書き出し操作を表示する。
++
++## 6. Privacy, OAuth, and trust boundaries
++
++- 単独編集では Google ログイン、学校アカウント、氏名、メール、Workspace membership を要求しない。
++- Drive 連携の OAuth scope は `drive.file` のみに限定する。広い `drive`、`drive.readonly`、Gmail、Classroom scope は要求しない。
++- ファイル選択には Google Picker を使い、アプリが作成したファイルまたは利用者が明示選択したファイルだけを扱う。Drive 全体を列挙または探索しない。
++- access token、refresh token、Picker token をプロジェクト payload、Y.Doc、`.sb3`、Apps Script property、ログへ保存しない。
++- WebRTC peer へ共有する情報はライブ編集、必要最小限の presence、room negotiation に限定する。Google token、Drive 権限情報、名簿全体を送らない。
++- signaling は接続成立に必要な offer/answer/ICE と短命 room identifier だけを扱い、Yjs update または project snapshot を保存・relay しない。
++- Apps Script は classroom control plane であり、プロジェクト内容を読まない。保存できるのは roster、invitation、room metadata、Drive permission setup の結果だけである。
++- 共有 Drive ファイルへのアクセス制御と保持は利用者の Google Drive 権限に従う。BlockSync が中央バックアップを持つと表示してはならない。
++
++## 7. Runtime separation
++
++### Community runtime dependencies
++
++- `apps/r1-scratch-host` を基礎とするブラウザー host。
++- ブラウザー安全な project schema、validation、canonicalization/hash compatibility boundary。
++- IndexedDB local repository と asset storage。
++- `.sb3` import/export。
++- Yjs/WebRTC provider と最小 signaling。
++- Google Identity、Picker、Drive `drive.file` adapter。
++- 任意の Apps Script classroom adapter。未設定でも Community editor は動作する。
++
++### Frozen School/self-hosted packages
++
++- `apps/r1-persist-server`。
++- `packages/project-store-sqlite` の migrations、revision persistence、asset GC。
++- `packages/session-service`、`packages/auth-context` の server session path。
++- `packages/workspace-directory` と Workspace/Person/roster/RBAC/audit schema・repository。
++- School 管理 API/UI、集中バックアップ、集中監査、サーバー WebSocket 認可。
++
++Community package から frozen package への runtime import を追加しない。共用する純粋な型またはアルゴリズムが必要な場合は、ブラウザー安全性と既存 contract tests を満たす独立境界へ抽出し、School package の挙動を暗黙に変更しない。
++
++## 8. Existing server work and migration treatment
++
++- 受理済み server、SQLite、GC、auth、Workspace migration、Person/UserAccount、directory repository の code、fixture、設計書、Go/No-Go 証跡を保持する。
++- `r1-persist-server` と関連 package は通常の build/test で buildable に保つ。ただし Local-First 機能追加のための schema 拡張や Community からの依存追加は行わない。
++- 未完了の class move、overlap service、claim、System Owner transfer、Person 関連付け、audit service/API/UI は凍結する。特に現在 pending の Person + audit 設計を Local-First 前提へ書き換えず、School/self-hosted track 再開時の設計入力として残す。
++- 既存の server project を Local-First へ自動移行しない。将来の migration は、認可された明示 export/import、asset 完全性、V1 byte/hash preservation、利用者への保存先選択を満たす別設計とする。
++- ローカル record に legacy organization/user の代用値を埋めず、server DB row と LocalProjectRecord を同一 ID 空間と仮定しない。
++
++## 9. Staged delivery
++
++### Stage 0 — Browser-safe core
++
++次の実装 slice とする。
++
++- `ProjectEnvelopeV1` の公開 contract と hash test vector を固定したまま、ProjectDocument の validation、canonicalization、SHA-256 境界をブラウザーで利用可能にする。
++- Node-only import が Community browser bundle へ混入しないことを build test で証明する。
++- `LocalProjectRecord` の versioned schema、validation、upgrade policy を定義する。organization/user の偽値を禁止する contract test を含める。
++- IndexedDB、Drive、Yjs、UI はこの slice へ混在させない。
++
++**Gate:** browser build、既存 Node tests、V1 canonical/hash vectors が同時に通り、既存 V1 bytes/hash に差分がない。
++
++### Stage 1 — Local MVP
++
++- IndexedDB repository、atomic save、asset lifecycle、再起動後の復元。
++- ログインなしの作成、編集、自動保存。
++- `.sb3` import/export と障害時 export recovery。
++- quota、transaction abort、schema upgrade、破損 record の試験。
++
++**Gate:** オフライン状態で新規作成、再起動復元、`.sb3` roundtrip が成立し、保存失敗時にも作品を export できる。
++
++### Stage 2 — Drive
++
++- Google login、`drive.file` consent、Google Picker。
++- Picker-selected file の作成・読込と、`snapshotId` / `leadershipEpoch` / `yjsStateVector` / `yjsStateHash` を持つ snapshot 書き込み。
++- 書き込み前後に `headRevisionId` / `version` と app-level snapshot metadata を取得する post-write conflict detection。Drive API による atomic CAS ではないことを API contract と UI に明示する。
++- token expiry、permission loss、quota、concurrent update の degraded behavior。競合時は自動保存停止、local copy と Drive revisions の保持、利用者確認付き recovery とする。
++
++**Gate:** Drive 障害中も local source of truth が維持され、再接続後に明示的に同期できる。広い OAuth scope を要求しない。観測可能な metadata 不一致を作る制御済み並行 update 試験で事後検出し、自動保存を停止して recovery candidates を保持する。検査をすり抜ける race window を文書化し、`File.version` / `headRevisionId` を atomic precondition または全競合検出として扱う実装がない。
++
++### Stage 3 — P2P
++
++- Y.Doc mapping、WebRTC provider、最小 signaling、presence。
++- best-effort の logical leader election、通常時の single-writer behavior、正常 handoff、crash re-election。
++- partition、同時再選出、split-brain、late peer、並行 Drive update、利用者確認付き recovery の試験。
++- Apps Script を必須 lock service としない構成試験。
++
++**Gate:** 非 partition 時は logical leader だけが Drive 保存を試み、live edits が peer 間で収束する。partition で複数 writer が生じ得る試験では厳密な排他を主張しない。競合または split-brain 疑いを観測した client は直ちに自動 Drive 保存を停止し、通知を受けた peer も停止する。切断中の peer は観測まで継続し得るため、再接続時の照合で停止へ収束することを試験する。両方の IndexedDB copy と Drive revisions を保持し、Yjs 再収束と利用者確認前には再保存しない。どの通信障害でも各端末から `.sb3` を書き出せる。
++
++### Stage 4 — Optional Apps Script
++
++- roster、invitation、room metadata、Drive permission setup。
++- payload/Yjs relay 禁止を API contract、ログ検査、サイズ制限で確認する。
++- Apps Script 未導入・障害時の Community runtime 非依存を試験する。
++
++**Gate:** Apps Script を削除または停止しても solo、Drive、既存 P2P room、export が動作する。
++
++### Stage 5 — Release gates
++
++- 対応 Chrome/ChromeOS/Windows で local recovery と `.sb3` corpus を確認。
++- OAuth consent と scope、Picker-only access、token 非永続化をレビュー。
++- WebRTC threat model、room abuse、metadata minimization をレビュー。
++- School server packages の build/test と Community bundle の dependency scan を実行。
++- 既知の制限、中央バックアップがないこと、Drive 権限・保持責任を利用者へ表示する。
++
++## 10. Acceptance criteria
++
++1. 未ログイン利用者がプロジェクトを作成・編集し、IndexedDB から再開し、`.sb3` を入出力できる。
++2. LocalProjectRecord は `ProjectEnvelopeV1` と別 schema で、fake organization/user 値を持たない。
++3. Drive 共有または共同編集を選ぶまで Google ログインを要求しない。
++4. OAuth scope は `drive.file` のみで、ファイルアクセスは Google Picker で明示選択された範囲に限る。
++5. ライブ編集は Yjs/WebRTC で運び、signaling と Apps Script は Yjs update を relay・保存しない。
++6. WebRTC leader election は通常時の重複書き込みを減らす best-effort の logical single writer であり、partition 時の厳密な分散ロックまたは atomic split-brain rejection を保証すると表示しない。
++7. Drive、WebRTC、signaling、Apps Script のいずれが失敗しても、ローカルデータを保持し `.sb3` として書き出せる。
++8. 各 Drive snapshot は app-level `snapshotId`、`leadershipEpoch`、`yjsStateVector`、`yjsStateHash` を持つ。保存前後、再接続、handoff、次回保存前に Drive `headRevisionId` / `version` と app metadata を再取得するが、これは output-only 値による best-effort の事後競合検出であり、atomic CAS、即時検出、全競合検出ではない。
++9. 競合または split-brain 疑いでは自動 Drive 保存を停止し、両方の IndexedDB copy と利用可能な Drive revisions を保持する。Yjs 再収束後、利用者の明示確認前に再保存せず、別ファイルへ自動上書き退避しない。
++10. Apps Script は roster、invitation、room metadata、Drive permission setup に限定され、project payload を保存せず、必須 lock service にしない。
++11. `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit は buildable な frozen School/self-hosted track として残り、Community runtime の必須依存ではない。
++12. AI、中央バックアップ、大規模ルーム、新規 school-directory 機能は初回 Local-First release に含まれない。
++13. 公開済み `ProjectEnvelopeV1` と hash contract は byte/hash compatibility tests を通し、変更されない。
++14. Stage 0 から Stage 5 の gate を順に満たし、前段 gate を迂回して次段を release しない。

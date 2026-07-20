@@ -1,7 +1,10 @@
 export {
+  DRIVE_AUTH_PREFERENCE_KEY,
   DRIVE_FILE_SCOPE,
   createGoogleAuthorization,
+  createLocalDriveAuthPreferenceStore,
   loadGoogleScripts,
+  type DriveAuthPreferenceStore,
   type GoogleAuthorization,
   type GoogleAuthorizationOptions,
   type GoogleIdentityGlobal,
@@ -38,6 +41,7 @@ export {
   createGooglePicker,
   type GooglePicker,
   type GooglePickerOptions,
+  type PickFileOptions,
   type PickerBuildOptions,
   type PickerCallbackData,
 } from "./picker.js";

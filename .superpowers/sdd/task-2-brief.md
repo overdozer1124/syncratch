@@ -1,4 +1,46 @@
-﻿### Task 2: Failing SQLite enrollment contracts
+﻿# Task 2: Browser-safe project and SB3 core
+
+## Goal
+
+Provide browser-safe project hashing, LocalProjectRecord validation, and SB3 import/export entry points without changing the published ProjectEnvelopeV1 contract or breaking Node callers.
+
+## Required behavior
+
+1. Preserve every existing `@blocksync/project-envelope` public export and byte/hash result.
+2. Replace direct Node-only hashing in reusable code with a synchronous browser-safe implementation. `contentHash`, `requestHash`, canonicalization, stable target IDs, SHA-256 asset hashes, and MD5 SB3 asset checks must retain existing vectors.
+3. Isolate `loadSb3Isolated` and its `node:child_process`, `node:path`, and `node:url` dependencies behind a Node-only SB3 entry point. Add a browser entry point that exports normal load/export/canonical/media verification but cannot pull Node built-ins into a browser bundle.
+4. Add `@blocksync/project-local-core` with a versioned `blocksync.local-project/v1` record. It contains local project ID, title, revision, updatedAt, ProjectDocument, asset byte records, save state, and optional Drive file ID. It must not contain or accept `organizationId` or `updatedByUserId`.
+5. Validate LocalProjectRecord structure and call the existing ProjectDocument validator. Reject malformed assets, negative/non-integer revisions, invalid dates, unknown format, and server identity fields. Preserve typed-array bytes.
+6. Add a build test that bundles browser entry points and fails if `node:` imports or browser-external stubs remain. Existing Node tests and type checks must continue to pass.
+
+## Suggested structure
+
+- Factor browser-safe SB3 functions from `packages/sb3-tools/src/index.ts` into a core module.
+- Keep `packages/sb3-tools/src/index.ts` backward-compatible by re-exporting the browser-safe core and Node isolated loader.
+- Export browser-safe API as `@blocksync/sb3-tools/browser` and isolated loader as `@blocksync/sb3-tools/node`.
+- Use a small audited browser-safe hash dependency rather than implementing cryptography manually. Pin the dependency version and update `pnpm-lock.yaml`.
+- Add `packages/project-local-core/` following existing TypeScript/Vitest package conventions.
+
+## TDD and tests
+
+- Write failing vector/bundle/local-record tests first and run them to observe the expected failures.
+- Reuse existing project-envelope and SB3 vectors.
+- Include a browser bundle smoke that actually invokes project hashing and SB3 browser exports.
+- Run tests and typechecks for project-envelope, project-local-core, sb3-tools, and affected dependents.
+- Run the workspace build or the narrowest equivalent that proves no regressions.
+
+## Constraints
+
+- Do not change ProjectEnvelopeV1 fields, canonical JSON, request material, or hash values.
+- Do not change SB3 safety limits or accepted/rejected media semantics.
+- Do not add IndexedDB, UI, Drive, WebRTC, Apps Script, or School Server changes in this task.
+- Preserve existing package public exports.
+- Follow the repository conventions and Conventional Commits.
+
+## Deliverable
+
+Implement, self-review, commit, and write the detailed report to `.superpowers/sdd/task-2-report.md`, including RED/GREEN commands and exact test results.
+### Task 2: Failing SQLite enrollment contracts
 
 **Files:**
 - Modify: `packages/project-store-sqlite/src/directory-repository.contract.test.ts`
