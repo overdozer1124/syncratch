@@ -96,7 +96,7 @@ export interface CollabSessionOptions {
     document: ProjectDocument,
     assets: Map<string, Uint8Array>,
     context: ApplyRemoteContext,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /** Kept for diagnostics/compat; never authorizes Drive writes. */
   eligible?: boolean;
   reobserveDriveBeforeLeadership?: () => void | Promise<void>;
@@ -484,7 +484,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   };
 
   const evaluateGuestBootstrap = async (): Promise<void> => {
-    if (createdThisRoom || guestReady) return;
+    if (!active || createdThisRoom || guestReady) return;
     if (bootstrapPhase === "invalid-project") return;
 
     const checkpoint = readBootstrapCheckpoint(domain.ydoc);
@@ -542,10 +542,11 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     emitState();
     try {
       suppressLocal = true;
-      await options.applyRemoteToLocal(result.document, result.assets, {
+      const applied = await options.applyRemoteToLocal(result.document, result.assets, {
         mode: "guest-initial",
         projectTitle: validatedTitle,
       });
+      if (!active || applied === false) return;
       lastLocalTargetJson.clear();
       for (const target of options.materializeLocal().document.targets) {
         lastLocalTargetJson.set(target.id, JSON.stringify(target));
@@ -558,11 +559,12 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         stallTimer = null;
       }
     } catch {
+      if (!active) return;
       bootstrapPhase = "local-save-failed";
       issueCodes = ["LOCAL_SAVE_FAILED"];
     } finally {
       suppressLocal = false;
-      emitState();
+      if (active) emitState();
     }
   };
 
@@ -767,8 +769,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         clearTimeout(guestEvaluateTimer);
         guestEvaluateTimer = null;
       }
-      provider.disconnect();
       active = false;
+      provider.disconnect();
       maySeed = false;
       createdThisRoom = false;
       guestReady = false;
@@ -889,20 +891,22 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       emitState();
       try {
         suppressLocal = true;
-        await options.applyRemoteToLocal(
+        const applied = await options.applyRemoteToLocal(
           validatedMaterialization.document,
           validatedMaterialization.assets,
           {mode: "guest-initial", projectTitle: validatedTitle},
         );
+        if (!active || applied === false) return;
         guestReady = true;
         bootstrapPhase = "ready";
         issueCodes = [];
       } catch {
+        if (!active) return;
         bootstrapPhase = "local-save-failed";
         issueCodes = ["LOCAL_SAVE_FAILED"];
       } finally {
         suppressLocal = false;
-        emitState();
+        if (active) emitState();
       }
     },
     reconnectBootstrap() {

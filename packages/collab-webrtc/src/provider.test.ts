@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import * as Y from "yjs";
 import {createCollabProvider} from "./provider.js";
 import {createMemoryMesh} from "./memory-mesh.js";
+import type {CollabTransport, TransportHandlers} from "./transport.js";
 
 const SECRET = "shared-room-secret-shared-room-secret";
 
@@ -13,6 +14,42 @@ async function flushAll(...providers: {flush(): Promise<void>}[]): Promise<void>
 }
 
 describe("createCollabProvider sync", () => {
+  it("opens a fresh transport after an unexpected transport closure", () => {
+    let handlers: TransportHandlers | undefined;
+    let connectCalls = 0;
+    let disconnectCalls = 0;
+    const transport: CollabTransport = {
+      connect(_participantId, nextHandlers) {
+        connectCalls += 1;
+        handlers = nextHandlers;
+        nextHandlers.onStatus("connecting");
+        nextHandlers.onStatus("connected");
+      },
+      send() {},
+      broadcast() {},
+      disconnect() {
+        disconnectCalls += 1;
+        handlers?.onStatus("disconnected");
+      },
+    };
+    const provider = createCollabProvider({
+      doc: new Y.Doc(),
+      secret: SECRET,
+      transport,
+      participantId: "peer-a",
+    });
+
+    provider.connect();
+    provider.connect();
+    expect(connectCalls).toBe(1);
+    handlers?.onStatus("disconnected");
+    provider.connect();
+
+    expect(connectCalls).toBe(2);
+    expect(disconnectCalls).toBe(1);
+    expect(provider.getStatus()).toBe("connected");
+  });
+
   it("converges two docs over an in-memory mesh and reports connected", async () => {
     const mesh = createMemoryMesh();
     const docA = new Y.Doc();

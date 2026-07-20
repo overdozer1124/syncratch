@@ -36,6 +36,7 @@ import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
+import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
 import {staticAssetUrl} from "./static-url.js";
@@ -510,12 +511,14 @@ async function applyCollaborativeProject(
   document: ProjectDocument,
   assets: Map<string, Uint8Array>,
   context: ApplyRemoteContext,
-): Promise<void> {
+): Promise<void | boolean> {
   if (generation !== collaborationGeneration || !collabSession) return;
   await saveCoordinator.flush();
   if (generation !== collaborationGeneration || !collabSession) return;
 
   if (context.mode === "guest-initial") {
+    driveAutosave?.cancel();
+    const previous = hasCurrent ? structuredClone(current) : undefined;
     const record: LocalProjectRecord = {
       format: LOCAL_PROJECT_FORMAT,
       localProjectId: crypto.randomUUID(),
@@ -526,9 +529,28 @@ async function applyCollaborativeProject(
       assets: assetRecords(document, assets),
       saveState: "clean",
     };
-    const saved = await store.createOrReplace(record, null);
-    if (generation !== collaborationGeneration || !collabSession) return;
-    await loadRecord(saved);
+    return applyGuestInitialProject({
+      candidate: record,
+      previous,
+      isActive: () =>
+        generation === collaborationGeneration && collabSession !== null,
+      async load(recordToLoad) {
+        attachLocalStorage(recordToLoad);
+        await vm.loadProject(documentToProjectJson(recordToLoad.document));
+      },
+      persist: candidate => store.createOrReplace(candidate, null),
+      remove: saved => store.delete(saved.localProjectId),
+      commit(saved) {
+        const session = projectSessions.begin();
+        current = saved;
+        hasCurrent = true;
+        titleInput.value = saved.title;
+        installSaveCoordinator(session);
+      },
+      setSuppressed(value) {
+        suppressVmChanges = value;
+      },
+    });
     return;
   }
 
