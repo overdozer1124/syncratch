@@ -8,6 +8,8 @@ export interface ProjectStatusInput {
   driveMessage?: string;
   collab: CollabState | null;
   collabIdleMessage?: string;
+  fatalError?: string;
+  localError?: string;
 }
 
 const localStatusText: Record<LocalSaveState, string> = {
@@ -31,10 +33,10 @@ const driveDetailText: Record<EditorDriveStatus, string | null> = {
 function collabDetail(state: CollabState | null, idleMessage?: string): string | null {
   if (!state) return idleMessage && idleMessage !== "Solo" ? idleMessage : null;
   const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
+  if (state.status === "disconnected") return "Collab disconnected";
   if (state.bootstrapPhase !== "ready" && state.bootstrapPhase !== "idle") {
     return `Collab ${state.bootstrapPhase}`;
   }
-  if (state.status === "disconnected") return "Collab disconnected";
   if (state.conflict) return `${peers} · Drive paused`;
   return `${peers} connected`;
 }
@@ -43,7 +45,10 @@ export function composeProjectStatus(input: ProjectStatusInput): {
   primary: string;
   details: string;
 } {
-  const primary = localStatusText[input.local];
+  if (input.fatalError) {
+    return {primary: "Error", details: input.fatalError};
+  }
+  const primary = input.localError ?? localStatusText[input.local];
   const details = [
     input.driveMessage
       ? `${driveDetailText[input.drive] ?? "Drive"}: ${input.driveMessage}`

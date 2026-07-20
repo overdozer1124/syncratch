@@ -34,9 +34,9 @@ import {
 } from "./runtime-assets.js";
 import {
   assetRecordsFromMap,
-  createRecoveryCopy,
-  findMissingAssets,
+  createCorruptRecordRecovery,
   isMissingAssetError,
+  recoverLoadedRecord,
   recordHasMissingStoredAssets,
 } from "./local-record-recovery.js";
 import {composeProjectStatus} from "./project-status.js";
@@ -238,9 +238,11 @@ let lastDriveStatus: EditorDriveStatus = "not-configured";
 let lastDriveMessage: string | undefined;
 let lastCollabState: CollabState | null = null;
 let lastCollabIdleMessage = "Solo";
+let fatalBootError: string | undefined;
+let localOperationError: string | undefined;
 const recoveryAssetOverlay = new Map<string, Uint8Array>();
-let activeProjectSession: ProjectSession = 0;
 const projectSessions = createProjectSessionTracker();
+const corruptRecordRecovery = createCorruptRecordRecovery();
 const assetHashCache = createAssetHashCache(sha256Hex);
 
 const diagnostic = {
@@ -284,16 +286,21 @@ const diagnostic = {
   failNextWrite(): void {
     failNextWrite = true;
   },
-  corruptStoredAssets(): void {
+  async corruptStoredAssets(): Promise<void> {
     if (!hasCurrent || current.assets.length === 0) {
       throw new Error("No stored assets to corrupt");
     }
     const [removed, ...remaining] = current.assets;
     recoveryAssetOverlay.set(removed.md5ext, removed.bytes);
-    current = {
+    current = await store.createOrReplace({
       ...current,
       assets: remaining,
-    };
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+    }, current.revision);
+  },
+  async localProjectIds(): Promise<string[]> {
+    return (await store.list()).map(record => record.localProjectId);
   },
   async configureCollaborationTestGate(driveFileId: string): Promise<void> {
     if (import.meta.env.MODE !== "e2e") {
@@ -381,22 +388,23 @@ function assetMap(record: LocalProjectRecord): Map<string, Uint8Array> {
 async function maybeRecoverCorruptRecord(
   session: ProjectSession,
 ): Promise<boolean> {
-  if (!hasCurrent || !recordHasMissingStoredAssets(current)) return false;
+  if (!hasCurrent || !projectSessions.isActive(session)) return false;
+  const source = current;
   const assets = runtimeAssetMap();
   const document = documentFromVm(assets);
-  if (findMissingAssets(document, assets).length > 0) return false;
-  const recovery = createRecoveryCopy({
-    current,
+  return corruptRecordRecovery.recover({
+    current: source,
     title: titleInput.value,
     document,
     assets,
     localProjectId: crypto.randomUUID(),
+    isActive: () => projectSessions.isActive(session),
+    persist: recovery => store.createOrReplace(recovery, null),
+    remove: recovery => store.delete(recovery.localProjectId),
+    commit(saved) {
+      current = saved;
+    },
   });
-  const saved = await store.createOrReplace(recovery, null);
-  projectSessions.runIfActive(session, () => {
-    current = saved;
-  });
-  return true;
 }
 
 function attachLocalStorage(record: LocalProjectRecord): void {
@@ -425,38 +433,47 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
-  if (failNextWrite) {
-    failNextWrite = false;
-    throw new ProjectStoreTransactionError("Simulated IndexedDB write failure");
-  }
-  if (await maybeRecoverCorruptRecord(session)) {
-    // Fall through to persist the recovered revision-0 record.
-  }
-  const assets = runtimeAssetMap();
-  const document = documentFromVm(assets);
-  try {
-    const next: LocalProjectRecord = {
-      ...current,
-      title: titleInput.value,
-      revision: current.revision + 1,
-      updatedAt: new Date().toISOString(),
-      document,
-      assets: assetRecordsFromMap(document, assets),
-      saveState: "clean",
-    };
-    const saved = await store.createOrReplace(next, current.revision);
-    projectSessions.runIfActive(session, () => {
-      current = saved;
-    });
-    recoveryAssetOverlay.clear();
-  } catch (error) {
-    if (!isMissingAssetError(error)) throw error;
-    if (await maybeRecoverCorruptRecord(session)) {
-      await persistCurrent(session);
-      return;
+  await projectSessions.runSerialized(session, async isActive => {
+    if (failNextWrite) {
+      failNextWrite = false;
+      throw new ProjectStoreTransactionError(
+        "Simulated IndexedDB write failure",
+      );
     }
-    throw error;
-  }
+
+    const persistRevision = async (): Promise<void> => {
+      if (!isActive()) return;
+      const source = current;
+      const assets = runtimeAssetMap();
+      const document = documentFromVm(assets);
+      if (!isActive()) return;
+      const next: LocalProjectRecord = {
+        ...source,
+        title: titleInput.value,
+        revision: source.revision + 1,
+        updatedAt: new Date().toISOString(),
+        document,
+        assets: assetRecordsFromMap(document, assets),
+        saveState: "clean",
+      };
+      const saved = await store.createOrReplace(next, source.revision);
+      if (!isActive()) return;
+      current = saved;
+      recoveryAssetOverlay.clear();
+    };
+
+    try {
+      await maybeRecoverCorruptRecord(session);
+      if (!isActive()) return;
+      await persistRevision();
+    } catch (error) {
+      if (!isMissingAssetError(error)) throw error;
+      if (!isActive()) return;
+      if (!await maybeRecoverCorruptRecord(session)) throw error;
+      if (!isActive()) return;
+      await persistRevision();
+    }
+  });
 }
 
 function renderProjectStatus(): void {
@@ -466,20 +483,23 @@ function renderProjectStatus(): void {
     driveMessage: lastDriveMessage,
     collab: lastCollabState,
     collabIdleMessage: lastCollabIdleMessage,
+    fatalError: fatalBootError,
+    localError: localOperationError,
   });
   saveStatus.textContent = primary;
+  saveStatus.title = fatalBootError ?? "";
   projectStatusDetails.textContent = details ? ` · ${details}` : "";
   projectStatusDetails.hidden = details.length === 0;
 }
 
 function renderSaveState(state: LocalSaveState): void {
   lastLocalSaveState = state;
+  localOperationError = undefined;
   retryButton.hidden = state !== "error" && state !== "conflict";
   renderProjectStatus();
 }
 
 function installSaveCoordinator(session: ProjectSession): void {
-  activeProjectSession = session;
   saveCoordinator?.dispose();
   saveCoordinator = createSaveCoordinator({
     debounceMs: 250,
@@ -740,28 +760,34 @@ async function loadRecord(
   driveAutosave?.cancel();
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
-  await loadRecordSafely({
-    candidate,
-    previous,
-    setSuppressed(value) {
-      suppressVmChanges = value;
-    },
-    async load(recordToLoad) {
-      attachLocalStorage(recordToLoad);
-      await vm.loadProject(documentToProjectJson(recordToLoad.document));
-      signal?.throwIfAborted();
-    },
-    commit(loaded) {
-      const session = projectSessions.begin();
-      current = loaded;
-      hasCurrent = true;
-      titleInput.value = loaded.title;
-      installSaveCoordinator(session);
-      void maybeRecoverCorruptRecord(session).then(recovered => {
-        if (recovered) void saveCoordinator.flush();
-      });
-    },
-  });
+  const session = projectSessions.begin();
+  saveCoordinator?.dispose();
+  try {
+    await loadRecordSafely({
+      candidate,
+      previous,
+      setSuppressed(value) {
+        suppressVmChanges = value;
+      },
+      async load(recordToLoad) {
+        attachLocalStorage(recordToLoad);
+        await vm.loadProject(documentToProjectJson(recordToLoad.document));
+        signal?.throwIfAborted();
+      },
+      commit(loaded) {
+        current = loaded;
+        hasCurrent = true;
+        titleInput.value = loaded.title;
+        installSaveCoordinator(session);
+        if (recordHasMissingStoredAssets(loaded)) {
+          void recoverLoadedRecord({coordinator: saveCoordinator});
+        }
+      },
+    });
+  } catch (error) {
+    if (previous) installSaveCoordinator(session);
+    throw error;
+  }
 }
 
 async function loadFixtureRecord(
@@ -1122,7 +1148,8 @@ fileInput.addEventListener("change", async () => {
       file.name.replace(/\.sb3$/i, ""),
     );
   } catch {
-    saveStatus.textContent = "Import failed";
+    localOperationError = "Import failed";
+    renderProjectStatus();
     retryButton.hidden = true;
   } finally {
     fileInput.value = "";
@@ -1177,8 +1204,7 @@ collabDiagnosticsButton.addEventListener("click", () => {
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
-  saveStatus.textContent = "Error";
-  saveStatus.title = diagnostic.error ?? "";
+  fatalBootError = diagnostic.error ?? "Boot failed";
   driveReady = false;
   renderDriveStatus(driveIntegration.getStatus());
 });

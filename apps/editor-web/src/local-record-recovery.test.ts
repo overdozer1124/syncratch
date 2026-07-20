@@ -1,12 +1,15 @@
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import {emptyProject, type CostumeRef, type ProjectDocument} from "@blocksync/project-schema";
 import {LOCAL_PROJECT_FORMAT, type LocalProjectRecord} from "@blocksync/project-local-core";
+import {createSaveCoordinator} from "./save-coordinator.js";
 import {
   assetRecordsFromMap,
+  createCorruptRecordRecovery,
   createRecoveryCopy,
   findMissingAssets,
   isMissingAssetError,
   MissingAssetError,
+  recoverLoadedRecord,
 } from "./local-record-recovery.js";
 
 const STAGE_COSTUME: CostumeRef = {
@@ -133,5 +136,116 @@ describe("isMissingAssetError", () => {
     expect(isMissingAssetError(new MissingAssetError(["a.svg"]))).toBe(true);
     expect(isMissingAssetError(new Error("Missing asset a.svg"))).toBe(true);
     expect(isMissingAssetError(new Error("IndexedDB failed"))).toBe(false);
+  });
+});
+
+describe("recoverCorruptRecord coordination", () => {
+  it("does not leave a recovery copy when its project session becomes stale", async () => {
+    const source: LocalProjectRecord = {...baseRecord(), assets: []};
+    const runtimeAssets = new Map([
+      [STAGE_COSTUME.md5ext, new Uint8Array([9, 9, 9])],
+    ]);
+    let active = true;
+    let finishPersist!: () => void;
+    const persistGate = new Promise<void>(resolve => {
+      finishPersist = resolve;
+    });
+    const persisted = new Map<string, LocalProjectRecord>();
+    let current = source;
+    const coordinator = createCorruptRecordRecovery();
+
+    const recovery = coordinator.recover({
+      current: source,
+      title: source.title,
+      document: source.document,
+      assets: runtimeAssets,
+      localProjectId: "stale-recovery",
+      isActive: () => active,
+      async persist(record) {
+        persisted.set(record.localProjectId, record);
+        await persistGate;
+        return record;
+      },
+      async remove(record) {
+        persisted.delete(record.localProjectId);
+      },
+      commit(record) {
+        if (active) current = record;
+      },
+    });
+    await vi.waitFor(() => expect(persisted.size).toBe(1));
+    active = false;
+    finishPersist();
+    await recovery;
+
+    expect(current.localProjectId).toBe(source.localProjectId);
+    expect([...persisted]).toEqual([]);
+  });
+
+  it("uses one recovery write for concurrent callers", async () => {
+    const source: LocalProjectRecord = {...baseRecord(), assets: []};
+    const runtimeAssets = new Map([
+      [STAGE_COSTUME.md5ext, new Uint8Array([9, 9, 9])],
+    ]);
+    let finishPersist!: () => void;
+    const persistGate = new Promise<void>(resolve => {
+      finishPersist = resolve;
+    });
+    const persist = vi.fn(async (record: LocalProjectRecord) => {
+      await persistGate;
+      return record;
+    });
+    const commit = vi.fn();
+    const coordinator = createCorruptRecordRecovery();
+
+    const first = coordinator.recover({
+      current: source,
+      title: source.title,
+      document: source.document,
+      assets: runtimeAssets,
+      localProjectId: "recovery-1",
+      isActive: () => true,
+      persist,
+      remove: async () => undefined,
+      commit,
+    });
+    const second = coordinator.recover({
+      current: source,
+      title: source.title,
+      document: source.document,
+      assets: runtimeAssets,
+      localProjectId: "recovery-2",
+      isActive: () => true,
+      persist,
+      remove: async () => undefined,
+      commit,
+    });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalled());
+
+    expect(persist).toHaveBeenCalledTimes(1);
+    finishPersist();
+    await Promise.all([first, second]);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("recoverLoadedRecord", () => {
+  it("handles automatic recovery failure through the save coordinator", async () => {
+    const coordinator = createSaveCoordinator({
+      debounceMs: 10,
+      save: async () => {
+        throw new Error("IndexedDB recovery failed");
+      },
+    });
+
+    const outcome = await recoverLoadedRecord({
+      coordinator,
+    }).then(
+      () => "resolved",
+      () => "rejected",
+    );
+
+    expect(outcome).toBe("resolved");
+    expect(coordinator.getState()).toBe("error");
   });
 });

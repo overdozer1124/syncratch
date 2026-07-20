@@ -131,6 +131,10 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
   expect(
     await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
   ).toBe(originalId);
+  await page.evaluate(() =>
+    window.__blocksyncTask3!.configureCollaborationTestGate("import-failure"),
+  );
+  await expect(page.getByTestId("save-status")).toHaveText("Import failed");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", {name: "Download to this device"}).click();
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.sb3$/);
@@ -286,15 +290,28 @@ test("corrupt stored assets recover automatically on save", async ({page}) => {
   const originalId = await page.evaluate(
     () => window.__blocksyncTask3!.getState().localProjectId,
   );
-  await page.evaluate(() => {
-    window.__blocksyncTask3!.corruptStoredAssets();
+  await page.evaluate(async () => {
+    await window.__blocksyncTask3!.corruptStoredAssets();
     window.__blocksyncTask3!.createTestBlock("recovered-after-corrupt");
   });
 
   await expect(page.getByTestId("save-status")).toHaveText("Saved");
-  expect(
-    await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
-  ).not.toBe(originalId);
+  const recoveredId = await page.evaluate(
+    () => window.__blocksyncTask3!.getState().localProjectId,
+  );
+  expect(recoveredId).not.toBe(originalId);
+  expect(await page.evaluate(
+    () => window.__blocksyncTask3!.localProjectIds(),
+  )).toEqual(expect.arrayContaining([originalId, recoveredId]));
+
+  await page.reload();
+  await page.waitForFunction(() => window.__blocksyncTask3?.ready === true);
+  expect(await page.evaluate(
+    () => window.__blocksyncTask3!.getState().localProjectId,
+  )).toBe(recoveredId);
+  expect(await page.evaluate(
+    () => window.__blocksyncTask3!.hasBlock("recovered-after-corrupt"),
+  )).toBe(true);
 });
 
 test("unified status shows local save as primary with optional secondary details", async ({
@@ -342,7 +359,8 @@ declare global {
       exportSb3(): Promise<Uint8Array>;
       importSb3(bytes: Uint8Array, title: string): Promise<void>;
       failNextWrite(): void;
-      corruptStoredAssets(): void;
+      corruptStoredAssets(): Promise<void>;
+      localProjectIds(): Promise<string[]>;
       configureCollaborationTestGate(driveFileId: string): Promise<void>;
       renameTarget(isStage: boolean, name: string): void;
       targetName(isStage: boolean): string | undefined;

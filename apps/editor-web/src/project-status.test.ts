@@ -77,4 +77,47 @@ describe("composeProjectStatus", () => {
     expect(disconnected.details).toContain("Collab disconnected");
     expect(disconnected.details).toContain("Drive disconnected");
   });
+
+  it("keeps a fatal boot error primary during later status recomposition", () => {
+    const status = composeProjectStatus({
+      local: "clean",
+      drive: "not-configured",
+      collab: null,
+      fatalError: "IndexedDB failed to open",
+    });
+
+    expect(status.primary).toBe("Error");
+    expect(status.details).toContain("IndexedDB failed to open");
+  });
+
+  it("keeps an import failure primary during secondary status updates", () => {
+    const status = composeProjectStatus({
+      local: "clean",
+      localError: "Import failed",
+      drive: "synced",
+      collab: null,
+    });
+
+    expect(status.primary).toBe("Import failed");
+    expect(status.details).toBe("Drive synced");
+  });
+
+  it("prioritizes collaboration disconnection over bootstrap progress", () => {
+    const status = composeProjectStatus({
+      local: "clean",
+      drive: "not-configured",
+      collab: collabState({
+        status: "disconnected",
+        peerCount: 0,
+        bootstrapPhase: "receiving-project",
+        role: "follower",
+        createdThisRoom: false,
+        conflict: false,
+        expectedAssets: 2,
+        verifiedAssets: 1,
+      }),
+    });
+
+    expect(status.details).toBe("Collab disconnected");
+  });
 });

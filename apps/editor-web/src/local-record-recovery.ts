@@ -3,6 +3,7 @@ import {
   type LocalProjectRecord,
 } from "@blocksync/project-local-core";
 import type {ProjectDocument} from "@blocksync/project-schema";
+import type {SaveCoordinator} from "./save-coordinator.js";
 
 export class MissingAssetError extends Error {
   readonly missing: readonly string[];
@@ -88,4 +89,64 @@ export function recordHasMissingStoredAssets(
     record.assets.map(asset => [asset.md5ext, asset.bytes] as const),
   );
   return findMissingAssets(record.document, stored).length > 0;
+}
+
+export interface RecoverCorruptRecordOptions {
+  current: LocalProjectRecord;
+  title: string;
+  document: ProjectDocument;
+  assets: ReadonlyMap<string, Uint8Array>;
+  localProjectId: string;
+  isActive(): boolean;
+  persist(record: LocalProjectRecord): Promise<LocalProjectRecord>;
+  remove(record: LocalProjectRecord): Promise<void>;
+  commit(record: LocalProjectRecord): void;
+}
+
+export interface CorruptRecordRecovery {
+  recover(options: RecoverCorruptRecordOptions): Promise<boolean>;
+}
+
+export function createCorruptRecordRecovery(): CorruptRecordRecovery {
+  let inFlight: Promise<boolean> | null = null;
+
+  const recoverOnce = async (
+    options: RecoverCorruptRecordOptions,
+  ): Promise<boolean> => {
+    if (!options.isActive()) return false;
+    if (!recordHasMissingStoredAssets(options.current)) return false;
+    if (findMissingAssets(options.document, options.assets).length > 0) {
+      return false;
+    }
+    if (!options.isActive()) return false;
+    const saved = await options.persist(createRecoveryCopy(options));
+    if (!options.isActive()) {
+      await options.remove(saved);
+      return false;
+    }
+    options.commit(saved);
+    return true;
+  };
+
+  return {
+    recover(options) {
+      if (inFlight) return inFlight;
+      const work = recoverOnce(options);
+      inFlight = work.finally(() => {
+        inFlight = null;
+      });
+      return inFlight;
+    },
+  };
+}
+
+export interface LoadedRecordRecoveryOptions {
+  coordinator: Pick<SaveCoordinator, "markDirty" | "flush">;
+}
+
+export async function recoverLoadedRecord(
+  options: LoadedRecordRecoveryOptions,
+): Promise<void> {
+  options.coordinator.markDirty();
+  await options.coordinator.flush();
 }

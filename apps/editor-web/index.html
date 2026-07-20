@@ -14,7 +14,13 @@
         <input id="open-file" type="file" accept=".sb3" hidden />
         <button id="download-project" type="button">Download to this device</button>
         <button id="save-project" type="button">Save locally</button>
-        <span class="project-status" id="project-status">
+        <span
+          aria-atomic="true"
+          aria-live="polite"
+          class="project-status"
+          id="project-status"
+          role="status"
+        >
           <span data-testid="save-status" id="save-status">Starting…</span>
           <span
             class="status-details"
@@ -29,7 +35,7 @@
           <button id="open-drive" type="button" disabled>Open Google Drive</button>
           <button id="save-drive" type="button" disabled>Save to Google Drive</button>
           <button id="disconnect-google" type="button" disabled>Disconnect</button>
-          <span class="status-secondary" data-testid="drive-status" id="drive-status">Not configured</span>
+          <span aria-hidden="true" class="status-secondary" data-testid="drive-status" id="drive-status">Not configured</span>
         </span>
         <span class="collab-controls">
           <button id="create-room" type="button" disabled>Create room</button>
@@ -45,7 +51,7 @@
           <button id="collab-retry-save" type="button" hidden>保存を再試行</button>
           <button id="collab-download-sb3" type="button" hidden>SB3をダウンロード</button>
           <button id="collab-diagnostics" type="button" hidden>診断情報</button>
-          <span class="status-secondary" data-testid="collab-status" id="collab-status">Solo</span>
+          <span aria-hidden="true" class="status-secondary" data-testid="collab-status" id="collab-status">Solo</span>
         </span>
       </header>
       <section data-testid="scratch-gui" id="scratch-gui"></section>
