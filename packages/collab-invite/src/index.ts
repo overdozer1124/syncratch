@@ -1,12 +1,16 @@
 /**
  * @experimental Small-room collaboration invitation model.
  *
- * An invitation carries a random room id, a random high-entropy secret, and the
- * Drive file id. This data lives in the URL fragment ONLY. It must never enter
- * request URLs, logs, Drive payloads, `.sb3`, IndexedDB project content, or
- * signaling messages. The signaling topic is derived from a one-way hash of the
- * room id and secret so that neither the secret nor the file id can be recovered
- * from anything a signaling server observes.
+ * An invitation carries a random room id and a random high-entropy secret.
+ * This data lives in the URL fragment ONLY. It must never enter request URLs,
+ * logs, Drive payloads, `.sb3`, IndexedDB project content, or signaling
+ * messages. The signaling topic is derived from a one-way hash of the room id
+ * and secret so that the secret cannot be recovered from anything a signaling
+ * server observes.
+ *
+ * Drive file ids are not part of the collaboration capability. Legacy invites
+ * that still carry a `driveFileId` field decode successfully, but the file id
+ * is stripped and never used for Join.
  */
 
 const FRAGMENT_KEY = "blocksync-collab";
@@ -16,8 +20,6 @@ export interface CollabInvite {
   roomId: string;
   /** Random, high-entropy shared secret. Never sent to signaling. */
   secret: string;
-  /** Drive file id all participants must be able to read. */
-  driveFileId: string;
 }
 
 export type RandomBytes = (length: number) => Uint8Array;
@@ -65,52 +67,68 @@ function decodeText(value: string): string | null {
   }
 }
 
-/** Create an invitation. Entropy is injectable so callers can test determinism. */
-export function createInvite(
-  driveFileId: string,
-  options: CreateInviteOptions = {},
-): CollabInvite {
-  if (typeof driveFileId !== "string" || driveFileId.length === 0) {
-    throw new Error("driveFileId must be a non-empty string");
-  }
+/** Create a Drive-free invitation. Entropy is injectable for tests. */
+export function createInvite(options: CreateInviteOptions = {}): CollabInvite {
   const randomBytes = options.randomBytes ?? defaultRandomBytes;
   const roomId = base64UrlFromBytes(randomBytes(16));
   const secret = base64UrlFromBytes(randomBytes(32));
   if (roomId.length < 16 || secret.length < 32) {
     throw new Error("entropy source returned insufficient bytes");
   }
-  return {roomId, secret, driveFileId};
+  return {roomId, secret};
 }
 
-function isInvite(value: unknown): value is CollabInvite {
+function isInviteShape(value: unknown): value is {
+  roomId: string;
+  secret: string;
+  driveFileId?: string;
+} {
   if (typeof value !== "object" || value === null) return false;
   const record = value as Record<string, unknown>;
   const keys = Object.keys(record);
-  if (keys.some((key) => key !== "roomId" && key !== "secret" && key !== "driveFileId")) {
+  if (keys.some(key => key !== "roomId" && key !== "secret" && key !== "driveFileId")) {
     return false;
   }
-  return (
-    typeof record.roomId === "string" &&
-    record.roomId.length > 0 &&
-    typeof record.secret === "string" &&
-    record.secret.length > 0 &&
-    typeof record.driveFileId === "string" &&
-    record.driveFileId.length > 0
-  );
+  if (
+    typeof record.roomId !== "string" ||
+    record.roomId.length === 0 ||
+    typeof record.secret !== "string" ||
+    record.secret.length === 0
+  ) {
+    return false;
+  }
+  if (
+    "driveFileId" in record &&
+    (typeof record.driveFileId !== "string" || record.driveFileId.length === 0)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function toInvite(value: {
+  roomId: string;
+  secret: string;
+  driveFileId?: string;
+}): CollabInvite {
+  return {roomId: value.roomId, secret: value.secret};
 }
 
 /** Encode an invitation as the fragment portion (without a leading `#`). */
 export function encodeInviteFragment(invite: CollabInvite): string {
-  if (!isInvite(invite)) throw new Error("invalid invite");
+  if (!isInviteShape(invite)) throw new Error("invalid invite");
   const payload = JSON.stringify({
     roomId: invite.roomId,
     secret: invite.secret,
-    driveFileId: invite.driveFileId,
   });
   return `${FRAGMENT_KEY}=${encodeText(payload)}`;
 }
 
-/** Decode an invitation from a fragment string (leading `#` optional). */
+/**
+ * Decode an invitation from a fragment string (leading `#` optional).
+ * Legacy fragments that include `driveFileId` are accepted; the file id is
+ * stripped from the returned collaboration capability.
+ */
 export function decodeInviteFragment(fragment: string): CollabInvite | null {
   if (typeof fragment !== "string") return null;
   const body = fragment.startsWith("#") ? fragment.slice(1) : fragment;
@@ -125,12 +143,8 @@ export function decodeInviteFragment(fragment: string): CollabInvite | null {
   } catch {
     return null;
   }
-  if (!isInvite(parsed)) return null;
-  return {
-    roomId: parsed.roomId,
-    secret: parsed.secret,
-    driveFileId: parsed.driveFileId,
-  };
+  if (!isInviteShape(parsed)) return null;
+  return toInvite(parsed);
 }
 
 /** Build a shareable URL that carries the invitation in the fragment only. */
@@ -151,8 +165,8 @@ export function parseInviteFromUrl(url: string): CollabInvite | null {
 
 /**
  * Derive the signaling topic from a one-way hash of the room id and secret.
- * The Drive file id is intentionally excluded so it can never be reconstructed
- * from the topic, and the hash prevents recovering the secret from signaling.
+ * Drive file ids are intentionally excluded so they can never be reconstructed
+ * from the topic.
  */
 export async function deriveSignalingTopic(
   invite: {roomId: string; secret: string; driveFileId?: string},

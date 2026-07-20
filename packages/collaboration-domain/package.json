@@ -12,7 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@blocksync/project-envelope": "workspace:*",
     "@blocksync/project-schema": "workspace:*",
+    "@noble/hashes": "2.2.0",
     "yjs": "^13.6.27"
   },
   "devDependencies": {

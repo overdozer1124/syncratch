@@ -71,9 +71,11 @@ import {createWebRtcProvider} from "@blocksync/collab-webrtc";
 import {
   createCollabSession,
   evaluateCollabReadiness,
+  type ApplyRemoteContext,
   type CollabSession,
   type CollabState,
 } from "./collab-session.js";
+import {summarizePreflightIssues} from "@blocksync/collaboration-domain";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -207,6 +209,10 @@ const createRoomButton = requiredElement<HTMLButtonElement>("create-room");
 const joinRoomButton = requiredElement<HTMLButtonElement>("join-room");
 const copyInviteButton = requiredElement<HTMLButtonElement>("copy-invite");
 const leaveRoomButton = requiredElement<HTMLButtonElement>("leave-room");
+const collabReconnectButton = requiredElement<HTMLButtonElement>("collab-reconnect");
+const collabRetrySaveButton = requiredElement<HTMLButtonElement>("collab-retry-save");
+const collabDownloadSb3Button = requiredElement<HTMLButtonElement>("collab-download-sb3");
+const collabDiagnosticsButton = requiredElement<HTMLButtonElement>("collab-diagnostics");
 const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
@@ -296,7 +302,13 @@ const diagnostic = {
   collaborationDebug() {
     const materialized = collabSession?.domain.materialize();
     return {
-      state: collabSession?.getState() ?? null,
+      state: collabSession
+        ? {
+            ...collabSession.getState(),
+            // Keep role for harness diagnostics; UI no longer displays it.
+            role: collabSession.getState().role,
+          }
+        : null,
       vmTargets: vm.runtime.targets.map(target => ({
         isStage: target.isStage,
         name: target.getName(),
@@ -425,8 +437,8 @@ function installSaveCoordinator(session: ProjectSession): void {
 function markDirty(): void {
   if (suppressVmChanges) return;
   saveCoordinator.markDirty();
-  // Followers never write Drive; collab edits must not flip Drive to Unsynced.
-  if (!collabSession || collabSession.isLeader()) {
+  // Only the room-creating device may mark Drive unsynced / autosave.
+  if (!collabSession || collabSession.createdThisRoom()) {
     driveIntegration.markLocalChange();
     driveAutosave?.noteChange();
   }
@@ -441,46 +453,87 @@ function randomParticipantId(): string {
   return `p-${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function renderBootstrapActions(state: CollabState | null): void {
+  const phase = state?.bootstrapPhase ?? "idle";
+  collabReconnectButton.hidden = phase !== "stalled-project";
+  collabRetrySaveButton.hidden = phase !== "local-save-failed";
+  collabDownloadSb3Button.hidden = phase !== "local-save-failed";
+  collabDiagnosticsButton.hidden = !(
+    phase === "stalled-project" ||
+    phase === "invalid-project" ||
+    phase === "local-save-failed" ||
+    phase === "receiving-project" ||
+    phase === "verifying-project"
+  );
+  const bootstrapping = Boolean(
+    state &&
+    !state.createdThisRoom &&
+    phase !== "ready" &&
+    phase !== "idle",
+  );
+  guiHost.classList.toggle("collab-bootstrap-locked", bootstrapping);
+}
+
 function renderCollabIdle(message = "Solo"): void {
   collabStatus.textContent = message;
-  const ready = hasCurrent && evaluateCollabReadiness({
-    googleConnected:
-      collaborationTestGate || (driveReady && driveIntegration.isConnected()),
-    driveFileId: current.driveFileId,
-    signalingUrl,
-  }).ok;
+  const ready = hasCurrent && evaluateCollabReadiness({signalingUrl}).ok;
   createRoomButton.disabled = Boolean(collabSession) || !ready;
-  joinRoomButton.disabled = Boolean(collabSession) ||
-    !(collaborationTestGate || (driveReady && driveIntegration.isConnected())) ||
-    signalingUrl.length === 0;
+  joinRoomButton.disabled = Boolean(collabSession) || !ready;
   copyInviteButton.disabled = activeInvite === null;
   leaveRoomButton.disabled = collabSession === null;
+  renderBootstrapActions(null);
 }
 
 function renderCollabState(state: CollabState): void {
   const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
   const conflict = state.conflict ? " · conflict; Drive paused" : "";
+  const assets =
+    state.bootstrapPhase === "ready" || state.expectedAssets === 0
+      ? ""
+      : ` · 素材 ${state.verifiedAssets}/${state.expectedAssets}`;
+  const phase =
+    state.bootstrapPhase === "ready"
+      ? "ready"
+      : state.bootstrapPhase;
   collabStatus.textContent =
-    `${state.status} · ${peers} · ${state.role}${conflict}`;
+    `${state.status} · ${peers} · ${phase}${assets}${conflict}`;
   driveAutosave?.eligibilityChanged();
   createRoomButton.disabled = true;
   joinRoomButton.disabled = true;
   copyInviteButton.disabled = activeInvite === null;
   leaveRoomButton.disabled = false;
+  renderBootstrapActions(state);
 }
 
 async function applyCollaborativeProject(
   generation: number,
-  invite: CollabInvite,
   document: ProjectDocument,
   assets: Map<string, Uint8Array>,
+  context: ApplyRemoteContext,
 ): Promise<void> {
   if (generation !== collaborationGeneration || !collabSession) return;
   await saveCoordinator.flush();
   if (generation !== collaborationGeneration || !collabSession) return;
+
+  if (context.mode === "guest-initial") {
+    const record: LocalProjectRecord = {
+      format: LOCAL_PROJECT_FORMAT,
+      localProjectId: crypto.randomUUID(),
+      title: context.projectTitle ?? "共同編集プロジェクト",
+      revision: 0,
+      updatedAt: new Date().toISOString(),
+      document,
+      assets: assetRecords(document, assets),
+      saveState: "clean",
+    };
+    const saved = await store.createOrReplace(record, null);
+    if (generation !== collaborationGeneration || !collabSession) return;
+    await loadRecord(saved);
+    return;
+  }
+
   const next: LocalProjectRecord = {
     ...current,
-    driveFileId: invite.driveFileId,
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
     document,
@@ -517,17 +570,17 @@ async function startCollaboration(
       const assets = runtimeAssetMap();
       return {document: documentFromVm(assets), assets};
     },
-    applyRemoteToLocal: async (document, assets) => {
-      await applyCollaborativeProject(generation, invite, document, assets);
-      // A follower edit changes the leader's durable snapshot too. The VM load
-      // is suppressed, so explicitly mark and schedule the leader's Drive copy.
-      if (collabSession?.isLeader()) {
+    applyRemoteToLocal: async (document, assets, context) => {
+      await applyCollaborativeProject(generation, document, assets, context);
+      if (collabSession?.createdThisRoom()) {
         driveIntegration.markLocalChange();
         driveAutosave.noteChange();
       }
     },
+    projectTitle: () => titleInput.value,
     reobserveDriveBeforeLeadership: async () => {
       if (collaborationTestGate) return;
+      if (!current.driveFileId) return;
       if (!await driveIntegration.reobserveCurrentFile()) {
         throw new Error("Drive changed during collaboration handoff");
       }
@@ -537,32 +590,24 @@ async function startCollaboration(
   collabSession = session;
   activeInvite = invite;
   collabInviteInput.value = inviteUrl(window.location.href, invite);
-  session.start({host});
+  const started = session.start({host});
+  if (!started.ok) {
+    const summary = summarizePreflightIssues(started.issues);
+    collabSession = null;
+    activeInvite = null;
+    renderCollabIdle(summary.summary);
+    collabStatus.title = summary.codes.join(", ");
+  }
 }
 
 async function createRoom(): Promise<void> {
   try {
-    const readiness = evaluateCollabReadiness({
-      googleConnected: collaborationTestGate || driveIntegration.isConnected(),
-      driveFileId: current.driveFileId,
-      signalingUrl,
-    });
+    const readiness = evaluateCollabReadiness({signalingUrl});
     if (!readiness.ok) {
       renderCollabIdle(readiness.reason);
       return;
     }
-    if (!collaborationTestGate) {
-      // Align Drive with the local project before hosting. A fresh save also
-      // refreshes the observation used by later leader writes — avoid the
-      // brittle export-vs-Drive byte check that blocked Create room when
-      // appProperties.stateHash was missing or SB3 bytes differed slightly.
-      renderCollabIdle("Saving to Drive before creating room…");
-      if (!await driveIntegration.saveToDrive({explicit: true})) {
-        renderCollabIdle("Could not save to Drive before creating a room");
-        return;
-      }
-    }
-    await startCollaboration(createInvite(current.driveFileId!), true);
+    await startCollaboration(createInvite(), true);
   } catch (error) {
     renderCollabIdle(
       error instanceof Error ? error.message : "Could not create room",
@@ -583,24 +628,10 @@ async function joinRoom(): Promise<void> {
       renderCollabIdle("Invalid collaboration invite");
       return;
     }
-    const readiness = evaluateCollabReadiness({
-      googleConnected: collaborationTestGate || driveIntegration.isConnected(),
-      driveFileId: invite.driveFileId,
-      signalingUrl,
-    });
+    const readiness = evaluateCollabReadiness({signalingUrl});
     if (!readiness.ok) {
       renderCollabIdle(readiness.reason);
       return;
-    }
-    if (!collaborationTestGate) {
-      renderCollabIdle("Opening shared Drive file for this Google account…");
-      const opened = await driveIntegration.openCollaborationFile(invite.driveFileId);
-      if (!opened) {
-        renderCollabIdle(
-          "Share the host Drive file with this account, Join again, and pick that same file",
-        );
-        return;
-      }
     }
     await startCollaboration(invite, false);
   } catch (error) {
@@ -976,13 +1007,17 @@ async function boot(): Promise<void> {
 driveIntegration = setupDriveIntegration();
 driveAutosave = createDriveAutosave({
   delayMs: 2_000,
-  isEligible: () =>
-    hasCurrent &&
-    Boolean(current.driveFileId) &&
-    isDriveAutosaveEligible({
+  isEligible: () => {
+    const state = collabSession?.getState();
+    return hasCurrent && isDriveAutosaveEligible({
       driveConnected: driveIntegration.isConnected(),
-      collaboration: collabSession?.getState() ?? null,
-    }),
+      createdThisRoom: Boolean(state?.createdThisRoom),
+      bootstrapReady: state?.bootstrapPhase === "ready",
+      driveFileId: current.driveFileId,
+      collaborationConnected: state?.status === "connected",
+      conflict: Boolean(state?.conflict),
+    });
+  },
   save: () => driveIntegration.saveToDrive({explicit: false}),
 });
 
@@ -1031,6 +1066,25 @@ copyInviteButton.addEventListener("click", () => {
   void navigator.clipboard.writeText(inviteUrl(window.location.href, activeInvite));
 });
 leaveRoomButton.addEventListener("click", leaveRoom);
+collabReconnectButton.addEventListener("click", () => {
+  collabSession?.reconnectBootstrap();
+});
+collabRetrySaveButton.addEventListener("click", () => {
+  void collabSession?.retryLocalSave();
+});
+collabDownloadSb3Button.addEventListener("click", () => {
+  const materialization = collabSession?.getValidatedMaterialization();
+  if (!materialization) return;
+  void exportSb3(materialization.document, materialization.assets).then(download);
+});
+collabDiagnosticsButton.addEventListener("click", () => {
+  const diagnostics = collabSession?.getDiagnostics();
+  if (!diagnostics) return;
+  const text = JSON.stringify(diagnostics);
+  void navigator.clipboard.writeText(text).then(() => {
+    collabStatus.title = "Diagnostics copied";
+  });
+});
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);

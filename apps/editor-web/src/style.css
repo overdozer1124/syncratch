@@ -74,6 +74,11 @@ body,
   width: auto;
 }
 
+#scratch-gui.collab-bootstrap-locked {
+  pointer-events: none;
+  opacity: 0.72;
+}
+
 #scratch-gui {
   flex: 1 1 auto;
   min-height: 0;

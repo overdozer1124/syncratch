@@ -245,6 +245,36 @@ export class ProjectCollaborationDocument {
       trial.destroy();
     }
   }
+
+  /**
+   * Accept a remote update into a staging document without requiring a complete
+   * asset set. Still enforces decoded-update size and rejects corrupt updates.
+   */
+  tryApplyStagingUpdate(
+    update: Uint8Array,
+    maxUpdateBytes = 16 * 1024 * 1024,
+  ): ApplyRemoteResult {
+    if (update.byteLength > maxUpdateBytes) {
+      return {
+        accepted: false,
+        issues: [issue("INVALID_DOCUMENT", "decoded Yjs update exceeds hard limit")],
+      };
+    }
+    try {
+      Y.applyUpdate(this.ydoc, update, REMOTE_ORIGIN);
+      return {accepted: true};
+    } catch (error) {
+      return {
+        accepted: false,
+        issues: [
+          issue(
+            "INVALID_DOCUMENT",
+            error instanceof Error ? error.message : String(error),
+          ),
+        ],
+      };
+    }
+  }
 }
 
 function parseJsonField<T>(raw: unknown, fallback: T): T {
