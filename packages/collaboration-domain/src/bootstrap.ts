@@ -534,22 +534,6 @@ export function validateSealedCheckpoint(
   };
 }
 
-function manifestEquals(a: BootstrapAsset[], b: BootstrapAsset[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i += 1) {
-    const left = a[i]!;
-    const right = b[i]!;
-    if (
-      left.md5ext !== right.md5ext ||
-      left.contentSha256 !== right.contentSha256 ||
-      left.byteLength !== right.byteLength
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
 function countVerifiedAssets(
   ydoc: Y.Doc,
   manifest: BootstrapAsset[],
