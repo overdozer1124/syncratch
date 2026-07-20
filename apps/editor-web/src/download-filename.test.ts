@@ -7,9 +7,9 @@ describe("downloadFilename", () => {
   });
 
   it("uses a safe fallback and limits the filename length", () => {
-    expect(downloadFilename("...")).toBe("project.sb3");
-    expect(downloadFilename("CON")).toBe("project.sb3");
-    expect(downloadFilename("lpt9")).toBe("project.sb3");
+    expect(downloadFilename("...")).toBe("作品.sb3");
+    expect(downloadFilename("CON")).toBe("作品.sb3");
+    expect(downloadFilename("lpt9")).toBe("作品.sb3");
     expect(downloadFilename("a".repeat(500)).length).toBeLessThanOrEqual(104);
   });
 });

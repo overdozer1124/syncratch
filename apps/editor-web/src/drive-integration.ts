@@ -81,7 +81,7 @@ export interface EditorDriveIntegration {
 }
 
 function projectTitle(fileName: string): string {
-  return fileName.replace(/\.sb3$/i, "") || "Drive project";
+  return fileName.replace(/\.sb3$/i, "") || "Google ドライブの作品";
 }
 
 interface TrackedObservation extends DriveObservation {

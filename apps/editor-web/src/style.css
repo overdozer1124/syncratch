@@ -21,31 +21,64 @@ body,
   z-index: 200000;
   flex: 0 0 auto;
   box-sizing: border-box;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: #4c97ff;
+  padding: 8px 12px;
+  background: #1565a9;
   color: white;
 }
 
 .toolbar input,
 .toolbar button {
-  min-height: 30px;
+  min-height: 40px;
   border: 1px solid rgb(0 0 0 / 18%);
-  border-radius: 5px;
+  border-radius: 8px;
+  font: inherit;
 }
 
 .toolbar input {
-  width: min(260px, 30vw);
+  width: min(240px, 28vw);
   padding: 0 8px;
 }
 
 .toolbar button {
-  padding: 0 10px;
+  padding: 0 12px;
   background: white;
   cursor: pointer;
+  color: #16324f;
+  font-weight: 650;
+}
+
+.toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.primary-controls,
+.file-controls,
+.collab-controls,
+.drive-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-field,
+.invite-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.invite-field {
+  flex: 1 1 320px;
+}
+
+.invite-field input {
+  flex: 1;
+  width: auto;
+  min-width: 180px;
 }
 
 #save-status {
@@ -61,6 +94,7 @@ body,
   min-width: 120px;
   justify-content: flex-end;
   text-align: right;
+  font-weight: 700;
 }
 
 .status-details {
@@ -68,35 +102,133 @@ body,
   font-size: 0.92em;
 }
 
-.status-secondary {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.save-help,
+.panel-help,
+.safety-help {
+  margin: 5px 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
-.drive-controls,
-.collab-controls {
-  flex-basis: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#drive-status,
-#collab-status {
-  min-width: 108px;
+.save-help {
   text-align: right;
+  opacity: 0.92;
 }
 
-#collab-invite {
-  flex: 1;
-  width: auto;
+.feature-panels {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tool-panel {
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 9px;
+  background: rgb(18 71 130 / 22%);
+}
+
+.tool-panel summary {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.tool-panel[open] {
+  background: rgb(18 71 130 / 42%);
+}
+
+.tool-panel[open] summary {
+  border-radius: 8px;
+  background: rgb(18 71 130 / 35%);
+}
+
+.panel-content {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  max-height: min(45vh, 300px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 10px;
+  background: #0f5b99;
+  box-shadow: 0 10px 26px rgb(0 28 71 / 35%);
+}
+
+.panel-status {
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 22%);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.panel-feedback {
+  min-height: 0;
+  margin: 6px 0 0;
+  font-weight: 700;
+}
+
+.panel-feedback:empty {
+  display: none;
+}
+
+.safety-help {
+  color: #fff7c2;
+}
+
+@media (max-width: 720px) {
+  .toolbar {
+    padding: 6px;
+  }
+
+  .toolbar input {
+    width: min(200px, 55vw);
+  }
+
+  .project-status {
+    flex-basis: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .save-help {
+    text-align: left;
+  }
+
+  .tool-panel summary {
+    padding: 7px 6px;
+    font-size: 0.82rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar {
+    padding: 4px;
+  }
+
+  .toolbar input,
+  .toolbar button {
+    min-height: 36px;
+  }
+
+  .save-help {
+    display: none;
+  }
+
+  .tool-panel summary {
+    font-size: 0.76rem;
+  }
 }
 
 #scratch-gui.collab-bootstrap-locked {
@@ -108,13 +240,27 @@ body,
   flex: 1 1 auto;
   min-height: 0;
   position: relative;
+  overflow: auto;
 }
 
 #scratch-gui > div {
   position: absolute;
   inset: 0;
-  min-height: 0;
+  min-width: 1024px;
   height: 100%;
+}
+
+#scratch-gui button[aria-label="Debug"] {
+  display: none !important;
+}
+
+@media (max-width: 1024px) {
+  #scratch-gui [class*="collapsible-label"],
+  #scratch-gui [class*="tutorials-label"],
+  #scratch-gui [class*="debug-label"],
+  #scratch-gui [class*="dropdown-label"] {
+    display: inline !important;
+  }
 }
 
 /* Google Picker mounts on document.body with a low default z-index (~1000). */

@@ -39,7 +39,17 @@ import {
   recoverLoadedRecord,
   recordHasMissingStoredAssets,
 } from "./local-record-recovery.js";
-import {composeProjectStatus} from "./project-status.js";
+import {
+  collaborationStatusText,
+  composeProjectStatus,
+} from "./project-status.js";
+import {
+  friendlyCollaborationMessage,
+  friendlyDriveMessage,
+} from "./ui-copy.js";
+import {friendlyProjectTitle} from "./project-title.js";
+import {installScratchAccessibility} from "./scratch-accessibility.js";
+import {driveConflictAction} from "./drive-conflict-status.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
@@ -121,7 +131,7 @@ interface ScratchStorageInstance extends MemoryAssetStorage {
 
 interface ScratchGuiGlobal {
   ScratchStorage: new () => ScratchStorageInstance;
-  EditorState: new (options?: {isEmbedded?: boolean}) => unknown;
+  EditorState: new (options: {isEmbedded?: boolean; locale?: string}) => unknown;
   createStandaloneRoot(
     state: unknown,
     element: HTMLElement,
@@ -217,7 +227,25 @@ const collabDownloadSb3Button = requiredElement<HTMLButtonElement>("collab-downl
 const collabDiagnosticsButton = requiredElement<HTMLButtonElement>("collab-diagnostics");
 const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
+const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
+const toolPanels = [
+  ...document.querySelectorAll<HTMLDetailsElement>(".tool-panel"),
+];
+
+for (const panel of toolPanels) {
+  panel.addEventListener("toggle", () => {
+    if (!panel.open) return;
+    for (const other of toolPanels) {
+      if (other !== panel) other.open = false;
+    }
+  });
+}
+
+function closePanelFor(element: HTMLElement): void {
+  const panel = element.closest<HTMLDetailsElement>(".tool-panel");
+  if (panel) panel.open = false;
+}
 
 let store: ProjectStore;
 let vm: ScratchVm;
@@ -242,7 +270,7 @@ let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
 let lastDriveMessage: string | undefined;
 let lastCollabState: CollabState | null = null;
-let lastCollabIdleMessage = "Solo";
+let lastCollabIdleMessage = "ひとりで作っています";
 let fatalBootError: string | undefined;
 let localOperationError: string | undefined;
 const recoveryAssetOverlay = new Map<string, Uint8Array>();
@@ -556,7 +584,7 @@ function renderBootstrapActions(state: CollabState | null): void {
   guiHost.classList.toggle("collab-bootstrap-locked", bootstrapping);
 }
 
-function renderCollabIdle(message = "Solo"): void {
+function renderCollabIdle(message = "ひとりで作っています"): void {
   lastCollabState = null;
   lastCollabIdleMessage = message;
   collabStatus.textContent = message;
@@ -571,6 +599,7 @@ function renderCollabIdle(message = "Solo"): void {
 
 function renderCollabState(state: CollabState): void {
   lastCollabState = state;
+<<<<<<< HEAD
   if (state.bootstrapPhase === "ready") {
     guestInitialRollback = null;
   }
@@ -586,6 +615,9 @@ function renderCollabState(state: CollabState): void {
       : state.bootstrapPhase;
   collabStatus.textContent =
     `${state.status} · ${peers} · ${phase}${assets}${conflict}`;
+=======
+  collabStatus.textContent = collaborationStatusText(state);
+>>>>>>> fb8a990 (Localize editor UX for young Japanese users)
   driveAutosave?.eligibilityChanged();
   createRoomButton.disabled = true;
   joinRoomButton.disabled = true;
@@ -732,6 +764,7 @@ async function startCollaboration(
   });
   collabSession = session;
   activeInvite = invite;
+  collabFeedback.textContent = "";
   collabInviteInput.value = inviteUrl(window.location.href, invite);
   const started = session.start({host});
   if (!started.ok) {
@@ -739,7 +772,7 @@ async function startCollaboration(
     collabSession = null;
     activeInvite = null;
     renderCollabIdle(summary.summary);
-    collabStatus.title = summary.codes.join(", ");
+    collabStatus.title = "作品の素材や内容を確認してください。";
   }
 }
 
@@ -747,13 +780,16 @@ async function createRoom(): Promise<void> {
   try {
     const readiness = evaluateCollabReadiness({signalingUrl});
     if (!readiness.ok) {
-      renderCollabIdle(readiness.reason);
+      renderCollabIdle(
+        friendlyCollaborationMessage(readiness.reason) ??
+          "いっしょに作る機能を使えません。",
+      );
       return;
     }
     await startCollaboration(createInvite(), true);
-  } catch (error) {
+  } catch {
     renderCollabIdle(
-      error instanceof Error ? error.message : "Could not create room",
+      "いっしょに作るリンクを作れませんでした。インターネットをたしかめてください。",
     );
   }
 }
@@ -768,18 +804,23 @@ async function joinRoom(): Promise<void> {
   try {
     const invite = inviteFromInput();
     if (!invite) {
-      renderCollabIdle("Invalid collaboration invite");
+      renderCollabIdle(
+        friendlyCollaborationMessage("Invalid collaboration invite")!,
+      );
       return;
     }
     const readiness = evaluateCollabReadiness({signalingUrl});
     if (!readiness.ok) {
-      renderCollabIdle(readiness.reason);
+      renderCollabIdle(
+        friendlyCollaborationMessage(readiness.reason) ??
+          "いっしょに作る機能を使えません。",
+      );
       return;
     }
     await startCollaboration(invite, false);
-  } catch (error) {
+  } catch {
     renderCollabIdle(
-      error instanceof Error ? error.message : "Could not join room",
+      "友だちの作品に入れませんでした。リンクとインターネットをたしかめてください。",
     );
   }
 }
@@ -791,6 +832,7 @@ function leaveRoom(): void {
   collaborationGeneration += 1;
   collabSession = null;
   activeInvite = null;
+  collabFeedback.textContent = "";
   renderCollabIdle();
 }
 
@@ -818,7 +860,7 @@ async function loadRecord(
       commit(loaded) {
         current = loaded;
         hasCurrent = true;
-        titleInput.value = loaded.title;
+        titleInput.value = friendlyProjectTitle(loaded.title);
         installSaveCoordinator(session);
         if (recordHasMissingStoredAssets(loaded)) {
           void recoverLoadedRecord({coordinator: saveCoordinator});
@@ -833,7 +875,7 @@ async function loadRecord(
 
 async function loadFixtureRecord(
   localProjectId = crypto.randomUUID(),
-  title = "Local project",
+  title = "新しい作品",
 ): Promise<LocalProjectRecord> {
   const [projectResponse, assetsResponse] = await Promise.all([
     fetch(staticAssetUrl("generated/fixtures/cat-project.json")),
@@ -892,7 +934,7 @@ async function importProject(
   const result = await loadSb3(bytes);
   if (!result.ok || !result.document || !result.assets) {
     const message = result.issues.map(issue => issue.message).join("; ");
-    throw new Error(message || "Invalid SB3");
+    throw new Error(message || "Scratch の作品ファイルではありません");
   }
   const record: LocalProjectRecord = {
     format: LOCAL_PROJECT_FORMAT,
@@ -930,8 +972,9 @@ async function getVm(): Promise<ScratchVm> {
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
-    const state = new GUI.EditorState({});
+    const state = new GUI.EditorState({locale: "ja-Hira"});
     const root = GUI.createStandaloneRoot(state, guiHost);
+    installScratchAccessibility(guiHost);
     root.render({
       canEditTitle: false,
       canSave: false,
@@ -1019,25 +1062,26 @@ function buildPicker(options: PickerBuildOptions) {
 }
 
 const driveStatusText: Record<EditorDriveStatus, string> = {
-  "not-configured": "Not configured",
-  disconnected: "Disconnected",
-  connected: "Connected",
-  syncing: "Syncing…",
-  synced: "Synced",
-  unsynced: "Unsynced",
-  conflict: "Conflict",
+  "not-configured": "このパソコンでは使えません",
+  disconnected: "つながっていません",
+  connected: "つながりました",
+  syncing: "保存中…",
+  synced: "保存しました",
+  unsynced: "まだ保存していません",
+  conflict: "別の場所で作品が変わっています",
 };
 
 function renderDriveStatus(
   status: EditorDriveStatus,
   message?: string,
 ): void {
+  const friendlyMessage = friendlyDriveMessage(message);
   lastDriveStatus = status;
-  lastDriveMessage = message;
-  driveStatus.textContent = message
-    ? `${driveStatusText[status]}: ${message}`
+  lastDriveMessage = friendlyMessage;
+  driveStatus.textContent = friendlyMessage
+    ? `${driveStatusText[status]}：${friendlyMessage}`
     : driveStatusText[status];
-  driveStatus.title = message ?? "";
+  driveStatus.title = friendlyMessage ?? "";
   const configured = status !== "not-configured";
   const connected = !["not-configured", "disconnected", "syncing"]
     .includes(status);
@@ -1050,8 +1094,9 @@ function renderDriveStatus(
   saveDriveButton.disabled = !driveReady || !connected;
   disconnectGoogleButton.disabled =
     !driveReady || !configured || status === "disconnected";
-  if (status === "conflict") collabSession?.reportDriveConflict();
-  if (status === "synced") collabSession?.clearDriveConflict();
+  const conflictAction = driveConflictAction(status);
+  if (conflictAction === "report") collabSession?.reportDriveConflict();
+  if (conflictAction === "clear") collabSession?.clearDriveConflict();
   if (!collabSession) renderCollabIdle();
   else renderProjectStatus();
 }
@@ -1189,17 +1234,23 @@ fileInput.addEventListener("change", async () => {
       file.name.replace(/\.sb3$/i, ""),
     );
   } catch {
-    localOperationError = "Import failed";
+    localOperationError =
+      "作品ファイルを開けませんでした。今の作品はそのままです。";
     renderProjectStatus();
     retryButton.hidden = true;
   } finally {
     fileInput.value = "";
+    closePanelFor(openButton);
   }
 });
 downloadButton.addEventListener("click", () => {
   void exportCurrentSb3().then(download);
+  closePanelFor(downloadButton);
 });
-saveButton.addEventListener("click", () => void saveCoordinator.flush());
+saveButton.addEventListener("click", () => {
+  void saveCoordinator.flush();
+  closePanelFor(saveButton);
+});
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
 connectGoogleButton.addEventListener("click", () => {
   void driveIntegration.connect();
@@ -1213,14 +1264,22 @@ saveDriveButton.addEventListener("click", () => {
 });
 disconnectGoogleButton.addEventListener("click", () => {
   driveAutosave.cancel();
-  leaveRoom();
   driveIntegration.disconnect();
 });
 createRoomButton.addEventListener("click", () => void createRoom());
 joinRoomButton.addEventListener("click", () => void joinRoom());
 copyInviteButton.addEventListener("click", () => {
   if (!activeInvite) return;
-  void navigator.clipboard.writeText(inviteUrl(window.location.href, activeInvite));
+  void navigator.clipboard
+    .writeText(inviteUrl(window.location.href, activeInvite))
+    .then(() => {
+      collabFeedback.textContent =
+        "コピーしました。いっしょに作りたい友だちに送ってね。";
+    })
+    .catch(() => {
+      collabFeedback.textContent =
+        "コピーできませんでした。リンクを選んでコピーしてください。";
+    });
 });
 leaveRoomButton.addEventListener("click", leaveRoom);
 collabReconnectButton.addEventListener("click", () => {
@@ -1239,13 +1298,14 @@ collabDiagnosticsButton.addEventListener("click", () => {
   if (!diagnostics) return;
   const text = JSON.stringify(diagnostics);
   void navigator.clipboard.writeText(text).then(() => {
-    collabStatus.title = "Diagnostics copied";
+    collabFeedback.textContent = "くわしい情報をコピーしました。";
   });
 });
 
 boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
-  fatalBootError = diagnostic.error ?? "Boot failed";
+  fatalBootError =
+    "エディターを始められませんでした。ページを読み直してください。";
   driveReady = false;
   renderDriveStatus(driveIntegration.getStatus());
 });
