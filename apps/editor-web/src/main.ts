@@ -337,12 +337,52 @@ const diagnostic = {
     });
     vm.emit("PROJECT_CHANGED");
   },
+  createTestBlockOnTarget(id: string, targetName: string): void {
+    const target = vm.runtime.targets.find(
+      candidate => !candidate.isStage && candidate.getName() === targetName,
+    );
+    if (!target) throw new Error(`Sprite target missing: ${targetName}`);
+    target.blocks.createBlock({
+      id,
+      opcode: "event_whenflagclicked",
+      next: null,
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 20,
+      y: 20,
+    });
+    vm.emit("PROJECT_CHANGED");
+  },
   hasBlock(id: string, isStage = false): boolean {
     const target = vm.runtime.targets.find(
       candidate => candidate.isStage === isStage,
     );
     return target?.blocks.getBlock(id) !== null &&
       target?.blocks.getBlock(id) !== undefined;
+  },
+  hasBlockOnTarget(id: string, targetName: string): boolean {
+    const target = vm.runtime.targets.find(
+      candidate => !candidate.isStage && candidate.getName() === targetName,
+    );
+    const block = target?.blocks.getBlock(id);
+    return block !== null && block !== undefined;
+  },
+  selectTargetByName(targetName: string): boolean {
+    const target = vm.runtime.targets.find(
+      candidate => candidate.getName() === targetName,
+    );
+    if (!target) return false;
+    vm.setEditingTarget(target.id);
+    return true;
+  },
+  editingTargetName(): string | null {
+    const editing = vm.editingTarget;
+    if (!editing) return null;
+    if (typeof editing.getName === "function") return editing.getName() ?? null;
+    return editing.sprite?.name ?? null;
   },
   getState() {
     return {
