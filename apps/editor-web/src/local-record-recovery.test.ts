@@ -79,6 +79,15 @@ describe("findMissingAssets", () => {
 
     expect(findMissingAssets(document, assets)).toEqual([]);
   });
+
+  it("treats zero-length asset bytes as missing", () => {
+    const document = documentWithStage();
+    const assets = new Map([
+      [STAGE_COSTUME.md5ext, new Uint8Array()],
+    ]);
+
+    expect(findMissingAssets(document, assets)).toEqual([STAGE_COSTUME.md5ext]);
+  });
 });
 
 describe("assetRecordsFromMap", () => {

@@ -351,9 +351,13 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         continue;
       }
       for (const md5ext of needed) {
-        if (sharedAssets.has(md5ext) || assetsToPublish.has(md5ext)) continue;
+        if (assetsToPublish.has(md5ext)) continue;
         const bytes = localAssetBytes(md5ext);
-        if (bytes) assetsToPublish.set(md5ext, bytes);
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) continue;
+        const existing = sharedAssets.get(md5ext);
+        // Overwrite empty placeholders once real costume/sound bytes exist.
+        if (existing instanceof Uint8Array && existing.byteLength > 0) continue;
+        assetsToPublish.set(md5ext, bytes);
       }
       readyTargets.push(target);
       lastLocalTargetJson.set(targetId, JSON.stringify(target));
@@ -361,23 +365,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
     // Orphan assets (not yet referenced by a ready target) still sync, but
     // never ahead of a target that still lacks costume/sound bytes.
+    const shouldPublishAsset = (md5ext: string, bytes: Uint8Array): boolean => {
+      if (bytes.byteLength === 0 || assetsToPublish.has(md5ext)) return false;
+      const existing = sharedAssets.get(md5ext);
+      return !(existing instanceof Uint8Array && existing.byteLength > 0);
+    };
     for (const [md5ext, bytes] of pendingAssets) {
-      if (
-        bytes.byteLength > 0 &&
-        !sharedAssets.has(md5ext) &&
-        !assetsToPublish.has(md5ext)
-      ) {
-        assetsToPublish.set(md5ext, bytes);
-      }
+      if (shouldPublishAsset(md5ext, bytes)) assetsToPublish.set(md5ext, bytes);
     }
     for (const [md5ext, bytes] of assets) {
-      if (
-        bytes.byteLength > 0 &&
-        !sharedAssets.has(md5ext) &&
-        !assetsToPublish.has(md5ext)
-      ) {
-        assetsToPublish.set(md5ext, bytes);
-      }
+      if (shouldPublishAsset(md5ext, bytes)) assetsToPublish.set(md5ext, bytes);
     }
 
     if (readyTargets.length > 0 || assetsToPublish.size > 0) {

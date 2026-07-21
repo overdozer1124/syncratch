@@ -124,6 +124,7 @@ interface ScratchVm {
   on(event: string, listener: () => void): void;
   emit(event: string): void;
   runtime: {
+    storage?: ScratchStorageInstance;
     targets: Array<{
       isStage: boolean;
       blocks: VmBlocks;
@@ -465,13 +466,29 @@ async function maybeRecoverCorruptRecord(
   });
 }
 
+/** Mutable map shared with the memory helper so CDN stores stay attached. */
+const collabMemoryAssets = new Map<string, Uint8Array>();
+let collabMemoryHelperAttached = false;
+
 function attachLocalStorage(record: LocalProjectRecord): void {
-  const assets = assetMap(record);
-  const storage = new GUI.ScratchStorage();
+  collabMemoryAssets.clear();
+  for (const [md5ext, bytes] of assetMap(record)) {
+    if (bytes.byteLength > 0) collabMemoryAssets.set(md5ext, bytes);
+  }
+  const runtimeStorage = vm.runtime.storage as ScratchStorageInstance | undefined;
+  if (runtimeStorage && collabMemoryHelperAttached) {
+    return;
+  }
+  // Prefer the GUI/CDN-backed store when present; only create a bare store as
+  // a fallback so library costume fetches remain available after collab apply.
+  const storage = runtimeStorage ?? new GUI.ScratchStorage();
   storage.addHelper({
-    load: createMemoryAssetLoader(storage, assets),
+    load: createMemoryAssetLoader(storage, collabMemoryAssets),
   });
-  vm.attachStorage(storage);
+  collabMemoryHelperAttached = true;
+  if (!runtimeStorage) {
+    vm.attachStorage(storage);
+  }
 }
 
 function runtimeAssetMap(): Map<string, Uint8Array> {

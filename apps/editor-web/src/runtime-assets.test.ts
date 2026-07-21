@@ -30,4 +30,17 @@ describe("collectRuntimeAssetBytes", () => {
     ]);
     expect(assets.get("costume.jpg")).not.toBe(targets[0]!.sprite.costumes[0]!.asset.data);
   });
+
+  it("skips empty costume/sound byte arrays", () => {
+    const assets = collectRuntimeAssetBytes(new Map(), [{
+      sprite: {
+        costumes: [{
+          assetId: "empty",
+          dataFormat: "svg",
+          asset: {data: new Uint8Array()},
+        }],
+      },
+    }]);
+    expect(assets.has("empty.svg")).toBe(false);
+  });
 });

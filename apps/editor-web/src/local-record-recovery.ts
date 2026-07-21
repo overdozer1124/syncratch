@@ -32,7 +32,10 @@ export function findMissingAssets(
   document: ProjectDocument,
   assets: ReadonlyMap<string, Uint8Array>,
 ): string[] {
-  return requiredAssetMd5exts(document).filter(md5ext => !assets.has(md5ext));
+  return requiredAssetMd5exts(document).filter(md5ext => {
+    const bytes = assets.get(md5ext);
+    return !(bytes instanceof Uint8Array) || bytes.byteLength === 0;
+  });
 }
 
 export function assetRecordsFromMap(

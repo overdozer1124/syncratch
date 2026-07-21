@@ -37,7 +37,9 @@ export function collectRuntimeAssetBytes(
       const dataFormat = rawDataFormat === "jpeg" ? "jpg" : rawDataFormat;
       const data = runtimeAsset.asset?.data;
       if (!assetId || !dataFormat || !data) continue;
-      assets.set(`${assetId}.${dataFormat}`, copyBytes(data));
+      const bytes = copyBytes(data);
+      if (bytes.byteLength === 0) continue;
+      assets.set(`${assetId}.${dataFormat}`, bytes);
     }
   }
   return assets;

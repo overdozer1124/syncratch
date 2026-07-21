@@ -50,7 +50,7 @@ export function createMemoryAssetLoader(
   return (requestedType, assetId, dataFormat) => {
     const format = canonicalFormat(String(dataFormat));
     const bytes = assets.get(`${assetId}.${format}`);
-    if (!bytes) return Promise.resolve(null);
+    if (!bytes || bytes.byteLength === 0) return Promise.resolve(null);
     const expectedType = assetTypeFor(storage, format);
     const requestedName =
       (requestedType as {name?: string})?.name ?? String(requestedType);

@@ -296,6 +296,7 @@ export class ProjectCollaborationDocument {
   ): void {
     this.ydoc.transact(() => {
       for (const [md5ext, bytes] of assets) {
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) continue;
         this.assets.set(md5ext, bytes);
       }
       for (const target of targets) {
@@ -311,8 +312,9 @@ export class ProjectCollaborationDocument {
     }, LOCAL_ORIGIN);
   }
 
-  /** Store an asset by its content address (local origin). Idempotent. */
+  /** Store an asset by its content address (local origin). Skips empty bytes. */
   putAsset(md5ext: string, bytes: Uint8Array): void {
+    if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) return;
     this.ydoc.transact(() => {
       this.assets.set(md5ext, bytes);
     }, LOCAL_ORIGIN);
@@ -628,15 +630,19 @@ function materializeAndValidate(
     issues.push(issue("INVALID_DOCUMENT", "total asset bytes exceed limit"));
   }
 
-  // Every costume/sound must reference a present asset (content-addressed).
+  // Every costume/sound must reference a present, non-empty asset.
+  const hasAssetBytes = (md5ext: string): boolean => {
+    const bytes = assets.get(md5ext);
+    return bytes instanceof Uint8Array && bytes.byteLength > 0;
+  };
   for (const target of targets) {
     for (const costume of target.costumes ?? []) {
-      if (!assets.has(costume.md5ext)) {
+      if (!hasAssetBytes(costume.md5ext)) {
         issues.push(issue("MISSING_ASSET" as ValidationIssue["code"], `missing asset ${costume.md5ext}`, target.id));
       }
     }
     for (const sound of target.sounds ?? []) {
-      if (!assets.has(sound.md5ext)) {
+      if (!hasAssetBytes(sound.md5ext)) {
         issues.push(issue("MISSING_ASSET" as ValidationIssue["code"], `missing asset ${sound.md5ext}`, target.id));
       }
     }
