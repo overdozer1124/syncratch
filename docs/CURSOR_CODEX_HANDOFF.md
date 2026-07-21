@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 22:25:40 JST |
+| 最終更新 | 2026-07-21 22:57:39 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `LIBRARY_ASSET_FIX_CI_GREEN_USER_VALIDATION_PENDING` |
-| 現在の担当 | ユーザー / Cursor（最新bundleで実機確認） |
-| 現在のTask | PR #10 新規ライブラリスプライト素材・保存修正 |
+| ワークフロー状態 | `SPRITE_SELECTION_PRESERVATION_FIX_REQUIRED` |
+| 現在の担当 | Cursor（remote apply時のローカル選択復元） |
+| 現在のTask | PR #10 共同編集remote更新で選択スプライトが先頭へ戻る問題 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（Stage 0〜5完了。同期・素材保存修正とCI完了、実機確認待ち） |
+| Local-First実装進捗 | **99%**（Stage 0〜5完了。同期・素材保存は実機PASS、選択保持UX修正待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` / Codex worktree: `cursor/block-graph-sync-f431` |
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 最新bundleをhard reloadし、新規roomでBasketball追加・両端末保存を実機確認 |
+| 次Task | regular remote apply前後で各ブラウザ固有のediting targetを復元し、2ブラウザE2Eを追加 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-PR #10 の最新ブランチを取得し、古いdev serverを停止して再起動する。2画面をhard reloadして新規roomを作り、ScratchライブラリからBasketballを追加する。追加側・相手側の両方でスプライト表示と「このパソコンに保存しました」を確認する。旧版で「？」になったスプライトは再利用せず、新規作品または再追加で判定する。再現した場合はブラウザーconsole、`vm.runtime.storage.load()` のhelper結果、assetId/dataFormat、LocalProjectStoreの例外を台帳へ記録する。
+regular remote applyの直前に現在のediting targetを安定した作品内ターゲット識別へ写像し、`vm.loadProject()` 完了後に新しいruntime targetへ解決して `vm.setEditingTarget()` で復元する。選択状態はY.Docへ書かず、各ブラウザ固有のUI状態として扱う。選択対象がremote側で削除された場合だけScratch標準の先頭sprite/stage fallbackを許す。guest-initialと明示的な別作品openは従来どおり新作品の既定選択でよい。VM runtime IDはloadごとに再生成され得るため、古いruntime IDをそのまま再利用しない。下記22:57:39の必須試験を追加してからCodexへ再提出する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3330,5 +3330,51 @@ PR #10 head: afee93b（code head 9d8e276 + 台帳）
 修正: loadProjectPreservingEditingTarget で load 前後に editingTarget.id を保存・復元。共同編集の guest-initial / update 適用経路に接続。
 検証: typecheck PASS、unit 2/2 PASS。
 次: ユーザーが hard reload + 新ルームで、B選択のまま相手の編集を受けても選択が維持されることを確認。
+```
+
+### 2026-07-21 22:57:39 JST — Codex（remote更新による選択スプライト強制変更の原因確定）
+
+```text
+状態: SPRITE_SELECTION_PRESERVATION_FIX_REQUIRED
+ユーザー実機結果:
+- コード同期、ライブラリスプライト追加、別スプライトへのコード追加はいずれもPASS。
+- A/Bの双方でBを選択中、片側のblock更新を受信すると受信側だけA（先頭sprite）へ強制移動する。
+
+根本原因（確度: 高、コード経路で確定）:
+1. regular remote applyは `apps/editor-web/src/main.ts` の `applyCollaborativeProject()` から、remote更新ごとに作品全体を `vm.loadProject()` している（line 757）。
+2. Scratch VMの `installTargets(..., wholeProject=true)` は全体loadのたびに `targets.length > 1` なら無条件で `editingTarget = targets[1]`、すなわち最初のspriteを選ぶ（vendor scratch-vm virtual-machine.js lines 556-560）。
+3. 直後の `emitTargetsUpdate()` / `emitWorkspaceUpdate()` がScratch GUI reducerへ先頭spriteのeditingTargetを通知するため、画面選択もAへ切り替わる。
+4. これはYjs/WebRTCの一方向不全やblock target誤配信ではない。作品内容は正しく収束しているが、remote applyの全体reloadが各利用者固有の選択状態を破壊している。
+
+Cursor先行実装 7864e8e のレビュー: CHANGES_REQUESTED（P1）
+- helperはload前の `vm.editingTarget.id` を保存し、load後に同じIDで `vm.setEditingTarget()` している。
+- Scratch Target constructorは `this.id = uid()` でruntime IDを生成し、SB3 project.jsonにもProjectDocument target.idは出力されない。全体load後のBは別runtime IDになる。
+- `setEditingTarget(oldId)` は該当targetが無ければ何もせず、Scratchが選んだ先頭sprite Aのままとなる。
+- unit mockはload後も `sprite-b` が有効という実VMと異なる前提のため、2/2 PASSでも不具合を検出できない。
+
+既存試験の見落とし:
+- 実Chromium E2Eはremote blockが受信VMとBlockly SVGに出ることまでは確認するが、remote apply前後の選択sprite不変を検査していない。
+- Basketball E2Eも両端末のtarget存在と保存成功のみで、受信側のeditingTargetを固定していない。
+
+修正要件:
+- regular remote applyだけ、load前のローカルediting targetを安定した作品内identityへ写像し、load後の新runtime targetへ再解決して `vm.setEditingTarget(newRuntimeId)` を呼ぶ。
+- 選択状態は共同編集データではない。Y.Doc・ProjectDocument・相手peerへpublishせず、各ブラウザで独立して保持する。
+- SB3 project.jsonはProjectDocumentのtarget.idを含まず、runtime IDもloadで再生成され得る。古いruntime IDの直接再利用は禁止。stage/sprite種別と安定target IDを、load前後のtarget順/layer/name対応を使って解決する。
+- 選択対象がremoteで削除された場合のみ、先頭spriteまたはstageへのfallbackを許す。
+- guest-initial bootstrap、明示的な別作品open/newでは前作品の選択を復元しない。
+- session終了後にpreviousを再loadするrollback経路でも、元のローカル選択を維持する。
+
+必須回帰試験:
+- A/Bを持つ2ブラウザで双方Bを選択。peer AがBへblock追加後もpeer Bの選択はBのまま、blockは表示される。
+- peer BがAを選択してAを編集しても、peer AがBを選択中ならpeer AはBのまま。
+- 同一remote update後も両peerのeditingTargetが互いに独立している。
+- 選択中Bがremote削除された場合のみ安全なfallback。
+- 既存のblock同期、Basketball asset同期・保存、typecheck、実Chromium 2-context E2Eを維持。
+
+設計評価:
+- 最小安全修正は選択復元。block単位CRDTとは別問題で、Y.Doc schema変更は不要。
+- ただしwhole-project loadは将来、workspace scroll、選択tab、costume選択等のローカルUI状態もリセットし得る。今回のP1はsprite選択に限定し、追加のUX状態は別監査候補とする。
+
+進捗: Local-First primary track 99% / 原因調査100% / 選択保持修正は再設計待ち（Cursor 7864e8eはP1未解消）。
 ```
 
