@@ -45,12 +45,21 @@ interface PeerEntry {
   initiator: boolean;
 }
 
-/** Lexicographically smaller peer id sends the offer to avoid glare. */
+/**
+ * Lexicographically smaller peer id keeps its offer during glare.
+ * Joiners always offer to peers listed in `joined`; existing peers wait.
+ */
 export function shouldInitiateOffer(localId: string, remoteId: string): boolean {
   return localId < remoteId;
 }
 
 export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
+
+/** Public STUN only (not TURN). Helps many NATs; school networks may still block. */
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
+  {urls: "stun:stun.l.google.com:19302"},
+  {urls: "stun:stun1.l.google.com:19302"},
+];
 
 function requireSignalingUrl(signalingUrl: string): string {
   if (typeof signalingUrl !== "string" || signalingUrl.trim().length === 0) {
@@ -78,7 +87,7 @@ function requireHashedTopic(topic: string): string {
 export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTransport {
   const signalingUrl = requireSignalingUrl(options.signalingUrl);
   const topic = requireHashedTopic(options.topic);
-  const iceServers = options.iceServers ?? [];
+  const iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS;
   const pingIntervalMs =
     options.pingIntervalMs ?? DEFAULT_SIGNALING_PING_INTERVAL_MS;
   const makeSocket: WebSocketFactory =
@@ -94,6 +103,11 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const reassemblers = new Map<string, ChunkReassembler>();
   const sendTail = new Map<string, Promise<void>>();
   const pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
+  const signalingRoster = new Set<string>();
+  const offerRetries = new Map<string, number>();
+  const offerRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const MAX_OFFER_RETRIES = 2;
+  const OFFER_RETRY_MS = 8_000;
   /** High-water mark before we wait for bufferedamountlow (bytes). */
   const BUFFER_HIGH = 256 * 1024;
   const BUFFER_LOW = 64 * 1024;
@@ -192,10 +206,42 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     });
   };
 
+  const emitSignalingRoster = (): void => {
+    handlers?.onSignalingRoster?.([...signalingRoster].sort());
+  };
+
+  const clearOfferRetry = (peerId: string): void => {
+    const timer = offerRetryTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    offerRetryTimers.delete(peerId);
+  };
+
+  const scheduleOfferRetry = (peerId: string): void => {
+    clearOfferRetry(peerId);
+    const attempts = offerRetries.get(peerId) ?? 0;
+    if (attempts >= MAX_OFFER_RETRIES) return;
+    offerRetryTimers.set(
+      peerId,
+      setTimeout(() => {
+        offerRetryTimers.delete(peerId);
+        const entry = peerConnections.get(peerId);
+        if (!entry?.initiator) return;
+        if (entry.channel?.readyState === "open") return;
+        offerRetries.set(peerId, attempts + 1);
+        if (options.onDiagnostic) {
+          options.onDiagnostic(`offer-retry(${peerId})=${attempts + 1}`);
+        }
+        closePeer(peerId, entry);
+        createPeer(peerId, true);
+      }, OFFER_RETRY_MS),
+    );
+  };
+
   const closePeer = (peerId: string, expected?: PeerEntry): void => {
     const entry = peerConnections.get(peerId);
     if (!entry) return;
     if (expected && entry !== expected) return;
+    clearOfferRetry(peerId);
     peerConnections.delete(peerId);
     reassemblers.delete(peerId);
     sendTail.delete(peerId);
@@ -213,6 +259,8 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     entry.channel = channel;
     channel.addEventListener("open", () => {
       if (peerConnections.get(peerId) !== entry) return;
+      clearOfferRetry(peerId);
+      offerRetries.delete(peerId);
       handlers?.onPeerOpen(peerId);
     });
     channel.addEventListener("message", (ev: MessageEvent) => {
@@ -257,6 +305,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         signal(peerId, {description: offer});
+        scheduleOfferRetry(peerId);
       })().catch((error) => {
         if (options.onDiagnostic) options.onDiagnostic(`offer-error(${peerId})=${String(error)}`);
       });
@@ -289,16 +338,36 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const onSignal = async (from: string, data: any): Promise<void> => {
     try {
       let entry = peerConnections.get(from);
+      if (data?.description?.type === "offer") {
+        // Glare: both sides offered. Keep the lexicographically smaller id's offer.
+        if (entry?.initiator) {
+          if (shouldInitiateOffer(localPeerId, from)) {
+            if (options.onDiagnostic) {
+              options.onDiagnostic(`glare-ignore(${from})`);
+            }
+            return;
+          }
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`glare-yield(${from})`);
+          }
+          closePeer(from, entry);
+          entry = undefined;
+        }
+        if (!entry) entry = createPeer(from, false);
+        await entry.pc.setRemoteDescription(data.description);
+        await flushPendingIce(from, entry);
+        const answer = await entry.pc.createAnswer();
+        await entry.pc.setLocalDescription(answer);
+        signal(from, {description: answer});
+        return;
+      }
       if (data?.description) {
         if (!entry) entry = createPeer(from, false);
         await entry.pc.setRemoteDescription(data.description);
         await flushPendingIce(from, entry);
-        if (data.description.type === "offer") {
-          const answer = await entry.pc.createAnswer();
-          await entry.pc.setLocalDescription(answer);
-          signal(from, {description: answer});
-        }
-      } else if (data?.candidate) {
+        return;
+      }
+      if (data?.candidate) {
         if (entry?.pc.remoteDescription) {
           await entry.pc.addIceCandidate(data.candidate);
         } else {
@@ -312,12 +381,6 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     }
   };
 
-  const maybeInitiate = (remotePeerId: string): void => {
-    if (!remotePeerId || peerConnections.has(remotePeerId)) return;
-    if (!shouldInitiateOffer(localPeerId, remotePeerId)) return;
-    createPeer(remotePeerId, true);
-  };
-
   const onSocketMessage = (raw: string): void => {
     let msg: any;
     try {
@@ -328,20 +391,36 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     if (options.onDiagnostic) options.onDiagnostic(`recv ${msg.t} ${msg.peer ?? msg.from ?? ""}`);
     switch (msg.t) {
       case "joined": {
+        // Joiner always offers to peers already in the room.
         const peers = Array.isArray(msg.peers) ? msg.peers : [];
         for (const peer of peers) {
-          if (typeof peer === "string") maybeInitiate(peer);
+          if (typeof peer !== "string" || peer.length === 0) continue;
+          signalingRoster.add(peer);
+          if (!peerConnections.has(peer)) createPeer(peer, true);
         }
+        emitSignalingRoster();
         break;
       }
       case "peer":
-        if (typeof msg.peer === "string") maybeInitiate(msg.peer);
+        // Existing member: wait for the joiner's offer (they initiate via joined).
+        if (typeof msg.peer === "string" && msg.peer.length > 0) {
+          signalingRoster.add(msg.peer);
+          emitSignalingRoster();
+        }
         break;
       case "signal":
-        if (typeof msg.from === "string") void onSignal(msg.from, msg.data);
+        if (typeof msg.from === "string") {
+          signalingRoster.add(msg.from);
+          emitSignalingRoster();
+          void onSignal(msg.from, msg.data);
+        }
         break;
       case "leave":
-        if (typeof msg.peer === "string") closePeer(msg.peer);
+        if (typeof msg.peer === "string") {
+          signalingRoster.delete(msg.peer);
+          emitSignalingRoster();
+          closePeer(msg.peer);
+        }
         break;
       case "pong":
         break;
@@ -392,10 +471,13 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     },
     disconnect() {
       clearPingTimer();
+      for (const peerId of [...offerRetryTimers.keys()]) clearOfferRetry(peerId);
+      offerRetries.clear();
       for (const peerId of [...peerConnections.keys()]) closePeer(peerId);
       reassemblers.clear();
       sendTail.clear();
       pendingIceCandidates.clear();
+      signalingRoster.clear();
       const closingSocket = socket;
       socket = null;
       try {
@@ -421,6 +503,7 @@ export function createWebRtcProvider(options: WebRtcProviderOptions): CollabProv
     signalingUrl: options.signalingUrl,
     topic: options.topic,
     iceServers: options.iceServers,
+    pingIntervalMs: options.pingIntervalMs,
     WebSocketImpl: options.WebSocketImpl,
     createPeerConnection: options.createPeerConnection,
     onDiagnostic: options.onDiagnostic,

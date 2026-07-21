@@ -123,6 +123,8 @@ export interface BootstrapDiagnostics {
   createdThisRoom: boolean;
   status: string;
   sawPeerDuringBootstrap: boolean;
+  signalingPeerCount: number;
+  sawSignalingPeer: boolean;
 }
 
 export interface CollabSession {
@@ -147,6 +149,8 @@ export interface CollabSession {
 }
 
 const DEFAULT_STALL_MS = 15_000;
+/** Extra wait while signaling sees a peer but the data channel is still negotiating. */
+const ICE_NEGOTIATION_STALL_MS = 45_000;
 /** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
 const MAX_SIGNALING_AUTO_RECONNECTS = 5;
 
@@ -166,6 +170,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let lastProgressAt = 0;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
   let sawPeerDuringBootstrap = false;
+  let sawSignalingPeer = false;
   let ignoreEmptyPeerStall = false;
   let signalingAutoReconnects = 0;
   let validatedMaterialization: LocalMaterialization | null = null;
@@ -385,6 +390,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     armStallTimer();
   };
 
+  const currentStallMs = (): number => {
+    const negotiating =
+      sawSignalingPeer && provider.getPeers().length === 0;
+    return negotiating
+      ? Math.max(stallInactivityMs, ICE_NEGOTIATION_STALL_MS)
+      : stallInactivityMs;
+  };
+
   const armStallTimer = (): void => {
     if (stallTimer) {
       clearTimeout(stallTimer);
@@ -400,6 +413,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     ) {
       return;
     }
+    const waitMs = currentStallMs();
     stallTimer = setTimeout(() => {
       stallTimer = null;
       if (
@@ -407,12 +421,12 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         !guestReady &&
         bootstrapPhase !== "invalid-project" &&
         bootstrapPhase !== "ready" &&
-        Date.now() - lastProgressAt >= stallInactivityMs
+        Date.now() - lastProgressAt >= currentStallMs()
       ) {
         bootstrapPhase = "stalled-project";
         emitState();
       }
-    }, stallInactivityMs);
+    }, waitMs);
   };
 
   const enterInvalid = (codes: string[]): void => {
@@ -835,6 +849,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     recomputeLeadership();
   });
+  provider.on("signaling", () => {
+    if (provider.getSignalingPeers().length === 0) return;
+    sawSignalingPeer = true;
+    if (!createdThisRoom && !guestReady) {
+      markProgress("signaling");
+      emitState();
+    }
+  });
   provider.on("awareness", recomputeLeadership);
 
   const doLocalPush = (): void => {
@@ -868,6 +890,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       }
       bootstrapPhase = "receiving-project";
       sawPeerDuringBootstrap = false;
+      sawSignalingPeer = false;
       signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
@@ -917,6 +940,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       guestInitialCopyApplied = false;
       bootstrapPhase = "idle";
       sawPeerDuringBootstrap = false;
+      sawSignalingPeer = false;
       signalingAutoReconnects = 0;
       validatedMaterialization = null;
       leadership = null;
@@ -1065,6 +1089,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         createdThisRoom,
         status: provider.getStatus(),
         sawPeerDuringBootstrap,
+        signalingPeerCount: provider.getSignalingPeers().length,
+        sawSignalingPeer,
       };
     },
     getValidatedMaterialization() {

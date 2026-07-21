@@ -44,7 +44,7 @@ export interface CollabProviderOptions {
   presence?: Record<string, unknown>;
 }
 
-type ProviderEvent = "status" | "peers" | "awareness";
+type ProviderEvent = "status" | "peers" | "awareness" | "signaling";
 
 export interface CollabProvider {
   readonly participantId: string;
@@ -53,6 +53,8 @@ export interface CollabProvider {
   destroy(): void;
   getStatus(): ConnectionStatus;
   getPeers(): string[];
+  /** Peers announced by signaling before a data channel is open. */
+  getSignalingPeers(): string[];
   getAwareness(): Map<string, AwarenessState>;
   setPresence(presence: Record<string, unknown>): void;
   on(event: ProviderEvent, listener: () => void): void;
@@ -84,12 +86,14 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
   let cipher: RoomCipher | null = null;
   let pending: Promise<void> = Promise.resolve();
   const peers = new Set<string>();
+  const signalingPeers = new Set<string>();
   const awareness = new Map<string, AwarenessState>();
   let presence: Record<string, unknown> = {...options.presence};
   const listeners: Record<ProviderEvent, Set<() => void>> = {
     status: new Set(),
     peers: new Set(),
     awareness: new Set(),
+    signaling: new Set(),
   };
   const outgoing = new Set<() => void>();
   let connected = false;
@@ -141,8 +145,10 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
         connected = false;
         doc.off("update", onDocUpdate);
         peers.clear();
+        signalingPeers.clear();
         awareness.clear();
         emit("peers");
+        emit("signaling");
         emit("awareness");
       }
       emit("status");
@@ -157,6 +163,11 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
       peers.delete(peerId);
       if (awareness.delete(peerId)) emit("awareness");
       emit("peers");
+    },
+    onSignalingRoster(peerIds) {
+      signalingPeers.clear();
+      for (const peerId of peerIds) signalingPeers.add(peerId);
+      emit("signaling");
     },
     onMessage(peerId, wire) {
       enqueue(async () => {
@@ -225,8 +236,10 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
       transport.disconnect();
       transportStarted = false;
       peers.clear();
+      signalingPeers.clear();
       awareness.clear();
       emit("peers");
+      emit("signaling");
       emit("awareness");
     },
     destroy() {
@@ -239,6 +252,9 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
     },
     getPeers() {
       return [...peers].sort();
+    },
+    getSignalingPeers() {
+      return [...signalingPeers].sort();
     },
     getAwareness() {
       return new Map(awareness);

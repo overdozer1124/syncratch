@@ -148,7 +148,8 @@ describe("createWebRtcTransport signaling wiring", () => {
     };
 
     transport.connect("peer-a", handlers);
-    FakeSocket.instances[0]!.message({t: "peer", peer: "peer-b"});
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
     await new Promise(resolve => setTimeout(resolve, 0));
     const staleChannel = created[0]!.__channel;
     const staleClose = staleChannel.addEventListener.mock.calls
@@ -156,7 +157,8 @@ describe("createWebRtcTransport signaling wiring", () => {
 
     transport.disconnect();
     transport.connect("peer-a", handlers);
-    FakeSocket.instances[1]!.message({t: "peer", peer: "peer-b"});
+    FakeSocket.instances[1]!.open();
+    FakeSocket.instances[1]!.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
     await new Promise(resolve => setTimeout(resolve, 0));
     const currentChannel = created[1]!.__channel;
     currentChannel.readyState = "open";
@@ -168,13 +170,15 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(currentChannel.send).toHaveBeenCalledWith("current-wire");
   });
 
-  it("initiates an encrypted-channel offer to peers that join after us", async () => {
+  it("does not initiate on peer notices; joiners offer via joined.peers", async () => {
     FakeSocket.instances = [];
     const created: RTCPeerConnection[] = [];
+    const onSignalingRoster = vi.fn();
     const transport = createWebRtcTransport({
       signalingUrl: "ws://127.0.0.1:9999/signal",
       topic: TOPIC,
       pingIntervalMs: 0,
+      iceServers: [],
       WebSocketImpl: (url) => new FakeSocket(url),
       createPeerConnection: () => {
         const pc = fakePeerConnection();
@@ -187,6 +191,7 @@ describe("createWebRtcTransport signaling wiring", () => {
       onPeerOpen: vi.fn(),
       onPeerClose: vi.fn(),
       onMessage: vi.fn(),
+      onSignalingRoster,
     });
     const socket = FakeSocket.instances[0]!;
     socket.open();
@@ -194,49 +199,19 @@ describe("createWebRtcTransport signaling wiring", () => {
     socket.message({t: "peer", topic: TOPIC, peer: "peer-b"});
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(created).toHaveLength(1);
-    const offerSignal = socket.sent.find((m) => m.t === "signal" && m.to === "peer-b");
-    expect(offerSignal?.data?.description?.type).toBe("offer");
+    // Existing member waits for the joiner's offer.
+    expect(created).toHaveLength(0);
+    expect(onSignalingRoster).toHaveBeenCalledWith(["peer-b"]);
   });
 
-  it("initiates from joined.peers when the local id should offer", async () => {
+  it("joiner always initiates offers to peers listed in joined", async () => {
     FakeSocket.instances = [];
     const created: RTCPeerConnection[] = [];
     const transport = createWebRtcTransport({
       signalingUrl: "ws://127.0.0.1:9999/signal",
       topic: TOPIC,
       pingIntervalMs: 0,
-      WebSocketImpl: (url) => new FakeSocket(url),
-      createPeerConnection: () => {
-        const pc = fakePeerConnection();
-        created.push(pc);
-        return pc;
-      },
-    });
-    transport.connect("peer-a", {
-      onStatus: vi.fn(),
-      onPeerOpen: vi.fn(),
-      onPeerClose: vi.fn(),
-      onMessage: vi.fn(),
-    });
-    const socket = FakeSocket.instances[0]!;
-    socket.open();
-    // Existing peer list only — no separate "peer" broadcast (missed/race).
-    socket.message({t: "joined", topic: TOPIC, peers: ["peer-z"]});
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(shouldInitiateOffer("peer-a", "peer-z")).toBe(true);
-    expect(created).toHaveLength(1);
-    expect(socket.sent.some((m) => m.t === "signal" && m.to === "peer-z")).toBe(true);
-  });
-
-  it("does not initiate from joined.peers when the remote id should offer", async () => {
-    FakeSocket.instances = [];
-    const created: RTCPeerConnection[] = [];
-    const transport = createWebRtcTransport({
-      signalingUrl: "ws://127.0.0.1:9999/signal",
-      topic: TOPIC,
-      pingIntervalMs: 0,
+      iceServers: [],
       WebSocketImpl: (url) => new FakeSocket(url),
       createPeerConnection: () => {
         const pc = fakePeerConnection();
@@ -252,11 +227,54 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
     const socket = FakeSocket.instances[0]!;
     socket.open();
+    // Even with a lexicographically larger local id, the joiner offers.
+    expect(shouldInitiateOffer("peer-z", "peer-a")).toBe(false);
     socket.message({t: "joined", topic: TOPIC, peers: ["peer-a"]});
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(shouldInitiateOffer("peer-z", "peer-a")).toBe(false);
-    expect(created).toHaveLength(0);
+    expect(created).toHaveLength(1);
+    expect(socket.sent.some((m) => m.t === "signal" && m.to === "peer-a")).toBe(true);
+  });
+
+  it("resolves offer glare by keeping the smaller peer id's offer", async () => {
+    FakeSocket.instances = [];
+    const created: RTCPeerConnection[] = [];
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: () => {
+        const pc = fakePeerConnection();
+        created.push(pc);
+        return pc;
+      },
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-z"]});
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toHaveLength(1);
+
+    // Remote also offered; peer-a < peer-z so we ignore theirs.
+    socket.message({
+      t: "signal",
+      topic: TOPIC,
+      from: "peer-z",
+      data: {description: {type: "offer", sdp: "remote-offer"}},
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created[0]!.setRemoteDescription).not.toHaveBeenCalledWith({
+      type: "offer",
+      sdp: "remote-offer",
+    });
   });
 
   it("sends signaling ping keepalive while connected", () => {
@@ -266,6 +284,7 @@ describe("createWebRtcTransport signaling wiring", () => {
       signalingUrl: "ws://127.0.0.1:9999/signal",
       topic: TOPIC,
       pingIntervalMs: 1_000,
+      iceServers: [],
       WebSocketImpl: (url) => new FakeSocket(url),
       createPeerConnection: fakePeerConnection,
     });
@@ -294,6 +313,7 @@ describe("createWebRtcTransport signaling wiring", () => {
       signalingUrl: "ws://127.0.0.1:9999/signal",
       topic: TOPIC,
       pingIntervalMs: 0,
+      iceServers: [],
       WebSocketImpl: (url) => new FakeSocket(url),
       createPeerConnection: () => {
         pc = fakePeerConnection();
@@ -336,6 +356,34 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
   });
 
+  it("uses default STUN servers when iceServers are omitted", () => {
+    FakeSocket.instances = [];
+    let config: RTCConfiguration | undefined;
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: (rtcConfig) => {
+        config = rtcConfig;
+        return fakePeerConnection();
+      },
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
+    expect(config?.iceServers?.length).toBeGreaterThan(0);
+    expect(
+      JSON.stringify(config?.iceServers).includes("stun.l.google.com"),
+    ).toBe(true);
+  });
+
   it("chunks large data-channel payloads and reassembles on receive", async () => {
     FakeSocket.instances = [];
     let pc: ReturnType<typeof fakePeerConnection> | null = null;
@@ -356,8 +404,7 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
     const socket = FakeSocket.instances[0]!;
     socket.open();
-    socket.message({t: "joined", topic: TOPIC, peers: []});
-    socket.message({t: "peer", topic: TOPIC, peer: "peer-b"});
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
     await new Promise((r) => setTimeout(r, 0));
 
     const channel = pc!.__channel;
