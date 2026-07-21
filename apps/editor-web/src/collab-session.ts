@@ -147,7 +147,8 @@ export interface CollabSession {
 }
 
 const DEFAULT_STALL_MS = 15_000;
-const MAX_BOOTSTRAP_AUTO_RECONNECTS = 2;
+/** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
+const MAX_SIGNALING_AUTO_RECONNECTS = 5;
 
 export function createCollabSession(options: CollabSessionOptions): CollabSession {
   const domain = new ProjectCollaborationDocument();
@@ -166,7 +167,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
   let sawPeerDuringBootstrap = false;
   let ignoreEmptyPeerStall = false;
-  let bootstrapAutoReconnects = 0;
+  let signalingAutoReconnects = 0;
   let validatedMaterialization: LocalMaterialization | null = null;
   let validatedTitle = COLLAB_FALLBACK_TITLE;
   let sealGeneration = 0;
@@ -788,34 +789,25 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     emitState();
     if (
       !active ||
-      createdThisRoom ||
-      guestReady ||
       ignoreEmptyPeerStall ||
       provider.getStatus() !== "disconnected" ||
       bootstrapPhase === "invalid-project" ||
       bootstrapPhase === "idle" ||
       bootstrapPhase === "local-save-failed" ||
-      bootstrapAutoReconnects >= MAX_BOOTSTRAP_AUTO_RECONNECTS
+      signalingAutoReconnects >= MAX_SIGNALING_AUTO_RECONNECTS
     ) {
       return;
     }
-    bootstrapAutoReconnects += 1;
+    signalingAutoReconnects += 1;
     queueMicrotask(() => {
-      if (
-        !active ||
-        createdThisRoom ||
-        guestReady ||
-        provider.getStatus() !== "disconnected"
-      ) {
-        return;
-      }
+      if (!active || provider.getStatus() !== "disconnected") return;
       if (bootstrapPhase === "stalled-project") {
         bootstrapPhase = "receiving-project";
       }
       lastProgressAt = Date.now();
-      armStallTimer();
+      if (!createdThisRoom && !guestReady) armStallTimer();
       forceTransportReconnect();
-      scheduleGuestEvaluate();
+      if (!createdThisRoom && !guestReady) scheduleGuestEvaluate();
       emitState();
     });
   });
@@ -823,6 +815,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     const peers = provider.getPeers();
     if (peers.length > 0) {
       sawPeerDuringBootstrap = true;
+      signalingAutoReconnects = 0;
       markProgress("peer");
     }
     if (
@@ -865,6 +858,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         bootstrapPhase = "ready";
         guestReady = true;
+        signalingAutoReconnects = 0;
         active = true;
         provider.connect();
         wasLeader = true;
@@ -874,7 +868,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       }
       bootstrapPhase = "receiving-project";
       sawPeerDuringBootstrap = false;
-      bootstrapAutoReconnects = 0;
+      signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
       active = true;
@@ -923,7 +917,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       guestInitialCopyApplied = false;
       bootstrapPhase = "idle";
       sawPeerDuringBootstrap = false;
-      bootstrapAutoReconnects = 0;
+      signalingAutoReconnects = 0;
       validatedMaterialization = null;
       leadership = null;
       leadershipGeneration += 1;
@@ -1051,7 +1045,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     reconnectBootstrap() {
       if (bootstrapPhase !== "stalled-project") return;
       bootstrapPhase = "receiving-project";
-      bootstrapAutoReconnects = 0;
+      signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
       // Always cycle the transport: signaling can stay "connected" after the

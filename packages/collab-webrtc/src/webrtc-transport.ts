@@ -35,6 +35,8 @@ export interface WebRtcTransportOptions {
   createPeerConnection?: (config: RTCConfiguration) => RTCPeerConnection;
   /** Optional diagnostic sink for connection/ICE transitions (debugging/E2E). */
   onDiagnostic?: (message: string) => void;
+  /** Keepalive interval for signaling ping; default 20s (hub idle is 60s). */
+  pingIntervalMs?: number;
 }
 
 interface PeerEntry {
@@ -42,6 +44,13 @@ interface PeerEntry {
   channel: RTCDataChannel | null;
   initiator: boolean;
 }
+
+/** Lexicographically smaller peer id sends the offer to avoid glare. */
+export function shouldInitiateOffer(localId: string, remoteId: string): boolean {
+  return localId < remoteId;
+}
+
+export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
 
 function requireSignalingUrl(signalingUrl: string): string {
   if (typeof signalingUrl !== "string" || signalingUrl.trim().length === 0) {
@@ -70,6 +79,8 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const signalingUrl = requireSignalingUrl(options.signalingUrl);
   const topic = requireHashedTopic(options.topic);
   const iceServers = options.iceServers ?? [];
+  const pingIntervalMs =
+    options.pingIntervalMs ?? DEFAULT_SIGNALING_PING_INTERVAL_MS;
   const makeSocket: WebSocketFactory =
     options.WebSocketImpl ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
   const makePc =
@@ -78,12 +89,33 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   let socket: WebSocketLike | null = null;
   let localPeerId = "";
   let handlers: TransportHandlers | null = null;
+  let pingTimer: ReturnType<typeof setInterval> | null = null;
   const peerConnections = new Map<string, PeerEntry>();
   const reassemblers = new Map<string, ChunkReassembler>();
   const sendTail = new Map<string, Promise<void>>();
+  const pendingIceCandidates = new Map<string, RTCIceCandidateInit[]>();
   /** High-water mark before we wait for bufferedamountlow (bytes). */
   const BUFFER_HIGH = 256 * 1024;
   const BUFFER_LOW = 64 * 1024;
+
+  const clearPingTimer = (): void => {
+    if (!pingTimer) return;
+    clearInterval(pingTimer);
+    pingTimer = null;
+  };
+
+  const startPingTimer = (connectionSocket: WebSocketLike): void => {
+    clearPingTimer();
+    if (pingIntervalMs <= 0) return;
+    pingTimer = setInterval(() => {
+      if (socket !== connectionSocket) return;
+      try {
+        connectionSocket.send(JSON.stringify({t: "ping"}));
+      } catch {
+        // Ignore send failures; socket close handling will reconnect.
+      }
+    }, pingIntervalMs);
+  };
 
   const signal = (to: string, data: unknown): void => {
     socket?.send(JSON.stringify({t: "signal", topic, to, data}));
@@ -167,6 +199,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     peerConnections.delete(peerId);
     reassemblers.delete(peerId);
     sendTail.delete(peerId);
+    pendingIceCandidates.delete(peerId);
     try {
       entry.channel?.close();
       entry.pc.close();
@@ -235,23 +268,54 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     return entry;
   };
 
+  const flushPendingIce = async (
+    peerId: string,
+    entry: PeerEntry,
+  ): Promise<void> => {
+    const pending = pendingIceCandidates.get(peerId);
+    if (!pending || pending.length === 0) return;
+    pendingIceCandidates.delete(peerId);
+    for (const candidate of pending) {
+      try {
+        await entry.pc.addIceCandidate(candidate);
+      } catch (error) {
+        if (options.onDiagnostic) {
+          options.onDiagnostic(`ice-flush-error(${peerId})=${String(error)}`);
+        }
+      }
+    }
+  };
+
   const onSignal = async (from: string, data: any): Promise<void> => {
     try {
       let entry = peerConnections.get(from);
       if (data?.description) {
         if (!entry) entry = createPeer(from, false);
         await entry.pc.setRemoteDescription(data.description);
+        await flushPendingIce(from, entry);
         if (data.description.type === "offer") {
           const answer = await entry.pc.createAnswer();
           await entry.pc.setLocalDescription(answer);
           signal(from, {description: answer});
         }
-      } else if (data?.candidate && entry) {
-        await entry.pc.addIceCandidate(data.candidate);
+      } else if (data?.candidate) {
+        if (entry?.pc.remoteDescription) {
+          await entry.pc.addIceCandidate(data.candidate);
+        } else {
+          const pending = pendingIceCandidates.get(from) ?? [];
+          pending.push(data.candidate as RTCIceCandidateInit);
+          pendingIceCandidates.set(from, pending);
+        }
       }
     } catch (error) {
       if (options.onDiagnostic) options.onDiagnostic(`signal-error(${from})=${String(error)}`);
     }
+  };
+
+  const maybeInitiate = (remotePeerId: string): void => {
+    if (!remotePeerId || peerConnections.has(remotePeerId)) return;
+    if (!shouldInitiateOffer(localPeerId, remotePeerId)) return;
+    createPeer(remotePeerId, true);
   };
 
   const onSocketMessage = (raw: string): void => {
@@ -263,19 +327,23 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     }
     if (options.onDiagnostic) options.onDiagnostic(`recv ${msg.t} ${msg.peer ?? msg.from ?? ""}`);
     switch (msg.t) {
-      case "joined":
-        // Peers already present will initiate to us; we wait for their offers.
-        break;
-      case "peer":
-        if (typeof msg.peer === "string" && !peerConnections.has(msg.peer)) {
-          createPeer(msg.peer, true);
+      case "joined": {
+        const peers = Array.isArray(msg.peers) ? msg.peers : [];
+        for (const peer of peers) {
+          if (typeof peer === "string") maybeInitiate(peer);
         }
+        break;
+      }
+      case "peer":
+        if (typeof msg.peer === "string") maybeInitiate(msg.peer);
         break;
       case "signal":
         if (typeof msg.from === "string") void onSignal(msg.from, msg.data);
         break;
       case "leave":
         if (typeof msg.peer === "string") closePeer(msg.peer);
+        break;
+      case "pong":
         break;
       default:
         break;
@@ -286,6 +354,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     connect(peerId, transportHandlers) {
       localPeerId = peerId;
       handlers = transportHandlers;
+      clearPingTimer();
       handlers.onStatus("connecting");
       const connectionSocket = makeSocket(signalingUrl);
       const connectionHandlers = transportHandlers;
@@ -293,6 +362,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       connectionSocket.addEventListener("open", () => {
         if (socket !== connectionSocket) return;
         connectionSocket.send(JSON.stringify({t: "join", topic, peer: localPeerId}));
+        startPingTimer(connectionSocket);
         connectionHandlers.onStatus("connected");
       });
       connectionSocket.addEventListener("message", (ev: MessageEvent) => {
@@ -301,6 +371,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       });
       const disconnected = (): void => {
         if (socket !== connectionSocket) return;
+        clearPingTimer();
         connectionHandlers.onStatus("disconnected");
       };
       connectionSocket.addEventListener("close", disconnected);
@@ -320,9 +391,11 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       }
     },
     disconnect() {
+      clearPingTimer();
       for (const peerId of [...peerConnections.keys()]) closePeer(peerId);
       reassemblers.clear();
       sendTail.clear();
+      pendingIceCandidates.clear();
       const closingSocket = socket;
       socket = null;
       try {

@@ -22,8 +22,10 @@ export {
   type MemoryMesh,
 } from "./memory-mesh.js";
 export {
+  DEFAULT_SIGNALING_PING_INTERVAL_MS,
   createWebRtcProvider,
   createWebRtcTransport,
+  shouldInitiateOffer,
   type WebRtcProviderOptions,
   type WebRtcTransportOptions,
   type WebSocketFactory,

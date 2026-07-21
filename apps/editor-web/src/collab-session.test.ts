@@ -429,6 +429,46 @@ describe("guest bootstrap terminal-state guards", () => {
     expect(guest.getDiagnostics().status).toBe("connected");
   });
 
+  it("auto-reconnects a host when signaling drops while waiting for guests", async () => {
+    let connects = 0;
+    const mesh = createMemoryMesh();
+    const create = (config: CollabProviderConfig) => {
+      const provider = createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+      const connect = provider.connect.bind(provider);
+      provider.connect = () => {
+        connects += 1;
+        connect();
+      };
+      return provider;
+    };
+    const host = createCollabSession({
+      roomId: "room-host-auto-reconnect",
+      secret: "host-auto-reconnect-secret-host-auto",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    host.start({host: true});
+    expect(host.getBootstrapPhase()).toBe("ready");
+    expect(connects).toBe(1);
+
+    host.provider.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(connects).toBe(2);
+    expect(host.provider.getStatus()).toBe("connected");
+    expect(host.getBootstrapPhase()).toBe("ready");
+  });
+
   it("reconnectBootstrap force-cycles transport after a peer departure stall", async () => {
     let connects = 0;
     let disconnects = 0;
