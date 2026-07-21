@@ -286,6 +286,24 @@ export class ProjectCollaborationDocument {
     }, LOCAL_ORIGIN);
   }
 
+  /**
+   * Publish costume/sound bytes and one or more targets in a single Yjs
+   * transaction so peers never observe a target without its assets.
+   */
+  putAssetsAndSetTargets(
+    targets: ScratchTarget[],
+    assets: Iterable<readonly [string, Uint8Array]>,
+  ): void {
+    this.ydoc.transact(() => {
+      for (const [md5ext, bytes] of assets) {
+        this.assets.set(md5ext, bytes);
+      }
+      for (const target of targets) {
+        this.writeTarget(target);
+      }
+    }, LOCAL_ORIGIN);
+  }
+
   /** Delete a target locally and propagate the deletion to every peer. */
   deleteTarget(targetId: string): void {
     this.ydoc.transact(() => {
@@ -333,6 +351,10 @@ export class ProjectCollaborationDocument {
    * Trial-apply a remote update on a clone, validate + limit-check, and only
    * commit to the live doc when acceptable. Corrupt/oversized remote state is
    * rejected and the live doc is left untouched.
+   *
+   * Updates that fail solely with MISSING_ASSET are still committed so Y.Docs
+   * converge when asset frames arrive out of order; callers must gate VM apply
+   * on a successful materialize() (incomplete assets stay out of the editor).
    */
   tryApplyRemoteUpdate(update: Uint8Array): ApplyRemoteResult {
     const trial = new Y.Doc();
@@ -341,7 +363,12 @@ export class ProjectCollaborationDocument {
       Y.applyUpdate(trial, update);
       const result = materializeAndValidate(trial, this.limits);
       if (!result.ok) {
-        return {accepted: false, issues: result.issues};
+        const onlyMissingAssets =
+          result.issues.length > 0 &&
+          result.issues.every(item => String(item.code) === "MISSING_ASSET");
+        if (!onlyMissingAssets) {
+          return {accepted: false, issues: result.issues};
+        }
       }
       Y.applyUpdate(this.ydoc, update, REMOTE_ORIGIN);
       return {accepted: true};

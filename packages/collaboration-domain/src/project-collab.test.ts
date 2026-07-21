@@ -7,6 +7,7 @@ import type {
 } from "@blocksync/project-schema";
 import {
   DEFAULT_PROJECT_COLLAB_LIMITS,
+  LOCAL_ORIGIN,
   ProjectCollaborationDocument,
 } from "./project-collab.js";
 // Existing Gate 0 API must remain exported and intact.
@@ -556,6 +557,75 @@ describe("content-addressed assets", () => {
     expect(before.ok && after.ok).toBe(true);
     if (!before.ok || !after.ok) return;
     expect(after.assets.size).toBe(before.assets.size);
+  });
+
+  it("publishes assets and targets in one local transaction", () => {
+    const doc = new ProjectCollaborationDocument();
+    const source = project([stage(), sprite("s1")]);
+    doc.loadLocalProject(source, assetsFor(source));
+    const baseball = sprite("bb");
+    const costumeBytes = new Uint8Array([9, 8, 7, 6]);
+    let localTransactions = 0;
+    doc.ydoc.on("afterTransaction", (transaction: Y.Transaction) => {
+      if (transaction.origin !== LOCAL_ORIGIN) return;
+      if (transaction.changedParentTypes.size === 0) return;
+      localTransactions += 1;
+    });
+    localTransactions = 0;
+    doc.putAssetsAndSetTargets(
+      [baseball],
+      [[baseball.costumes![0]!.md5ext, costumeBytes]],
+    );
+    expect(localTransactions).toBe(1);
+    const result = doc.materialize();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.targets.some(target => target.id === "bb")).toBe(true);
+    expect(result.assets.get(baseball.costumes![0]!.md5ext)).toEqual(costumeBytes);
+  });
+
+  it("soft-accepts a remote target that arrives before its assets", () => {
+    const source = project([stage(), sprite("s1")]);
+    const host = new ProjectCollaborationDocument();
+    host.loadLocalProject(source, assetsFor(source));
+    const peer = new ProjectCollaborationDocument();
+    peer.applyRemoteUpdate(host.encodeState());
+
+    const baseball = sprite("bb");
+    const costumeMd5 = baseball.costumes![0]!.md5ext;
+    const costumeBytes = new Uint8Array([9, 8, 7, 6]);
+    host.setTarget(baseball);
+    const targetOnly = Y.encodeStateAsUpdate(host.ydoc, Y.encodeStateVector(peer.ydoc));
+    expect(peer.tryApplyRemoteUpdate(targetOnly).accepted).toBe(true);
+    expect(peer.materialize().ok).toBe(false);
+
+    host.putAsset(costumeMd5, costumeBytes);
+    const assetUpdate = Y.encodeStateAsUpdate(host.ydoc, Y.encodeStateVector(peer.ydoc));
+    expect(peer.tryApplyRemoteUpdate(assetUpdate).accepted).toBe(true);
+    const result = peer.materialize();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.assets.has(costumeMd5)).toBe(true);
+    expect(result.document.targets.some(target => target.id === "bb")).toBe(true);
+  });
+
+  it("still rejects schema-invalid remote updates after soft-accepting missing assets", () => {
+    const source = project([stage(), sprite("s1")]);
+    const good = new ProjectCollaborationDocument();
+    good.loadLocalProject(source, assetsFor(source));
+    const receiver = new ProjectCollaborationDocument();
+    receiver.applyRemoteUpdate(good.encodeState());
+
+    const evil = new Y.Doc();
+    Y.applyUpdate(evil, good.encodeState());
+    const targets = evil.getMap<Y.Map<unknown>>("targets");
+    evil.transact(() => {
+      const t = targets.get("s1")!;
+      t.set("json", JSON.stringify(sprite("s1", {costumes: []})));
+    });
+    const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
+    expect(outcome.accepted).toBe(false);
+    expect(receiver.materialize().ok).toBe(true);
   });
 });
 

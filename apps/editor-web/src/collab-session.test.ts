@@ -844,6 +844,63 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(materialized.assets.has(baseball.costumes![0]!.md5ext)).toBe(true);
   });
 
+  it("publishes a new sprite and its costume bytes atomically", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-sprite-atomic",
+      secret: "sprite-atomic-secret-sprite-atomic-12",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    const baseball = sprite("bb", "Baseball");
+    const costumeMd5 = baseball.costumes![0]!.md5ext;
+    let remoteTransactions = 0;
+    a.domain.ydoc.on("afterTransaction", (transaction) => {
+      if (transaction.local) return;
+      if (transaction.changedParentTypes.size === 0) return;
+      remoteTransactions += 1;
+      // Atomic publish: the first time Baseball appears, costume bytes must too.
+      if (a.domain.ydoc.getMap("targets").has("bb")) {
+        const mid = a.domain.materialize();
+        expect(mid.ok).toBe(true);
+        if (mid.ok) expect(mid.assets.has(costumeMd5)).toBe(true);
+      }
+    });
+
+    vmB.addTarget(baseball, true);
+    b.noteLocalChange();
+    await flush(a, b);
+
+    expect(remoteTransactions).toBe(1);
+    expect(vmA.lastApplied()?.targets.some(target => target.id === "bb")).toBe(true);
+    const materialized = a.domain.materialize();
+    expect(materialized.ok).toBe(true);
+    if (!materialized.ok) throw new Error("expected materialize ok");
+    expect(materialized.assets.has(costumeMd5)).toBe(true);
+  });
+
   it("does not overwrite a pending local edit when a remote edit arrives first", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
