@@ -3209,3 +3209,19 @@ CI: Gate 0 2ジョブ実行中。
 再現継続時の次手: PROJECT_CHANGEDごとのvm.toJSON block graph、pending/base/remote/rebased、Y.Doc blocksJson hashをparticipant別に採取し、実Blockly dragイベント列で再現する。
 ```
 
+### 2026-07-21 20:00:41 JST — Cursor（修正版取得・サーバ再起動・再試験）
+
+```text
+状態: BLOCK_SYNC_FIX_REVALIDATED_LOCAL / CI_PENDING
+PR #10 head: ffb4618（修正0997a7b含む）
+作業:
+- origin/cursor/guest-bootstrap-stall-reconnect-f431 をfast-forward取得
+- signaling(ws://127.0.0.1:4444) と vite(http://127.0.0.1:5173/) を再起動
+- collaboration-domain 36/36 PASS
+- collab-session + apply-remote-update 33/33 PASS
+- Playwright 2-context WebRTC E2E PASS
+- 実ブラウザ新ルーム再試験: forever入れ子 Host→Guest / Guest変更→Host / 座標更新でblock巻き戻しなし いずれもPASS
+注意: 招待リンクが旧previewポート4173を含む場合あり。5173へ手動置換で接続成功。要確認。
+進捗: Local-First実装100% / 同期不具合解消 ~95%（CI完了待ち）
+```
+
