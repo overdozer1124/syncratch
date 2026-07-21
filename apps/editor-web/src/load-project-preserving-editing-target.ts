@@ -198,25 +198,33 @@ export async function loadProjectPreservingEditingTarget(
       restoreToolboxCategory: options.localUi.restoreToolboxCategory,
     });
     // Scratch workspaceUpdate/resize can nudge scroll after the first restore.
-    // Re-apply once the current frame settles so the captured viewport sticks.
+    // Schedule a second apply without awaiting — awaiting here would keep
+    // applyRemoteProjectUpdate's suppressVmChanges window open and drop
+    // concurrent local publishes from the receiving peer.
     if (uiSnapshot?.viewport && newRuntimeId) {
-      await new Promise<void>(resolve => {
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(() => resolve());
-        } else {
-          setTimeout(resolve, 0);
+      const localUi = options.localUi;
+      const viewport = uiSnapshot.viewport;
+      const snapshot = uiSnapshot;
+      const schedule =
+        typeof requestAnimationFrame === "function"
+          ? requestAnimationFrame
+          : (cb: () => void) => setTimeout(cb, 0);
+      schedule(() => {
+        try {
+          seedViewportForRuntimeTarget(
+            localUi.store,
+            newRuntimeId,
+            viewport,
+          );
+          localUi.applyViewport?.(viewport);
+          localUi.rememberViewport?.(viewport);
+          restoreLocalEditorUiState(localUi.store, snapshot, {
+            newRuntimeTargetId: newRuntimeId,
+            restoreToolboxCategory: localUi.restoreToolboxCategory,
+          });
+        } catch {
+          // Best-effort only.
         }
-      });
-      seedViewportForRuntimeTarget(
-        options.localUi.store,
-        newRuntimeId,
-        uiSnapshot.viewport,
-      );
-      options.localUi.applyViewport?.(uiSnapshot.viewport);
-      options.localUi.rememberViewport?.(uiSnapshot.viewport);
-      restoreLocalEditorUiState(options.localUi.store, uiSnapshot, {
-        newRuntimeTargetId: newRuntimeId,
-        restoreToolboxCategory: options.localUi.restoreToolboxCategory,
       });
     }
   }
