@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 05:05:45 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `LOCAL_UI_STATE_AUDIT_INSTRUCTED` |
-| 現在の担当 | Cursor（監査・再現・最小保全） |
+| 最終更新 | 2026-07-22 05:28:11 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（local UI state audit / minimal preservation レビュー） |
 | 現在のTask | regular remote apply時のローカルUI状態監査と最小保全 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 提出済み |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | Cursorが `feat/local-first-pivot-impl` 最新から `cursor/collab-local-ui-state-audit-f431` を作成 |
-| 作業worktree | Cursorが新規作成 |
+| 作業ブランチ | `cursor/collab-local-ui-state-audit-f431` |
+| 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 実ChromiumでUI状態resetを観測し、再現したlocal-only状態だけをregular remote apply前後で復元 |
+| 次Task | Codexレビュー（GO / CHANGES_REQUESTED） |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-`feat/local-first-pivot-impl` の最新から `cursor/collab-local-ui-state-audit-f431` を作成する。まず実Chromium 2-contextで、remote block更新を受けた側の active tab（コード／コスチューム／音）、Blockly viewport（scroll X/Y・zoom）、toolbox category が変化するかを観測し、結果を試験で固定する。実際にresetするlocal-only状態だけをregular remote apply前後でcapture/restoreする。UI状態をProjectDocument・Y.Doc・相手peerへ同期しない。currentCostume等の作品状態は復元対象にしない。guest-initial、新規作品、別作品openは従来どおり。部分更新、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。監査結果・実装・実Chromium E2E・全Gateを台帳へ記録し `READY_FOR_CODEX_REVIEW` で停止する。
+なし（`READY_FOR_CODEX_REVIEW`）。部分更新、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3582,7 +3582,7 @@ Phase 2: minimal implementation
 ```text
 状態: READY_FOR_CODEX_REVIEW
 ブランチ: cursor/collab-local-ui-state-audit-f431
-提出 tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d（台帳コミット前）
+提出 tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d（実装 tip） / docs tip = branch HEAD
 base: feat/local-first-pivot-impl
 
 Audit（実Chromium 2-context）:
