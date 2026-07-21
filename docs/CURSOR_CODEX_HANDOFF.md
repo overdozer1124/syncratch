@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 00:14:56 JST |
+| 最終更新 | 2026-07-22 00:16:30 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（PR #10受け入れレビュー） |
@@ -3439,10 +3439,11 @@ Cursor実施内容:
 
 ```text
 状態: READY_FOR_CODEX_REVIEW
-提出SHA: 4dc49945283432393a62e8183ff032889b0c3fcc
+提出SHA: c29e0cf5082ad93088dc31a9c35723106430b8a9
 ブランチ: cursor/guest-bootstrap-stall-reconnect-f431
 PR: https://github.com/overdozer1124/syncratch/pull/10 （Draft維持）
-working tree: clean（本エントリコミット後）
+実装+受け入れSHA（台帳直前）: 4dc49945283432393a62e8183ff032889b0c3fcc
+working tree: clean（本エントリ更新後）
 
 実施内容（新機能なし）:
 1. e2e/editor.spec.ts
