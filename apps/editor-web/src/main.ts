@@ -123,14 +123,21 @@ interface ScratchVm {
   attachStorage(storage: ScratchStorageInstance): void;
   loadProject(project: unknown): Promise<void>;
   setEditingTarget(targetId: string): void;
-  editingTarget?: {id?: string} | null;
+  editingTarget?: {
+    id?: string;
+    isStage?: boolean;
+    getName?: () => string;
+    sprite?: {name?: string};
+  } | null;
   toJSON(): string;
   on(event: string, listener: () => void): void;
   emit(event: string): void;
   runtime: {
     storage?: ScratchStorageInstance;
     targets: Array<{
+      id: string;
       isStage: boolean;
+      isOriginal?: boolean;
       blocks: VmBlocks;
       getName(): string;
       sprite: {name: string};
@@ -704,12 +711,9 @@ async function applyCollaborativeProject(
         generation === collaborationGeneration && collabSession !== null,
       async load(recordToLoad) {
         attachLocalStorage(recordToLoad);
-        // Guest-initial may still restore a previous local project on cancel;
-        // keep the user's selected sprite across that load too.
-        await loadProjectPreservingEditingTarget(
-          vm,
-          documentToProjectJson(recordToLoad.document),
-        );
+        // Guest-initial is a different project copy — do not restore the
+        // previous work's selected sprite onto the newly received project.
+        await vm.loadProject(documentToProjectJson(recordToLoad.document));
       },
       persist: candidate => store.createOrReplace(candidate, null),
       remove: saved => store.delete(saved.localProjectId),
@@ -762,12 +766,16 @@ async function applyCollaborativeProject(
       generation === collaborationGeneration && collabSession !== null,
     async load(recordToLoad) {
       attachLocalStorage(recordToLoad);
-      // Remote collab applies use full loadProject, which Scratch resets to the
-      // first sprite. Restore the local editing target so peer edits do not
-      // yank the user's selected sprite (e.g. B → A).
+      // Remote applies use full loadProject. Scratch regenerates runtime target
+      // ids and forces editingTarget to the first sprite — remap selection via
+      // stable ProjectDocument identity instead of the old runtime id.
       await loadProjectPreservingEditingTarget(
         vm,
         documentToProjectJson(recordToLoad.document),
+        {
+          beforeDocument: previous.document,
+          afterDocument: recordToLoad.document,
+        },
       );
     },
     persist: candidate => store.createOrReplace(candidate, previous.revision),

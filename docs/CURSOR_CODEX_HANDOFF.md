@@ -3378,3 +3378,18 @@ Cursor先行実装 7864e8e のレビュー: CHANGES_REQUESTED（P1）
 進捗: Local-First primary track 99% / 原因調査100% / 選択保持修正は再設計待ち（Cursor 7864e8eはP1未解消）。
 ```
 
+### 2026-07-21 23:09:33 JST — Cursor（選択スプライト復元を安定identity方式へ修正）
+
+```text
+状態: EDITING_TARGET_STABLE_IDENTITY_RESTORE
+Codex P1レビュー反映:
+- loadProject後はruntime target idが再生成されるため、旧runtime idの setEditingTarget では復元できない。
+修正:
+- captureEditingSelection で ProjectDocument の安定id（+ isStage/name）を記録
+- load後に afterDocument と runtime target を名前/種別で再解決して setEditingTarget(newRuntimeId)
+- regular remote updateのみ適用。guest-initialでは前作品の選択を復元しない
+- 対象がremote削除された場合は復元せずScratch既定選択へfallback
+検証: typecheck PASS、unit 5/5 PASS
+次: hard reload + 新ルームで双方B選択のまま相手編集を受けてもB維持を確認
+```
+
