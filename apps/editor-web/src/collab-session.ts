@@ -179,7 +179,7 @@ function signalingHostFromUrl(url: string | undefined): string | null {
 export function createCollabSession(options: CollabSessionOptions): CollabSession {
   const domain = new ProjectCollaborationDocument();
   const selfEligible = options.eligible ?? true;
-  const debounceMs = options.debounceMs ?? 250;
+  const debounceMs = options.debounceMs ?? 400;
   const stallInactivityMs = options.stallInactivityMs ?? DEFAULT_STALL_MS;
 
   let bootstrapPhase: BootstrapPhase = "idle";
@@ -835,15 +835,27 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     if (guestApplyInFlight && !createdThisRoom && !guestReady) {
       stagingChangedDuringGuestApply = true;
     }
+    // Same-target LWW: if Y.Doc already moved past our last synced snapshot,
+    // drop the stale pending local edit instead of republishing an older
+    // forever-stack / mid-drag snapshot over the peer's completed work.
+    for (const targetId of [...pendingTargets.keys()]) {
+      const sharedJson = currentTargetJson(targetId);
+      const lastJson = lastLocalTargetJson.get(targetId);
+      if (sharedJson !== undefined && sharedJson !== lastJson) {
+        pendingTargets.delete(targetId);
+      }
+    }
+    // Cancel the debounce push so a mid-edit VM snapshot cannot republish
+    // after we drop stale pending and before loadProject finishes.
+    if (localTimer) {
+      clearTimeout(localTimer);
+      localTimer = null;
+    }
     if (
       pendingTargets.size > 0 ||
       pendingTargetDeletions.size > 0 ||
       pendingAssets.size > 0
     ) {
-      if (localTimer) {
-        clearTimeout(localTimer);
-        localTimer = null;
-      }
       pushPendingLocalChanges();
     }
     if (!createdThisRoom && !guestReady) {

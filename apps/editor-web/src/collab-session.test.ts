@@ -1072,6 +1072,61 @@ describe("two-session convergence over WebRTC transport", () => {
       .toBe("FastByA");
   });
 
+  it("does not let a stale same-target pending edit clobber a newer remote stack", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-same-target-pending",
+      secret: "same-target-pending-secret-same-target",
+    };
+    const a = createCollabSession({
+      ...common,
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      debounceMs: 200,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    // B starts a mid-edit snapshot (forever with only one body block, conceptually).
+    vmB.editTargetName("s1", "IncompleteStack");
+    b.noteLocalChange();
+    // A finishes the stack and publishes first.
+    vmA.editTargetName("s1", "CompleteStack");
+    a.noteLocalChange();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flush(a, b);
+    // B's debounce would have republished IncompleteStack over CompleteStack.
+    await new Promise(resolve => setTimeout(resolve, 220));
+    await flush(a, b);
+
+    expect(vmA.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("CompleteStack");
+    expect(vmB.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("CompleteStack");
+    const materializeA = a.domain.materialize();
+    expect(materializeA.ok).toBe(true);
+    if (materializeA.ok) {
+      expect(materializeA.document.targets.find(t => t.id === "s1")?.name)
+        .toBe("CompleteStack");
+    }
+  });
+
   it("propagates a local target deletion to every peer", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
