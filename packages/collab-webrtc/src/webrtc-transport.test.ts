@@ -356,6 +356,34 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
   });
 
+  it("reports signaling join ack and errors", () => {
+    FakeSocket.instances = [];
+    const onSignalingJoined = vi.fn();
+    const onSignalingError = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: fakePeerConnection,
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+      onSignalingJoined,
+      onSignalingError,
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: []});
+    expect(onSignalingJoined).toHaveBeenCalledWith([]);
+    socket.message({t: "error", reason: "duplicate_peer"});
+    expect(onSignalingError).toHaveBeenCalledWith("duplicate_peer");
+  });
+
   it("uses default STUN servers when iceServers are omitted", () => {
     FakeSocket.instances = [];
     let config: RTCConfiguration | undefined;

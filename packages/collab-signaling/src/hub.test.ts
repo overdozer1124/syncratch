@@ -161,21 +161,37 @@ describe("validation and limits", () => {
 });
 
 describe("idle expiry", () => {
-  it("closes connections idle beyond the limit", () => {
+  it("closes never-joined connections idle beyond the short limit", () => {
     const a = new FakeConnection("a");
-    join(a, "peer-a");
+    hub.handleConnection(a);
     now += DEFAULT_SIGNALING_LIMITS.idleMs + 1;
     hub.sweepIdle();
     expect(a.closed).not.toBeNull();
   });
 
-  it("keeps recently active connections", () => {
+  it("keeps joined hosts waiting beyond the short idle window", () => {
+    const a = new FakeConnection("a");
+    join(a, "peer-a");
+    now += DEFAULT_SIGNALING_LIMITS.idleMs + 1;
+    hub.sweepIdle();
+    expect(a.closed).toBeNull();
+  });
+
+  it("closes joined connections idle beyond the joined limit", () => {
+    const a = new FakeConnection("a");
+    join(a, "peer-a");
+    now += DEFAULT_SIGNALING_LIMITS.joinedIdleMs + 1;
+    hub.sweepIdle();
+    expect(a.closed).not.toBeNull();
+  });
+
+  it("keeps recently active joined connections", () => {
     const a = new FakeConnection("a");
     join(a, "peer-a");
     now += 10;
     hub.handleMessage(a, JSON.stringify({t: "ping"}));
     expect(a.last()).toMatchObject({t: "pong"});
-    now += DEFAULT_SIGNALING_LIMITS.idleMs - 5;
+    now += DEFAULT_SIGNALING_LIMITS.joinedIdleMs - 5;
     hub.sweepIdle();
     expect(a.closed).toBeNull();
   });

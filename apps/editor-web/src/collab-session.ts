@@ -64,6 +64,8 @@ export interface CollabState {
   expectedAssets: number;
   receivedBytes: number;
   issueCodes: string[];
+  signalingPeerCount: number;
+  joinedTopic: boolean;
 }
 
 export interface LocalMaterialization {
@@ -125,6 +127,8 @@ export interface BootstrapDiagnostics {
   sawPeerDuringBootstrap: boolean;
   signalingPeerCount: number;
   sawSignalingPeer: boolean;
+  joinedTopic: boolean;
+  signalingError: string | null;
 }
 
 export interface CollabSession {
@@ -375,6 +379,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       expectedAssets,
       receivedBytes,
       issueCodes: [...issueCodes],
+      signalingPeerCount: provider.getSignalingPeers().length,
+      joinedTopic: provider.hasJoinedTopic(),
     });
   };
 
@@ -1023,6 +1029,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         expectedAssets,
         receivedBytes,
         issueCodes: [...issueCodes],
+        signalingPeerCount: provider.getSignalingPeers().length,
+        joinedTopic: provider.hasJoinedTopic(),
       };
     },
     async flush() {
@@ -1091,6 +1099,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         sawPeerDuringBootstrap,
         signalingPeerCount: provider.getSignalingPeers().length,
         sawSignalingPeer,
+        joinedTopic: provider.hasJoinedTopic(),
+        signalingError: provider.getSignalingError(),
       };
     },
     getValidatedMaterialization() {

@@ -118,17 +118,28 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     pingTimer = null;
   };
 
+  const sendPing = (connectionSocket: WebSocketLike | null = socket): void => {
+    if (!connectionSocket) return;
+    try {
+      connectionSocket.send(JSON.stringify({t: "ping"}));
+    } catch {
+      // Ignore send failures; socket close handling will reconnect.
+    }
+  };
+
   const startPingTimer = (connectionSocket: WebSocketLike): void => {
     clearPingTimer();
     if (pingIntervalMs <= 0) return;
     pingTimer = setInterval(() => {
       if (socket !== connectionSocket) return;
-      try {
-        connectionSocket.send(JSON.stringify({t: "ping"}));
-      } catch {
-        // Ignore send failures; socket close handling will reconnect.
-      }
+      sendPing(connectionSocket);
     }, pingIntervalMs);
+  };
+
+  const onVisibilityChange = (): void => {
+    if (typeof document === "undefined") return;
+    if (document.visibilityState !== "visible") return;
+    sendPing();
   };
 
   const signal = (to: string, data: unknown): void => {
@@ -399,6 +410,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           if (!peerConnections.has(peer)) createPeer(peer, true);
         }
         emitSignalingRoster();
+        handlers?.onSignalingJoined?.([...signalingRoster].sort());
         break;
       }
       case "peer":
@@ -422,6 +434,14 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           closePeer(msg.peer);
         }
         break;
+      case "error":
+        if (typeof msg.reason === "string" && msg.reason.length > 0) {
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`signaling-error=${msg.reason}`);
+          }
+          handlers?.onSignalingError?.(msg.reason);
+        }
+        break;
       case "pong":
         break;
       default:
@@ -442,6 +462,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         if (socket !== connectionSocket) return;
         connectionSocket.send(JSON.stringify({t: "join", topic, peer: localPeerId}));
         startPingTimer(connectionSocket);
+        if (typeof document !== "undefined") {
+          document.addEventListener("visibilitychange", onVisibilityChange);
+        }
         connectionHandlers.onStatus("connected");
       });
       connectionSocket.addEventListener("message", (ev: MessageEvent) => {
@@ -451,6 +474,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       const disconnected = (): void => {
         if (socket !== connectionSocket) return;
         clearPingTimer();
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+        }
         connectionHandlers.onStatus("disconnected");
       };
       connectionSocket.addEventListener("close", disconnected);
@@ -471,6 +497,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     },
     disconnect() {
       clearPingTimer();
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
       for (const peerId of [...offerRetryTimers.keys()]) clearOfferRetry(peerId);
       offerRetries.clear();
       for (const peerId of [...peerConnections.keys()]) closePeer(peerId);

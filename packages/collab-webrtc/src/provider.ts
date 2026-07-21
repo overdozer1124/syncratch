@@ -55,6 +55,9 @@ export interface CollabProvider {
   getPeers(): string[];
   /** Peers announced by signaling before a data channel is open. */
   getSignalingPeers(): string[];
+  /** True after signaling acknowledged our topic join. */
+  hasJoinedTopic(): boolean;
+  getSignalingError(): string | null;
   getAwareness(): Map<string, AwarenessState>;
   setPresence(presence: Record<string, unknown>): void;
   on(event: ProviderEvent, listener: () => void): void;
@@ -87,6 +90,8 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
   let pending: Promise<void> = Promise.resolve();
   const peers = new Set<string>();
   const signalingPeers = new Set<string>();
+  let joinedTopic = false;
+  let signalingError: string | null = null;
   const awareness = new Map<string, AwarenessState>();
   let presence: Record<string, unknown> = {...options.presence};
   const listeners: Record<ProviderEvent, Set<() => void>> = {
@@ -146,6 +151,7 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
         doc.off("update", onDocUpdate);
         peers.clear();
         signalingPeers.clear();
+        joinedTopic = false;
         awareness.clear();
         emit("peers");
         emit("signaling");
@@ -167,6 +173,17 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
     onSignalingRoster(peerIds) {
       signalingPeers.clear();
       for (const peerId of peerIds) signalingPeers.add(peerId);
+      emit("signaling");
+    },
+    onSignalingJoined(peerIds) {
+      joinedTopic = true;
+      signalingError = null;
+      signalingPeers.clear();
+      for (const peerId of peerIds) signalingPeers.add(peerId);
+      emit("signaling");
+    },
+    onSignalingError(reason) {
+      signalingError = reason;
       emit("signaling");
     },
     onMessage(peerId, wire) {
@@ -237,6 +254,8 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
       transportStarted = false;
       peers.clear();
       signalingPeers.clear();
+      joinedTopic = false;
+      signalingError = null;
       awareness.clear();
       emit("peers");
       emit("signaling");
@@ -255,6 +274,12 @@ export function createCollabProvider(options: CollabProviderOptions): CollabProv
     },
     getSignalingPeers() {
       return [...signalingPeers].sort();
+    },
+    hasJoinedTopic() {
+      return joinedTopic;
+    },
+    getSignalingError() {
+      return signalingError;
     },
     getAwareness() {
       return new Map(awareness);

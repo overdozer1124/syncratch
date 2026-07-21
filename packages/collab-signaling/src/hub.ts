@@ -23,7 +23,14 @@ export interface SignalingLimits {
   maxPeersPerTopic: number;
   maxTopics: number;
   maxConnections: number;
+  /** Idle limit for sockets that have not joined a topic yet. */
   idleMs: number;
+  /**
+   * Idle limit for sockets that have joined a topic. Hosts waiting for guests
+   * often produce no signaling traffic, and browser background tabs throttle
+   * client ping timers — so this must be much longer than `idleMs`.
+   */
+  joinedIdleMs: number;
   maxMessagesPerWindow: number;
   rateWindowMs: number;
 }
@@ -36,6 +43,7 @@ export const DEFAULT_SIGNALING_LIMITS: SignalingLimits = {
   maxTopics: 2000,
   maxConnections: 500,
   idleMs: 60_000,
+  joinedIdleMs: 30 * 60_000,
   maxMessagesPerWindow: 120,
   rateWindowMs: 10_000,
 };
@@ -247,7 +255,8 @@ export class SignalingHub {
   /** Close connections whose last activity exceeds the idle limit. */
   sweepIdle(nowMs = this.now()): void {
     for (const member of [...this.members.values()]) {
-      if (nowMs - member.lastSeen > this.limits.idleMs) {
+      const limit = member.topic ? this.limits.joinedIdleMs : this.limits.idleMs;
+      if (nowMs - member.lastSeen > limit) {
         member.conn.close(1000, "idle timeout");
         this.handleClose(member.conn);
       }
