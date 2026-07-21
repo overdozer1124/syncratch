@@ -3439,7 +3439,7 @@ Cursor実施内容:
 
 ```text
 状態: READY_FOR_CODEX_REVIEW
-提出SHA: c173fc995669f6043cf973179ea05c460356c3a2
+提出SHA: 4dc49945283432393a62e8183ff032889b0c3fcc（受け入れ実装 tip） / docs tip = branch HEAD
 ブランチ: cursor/guest-bootstrap-stall-reconnect-f431
 PR: https://github.com/overdozer1124/syncratch/pull/10 （Draft維持）
 実装+受け入れSHA（台帳直前）: 4dc49945283432393a62e8183ff032889b0c3fcc
