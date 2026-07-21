@@ -6,6 +6,7 @@
 | 対象 tip | `48b94c499a496dbf6c15ecee63c57f6e8e256258` |
 | 元ブランチ | `feat/local-first-pivot-impl` |
 | 本流ブランチ | `main`（同一 tip で新設） |
+| 受け入れ PR | https://github.com/overdozer1124/syncratch/pull/15（Draft） |
 | 製品名 | Syncratch（シンクラッチ） |
 
 ## 結論
