@@ -158,4 +158,75 @@ describe("editing selection remapping", () => {
 
     expect(setEditingTarget).toHaveBeenCalledWith("runtime-new-b");
   });
+
+  it("seeds remapped viewport metrics before restoring the editing target", async () => {
+    const before = documentOf([
+      stage(),
+      sprite("id-a", "Sprite1", 1),
+      sprite("id-b", "Sprite2", 2),
+    ]);
+    const after = before;
+    const setEditingTarget = vi.fn();
+    const dispatch = vi.fn();
+    const restoreToolbox = vi.fn(() => true);
+    const vm = {
+      editingTarget: {
+        id: "runtime-old-b",
+        isStage: false,
+        getName: () => "Sprite2",
+      },
+      setEditingTarget,
+      runtime: {
+        targets: [
+          {id: "runtime-old-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ],
+      },
+      loadProject: vi.fn(async () => {
+        vm.runtime.targets = [
+          {id: "runtime-new-a", isStage: false, getName: () => "Sprite1", isOriginal: true},
+          {id: "runtime-new-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ];
+      }),
+    };
+    const guiStore = {
+      getState: () => ({
+        scratchGui: {
+          editorTab: {activeTabIndex: 1},
+          workspaceMetrics: {
+            targets: {
+              "runtime-old-b": {scrollX: 33, scrollY: -8, scale: 1.25},
+            },
+          },
+        },
+      }),
+      dispatch,
+    };
+
+    await loadProjectPreservingEditingTarget(vm, {targets: []}, {
+      beforeDocument: before,
+      afterDocument: after,
+      localUi: {
+        store: guiStore,
+        readToolboxCategoryId: () => "looks",
+        restoreToolboxCategory: restoreToolbox,
+      },
+    });
+
+    expect(setEditingTarget).toHaveBeenCalledWith("runtime-new-b");
+    const metricCalls = dispatch.mock.calls
+      .map(call => call[0] as {type?: string; targetID?: string; scrollX?: number})
+      .filter(action => action.type?.includes("UPDATE_METRICS"));
+    expect(metricCalls[0]).toMatchObject({
+      targetID: "runtime-new-b",
+      scrollX: 33,
+    });
+    const orderMetricThenSelect =
+      dispatch.mock.invocationCallOrder[0]! <
+      setEditingTarget.mock.invocationCallOrder[0]!;
+    expect(orderMetricThenSelect).toBe(true);
+    expect(restoreToolbox).toHaveBeenCalledWith("looks");
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({type: expect.stringContaining("ACTIVATE_TAB"), activeTabIndex: 1}),
+    );
+  });
 });

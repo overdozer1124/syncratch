@@ -111,8 +111,19 @@ import {
   type CollabState,
 } from "./collab-session.js";
 import {summarizePreflightIssues} from "@blocksync/collaboration-domain";
+import {
+  activateTabAction,
+  captureLocalEditorUiState,
+  seedViewportForRuntimeTarget,
+  type GuiStoreLike,
+} from "./local-editor-ui-state.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
+
+interface EditorGuiState {
+  store: GuiStoreLike;
+  dispatch(action: unknown): unknown;
+}
 
 interface VmBlocks {
   createBlock(block: Record<string, unknown>): void;
@@ -157,9 +168,9 @@ interface ScratchStorageInstance extends MemoryAssetStorage {
 
 interface ScratchGuiGlobal {
   ScratchStorage: new () => ScratchStorageInstance;
-  EditorState: new (options: {isEmbedded?: boolean; locale?: string}) => unknown;
+  EditorState: new (options: {isEmbedded?: boolean; locale?: string}) => EditorGuiState;
   createStandaloneRoot(
-    state: unknown,
+    state: EditorGuiState,
     element: HTMLElement,
   ): {
     render(options: {
@@ -285,6 +296,7 @@ function closePanelFor(element: HTMLElement): void {
 
 let store: ProjectStore;
 let vm: ScratchVm;
+let editorGuiState: EditorGuiState | null = null;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -383,6 +395,32 @@ const diagnostic = {
     if (!editing) return null;
     if (typeof editing.getName === "function") return editing.getName() ?? null;
     return editing.sprite?.name ?? null;
+  },
+  getLocalEditorUiState() {
+    if (!editorGuiState) return null;
+    return captureLocalEditorUiState(
+      editorGuiState.store,
+      vm.editingTarget?.id,
+      readToolboxCategoryId(),
+    );
+  },
+  setActiveEditorTab(activeTabIndex: number): void {
+    if (!editorGuiState) throw new Error("Editor GUI store missing");
+    editorGuiState.dispatch(activateTabAction(activeTabIndex));
+  },
+  setWorkspaceViewport(scrollX: number, scrollY: number, scale: number): boolean {
+    if (!editorGuiState) return false;
+    const targetId = vm.editingTarget?.id;
+    if (!targetId) return false;
+    seedViewportForRuntimeTarget(editorGuiState.store, targetId, {
+      scrollX,
+      scrollY,
+      scale,
+    });
+    return applyWorkspaceViewport({scrollX, scrollY, scale});
+  },
+  selectToolboxCategory(categoryId: string): boolean {
+    return restoreToolboxCategory(categoryId);
   },
   getState() {
     return {
@@ -815,6 +853,13 @@ async function applyCollaborativeProject(
         {
           beforeDocument: previous.document,
           afterDocument: recordToLoad.document,
+          localUi: editorGuiState
+            ? {
+                store: editorGuiState.store,
+                readToolboxCategoryId,
+                restoreToolboxCategory,
+              }
+            : undefined,
         },
       );
     },
@@ -1108,12 +1153,93 @@ function download(bytes: Uint8Array): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+type ScratchWorkspace = {
+  scrollX?: number;
+  scrollY?: number;
+  scale?: number;
+  resize?: () => void;
+  getToolbox?: () => {
+    getSelectedItem?: () => {getId?: () => string} | null;
+    getToolboxItemById?: (id: string) => unknown;
+    setSelectedItem?: (item: unknown) => void;
+    selectCategoryByName?: (name: string) => void;
+  } | null;
+};
+
+function scratchBlocksApi(): {
+  getMainWorkspace?: () => ScratchWorkspace | null;
+} | null {
+  const globalObject = window as unknown as {
+    Blockly?: {
+      getMainWorkspace?: () => ScratchWorkspace | null;
+    };
+  };
+  return globalObject.Blockly ?? null;
+}
+
+function readToolboxCategoryId(): string | null {
+  try {
+    const workspace = scratchBlocksApi()?.getMainWorkspace?.();
+    const selected = workspace?.getToolbox?.()?.getSelectedItem?.();
+    const id = selected?.getId?.();
+    if (typeof id === "string" && id.length > 0) return id;
+  } catch {
+    // fall through to DOM
+  }
+  const selected = guiHost.querySelector(
+    ".blocklyToolboxCategory.blocklyToolboxSelected, .scratchCategoryMenuItem.categorySelected",
+  );
+  const id = selected?.getAttribute("id") ?? selected?.getAttribute("data-category");
+  return id && id.length > 0 ? id : null;
+}
+
+function restoreToolboxCategory(categoryId: string): boolean {
+  try {
+    const toolbox = scratchBlocksApi()?.getMainWorkspace?.()?.getToolbox?.();
+    if (!toolbox) return false;
+    if (typeof toolbox.getToolboxItemById === "function" &&
+      typeof toolbox.setSelectedItem === "function") {
+      const item = toolbox.getToolboxItemById(categoryId);
+      if (item) {
+        toolbox.setSelectedItem(item);
+        return true;
+      }
+    }
+    if (typeof toolbox.selectCategoryByName === "function") {
+      toolbox.selectCategoryByName(categoryId);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function applyWorkspaceViewport(viewport: {
+  scrollX: number;
+  scrollY: number;
+  scale: number;
+}): boolean {
+  try {
+    const workspace = scratchBlocksApi()?.getMainWorkspace?.();
+    if (!workspace) return false;
+    workspace.scrollX = viewport.scrollX;
+    workspace.scrollY = viewport.scrollY;
+    workspace.scale = viewport.scale;
+    workspace.resize?.();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function getVm(): Promise<ScratchVm> {
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
     // 日本語（漢字）。ひらがな版は "ja-Hira"。
     const state = new GUI.EditorState({locale: "ja"});
+    editorGuiState = state;
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({

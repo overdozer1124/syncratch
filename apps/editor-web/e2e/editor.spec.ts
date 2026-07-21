@@ -336,6 +336,83 @@ async function connectTwoCollabPeers(
 test.describe("real WebRTC collaboration", () => {
   test.describe.configure({mode: "serial"});
 
+test("two Chromium contexts keep local editor UI across remote block edits", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  try {
+    await connectTwoCollabPeers(pageA, pageB, "shared-drive-ui-state");
+
+    await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
+    await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+    await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+      .toBeVisible({timeout: 20_000});
+
+    expect(await pageA.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+    expect(await pageB.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+
+    // Distinctive local-only UI on the receiving peer (costumes tab + scrolled code viewport).
+    await pageB.evaluate(() => {
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      window.__blocksyncTask3!.setWorkspaceViewport(48, -36, 1.1);
+      window.__blocksyncTask3!.selectToolboxCategory("looks");
+      window.__blocksyncTask3!.setActiveEditorTab(1);
+    });
+    const before = await pageB.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState());
+    expect(before?.activeTabIndex).toBe(1);
+    expect(before?.viewport).toMatchObject({scrollX: 48, scrollY: -36, scale: 1.1});
+
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "ui-state-remote-block",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "ui-state-remote-block",
+          "Basketball",
+        )),
+      editing: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+      ui: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLocalEditorUiState()),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      editing: "Basketball",
+      ui: {
+        activeTabIndex: 1,
+        viewport: {scrollX: 48, scrollY: -36, scale: 1.1},
+      },
+    });
+
+    // Peer A keeps its own UI (code tab) — local contexts stay independent.
+    await pageA.evaluate(() => window.__blocksyncTask3!.setActiveEditorTab(0));
+    expect(await pageA.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex)).toBe(0);
+    expect(await pageB.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex)).toBe(1);
+  } finally {
+    await Promise.all([contextA.close(), contextB.close()]);
+  }
+});
+
 test("two Chromium contexts keep independent sprite selection across remote edits", async ({
   browser,
 }) => {
@@ -648,6 +725,14 @@ declare global {
       hasBlockOnTarget(id: string, targetName: string): boolean;
       selectTargetByName(targetName: string): boolean;
       editingTargetName(): string | null;
+      getLocalEditorUiState(): {
+        activeTabIndex: number;
+        viewport: {scrollX: number; scrollY: number; scale: number} | null;
+        toolboxCategoryId: string | null;
+      } | null;
+      setActiveEditorTab(activeTabIndex: number): void;
+      setWorkspaceViewport(scrollX: number, scrollY: number, scale: number): boolean;
+      selectToolboxCategory(categoryId: string): boolean;
       getState(): {
         localProjectId: string;
         revision: number;
