@@ -406,6 +406,90 @@ describe("guest bootstrap terminal-state guards", () => {
     expect(guest.domain.encodeState()).toEqual(frozenState);
     expect(stateEvents).toHaveLength(frozenEventCount);
   });
+
+  it("does not stall immediately on empty peers before any peer is seen", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const guest = createCollabSession({
+      roomId: "room-empty-peers-before-seen",
+      secret: "empty-peers-before-seen-secret-empty1",
+      debounceMs: 0,
+      stallInactivityMs: 10_000,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    guest.start({host: false});
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    guest.provider.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(guest.getBootstrapPhase()).not.toBe("stalled-project");
+    expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(false);
+    expect(guest.getDiagnostics().status).toBe("connected");
+  });
+
+  it("reconnectBootstrap force-cycles transport after a peer departure stall", async () => {
+    let connects = 0;
+    let disconnects = 0;
+    const mesh = createMemoryMesh();
+    const create = (config: CollabProviderConfig) => {
+      const provider = createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+      const connect = provider.connect.bind(provider);
+      const disconnect = provider.disconnect.bind(provider);
+      provider.connect = () => {
+        connects += 1;
+        connect();
+      };
+      provider.disconnect = () => {
+        disconnects += 1;
+        disconnect();
+      };
+      return provider;
+    };
+    const source = project([stage(), sprite("s1", "S1")]);
+    const common = {
+      roomId: "room-reconnect-force-cycle",
+      secret: "reconnect-force-cycle-secret-reconnect",
+      debounceMs: 0,
+    };
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      ...common,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    host.start({host: true});
+    guest.start({host: false});
+    host.leave();
+    await flush(guest);
+    expect(guest.getBootstrapPhase()).toBe("stalled-project");
+    expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(true);
+
+    const connectsBefore = connects;
+    const disconnectsBefore = disconnects;
+    guest.reconnectBootstrap();
+
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    expect(disconnects).toBe(disconnectsBefore + 1);
+    expect(connects).toBe(connectsBefore + 1);
+    expect(guest.provider.getStatus()).toBe("connected");
+  });
 });
 
 describe("guest staging guard lifecycle", () => {

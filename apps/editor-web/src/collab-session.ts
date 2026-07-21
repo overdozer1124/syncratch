@@ -121,6 +121,8 @@ export interface BootstrapDiagnostics {
   receivedBytes: number;
   peerCount: number;
   createdThisRoom: boolean;
+  status: string;
+  sawPeerDuringBootstrap: boolean;
 }
 
 export interface CollabSession {
@@ -145,6 +147,7 @@ export interface CollabSession {
 }
 
 const DEFAULT_STALL_MS = 15_000;
+const MAX_BOOTSTRAP_AUTO_RECONNECTS = 2;
 
 export function createCollabSession(options: CollabSessionOptions): CollabSession {
   const domain = new ProjectCollaborationDocument();
@@ -161,6 +164,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let issueCodes: string[] = [];
   let lastProgressAt = 0;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let sawPeerDuringBootstrap = false;
+  let ignoreEmptyPeerStall = false;
+  let bootstrapAutoReconnects = 0;
   let validatedMaterialization: LocalMaterialization | null = null;
   let validatedTitle = COLLAB_FALLBACK_TITLE;
   let sealGeneration = 0;
@@ -767,19 +773,69 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     emitState();
   });
-  provider.on("status", emitState);
+  const forceTransportReconnect = (): void => {
+    ignoreEmptyPeerStall = true;
+    sawPeerDuringBootstrap = false;
+    try {
+      provider.disconnect();
+      provider.connect();
+    } finally {
+      ignoreEmptyPeerStall = false;
+    }
+  };
+
+  provider.on("status", () => {
+    emitState();
+    if (
+      !active ||
+      createdThisRoom ||
+      guestReady ||
+      ignoreEmptyPeerStall ||
+      provider.getStatus() !== "disconnected" ||
+      bootstrapPhase === "invalid-project" ||
+      bootstrapPhase === "idle" ||
+      bootstrapPhase === "local-save-failed" ||
+      bootstrapAutoReconnects >= MAX_BOOTSTRAP_AUTO_RECONNECTS
+    ) {
+      return;
+    }
+    bootstrapAutoReconnects += 1;
+    queueMicrotask(() => {
+      if (
+        !active ||
+        createdThisRoom ||
+        guestReady ||
+        provider.getStatus() !== "disconnected"
+      ) {
+        return;
+      }
+      if (bootstrapPhase === "stalled-project") {
+        bootstrapPhase = "receiving-project";
+      }
+      lastProgressAt = Date.now();
+      armStallTimer();
+      forceTransportReconnect();
+      scheduleGuestEvaluate();
+      emitState();
+    });
+  });
   provider.on("peers", () => {
-    markProgress("peer");
     const peers = provider.getPeers();
+    if (peers.length > 0) {
+      sawPeerDuringBootstrap = true;
+      markProgress("peer");
+    }
     if (
       !createdThisRoom &&
       !guestReady &&
       active &&
+      !ignoreEmptyPeerStall &&
       peers.length === 0 &&
+      sawPeerDuringBootstrap &&
       (bootstrapPhase === "receiving-project" ||
         bootstrapPhase === "verifying-project")
     ) {
-      // Host/sealer departed during bootstrap.
+      // Host/sealer departed after we had already connected to them.
       bootstrapPhase = "stalled-project";
       emitState();
       return;
@@ -817,6 +873,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         return {ok: true as const};
       }
       bootstrapPhase = "receiving-project";
+      sawPeerDuringBootstrap = false;
+      bootstrapAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
       active = true;
@@ -854,7 +912,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         guestEvaluateTimer = null;
       }
       active = false;
+      ignoreEmptyPeerStall = true;
       provider.disconnect();
+      ignoreEmptyPeerStall = false;
       maySeed = false;
       createdThisRoom = false;
       guestReady = false;
@@ -862,6 +922,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       stagingChangedDuringGuestApply = false;
       guestInitialCopyApplied = false;
       bootstrapPhase = "idle";
+      sawPeerDuringBootstrap = false;
+      bootstrapAutoReconnects = 0;
       validatedMaterialization = null;
       leadership = null;
       leadershipGeneration += 1;
@@ -989,11 +1051,12 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     reconnectBootstrap() {
       if (bootstrapPhase !== "stalled-project") return;
       bootstrapPhase = "receiving-project";
+      bootstrapAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
-      if (provider.getStatus() !== "connected") {
-        provider.connect();
-      }
+      // Always cycle the transport: signaling can stay "connected" after the
+      // data channel dies, and a no-op connect() leaves the guest stranded.
+      forceTransportReconnect();
       scheduleGuestEvaluate();
       emitState();
     },
@@ -1006,6 +1069,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         receivedBytes,
         peerCount: provider.getPeers().length,
         createdThisRoom,
+        status: provider.getStatus(),
+        sawPeerDuringBootstrap,
       };
     },
     getValidatedMaterialization() {
