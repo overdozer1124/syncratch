@@ -42,10 +42,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 21:55:42 JST |
+| 最終更新 | 2026-07-21 22:07:47 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `LIBRARY_ASSET_FIX_PUSHED_CI_PENDING` |
-| 現在の担当 | Codex CI確認 / ユーザー実機確認 |
+| ワークフロー状態 | `CI_FLAKE_FIX_READY_TO_PUSH` |
+| 現在の担当 | Codex CI再実行 / ユーザー実機確認 |
 | 現在のTask | PR #10 新規ライブラリスプライト素材・保存修正 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
@@ -54,7 +54,7 @@
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | PR #10 CI完了後、最新bundleで新規ライブラリスプライトの保存・同期を実機確認 |
+| 次Task | 決定的テスト修正をPR #10へ反映し、最終CI後に最新bundleで実機確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -3264,5 +3264,17 @@ rebase後検証:
 事前実GUI検証: Basketball追加、追加側保存、相手側表示・保存を実Chromium 2-contextでPASS。
 CI: Gate 0 2ジョブ実行中。
 進捗: Local-First実装100% / 本素材不具合修正100%（PR反映済み、CI・ユーザー実機確認待ち）。
+```
+
+### 2026-07-21 22:07:47 JST — Codex（Gate 0 staging-size testフレーク修正）
+
+```text
+状態: CI_FLAKE_FIX_READY_TO_PUSH
+CI結果: 同一SHA 52e6681のpull_request Gate 0はPASS、push Gate 0は1件のみFAIL。
+失敗箇所: collaboration-domainの「mergeUpdates > limit、encodeStateAsUpdate <= limit」を探索するテスト。
+原因: Y.DocのランダムclientID長によりupdate byte lengthが変わり、hardLimit=250の境界ケースが12回以内に必ず出る保証がなかった。製品コード失敗ではなく非決定的テスト。
+修正: sender/receiver clientIDを1/2へ固定し、既知サイズ merge=244 / encode=209 の間となるhardLimit=225を使用。
+検証: collaboration-domain 36/36を4並列実行し、4/4 PASS。git diff --check PASS。
+進捗: Local-First実装100% / 素材不具合修正100% / CI安定化95%（push・最終Gate待ち）。
 ```
 

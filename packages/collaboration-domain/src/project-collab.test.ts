@@ -287,9 +287,15 @@ describe("remote state acceptance guards", () => {
 
   it("does not reject when mergeUpdates exceeds the limit but encodeStateAsUpdate does not", () => {
     const sender = new Y.Doc();
+    sender.clientID = 1;
     const values = sender.getMap<string>("values");
-    const receiver = new ProjectCollaborationDocument();
-    const hardLimit = 250;
+    const receiverDoc = new Y.Doc();
+    receiverDoc.clientID = 2;
+    const receiver = new ProjectCollaborationDocument(receiverDoc);
+    // Fixed client IDs make the i=4 state deterministic: mergeUpdates is 244
+    // bytes while encodeStateAsUpdate is 209 bytes. A 225-byte limit must use
+    // the exact encoded state and accept it.
+    const hardLimit = 225;
     let senderVector = Y.encodeStateVector(sender);
     let sawMergeOverEncodeUnder = false;
 
