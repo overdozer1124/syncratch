@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 22:07:47 JST |
+| 最終更新 | 2026-07-21 22:25:40 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `CI_FLAKE_FIX_READY_TO_PUSH` |
-| 現在の担当 | Codex CI再実行 / ユーザー実機確認 |
+| ワークフロー状態 | `LIBRARY_ASSET_FIX_CI_GREEN_USER_VALIDATION_PENDING` |
+| 現在の担当 | ユーザー / Cursor（最新bundleで実機確認） |
 | 現在のTask | PR #10 新規ライブラリスプライト素材・保存修正 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
+| Local-First実装進捗 | **100%**（Stage 0〜5完了。同期・素材保存修正とCI完了、実機確認待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/block-graph-sync-f431` |
+| 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` / Codex worktree: `cursor/block-graph-sync-f431` |
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 決定的テスト修正をPR #10へ反映し、最終CI後に最新bundleで実機確認 |
+| 次Task | 最新bundleをhard reloadし、新規roomでBasketball追加・両端末保存を実機確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Local-First Stage 0 の実装計画を作成する。ProjectDocument validation、canonicalization、SHA-256 をブラウザー安全にし、既存 `ProjectEnvelopeV1` bytes/hash test vector を不変に保つ。versioned `LocalProjectRecord` contract は organization/user の偽値を持たせず、IndexedDB・Drive・Yjs・UI の実装は後続 stage へ分離する。
+PR #10 の最新ブランチを取得し、古いdev serverを停止して再起動する。2画面をhard reloadして新規roomを作り、ScratchライブラリからBasketballを追加する。追加側・相手側の両方でスプライト表示と「このパソコンに保存しました」を確認する。旧版で「？」になったスプライトは再利用せず、新規作品または再追加で判定する。再現した場合はブラウザーconsole、`vm.runtime.storage.load()` のhelper結果、assetId/dataFormat、LocalProjectStoreの例外を台帳へ記録する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3276,5 +3276,31 @@ CI結果: 同一SHA 52e6681のpull_request Gate 0はPASS、push Gate 0は1件の
 修正: sender/receiver clientIDを1/2へ固定し、既知サイズ merge=244 / encode=209 の間となるhardLimit=225を使用。
 検証: collaboration-domain 36/36を4並列実行し、4/4 PASS。git diff --check PASS。
 進捗: Local-First実装100% / 素材不具合修正100% / CI安定化95%（push・最終Gate待ち）。
+```
+
+### 2026-07-21 22:25:40 JST — Codex（素材保存修正・最終Gate完了）
+
+```text
+状態: LIBRARY_ASSET_FIX_CI_GREEN_USER_VALIDATION_PENDING
+PR #10 code head: 9d8e276717456971b933bd2e5a0e83285c65643b
+修正SHA:
+- f6508d0843cc16076330c1609a048a48bf570730: memory asset cache missを同期nullにしてScratch CDN fallbackを復旧
+- 9d8e276717456971b933bd2e5a0e83285c65643b: collaboration-domainのstaging-size境界試験を決定化
+最終CI:
+- pull_request Gate 0 run 29833114943: PASS
+- push Gate 0 run 29833110960 attempt 2: PASS（全step、8m51s）
+- attempt 1のSQLite migration concurrency失敗は同一SHAのPR runでPASSしていた既存フレーク。再実行でPackage testsを含む全Gate PASSを確認。
+ローカル検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- ScratchライブラリBasketball追加の実Chromium 2-context E2E: 1/1 PASS
+- @blocksync/collaboration-domain: 36/36を4並列実行、4/4 PASS
+ユーザー実機確認:
+- 最新ブランチを取得し、古いdev serverを停止して再起動する。
+- 2画面ともhard reloadし、旧roomではなく新規roomを作る。
+- ScratchライブラリからBasketballを追加し、追加側の「このパソコンに保存しました」、相手側のBasketball表示と保存成功を確認する。
+- 旧版で「？」になった既存スプライトは既にasset bytesを失っている可能性があるため、新規作品または当該スプライト再追加で判定する。
+進捗: Local-First実装100% / 本素材不具合修正100% / 自動検証・CI 100%（ユーザー実機確認のみ待ち）。
 ```
 
