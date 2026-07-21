@@ -46,17 +46,19 @@ export function createMemoryAssetLoader(
   requestedType: unknown,
   assetId: string,
   dataFormat: string,
-) => Promise<unknown> {
+) => Promise<unknown> | null {
   return (requestedType, assetId, dataFormat) => {
     const format = canonicalFormat(String(dataFormat));
     const bytes = assets.get(`${assetId}.${format}`);
-    if (!bytes) return Promise.resolve(null);
+    // ScratchStorage only advances to its lower-priority CDN helper when a
+    // helper returns null synchronously. Promise.resolve(null) stops the chain.
+    if (!bytes || bytes.byteLength === 0) return null;
     const expectedType = assetTypeFor(storage, format);
     const requestedName =
       (requestedType as {name?: string})?.name ?? String(requestedType);
     const expectedName =
       (expectedType as {name?: string})?.name ?? String(expectedType);
-    if (requestedName !== expectedName) return Promise.resolve(null);
+    if (requestedName !== expectedName) return null;
     return Promise.resolve(
       storage.createAsset(
         expectedType,

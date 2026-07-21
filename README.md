@@ -1,6 +1,8 @@
-# BlockSync AI — Gate 0 lab
+# Syncratch（シンクラッチ）
 
-Experimental monorepo for Gate 0 technical viability checks only. Package APIs are **@experimental** and will not be treated as Release 1 stable.
+Local-first Scratch collaboration editor. Earlier design notes may still say
+BlockSync; the product name is **Syncratch**. Package APIs under `@blocksync/*`
+remain the internal npm scope for now and are **@experimental**.
 
 See:
 
@@ -19,4 +21,4 @@ pnpm gate0:test
 pnpm gate0:collab
 ```
 
-Node version: see `.nvmrc` (must match Scratch pin).
+On Unix-like shells, the same `pnpm` commands apply after `git submodule update --init vendor/scratch-editor` and `pnpm install`.

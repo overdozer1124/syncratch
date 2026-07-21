@@ -8,6 +8,22 @@ import {
 import {createMemoryAssetLoader} from "./scratch-storage-loader.js";
 
 describe("createMemoryAssetLoader", () => {
+  it("returns synchronous null on a miss so ScratchStorage can try its CDN helper", () => {
+    const storage = {
+      AssetType: {
+        Sound: {name: "Sound"},
+        ImageVector: {name: "ImageVector"},
+        ImageBitmap: {name: "ImageBitmap"},
+      },
+      DataFormat: {SVG: "svg", WAV: "wav", MP3: "mp3", PNG: "png", JPG: "jpg"},
+      createAsset: vi.fn(),
+    };
+    const load = createMemoryAssetLoader(storage, new Map());
+
+    expect(load(storage.AssetType.ImageVector, "library-asset", "svg")).toBeNull();
+    expect(storage.createAsset).not.toHaveBeenCalled();
+  });
+
   it("exports, reloads, and loads jpg/jpeg assets with DataFormat.JPG", async () => {
     const imageBitmap = {name: "ImageBitmap"};
     const jpg = "jpg-format";

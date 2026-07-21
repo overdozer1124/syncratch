@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-19 04:38:00 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `PIVOT_DESIGN_READY` |
-| 現在の担当 | Cursor |
-| 現在のTask | Local-First pivot specification |
+| 最終更新 | 2026-07-22 04:47:30 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `GO_PR10_READY_FOR_USER_MERGE_DECISION` |
+| 現在の担当 | ユーザー（PR #10 Ready化・merge・#8/#9整理の承認） |
+| 現在のTask | PR #10 stabilization / acceptance 正式承認済み |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **0%**（設計確定、Stage 0 未着手） |
+| Local-First実装進捗 | **100%**（PR #10実装・受け入れ・Codexレビュー完了） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `feat/local-first-pivot-impl` |
-| 作業worktree | `C:\cursor\NewScratchEditor-local-first-pivot` |
+| 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` |
+| 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 0 browser-safe core：V1 contract/hashを凍結したブラウザー安全境界と versioned LocalProjectRecord contract |
+| 次Task | ユーザー承認後、PR #10をReady化・mergeし、包含済みPR #8/#9をsupersededとしてclose |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Local-First Stage 0 の実装計画を作成する。ProjectDocument validation、canonicalization、SHA-256 をブラウザー安全にし、既存 `ProjectEnvelopeV1` bytes/hash test vector を不変に保つ。versioned `LocalProjectRecord` contract は organization/user の偽値を持たせず、IndexedDB・Drive・Yjs・UI の実装は後続 stage へ分離する。
+なし。PR #10はCodex GO。ユーザーがmergeを指示した場合のみ、PR #10をReady for reviewへ変更してbase `feat/local-first-pivot-impl`へmergeし、結果を再確認してからPR #8/#9へ「#10に包含・superseded」と記録してcloseする。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTにはまだ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3149,3 +3149,360 @@ Local-First実装進捗: Stage 0〜5 100%
 - AI、中央backup、大人数room、新School directoryは初回release対象外
 ```
 
+### 2026-07-21 19:18:44 JST — Codex（PR #10 ブロックグラフ同期不全）
+
+```text
+状態: BLOCK_SYNC_FIX_IMPLEMENTED / USER_DEVICE_VALIDATION_PENDING
+対象: PR #10 head 3f2b37b9a4de0c0f461a30ea9ca8389822f440f2
+作業ブランチ: cursor/block-graph-sync-f431
+全体進捗: Local-First Stage 0〜5 100% / 本不具合修正 100%（実機確認待ち）
+
+根本原因（確度: 高）:
+1. collaboration-domain が ScratchTarget 全体を1個の Y.Map `json` に保存していた。座標・名前等の更新も同じスプライトの blocks を含む whole-target LWW となり、相手のブロック編集を丸ごと巻き戻した。
+2. collab-session の connectivity score ガードが「接続数の少ない状態」を mid-drag とみなし、意図した forever の切り離しも pending から破棄した。接続数だけでは両者を識別できない。
+3. remote apply 中に debounce timerをcancel/pendingをdropする経路が、上記の片方向に見える症状を増幅した。
+
+除外できた主因:
+- WebRTC は既存双方向試験と実Chromium 2-context E2Eで host→guest / guest→host とも更新を確認。
+- VM loadProject 後の Blockly 表示も、受信側SVG `[data-id="sprite-collab-block"]` の出現を実E2Eで確認。VMだけ更新されGUIが古い経路は今回の再現では否定。
+- VM moveBlock はグラフ変更後に PROJECT_CHANGED を発火するため、documentFromVm() の単純なイベント順逆転は主因ではない。
+
+修正:
+- target storageを `metadataJson` と `blocksJson` に分割。座標/名前/素材メタデータだけの更新が block graph を上書きしない。
+- legacy `json` はbootstrap読取のみ互換。現行peerが書くとsplit形式を正とする（mixed-version live roomは非対応）。
+- connectivity scoreによるpending破棄を撤廃。弱いgraphはmid-drag対策として1秒debounceするが、破棄しない。
+- pending local editをremote targetへfield-level 3-way rebaseし、再ベース後snapshotを送信キューにも戻す。意図したdetachと相手の座標更新を両方保持。
+
+追加/強化した再現:
+- 同一spriteで peer A がblocks追加、peer Bがx座標変更 → 修正前はblocks消失、修正後は双方保持。
+- guestがforeverを意図的にdetachしてpending中、hostが同一spriteのxを変更 → detachとx=42がhost/guest/shared Y.Docすべてで収束。
+- 実Chromium 2-context WebRTCで受信側VMだけでなくBlockly SVGにもremote blockが出現。
+
+検証:
+- @blocksync/collaboration-domain: 36/36 PASS
+- @blocksync/editor-web: 164/164 PASS
+- @blocksync/collab-webrtc: 35/35 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- Playwright 実Chromium 2-context WebRTC focused E2E: 1/1 PASS
+- git diff --check: PASS
+
+設計限界:
+- blocksJson内部はまだblock graph全体のLWW。同一spriteのblock graphを両peerが真に同時編集した場合は一方が決定的に勝つだけで、操作の意味的mergeはしない。
+- 完全な同時編集には、parent/next/input不変条件を保つblock単位CRDTまたはBlockly operation/transactionモデルが必要。単純なblock field分割は壊れたgraphを作るため採用しない。
+
+次の担当:
+- Cursor: 本コミットをPR #10へ取り込み/反映。
+- ユーザー: 実機2画面で host forever入れ子 → guest反映、guest detach → host反映、sprite移動でblockを巻き戻さないことを確認。
+```
+
+### 2026-07-21 19:32:44 JST — Codex（修正版未反映の切り分け）
+
+```text
+状態: BLOCK_SYNC_FIX_PUSHED_CI_PENDING
+ユーザー報告: 2画面で座標・接続人数は一致するがblock graphが不一致のスクリーンショット。
+切り分け結果: 報告時点のPR #10 headは旧SHA 3f2b37bで、修正0997a7bはローカル隔離ブランチにしか存在しなかった。したがって当該画像は修正版の失敗証拠ではなく旧版の既知再現。
+対応: 0997a7bを `cursor/guest-bootstrap-stall-reconnect-f431` へfast-forward push。PR #10 headが0997a7bになったことをGitHubで確認。
+CI: Gate 0 2ジョブ実行中。
+進捗: Local-First実装100% / 本不具合解消90%（PR反映済み、CIと実機再確認待ち）。
+注意: CI完了後に修正版をhard reloadまたは新規起動し、新しいroomで再試験する。既存room/旧bundle/旧dev serverは判定に使わない。
+再現継続時の次手: PROJECT_CHANGEDごとのvm.toJSON block graph、pending/base/remote/rebased、Y.Doc blocksJson hashをparticipant別に採取し、実Blockly dragイベント列で再現する。
+```
+
+### 2026-07-21 20:00:41 JST — Cursor（修正版取得・サーバ再起動・再試験）
+
+```text
+状態: BLOCK_SYNC_FIX_REVALIDATED_LOCAL / CI_PENDING
+PR #10 head: ffb4618（修正0997a7b含む）
+作業:
+- origin/cursor/guest-bootstrap-stall-reconnect-f431 をfast-forward取得
+- signaling(ws://127.0.0.1:4444) と vite(http://127.0.0.1:5173/) を再起動
+- collaboration-domain 36/36 PASS
+- collab-session + apply-remote-update 33/33 PASS
+- Playwright 2-context WebRTC E2E PASS
+- 実ブラウザ新ルーム再試験: forever入れ子 Host→Guest / Guest変更→Host / 座標更新でblock巻き戻しなし いずれもPASS
+注意: 招待リンクが旧previewポート4173を含む場合あり。5173へ手動置換で接続成功。要確認。
+進捗: Local-First実装100% / 同期不具合解消 ~95%（CI完了待ち）
+```
+
+### 2026-07-21 21:40:40 JST — Codex（新規ライブラリスプライト保存失敗）
+
+```text
+状態: LIBRARY_ASSET_FIX_READY_TO_PUSH
+ユーザー報告: 共同編集中にBasketballを追加すると追加側が「このパソコンに保存できませんでした」、コスチュームが「？」、相手側へスプライトが届かない。
+根本原因（確度: 高）:
+- 共同編集用 createMemoryAssetLoader がcache miss/type mismatch時に `Promise.resolve(null)` を返していた。
+- scratch-storage 6.2.1 はhelperが同期的な `null` を返した場合だけ次の低優先度helperへ進む。Promiseを返すとresolve値がnullでもhelper chainを終了する。
+- そのためmemory helper装着後はScratch CDN helperへ到達せず、ライブラリ素材がbroken placeholderになった。runtime asset bytesが得られず、LocalProjectRecord保存と共同編集target publishも安全側で拒否された。
+修正:
+- memory asset cache miss/type mismatchは同期的nullを返し、Scratch CDN helperへfallbackさせる。
+- ScratchStorageInstanceのhelper契約を `Promise<unknown> | null` に修正。
+回帰試験:
+- 単体: cache missがPromiseではなく同期nullであることを固定。
+- 実Chromium 2-context WebRTC: 実ScratchライブラリからBasketballを追加し、追加側保存成功、相手側Basketball表示、相手側保存成功まで確認。
+検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- focused Playwright real Chromium: 1/1 PASS
+- git diff --check: PASS
+進捗: Local-First実装100% / 本素材不具合修正100%（PR反映・ユーザー実機確認待ち）。
+```
+
+### 2026-07-21 21:55:42 JST — Codex（素材修正rebase・PR反映完了）
+
+```text
+状態: LIBRARY_ASSET_FIX_PUSHED_CI_PENDING
+競合対応: Cursorのb7401b8（block syncローカル再検証記録）を保持し、Codex素材修正をその上へrebase。台帳は両記録を時系列で保持。
+素材修正SHA: f6508d0843cc16076330c1609a048a48bf570730
+PR #10 head: f6508d0843cc16076330c1609a048a48bf570730
+push: b7401b8..f6508d0 fast-forward成功
+rebase後検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- git diff --check: PASS
+事前実GUI検証: Basketball追加、追加側保存、相手側表示・保存を実Chromium 2-contextでPASS。
+CI: Gate 0 2ジョブ実行中。
+進捗: Local-First実装100% / 本素材不具合修正100%（PR反映済み、CI・ユーザー実機確認待ち）。
+```
+
+### 2026-07-21 22:07:47 JST — Codex（Gate 0 staging-size testフレーク修正）
+
+```text
+状態: CI_FLAKE_FIX_READY_TO_PUSH
+CI結果: 同一SHA 52e6681のpull_request Gate 0はPASS、push Gate 0は1件のみFAIL。
+失敗箇所: collaboration-domainの「mergeUpdates > limit、encodeStateAsUpdate <= limit」を探索するテスト。
+原因: Y.DocのランダムclientID長によりupdate byte lengthが変わり、hardLimit=250の境界ケースが12回以内に必ず出る保証がなかった。製品コード失敗ではなく非決定的テスト。
+修正: sender/receiver clientIDを1/2へ固定し、既知サイズ merge=244 / encode=209 の間となるhardLimit=225を使用。
+検証: collaboration-domain 36/36を4並列実行し、4/4 PASS。git diff --check PASS。
+進捗: Local-First実装100% / 素材不具合修正100% / CI安定化95%（push・最終Gate待ち）。
+```
+
+### 2026-07-21 22:25:40 JST — Codex（素材保存修正・最終Gate完了）
+
+```text
+状態: LIBRARY_ASSET_FIX_CI_GREEN_USER_VALIDATION_PENDING
+PR #10 code head: 9d8e276717456971b933bd2e5a0e83285c65643b
+修正SHA:
+- f6508d0843cc16076330c1609a048a48bf570730: memory asset cache missを同期nullにしてScratch CDN fallbackを復旧
+- 9d8e276717456971b933bd2e5a0e83285c65643b: collaboration-domainのstaging-size境界試験を決定化
+最終CI:
+- pull_request Gate 0 run 29833114943: PASS
+- push Gate 0 run 29833110960 attempt 2: PASS（全step、8m51s）
+- attempt 1のSQLite migration concurrency失敗は同一SHAのPR runでPASSしていた既存フレーク。再実行でPackage testsを含む全Gate PASSを確認。
+ローカル検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- ScratchライブラリBasketball追加の実Chromium 2-context E2E: 1/1 PASS
+- @blocksync/collaboration-domain: 36/36を4並列実行、4/4 PASS
+ユーザー実機確認:
+- 最新ブランチを取得し、古いdev serverを停止して再起動する。
+- 2画面ともhard reloadし、旧roomではなく新規roomを作る。
+- ScratchライブラリからBasketballを追加し、追加側の「このパソコンに保存しました」、相手側のBasketball表示と保存成功を確認する。
+- 旧版で「？」になった既存スプライトは既にasset bytesを失っている可能性があるため、新規作品または当該スプライト再追加で判定する。
+進捗: Local-First実装100% / 本素材不具合修正100% / 自動検証・CI 100%（ユーザー実機確認のみ待ち）。
+```
+
+### 2026-07-21 22:38:22 JST — Cursor（素材修正版の取得・サーバ再起動）
+
+```text
+状態: LIBRARY_ASSET_FIX_SERVERS_RESTARTED / USER_VALIDATION_READY
+PR #10 head: afee93b（code head 9d8e276 + 台帳）
+作業:
+- origin/cursor/guest-bootstrap-stall-reconnect-f431 を fast-forward
+- CI Gate0: SUCCESS 確認
+- signaling(ws://127.0.0.1:4444) と vite(http://127.0.0.1:5173/) を再起動
+ユーザー実機:
+- 2画面とも hard reload
+- 旧roomではなく新規room
+- Scratchライブラリから Basketball を追加し、追加側保存成功・相手側表示・相手側保存を確認
+- 旧版で「？」になったスプライトは新規作品または再追加で判定
+進捗: Local-First実装100% / 素材不具合修正100% / サーバ準備完了（ユーザー実機確認待ち）
+```
+
+### 2026-07-21 22:51:15 JST — Cursor（共同編集時のスプライト選択維持）
+
+```text
+状態: EDITING_TARGET_PRESERVE_IMPLEMENTED
+ユーザー報告: 双方がスプライトBを選択中に片方でブロック追加すると、もう一方がスプライトAへ強制切替される。
+根本原因: リモート適用が毎回 vm.loadProject を呼び、Scratch VM の installTargets(wholeProject=true) が editingTarget を targets[1]（先頭スプライト）へリセットする。選択復元がなかった。
+修正: loadProjectPreservingEditingTarget で load 前後に editingTarget.id を保存・復元。共同編集の guest-initial / update 適用経路に接続。
+検証: typecheck PASS、unit 2/2 PASS。
+次: ユーザーが hard reload + 新ルームで、B選択のまま相手の編集を受けても選択が維持されることを確認。
+```
+
+### 2026-07-21 22:57:39 JST — Codex（remote更新による選択スプライト強制変更の原因確定）
+
+```text
+状態: SPRITE_SELECTION_PRESERVATION_FIX_REQUIRED
+ユーザー実機結果:
+- コード同期、ライブラリスプライト追加、別スプライトへのコード追加はいずれもPASS。
+- A/Bの双方でBを選択中、片側のblock更新を受信すると受信側だけA（先頭sprite）へ強制移動する。
+
+根本原因（確度: 高、コード経路で確定）:
+1. regular remote applyは `apps/editor-web/src/main.ts` の `applyCollaborativeProject()` から、remote更新ごとに作品全体を `vm.loadProject()` している（line 757）。
+2. Scratch VMの `installTargets(..., wholeProject=true)` は全体loadのたびに `targets.length > 1` なら無条件で `editingTarget = targets[1]`、すなわち最初のspriteを選ぶ（vendor scratch-vm virtual-machine.js lines 556-560）。
+3. 直後の `emitTargetsUpdate()` / `emitWorkspaceUpdate()` がScratch GUI reducerへ先頭spriteのeditingTargetを通知するため、画面選択もAへ切り替わる。
+4. これはYjs/WebRTCの一方向不全やblock target誤配信ではない。作品内容は正しく収束しているが、remote applyの全体reloadが各利用者固有の選択状態を破壊している。
+
+Cursor先行実装 7864e8e のレビュー: CHANGES_REQUESTED（P1）
+- helperはload前の `vm.editingTarget.id` を保存し、load後に同じIDで `vm.setEditingTarget()` している。
+- Scratch Target constructorは `this.id = uid()` でruntime IDを生成し、SB3 project.jsonにもProjectDocument target.idは出力されない。全体load後のBは別runtime IDになる。
+- `setEditingTarget(oldId)` は該当targetが無ければ何もせず、Scratchが選んだ先頭sprite Aのままとなる。
+- unit mockはload後も `sprite-b` が有効という実VMと異なる前提のため、2/2 PASSでも不具合を検出できない。
+
+既存試験の見落とし:
+- 実Chromium E2Eはremote blockが受信VMとBlockly SVGに出ることまでは確認するが、remote apply前後の選択sprite不変を検査していない。
+- Basketball E2Eも両端末のtarget存在と保存成功のみで、受信側のeditingTargetを固定していない。
+
+修正要件:
+- regular remote applyだけ、load前のローカルediting targetを安定した作品内identityへ写像し、load後の新runtime targetへ再解決して `vm.setEditingTarget(newRuntimeId)` を呼ぶ。
+- 選択状態は共同編集データではない。Y.Doc・ProjectDocument・相手peerへpublishせず、各ブラウザで独立して保持する。
+- SB3 project.jsonはProjectDocumentのtarget.idを含まず、runtime IDもloadで再生成され得る。古いruntime IDの直接再利用は禁止。stage/sprite種別と安定target IDを、load前後のtarget順/layer/name対応を使って解決する。
+- 選択対象がremoteで削除された場合のみ、先頭spriteまたはstageへのfallbackを許す。
+- guest-initial bootstrap、明示的な別作品open/newでは前作品の選択を復元しない。
+- session終了後にpreviousを再loadするrollback経路でも、元のローカル選択を維持する。
+
+必須回帰試験:
+- A/Bを持つ2ブラウザで双方Bを選択。peer AがBへblock追加後もpeer Bの選択はBのまま、blockは表示される。
+- peer BがAを選択してAを編集しても、peer AがBを選択中ならpeer AはBのまま。
+- 同一remote update後も両peerのeditingTargetが互いに独立している。
+- 選択中Bがremote削除された場合のみ安全なfallback。
+- 既存のblock同期、Basketball asset同期・保存、typecheck、実Chromium 2-context E2Eを維持。
+
+設計評価:
+- 最小安全修正は選択復元。block単位CRDTとは別問題で、Y.Doc schema変更は不要。
+- ただしwhole-project loadは将来、workspace scroll、選択tab、costume選択等のローカルUI状態もリセットし得る。今回のP1はsprite選択に限定し、追加のUX状態は別監査候補とする。
+
+進捗: Local-First primary track 99% / 原因調査100% / 選択保持修正は再設計待ち（Cursor 7864e8eはP1未解消）。
+```
+
+### 2026-07-21 23:09:33 JST — Cursor（選択スプライト復元を安定identity方式へ修正）
+
+```text
+状態: EDITING_TARGET_STABLE_IDENTITY_RESTORE
+Codex P1レビュー反映:
+- loadProject後はruntime target idが再生成されるため、旧runtime idの setEditingTarget では復元できない。
+修正:
+- captureEditingSelection で ProjectDocument の安定id（+ isStage/name）を記録
+- load後に afterDocument と runtime target を名前/種別で再解決して setEditingTarget(newRuntimeId)
+- regular remote updateのみ適用。guest-initialでは前作品の選択を復元しない
+- 対象がremote削除された場合は復元せずScratch既定選択へfallback
+検証: typecheck PASS、unit 5/5 PASS
+次: hard reload + 新ルームで双方B選択のまま相手編集を受けてもB維持を確認
+```
+
+### 2026-07-21 23:49:01 JST — Cursor（製品名を Syncratch / シンクラッチ に統一）
+
+```text
+状態: PRODUCT_RENAME_SYNCRATCH
+正式名称: Syncratch（シンクラッチ）
+変更:
+- editor title / ツールバーブランド表示
+- README、local-first DEPLOYMENT/RECOVERY、root package.json name
+意図的に未変更: @blocksync/* npm scope、invite fragment blocksync-collab、__blocksyncTask3、歴史的設計仕様書
+```
+
+### 2026-07-21 23:55:49 JST — Codex（次作業: PR #10受け入れ固定・マージ準備）
+
+```text
+状態: PR10_STABILIZATION_ACCEPTANCE_INSTRUCTED
+判断: 次は候補1（PR整理）と候補2（共同編集受け入れチェックリスト）を一つのstabilization taskとして実施する。新機能は追加しない。
+
+現状確認:
+- PR #10 head a6c40b2。Draft、MERGEABLEだがGate 0実行中でUNSTABLE。
+- PR #10はlocal-first共同編集、bootstrap/reconnect、block収束、asset同期、選択保持、Syncratch改名、日本語（漢字）初期化まで包含する統合PR。base比較は67 files / 約8,900 insertionsで、これ以上の機能追加はレビューリスクが高い。
+- PR #9 head 1d82abbは `git cherry PR10 PR9` で `-`（patch-equivalent）。#10に実質包含済み。
+- PR #8の改名は#10にもad1b504として再実装されているがpatch-identicalではない。#8をcloseする前に、README/index/style/deployment/recovery/package名の意図が#10で全て満たされることを一覧確認する。
+
+Cursor実施内容:
+1. `apps/editor-web/e2e/editor.spec.ts` の実Chromium 2-context試験へ選択保持を追加する。双方B選択→peer AがB編集→peer BはBのまま、peer BがA編集→peer AはBのまま、かつblock同期・保存成功を確認する。unitだけで完了扱いにしない。
+2. `docs/local-first/COLLAB_ACCEPTANCE.md` を作り、新規room/hard reload前提で次を短く固定する: forever nest、detach、Basketball、別sprite編集、B選択維持、双方local save、Syncratch/シンクラッチ表示、日本語（漢字）初期化、invite URLのorigin/port一致。
+3. PR #10タイトルを現在の範囲へ変更し、本文に主要設計、既知限界（同一sprite blocksJson LWW、whole-project remote load）、自動/実機検証、#8/#9包含状況を記載する。
+4. Gate 0、@blocksync/editor-web test/typecheck/build:e2e、実Chromium 2-context E2Eを実行する。working tree clean、SHA、結果を台帳へ記録し `READY_FOR_CODEX_REVIEW` にする。
+5. PR #10はまだReady化・mergeしない。PR #8/#9もまだcloseしない。Codex GO後にユーザー承認のもと整理する。
+
+明示的な非目標:
+- remote apply部分更新
+- scroll/tab/costume等の追加UI状態監査
+- Chromebookヘッダー圧縮
+- invite実装修正（受け入れで失敗した場合のみ別finding）
+- PR #7性能改善
+- block単位CRDT
+
+進捗: Local-First primary track 99%（実装完了、最終受け入れとレビュー待ち）。
+```
+
+
+### 2026-07-22 00:14:56 JST — Cursor（PR #10受け入れ固定完了 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+提出SHA: 4dc49945283432393a62e8183ff032889b0c3fcc（受け入れ実装 tip） / docs tip = branch HEAD
+ブランチ: cursor/guest-bootstrap-stall-reconnect-f431
+PR: https://github.com/overdozer1124/syncratch/pull/10 （Draft維持）
+実装+受け入れSHA（台帳直前）: 4dc49945283432393a62e8183ff032889b0c3fcc
+working tree: clean（本エントリ更新後）
+
+実施内容（新機能なし）:
+1. e2e/editor.spec.ts
+   - 選択保持: 双方Basketball選択 → AがB編集でもB選択維持 → BがA編集でもA側B選択維持
+   - 招待URL origin = http://127.0.0.1:4173
+   - ja漢字ロケール文言（動き / スプライトを選ぶ）とDrive not-configured文へE2E追随
+   - 複数sprite時は named-target diagnostics でblock作成・検証
+   - 実WebRTC 2試験を serial 化（並列flake回避）
+2. docs/local-first/COLLAB_ACCEPTANCE.md 新設（新規room/hard reload前提の実機手順）
+3. PR #10 タイトル/本文を全範囲へ更新（既知限界・#8/#9包含を記載）
+
+PR #8/#9 包含比較:
+- #9 (1d82abb, sprite-add atomic): `git cherry HEAD origin/cursor/sprite-add-atomic-sync-f431` → `-`（patch-equivalent、#10包含済み）
+- #8 (56a9061, rename): cherry `+`（patch-identicalではない）が、#10の ad1b504 で title/brand/README/docs/package を満たし、かな併記まで含む。closeはCodex GO後
+
+検証:
+- pnpm gate0:test PASS
+- pnpm gate0:collab PASS
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test PASS（170/170）
+- @blocksync/editor-web build:e2e PASS
+- Playwright e2e/editor.spec.ts + e2e/collab.spec.ts PASS（14/14）
+
+明示的非目標（未着手）:
+- remote apply部分更新 / 追加UI状態監査 / Chromebookヘッダー / invite実装修正 / PR #7 / block単位CRDT
+
+次の担当: Codex
+進捗: Local-First primary track 99%
+```
+
+### 2026-07-22 04:47:30 JST — Codex（PR #10 stabilization / acceptance 正式承認）
+
+```text
+判定: GO（P0/P1/P2 findingなし）
+レビュー対象:
+- PR #10 https://github.com/overdozer1124/syncratch/pull/10
+- branch HEAD / docs tip: 0724ea23f27cfbf7ec50058ad02ac6833ba6a76f
+- acceptance code tip: 4dc49945283432393a62e8183ff032889b0c3fcc
+
+確認内容:
+- 実Chromium 2-context E2Eは、双方Basketball選択、peer AのB編集後もpeer BがB、peer BのA編集後もpeer AがB、対象block同期、双方local saveを検証する。
+- named-target diagnosticsはE2E modeでのみwindow公開され、production modeへテストAPIを露出しない。
+- `COLLAB_ACCEPTANCE.md` はhard reload / 新規room、forever nest/detach、Basketball、別sprite、選択維持、local save、ブランド、日本語、invite origin、既知限界を網羅する。
+- PRタイトル/本文は統合範囲、既知限界、検証、#8/#9包含関係を正しく説明する。
+- PR #9はpatch-equivalent。PR #8はpatch-identicalではないが、#10のad1b504が対象ファイルと改名意図を包含し、かな併記を追加している。
+
+検証証跡:
+- GitHub Gate 0 push / pull_request: PASS
+- GitHub r1-persist: PASS
+- Cursor: gate0:test PASS / gate0:collab PASS / editor-web 170/170 / typecheck PASS / build:e2e PASS / Playwright 14/14 PASS
+- Codex再実行: editor-web 170/170 PASS
+- Codex再実行: editor-web typecheck PASS
+- Codex再実行: focused real WebRTC selection E2E 1/1 PASS（21.4s）
+- git diff --check PASS / working tree clean（GO台帳更新前）
+
+次:
+- merge/closeはまだ未実行。ユーザー承認後にPR #10をReady化・mergeする。
+- #10 merge確認後、PR #8/#9をsuperseded by #10としてcloseする。
+- 次の機能スライスはmerge完了後に別途選定する。
+
+進捗: Local-First primary track 100%（実装・受け入れ・レビュー完了）。
+```

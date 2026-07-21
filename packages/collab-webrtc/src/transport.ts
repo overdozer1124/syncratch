@@ -6,6 +6,12 @@ export interface TransportHandlers {
   onPeerOpen(peerId: string): void;
   onPeerClose(peerId: string): void;
   onMessage(peerId: string, wire: string): void;
+  /** Peers seen via signaling (joined/peer), before a data channel opens. */
+  onSignalingRoster?(peerIds: string[]): void;
+  /** Signaling accepted our join (room membership confirmed). */
+  onSignalingJoined?(peerIds: string[]): void;
+  /** Signaling rejected a message (invalid topic, duplicate peer, etc.). */
+  onSignalingError?(reason: string): void;
 }
 
 /**

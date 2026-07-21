@@ -1,6 +1,6 @@
 # Local-First deployment
 
-The Community editor is a static SPA. Solo editing needs no application server,
+The Syncratch editor is a static SPA. Solo editing needs no application server,
 database, or object storage. A deployment consists of:
 
 1. static files from `apps/editor-web/dist`;
@@ -30,7 +30,7 @@ artifact without a runtime server.
 GitHub documents a 1 GB published-site limit, a soft 100 GB/month bandwidth
 limit, and a 10-minute deployment timeout:
 <https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits>.
-These are hosting limits, not BlockSync capacity guarantees.
+These are hosting limits, not Syncratch capacity guarantees.
 
 ## Google Drive configuration
 

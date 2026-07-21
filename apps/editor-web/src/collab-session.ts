@@ -24,7 +24,11 @@ import {
 } from "@blocksync/collaboration-domain";
 import type {CollabProvider} from "@blocksync/collab-webrtc";
 import {electLeader, isLeader as leaderMatches, type LeadershipState} from "@blocksync/collab-leader";
-import type {ProjectDocument} from "@blocksync/project-schema";
+import type {ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
+import {
+  isWeakerBlockGraph,
+  parseTargetJson,
+} from "./block-connectivity.js";
 
 export interface CollabReadinessInput {
   signalingUrl: string;
@@ -64,6 +68,9 @@ export interface CollabState {
   expectedAssets: number;
   receivedBytes: number;
   issueCodes: string[];
+  signalingPeerCount: number;
+  joinedTopic: boolean;
+  signalingError: string | null;
 }
 
 export interface LocalMaterialization {
@@ -111,6 +118,10 @@ export interface CollabSessionOptions {
   onState?: (state: CollabState) => void;
   /** Optional injection for deterministic bootstrap ids in tests. */
   randomBootstrapId?: () => string;
+  /** Hashed signaling topic (diagnostics only). */
+  signalingTopic?: string;
+  /** Configured signaling URL (diagnostics only; host shown, not full secret path). */
+  signalingUrl?: string;
 }
 
 export interface BootstrapDiagnostics {
@@ -121,12 +132,25 @@ export interface BootstrapDiagnostics {
   receivedBytes: number;
   peerCount: number;
   createdThisRoom: boolean;
+  status: string;
+  sawPeerDuringBootstrap: boolean;
+  signalingPeerCount: number;
+  sawSignalingPeer: boolean;
+  joinedTopic: boolean;
+  signalingError: string | null;
+  topicPrefix: string | null;
+  signalingHost: string | null;
+}
+
+export interface NoteLocalChangeOptions {
+  /** Flush immediately instead of waiting for the debounce window. */
+  force?: boolean;
 }
 
 export interface CollabSession {
   start(options: {host: boolean}): HostPreflightResult | {ok: true};
   leave(): void;
-  noteLocalChange(): void;
+  noteLocalChange(options?: NoteLocalChangeOptions): void;
   reportDriveConflict(): void;
   clearDriveConflict(): void;
   canPersistToDrive(options?: {explicit?: boolean}): {ok: boolean; reason?: string};
@@ -145,11 +169,32 @@ export interface CollabSession {
 }
 
 const DEFAULT_STALL_MS = 15_000;
+/** Extra wait while signaling sees a peer but the data channel is still negotiating. */
+const ICE_NEGOTIATION_STALL_MS = 45_000;
+/** Guest joined an empty room: wait longer for the host to (re)appear. */
+const EMPTY_ROOM_STALL_MS = 120_000;
+/** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
+const MAX_SIGNALING_AUTO_RECONNECTS = 5;
+/**
+ * When the local graph gets less connected with the same block ids (typical
+ * mid-drag forever insert), wait longer before publishing so the settled nest
+ * can win over a detached snapshot.
+ */
+const CONNECTIVITY_REGRESSION_DEBOUNCE_MS = 1_000;
+
+function signalingHostFromUrl(url: string | undefined): string | null {
+  if (!url || url.trim().length === 0) return null;
+  try {
+    return new URL(url).host || null;
+  } catch {
+    return null;
+  }
+}
 
 export function createCollabSession(options: CollabSessionOptions): CollabSession {
   const domain = new ProjectCollaborationDocument();
   const selfEligible = options.eligible ?? true;
-  const debounceMs = options.debounceMs ?? 250;
+  const debounceMs = options.debounceMs ?? 400;
   const stallInactivityMs = options.stallInactivityMs ?? DEFAULT_STALL_MS;
 
   let bootstrapPhase: BootstrapPhase = "idle";
@@ -161,6 +206,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let issueCodes: string[] = [];
   let lastProgressAt = 0;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let sawPeerDuringBootstrap = false;
+  let sawSignalingPeer = false;
+  let ignoreEmptyPeerStall = false;
+  let signalingAutoReconnects = 0;
   let validatedMaterialization: LocalMaterialization | null = null;
   let validatedTitle = COLLAB_FALLBACK_TITLE;
   let sealGeneration = 0;
@@ -227,8 +276,42 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const isSeeded = (): boolean => domain.ydoc.getMap("targets").size > 0;
 
   const currentTargetJson = (id: string): unknown => {
-    const entry = domain.ydoc.getMap<Y.Map<unknown>>("targets").get(id);
-    return entry instanceof Y.Map ? entry.get("json") : undefined;
+    const target = domain.getTarget(id);
+    return target ? JSON.stringify(target) : undefined;
+  };
+
+  const mergePendingTarget = (
+    baseJson: string | undefined,
+    pending: ScratchTarget,
+    remote: ScratchTarget,
+  ): ScratchTarget => {
+    const base = parseTargetJson(baseJson ?? null);
+    if (!base) return pending;
+    const baseRecord = base as unknown as Record<string, unknown>;
+    const pendingRecord = pending as unknown as Record<string, unknown>;
+    const mergedRecord = structuredClone(remote) as unknown as Record<string, unknown>;
+    const keys = new Set([...Object.keys(baseRecord), ...Object.keys(pendingRecord)]);
+    for (const key of keys) {
+      if (key === "id") continue;
+      if (JSON.stringify(baseRecord[key]) === JSON.stringify(pendingRecord[key])) {
+        continue;
+      }
+      if (pendingRecord[key] === undefined) {
+        delete mergedRecord[key];
+      } else {
+        mergedRecord[key] = structuredClone(pendingRecord[key]);
+      }
+    }
+    return mergedRecord as unknown as ScratchTarget;
+  };
+
+  const hasConnectivityRegression = (
+    previousJson: string | undefined,
+    next: ScratchTarget,
+  ): boolean => {
+    const previous = parseTargetJson(previousJson ?? null);
+    if (!previous) return false;
+    return isWeakerBlockGraph(next, previous);
   };
 
   const syncLocalToDoc = (): void => {
@@ -238,14 +321,13 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       domain.loadLocalProject(document, assets);
       return;
     }
-    for (const target of document.targets) {
-      if (currentTargetJson(target.id) !== JSON.stringify(target)) {
-        domain.setTarget(target);
-      }
-    }
     const assetMap = domain.ydoc.getMap<Uint8Array>("assets");
-    for (const [md5ext, bytes] of assets) {
-      if (!assetMap.has(md5ext)) domain.putAsset(md5ext, bytes);
+    const missingAssets = [...assets].filter(([md5ext]) => !assetMap.has(md5ext));
+    const dirtyTargets = document.targets.filter(
+      target => currentTargetJson(target.id) !== JSON.stringify(target),
+    );
+    if (dirtyTargets.length > 0 || missingAssets.length > 0) {
+      domain.putAssetsAndSetTargets(dirtyTargets, missingAssets);
     }
   };
 
@@ -313,30 +395,59 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     pendingTargetDeletions.clear();
 
-    for (const [md5ext, bytes] of pendingAssets) domain.putAsset(md5ext, bytes);
-    pendingAssets.clear();
     const sharedAssets = domain.ydoc.getMap<Uint8Array>("assets");
-    for (const [md5ext, bytes] of assets) {
-      if (!sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
-    }
+    const localAssetBytes = (md5ext: string): Uint8Array | undefined =>
+      assets.get(md5ext) ?? pendingAssets.get(md5ext);
 
     const deferred = new Map<string, ProjectDocument["targets"][number]>();
+    const readyTargets: ProjectDocument["targets"][number][] = [];
+    const assetsToPublish = new Map<string, Uint8Array>();
+    const assetReady = (md5ext: string): boolean => {
+      if (sharedAssets.has(md5ext)) {
+        const existing = sharedAssets.get(md5ext);
+        return existing instanceof Uint8Array && existing.byteLength > 0;
+      }
+      const bytes = localAssetBytes(md5ext);
+      return bytes instanceof Uint8Array && bytes.byteLength > 0;
+    };
+
     for (const [targetId, target] of pendingTargets) {
       const needed = targetAssetIds(target);
-      const ready = needed.every(
-        md5ext => sharedAssets.has(md5ext) || assets.has(md5ext),
-      );
-      if (!ready) {
+      if (!needed.every(assetReady)) {
         deferred.set(targetId, target);
         continue;
       }
       for (const md5ext of needed) {
-        const bytes = assets.get(md5ext);
-        if (bytes && !sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
+        if (assetsToPublish.has(md5ext)) continue;
+        const bytes = localAssetBytes(md5ext);
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) continue;
+        const existing = sharedAssets.get(md5ext);
+        // Overwrite empty placeholders once real costume/sound bytes exist.
+        if (existing instanceof Uint8Array && existing.byteLength > 0) continue;
+        assetsToPublish.set(md5ext, bytes);
       }
-      domain.setTarget(target);
+      readyTargets.push(target);
       lastLocalTargetJson.set(targetId, JSON.stringify(target));
     }
+
+    // Orphan assets (not yet referenced by a ready target) still sync, but
+    // never ahead of a target that still lacks costume/sound bytes.
+    const shouldPublishAsset = (md5ext: string, bytes: Uint8Array): boolean => {
+      if (bytes.byteLength === 0 || assetsToPublish.has(md5ext)) return false;
+      const existing = sharedAssets.get(md5ext);
+      return !(existing instanceof Uint8Array && existing.byteLength > 0);
+    };
+    for (const [md5ext, bytes] of pendingAssets) {
+      if (shouldPublishAsset(md5ext, bytes)) assetsToPublish.set(md5ext, bytes);
+    }
+    for (const [md5ext, bytes] of assets) {
+      if (shouldPublishAsset(md5ext, bytes)) assetsToPublish.set(md5ext, bytes);
+    }
+
+    if (readyTargets.length > 0 || assetsToPublish.size > 0) {
+      domain.putAssetsAndSetTargets(readyTargets, assetsToPublish);
+    }
+    pendingAssets.clear();
     pendingTargets.clear();
     for (const [targetId, target] of deferred) {
       pendingTargets.set(targetId, target);
@@ -363,6 +474,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       expectedAssets,
       receivedBytes,
       issueCodes: [...issueCodes],
+      signalingPeerCount: provider.getSignalingPeers().length,
+      joinedTopic: provider.hasJoinedTopic(),
+      signalingError: provider.getSignalingError(),
     });
   };
 
@@ -376,6 +490,20 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       bootstrapPhase = "receiving-project";
     }
     armStallTimer();
+  };
+
+  const currentStallMs = (): number => {
+    if (sawSignalingPeer && provider.getPeers().length === 0) {
+      return Math.max(stallInactivityMs, ICE_NEGOTIATION_STALL_MS);
+    }
+    if (
+      !createdThisRoom &&
+      provider.hasJoinedTopic() &&
+      provider.getSignalingPeers().length === 0
+    ) {
+      return Math.max(stallInactivityMs, EMPTY_ROOM_STALL_MS);
+    }
+    return stallInactivityMs;
   };
 
   const armStallTimer = (): void => {
@@ -393,6 +521,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     ) {
       return;
     }
+    const waitMs = currentStallMs();
     stallTimer = setTimeout(() => {
       stallTimer = null;
       if (
@@ -400,12 +529,12 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         !guestReady &&
         bootstrapPhase !== "invalid-project" &&
         bootstrapPhase !== "ready" &&
-        Date.now() - lastProgressAt >= stallInactivityMs
+        Date.now() - lastProgressAt >= currentStallMs()
       ) {
         bootstrapPhase = "stalled-project";
         emitState();
       }
-    }, stallInactivityMs);
+    }, waitMs);
   };
 
   const enterInvalid = (codes: string[]): void => {
@@ -712,24 +841,62 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         const result = domain.materialize();
         if (!result.ok) {
-          issueCodes = result.issues.map(item => String(item.code));
-          emitState();
+          // Incomplete asset arrivals are expected while Y.Docs converge; keep
+          // the last valid VM and avoid flashing transient MISSING_ASSET noise.
+          const onlyMissingAssets =
+            result.issues.length > 0 &&
+            result.issues.every(item => String(item.code) === "MISSING_ASSET");
+          if (!onlyMissingAssets) {
+            issueCodes = result.issues.map(item => String(item.code));
+            emitState();
+          }
           return;
         }
         suppressLocal = true;
         try {
-          await options.applyRemoteToLocal(result.document, result.assets, {
+          // Rebase every pending local field onto the newest remote target.
+          // Connectivity is not a quality signal: a weaker graph may be an
+          // intentional detach, so it must survive unrelated remote metadata.
+          const applyDocument: ProjectDocument = {
+            ...result.document,
+            targets: result.document.targets.map(remoteTarget => {
+              const pending = pendingTargets.get(remoteTarget.id);
+              return pending
+                ? mergePendingTarget(
+                    lastLocalTargetJson.get(remoteTarget.id),
+                    pending,
+                    remoteTarget,
+                  )
+                : remoteTarget;
+            }),
+          };
+          const applied = await options.applyRemoteToLocal(applyDocument, result.assets, {
             mode: "update",
           });
+          if (applied === false) return;
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
-            lastLocalTargetJson.set(target.id, JSON.stringify(target));
+            // Pending edits still need their pre-edit base for the next rebase.
+            if (pendingTargets.has(target.id)) {
+              // Publish the rebased snapshot, not the pre-remote snapshot;
+              // otherwise its stale metadata could undo the remote change.
+              pendingTargets.set(target.id, target);
+            } else {
+              lastLocalTargetJson.set(target.id, JSON.stringify(target));
+            }
           }
         } catch {
           // Preserve last valid VM / revision.
           issueCodes = ["REMOTE_APPLY_FAILED"];
         } finally {
           suppressLocal = false;
+        }
+        if (
+          pendingTargets.size > 0 ||
+          pendingTargetDeletions.size > 0 ||
+          pendingAssets.size > 0
+        ) {
+          pushPendingLocalChanges();
         }
       })
       .catch(() => undefined);
@@ -748,17 +915,6 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     if (guestApplyInFlight && !createdThisRoom && !guestReady) {
       stagingChangedDuringGuestApply = true;
     }
-    if (
-      pendingTargets.size > 0 ||
-      pendingTargetDeletions.size > 0 ||
-      pendingAssets.size > 0
-    ) {
-      if (localTimer) {
-        clearTimeout(localTimer);
-        localTimer = null;
-      }
-      pushPendingLocalChanges();
-    }
     if (!createdThisRoom && !guestReady) {
       scheduleGuestEvaluate();
     } else {
@@ -767,28 +923,94 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     emitState();
   });
-  provider.on("status", emitState);
+  const forceTransportReconnect = (): void => {
+    ignoreEmptyPeerStall = true;
+    sawPeerDuringBootstrap = false;
+    try {
+      provider.disconnect();
+    } catch {
+      ignoreEmptyPeerStall = false;
+      return;
+    }
+    // Yield so the signaling hub can finish closing the previous socket
+    // before we re-join with the same peer id.
+    queueMicrotask(() => {
+      try {
+        provider.connect();
+      } finally {
+        ignoreEmptyPeerStall = false;
+      }
+    });
+  };
+
+  provider.on("status", () => {
+    emitState();
+    if (
+      !active ||
+      ignoreEmptyPeerStall ||
+      provider.getStatus() !== "disconnected" ||
+      bootstrapPhase === "invalid-project" ||
+      bootstrapPhase === "idle" ||
+      bootstrapPhase === "local-save-failed" ||
+      signalingAutoReconnects >= MAX_SIGNALING_AUTO_RECONNECTS
+    ) {
+      return;
+    }
+    signalingAutoReconnects += 1;
+    queueMicrotask(() => {
+      if (!active || provider.getStatus() !== "disconnected") return;
+      if (bootstrapPhase === "stalled-project") {
+        bootstrapPhase = "receiving-project";
+      }
+      lastProgressAt = Date.now();
+      if (!createdThisRoom && !guestReady) armStallTimer();
+      forceTransportReconnect();
+      if (!createdThisRoom && !guestReady) scheduleGuestEvaluate();
+      emitState();
+    });
+  });
   provider.on("peers", () => {
-    markProgress("peer");
     const peers = provider.getPeers();
+    if (peers.length > 0) {
+      sawPeerDuringBootstrap = true;
+      signalingAutoReconnects = 0;
+      markProgress("peer");
+    }
     if (
       !createdThisRoom &&
       !guestReady &&
       active &&
+      !ignoreEmptyPeerStall &&
       peers.length === 0 &&
+      sawPeerDuringBootstrap &&
       (bootstrapPhase === "receiving-project" ||
         bootstrapPhase === "verifying-project")
     ) {
-      // Host/sealer departed during bootstrap.
+      // Host/sealer departed after we had already connected to them.
       bootstrapPhase = "stalled-project";
       emitState();
       return;
     }
     recomputeLeadership();
   });
+  provider.on("signaling", () => {
+    const signalingPeers = provider.getSignalingPeers();
+    if (signalingPeers.length > 0) {
+      sawSignalingPeer = true;
+      if (!createdThisRoom && !guestReady) {
+        markProgress("signaling");
+      }
+    }
+    // Host/guest: surface join failures instead of looking "connected & waiting".
+    emitState();
+  });
   provider.on("awareness", recomputeLeadership);
 
   const doLocalPush = (): void => {
+    if (suppressLocal) {
+      localTimer = setTimeout(doLocalPush, Math.max(debounceMs, 20));
+      return;
+    }
     localTimer = null;
     pushPendingLocalChanges();
   };
@@ -809,6 +1031,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         bootstrapPhase = "ready";
         guestReady = true;
+        signalingAutoReconnects = 0;
         active = true;
         provider.connect();
         wasLeader = true;
@@ -817,6 +1040,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         return {ok: true as const};
       }
       bootstrapPhase = "receiving-project";
+      sawPeerDuringBootstrap = false;
+      sawSignalingPeer = false;
+      signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
       active = true;
@@ -854,7 +1080,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         guestEvaluateTimer = null;
       }
       active = false;
+      ignoreEmptyPeerStall = true;
       provider.disconnect();
+      ignoreEmptyPeerStall = false;
       maySeed = false;
       createdThisRoom = false;
       guestReady = false;
@@ -862,6 +1090,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       stagingChangedDuringGuestApply = false;
       guestInitialCopyApplied = false;
       bootstrapPhase = "idle";
+      sawPeerDuringBootstrap = false;
+      sawSignalingPeer = false;
+      signalingAutoReconnects = 0;
       validatedMaterialization = null;
       leadership = null;
       leadershipGeneration += 1;
@@ -875,13 +1106,24 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         void Promise.resolve(options.rollbackGuestInitialLocal());
       }
     },
-    noteLocalChange() {
+    noteLocalChange(changeOptions) {
       if (suppressLocal || !active) return;
       // Guests must not publish project edits before ready.
       if (!createdThisRoom && !guestReady) return;
       capturePendingLocalChanges();
       if (localTimer) clearTimeout(localTimer);
-      localTimer = setTimeout(doLocalPush, debounceMs);
+      if (changeOptions?.force) {
+        doLocalPush();
+        return;
+      }
+      let waitMs = debounceMs;
+      for (const [targetId, target] of pendingTargets) {
+        if (hasConnectivityRegression(lastLocalTargetJson.get(targetId), target)) {
+          waitMs = Math.max(waitMs, CONNECTIVITY_REGRESSION_DEBOUNCE_MS);
+          break;
+        }
+      }
+      localTimer = setTimeout(doLocalPush, waitMs);
     },
     reportDriveConflict() {
       conflict = true;
@@ -943,6 +1185,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         expectedAssets,
         receivedBytes,
         issueCodes: [...issueCodes],
+        signalingPeerCount: provider.getSignalingPeers().length,
+        joinedTopic: provider.hasJoinedTopic(),
+        signalingError: provider.getSignalingError(),
       };
     },
     async flush() {
@@ -989,11 +1234,12 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     reconnectBootstrap() {
       if (bootstrapPhase !== "stalled-project") return;
       bootstrapPhase = "receiving-project";
+      signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
       armStallTimer();
-      if (provider.getStatus() !== "connected") {
-        provider.connect();
-      }
+      // Always cycle the transport: signaling can stay "connected" after the
+      // data channel dies, and a no-op connect() leaves the guest stranded.
+      forceTransportReconnect();
       scheduleGuestEvaluate();
       emitState();
     },
@@ -1006,6 +1252,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         receivedBytes,
         peerCount: provider.getPeers().length,
         createdThisRoom,
+        status: provider.getStatus(),
+        sawPeerDuringBootstrap,
+        signalingPeerCount: provider.getSignalingPeers().length,
+        sawSignalingPeer,
+        joinedTopic: provider.hasJoinedTopic(),
+        signalingError: provider.getSignalingError(),
+        topicPrefix: options.signalingTopic
+          ? options.signalingTopic.slice(0, 12)
+          : null,
+        signalingHost: signalingHostFromUrl(options.signalingUrl),
       };
     },
     getValidatedMaterialization() {

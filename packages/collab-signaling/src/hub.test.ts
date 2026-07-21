@@ -47,6 +47,21 @@ describe("join and membership", () => {
     expect(a.last()).toMatchObject({t: "peer", peer: "peer-b"});
   });
 
+  it("replaces a stale membership when the same peer id rejoins", () => {
+    const stale = new FakeConnection("stale");
+    const fresh = new FakeConnection("fresh");
+    const other = new FakeConnection("other");
+    join(stale, "peer-a");
+    join(other, "peer-b");
+    join(fresh, "peer-a");
+
+    expect(stale.closed).toEqual({code: 4000, reason: "replaced"});
+    expect(fresh.last()).toMatchObject({t: "joined", peers: ["peer-b"]});
+    expect(other.sent.some(item => (item as {t: string}).t === "leave")).toBe(true);
+    expect(other.last()).toMatchObject({t: "peer", peer: "peer-a"});
+    expect(hub.stats().peers).toBe(2);
+  });
+
   it("removes a peer on close and notifies the remaining peers", () => {
     const a = new FakeConnection("a");
     const b = new FakeConnection("b");
@@ -161,21 +176,37 @@ describe("validation and limits", () => {
 });
 
 describe("idle expiry", () => {
-  it("closes connections idle beyond the limit", () => {
+  it("closes never-joined connections idle beyond the short limit", () => {
     const a = new FakeConnection("a");
-    join(a, "peer-a");
+    hub.handleConnection(a);
     now += DEFAULT_SIGNALING_LIMITS.idleMs + 1;
     hub.sweepIdle();
     expect(a.closed).not.toBeNull();
   });
 
-  it("keeps recently active connections", () => {
+  it("keeps joined hosts waiting beyond the short idle window", () => {
+    const a = new FakeConnection("a");
+    join(a, "peer-a");
+    now += DEFAULT_SIGNALING_LIMITS.idleMs + 1;
+    hub.sweepIdle();
+    expect(a.closed).toBeNull();
+  });
+
+  it("closes joined connections idle beyond the joined limit", () => {
+    const a = new FakeConnection("a");
+    join(a, "peer-a");
+    now += DEFAULT_SIGNALING_LIMITS.joinedIdleMs + 1;
+    hub.sweepIdle();
+    expect(a.closed).not.toBeNull();
+  });
+
+  it("keeps recently active joined connections", () => {
     const a = new FakeConnection("a");
     join(a, "peer-a");
     now += 10;
     hub.handleMessage(a, JSON.stringify({t: "ping"}));
     expect(a.last()).toMatchObject({t: "pong"});
-    now += DEFAULT_SIGNALING_LIMITS.idleMs - 5;
+    now += DEFAULT_SIGNALING_LIMITS.joinedIdleMs - 5;
     hub.sweepIdle();
     expect(a.closed).toBeNull();
   });

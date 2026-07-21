@@ -72,6 +72,29 @@ body,
   gap: 8px;
 }
 
+.app-brand {
+  margin: 0;
+  padding-right: 4px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  color: #fffef6;
+}
+
+.app-brand-kana {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  opacity: 0.9;
+}
+
 .title-field,
 .invite-field {
   display: inline-flex;

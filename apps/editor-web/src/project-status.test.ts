@@ -7,6 +7,9 @@ function collabState(partial: Partial<CollabState> & Pick<CollabState, "status" 
     epoch: null,
     receivedBytes: 0,
     issueCodes: [],
+    signalingPeerCount: 0,
+    joinedTopic: true,
+    signalingError: null,
     ...partial,
   };
 }
@@ -58,6 +61,7 @@ describe("composeProjectStatus", () => {
         conflict: false,
         expectedAssets: 3,
         verifiedAssets: 1,
+        signalingPeerCount: 1,
       }),
     });
     const disconnected = composeProjectStatus({
@@ -123,5 +127,26 @@ describe("composeProjectStatus", () => {
     });
 
     expect(status.details).toBe("友だちとのつながりが切れました");
+  });
+
+  it("explains an empty signaling room while the guest is waiting", () => {
+    const status = composeProjectStatus({
+      local: "clean",
+      drive: "not-configured",
+      collab: collabState({
+        status: "connected",
+        peerCount: 0,
+        bootstrapPhase: "receiving-project",
+        role: "follower",
+        createdThisRoom: false,
+        conflict: false,
+        expectedAssets: 0,
+        verifiedAssets: 0,
+        signalingPeerCount: 0,
+        joinedTopic: true,
+      }),
+    });
+
+    expect(status.details).toContain("友だちの部屋が見つかりません");
   });
 });

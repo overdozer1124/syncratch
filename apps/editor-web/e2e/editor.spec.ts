@@ -31,12 +31,14 @@ test("fresh load mounts the standalone GUI and reports local save ready", async 
   await waitUntilReady(page);
 
   await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect(page.locator(".app-brand")).toContainText("Syncratch");
+  await expect(page.locator(".app-brand-kana")).toHaveText("シンクラッチ");
   await expect(page.getByLabel("作品の名前")).toHaveValue(/.+/);
   await expect(page.locator('[data-testid="scratch-gui"]')).toBeVisible();
   await expect(page.getByTestId("save-status")).toHaveText(
     "このパソコンに保存しました",
   );
-  await expect(page.getByText("うごき", {exact: true}).first()).toBeVisible();
+  await expect(page.getByText("動き", {exact: true}).first()).toBeVisible();
   await expect(
     page.locator('#scratch-gui [aria-label="設定メニュー"]'),
   ).toHaveCount(1);
@@ -100,7 +102,7 @@ test("no Google configuration keeps Drive disabled and local editing available",
   await waitUntilReady(page);
 
   await expect(page.getByTestId("drive-status")).toHaveText(
-    "このパソコンでは使えません",
+    "このパソコンでは Google ドライブを使えません",
   );
   await openPanel(page, "drive-panel");
   await expect(
@@ -288,27 +290,22 @@ test("editing, save, and reload stay local after initial static load", async ({
   expect(forbiddenRequests).toEqual([]);
 });
 
-test("two Chromium contexts converge different-target edits over WebRTC and recover locally", async ({
-  browser,
-}) => {
-  const contextA = await browser.newContext();
-  const contextB = await browser.newContext();
-  await contextA.grantPermissions(
-    ["clipboard-read", "clipboard-write"],
-    {origin: "http://127.0.0.1:4173"},
-  );
-  const pageA = await contextA.newPage();
-  const pageB = await contextB.newPage();
+async function connectTwoCollabPeers(
+  pageA: Page,
+  pageB: Page,
+  driveFileId: string,
+): Promise<string> {
   await Promise.all([waitUntilReady(pageA), waitUntilReady(pageB)]);
   await Promise.all([
-    pageA.evaluate(() =>
-      window.__blocksyncTask3!.configureCollaborationTestGate("shared-drive"),
+    pageA.evaluate(
+      id => window.__blocksyncTask3!.configureCollaborationTestGate(id),
+      driveFileId,
     ),
-    pageB.evaluate(() =>
-      window.__blocksyncTask3!.configureCollaborationTestGate("shared-drive"),
+    pageB.evaluate(
+      id => window.__blocksyncTask3!.configureCollaborationTestGate(id),
+      driveFileId,
     ),
   ]);
-
   await Promise.all([
     openPanel(pageA, "collab-panel"),
     openPanel(pageB, "collab-panel"),
@@ -322,10 +319,8 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   );
   const invite = await pageA.getByLabel("いっしょに作るリンク").inputValue();
   expect(invite).not.toContain("driveFileId");
-  await pageA.getByRole("button", {name: "リンクをコピー"}).click();
-  await expect(pageA.locator("#collab-feedback")).toHaveText(
-    "コピーしました。いっしょに作りたい友だちに送ってね。",
-  );
+  const inviteUrl = new URL(invite);
+  expect(inviteUrl.origin).toBe("http://127.0.0.1:4173");
   await pageB.getByLabel("いっしょに作るリンク").fill(invite);
   await pageB.getByRole("button", {name: "友だちの作品に入る"}).click();
   await expect(pageA.getByTestId("collab-status")).toContainText(
@@ -334,33 +329,210 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   await expect(pageB.getByTestId("collab-status")).toContainText(
     "1人といっしょに作っています",
   );
+  return invite;
+}
+
+// Real WebRTC rooms contend for CPU/signaling when run in parallel workers.
+test.describe("real WebRTC collaboration", () => {
+  test.describe.configure({mode: "serial"});
+
+test("two Chromium contexts keep independent sprite selection across remote edits", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  try {
+    await connectTwoCollabPeers(pageA, pageB, "shared-drive-selection");
+
+    await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
+    await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+    await expect(pageA.getByRole("button", {name: "Basketball", exact: true}))
+      .toBeVisible();
+    await expect(pageA.getByTestId("save-status")).toHaveText(
+      "このパソコンに保存しました",
+    );
+    await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+      .toBeVisible({timeout: 20_000});
+    await expect(pageB.getByTestId("save-status")).toHaveText(
+      "このパソコンに保存しました",
+    );
+
+    const spriteA = await pageA.evaluate(() => {
+      const names = window.__blocksyncTask3!.collaborationDebug().vmTargets
+        .filter(target => !target.isStage)
+        .map(target => target.name);
+      return names.find(name => name !== "Basketball") ?? null;
+    });
+    expect(spriteA).toBeTruthy();
+
+    expect(await pageA.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+    expect(await pageB.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+    expect(await pageA.evaluate(() =>
+      window.__blocksyncTask3!.editingTargetName())).toBe("Basketball");
+    expect(await pageB.evaluate(() =>
+      window.__blocksyncTask3!.editingTargetName())).toBe("Basketball");
+
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "basketball-owned-by-a",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      bEditing: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+      bHasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "basketball-owned-by-a",
+          "Basketball",
+        )),
+      aEditing: await pageA.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+    }), {timeout: 20_000}).toEqual({
+      bEditing: "Basketball",
+      bHasBlock: true,
+      aEditing: "Basketball",
+    });
+    await expect(pageB.getByTestId("save-status")).toHaveText(
+      "このパソコンに保存しました",
+    );
+
+    expect(await pageB.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      spriteA,
+    )).toBe(true);
+    expect(await pageB.evaluate(() =>
+      window.__blocksyncTask3!.editingTargetName())).toBe(spriteA);
+    await pageB.evaluate(
+      ({blockId, name}) =>
+        window.__blocksyncTask3!.createTestBlockOnTarget(blockId, name),
+      {blockId: "sprite-a-owned-by-b", name: spriteA!},
+    );
+    await expect.poll(async () => ({
+      aEditing: await pageA.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+      aHasBlock: await pageA.evaluate(
+        ({blockId, name}) =>
+          window.__blocksyncTask3!.hasBlockOnTarget(blockId, name),
+        {blockId: "sprite-a-owned-by-b", name: spriteA!},
+      ),
+      bEditing: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+    }), {timeout: 20_000}).toEqual({
+      aEditing: "Basketball",
+      aHasBlock: true,
+      bEditing: spriteA,
+    });
+    await expect(pageA.getByTestId("save-status")).toHaveText(
+      "このパソコンに保存しました",
+    );
+  } finally {
+    await Promise.all([contextA.close(), contextB.close()]);
+  }
+});
+
+test("two Chromium contexts converge different-target edits over WebRTC and recover locally", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  await connectTwoCollabPeers(pageA, pageB, "shared-drive-converge");
   await expect(pageA.getByTestId("project-status-details")).toContainText(
     "1人といっしょに作っています",
   );
   await expect(pageB.getByTestId("project-status-details")).toContainText(
     "1人といっしょに作っています",
   );
+  await openPanel(pageA, "collab-panel");
+  await pageA.getByRole("button", {name: "リンクをコピー"}).click();
+  await expect(pageA.locator("#collab-feedback")).toHaveText(
+    "コピーしました。いっしょに作りたい友だちに送ってね。",
+  );
+
+  // Exercise the real Scratch library path, not a synthetic target with
+  // pre-injected bytes. The collaboration memory helper must fall through to
+  // Scratch's CDN before the new target can be saved and published.
+  await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
+  await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+  await expect(pageA.getByRole("button", {name: "Basketball", exact: true}))
+    .toBeVisible();
+  await expect(pageA.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
+  await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+    .toBeVisible({timeout: 20_000});
+  await expect(pageB.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
+
+  const defaultSprite = await pageA.evaluate(() => {
+    const names = window.__blocksyncTask3!.collaborationDebug().vmTargets
+      .filter(target => !target.isStage)
+      .map(target => target.name);
+    return names.find(name => name !== "Basketball") ?? names[0] ?? null;
+  });
+  expect(defaultSprite).toBeTruthy();
 
   await Promise.all([
     pageA.evaluate(() =>
       window.__blocksyncTask3!.createTestBlock("stage-collab-block", true)),
-    pageB.evaluate(() =>
-      window.__blocksyncTask3!.createTestBlock("sprite-collab-block")),
+    pageB.evaluate(
+      name => window.__blocksyncTask3!.createTestBlockOnTarget(
+        "sprite-collab-block",
+        name,
+      ),
+      defaultSprite,
+    ),
   ]);
   await expect.poll(async () => ({
-    aSeesSpriteBlock: await pageA.evaluate(() =>
-      window.__blocksyncTask3!.hasBlock("sprite-collab-block")),
+    aSeesSpriteBlock: await pageA.evaluate(
+      name => window.__blocksyncTask3!.hasBlockOnTarget(
+        "sprite-collab-block",
+        name,
+      ),
+      defaultSprite,
+    ),
     bSeesStageBlock: await pageB.evaluate(() =>
       window.__blocksyncTask3!.hasBlock("stage-collab-block", true)),
     aDebug: await pageA.evaluate(() =>
       window.__blocksyncTask3!.collaborationDebug()),
     bDebug: await pageB.evaluate(() =>
       window.__blocksyncTask3!.collaborationDebug()),
-  }), {timeout: 20_000}).toMatchObject({
+  }), {timeout: 60_000}).toMatchObject({
     aSeesSpriteBlock: true,
     bSeesStageBlock: true,
   });
+  // Blockly only renders the editing target. Adding Basketball leaves that sprite
+  // selected, so switch back to the sprite that received the remote block.
+  expect(await pageA.evaluate(
+    name => window.__blocksyncTask3!.selectTargetByName(name),
+    defaultSprite,
+  )).toBe(true);
+  // The receiving VM and the actual Scratch Blockly workspace must both move.
+  // This distinguishes transport/domain convergence from a stale GUI surface.
+  await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
+  await openPanel(pageA, "collab-panel");
   await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
   await expect(pageB.getByTestId("collab-status")).not.toContainText("リーダー");
   await pageB.evaluate(() =>
@@ -370,6 +542,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   );
   expect(await pageB.evaluate(async () =>
     (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
+  await openPanel(pageB, "collab-panel");
   await pageB.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
 
   await Promise.all([
@@ -381,13 +554,16 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     pageA.waitForFunction(() => window.__blocksyncTask3?.ready === true),
     pageB.waitForFunction(() => window.__blocksyncTask3?.ready === true),
   ]);
-  expect(await pageA.evaluate(() =>
-    window.__blocksyncTask3!.hasBlock("sprite-collab-block"))).toBe(true);
+  expect(await pageA.evaluate(
+    name => window.__blocksyncTask3!.hasBlockOnTarget("sprite-collab-block", name),
+    defaultSprite,
+  )).toBe(true);
   expect(await pageB.evaluate(() =>
     window.__blocksyncTask3!.hasBlock("stage-collab-block", true))).toBe(true);
   expect(await pageA.evaluate(async () => (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
   expect(await pageB.evaluate(async () => (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
   await Promise.all([contextA.close(), contextB.close()]);
+});
 });
 
 test("corrupt stored assets recover automatically on save", async ({page}) => {
@@ -467,7 +643,11 @@ declare global {
       ready: boolean;
       error: string | null;
       createTestBlock(id: string, isStage?: boolean): void;
+      createTestBlockOnTarget(id: string, targetName: string): void;
       hasBlock(id: string, isStage?: boolean): boolean;
+      hasBlockOnTarget(id: string, targetName: string): boolean;
+      selectTargetByName(targetName: string): boolean;
+      editingTargetName(): string | null;
       getState(): {
         localProjectId: string;
         revision: number;
@@ -483,6 +663,7 @@ declare global {
       targetName(isStage: boolean): string | undefined;
       collaborationDebug(): {
         state: {role: "solo" | "leader" | "follower"} | null;
+        vmTargets: Array<{isStage: boolean; name: string}>;
       };
     };
   }

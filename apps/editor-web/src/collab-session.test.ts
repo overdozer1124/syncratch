@@ -47,13 +47,13 @@ function stage(): ScratchTarget {
   };
 }
 
-function sprite(id: string, name: string): ScratchTarget {
+function sprite(id: string, name: string, blocks?: ScratchTarget["blocks"]): ScratchTarget {
   const assetId = `${id}${"a".repeat(32 - id.length)}`;
   return {
     id,
     name,
     isStage: false,
-    blocks: {},
+    blocks: blocks ?? {},
     comments: {},
     currentCostume: 0,
     costumes: [costume(assetId, SPRITE_BYTES)],
@@ -123,6 +123,14 @@ function fakeVm(initial: ProjectDocument) {
     editTargetName(id: string, name: string) {
       const target = document.targets.find((t) => t.id === id)!;
       target.name = name;
+    },
+    replaceTarget(target: ScratchTarget) {
+      const index = document.targets.findIndex((t) => t.id === target.id);
+      if (index < 0) {
+        document.targets.push(structuredClone(target));
+        return;
+      }
+      document.targets[index] = structuredClone(target);
     },
     deleteTarget(id: string) {
       document.targets = document.targets.filter(target => target.id !== id);
@@ -406,6 +414,131 @@ describe("guest bootstrap terminal-state guards", () => {
     expect(guest.domain.encodeState()).toEqual(frozenState);
     expect(stateEvents).toHaveLength(frozenEventCount);
   });
+
+  it("does not stall immediately on empty peers before any peer is seen", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const guest = createCollabSession({
+      roomId: "room-empty-peers-before-seen",
+      secret: "empty-peers-before-seen-secret-empty1",
+      debounceMs: 0,
+      stallInactivityMs: 10_000,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    guest.start({host: false});
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    guest.provider.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(guest.getBootstrapPhase()).not.toBe("stalled-project");
+    expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(false);
+    expect(guest.getDiagnostics().status).toBe("connected");
+  });
+
+  it("auto-reconnects a host when signaling drops while waiting for guests", async () => {
+    let connects = 0;
+    const mesh = createMemoryMesh();
+    const create = (config: CollabProviderConfig) => {
+      const provider = createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+      const connect = provider.connect.bind(provider);
+      provider.connect = () => {
+        connects += 1;
+        connect();
+      };
+      return provider;
+    };
+    const host = createCollabSession({
+      roomId: "room-host-auto-reconnect",
+      secret: "host-auto-reconnect-secret-host-auto",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    host.start({host: true});
+    expect(host.getBootstrapPhase()).toBe("ready");
+    expect(connects).toBe(1);
+
+    host.provider.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(connects).toBe(2);
+    expect(host.provider.getStatus()).toBe("connected");
+    expect(host.getBootstrapPhase()).toBe("ready");
+  });
+
+  it("reconnectBootstrap force-cycles transport after a peer departure stall", async () => {
+    let connects = 0;
+    let disconnects = 0;
+    const mesh = createMemoryMesh();
+    const create = (config: CollabProviderConfig) => {
+      const provider = createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+      const connect = provider.connect.bind(provider);
+      const disconnect = provider.disconnect.bind(provider);
+      provider.connect = () => {
+        connects += 1;
+        connect();
+      };
+      provider.disconnect = () => {
+        disconnects += 1;
+        disconnect();
+      };
+      return provider;
+    };
+    const source = project([stage(), sprite("s1", "S1")]);
+    const common = {
+      roomId: "room-reconnect-force-cycle",
+      secret: "reconnect-force-cycle-secret-reconnect",
+      debounceMs: 0,
+    };
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      ...common,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    host.start({host: true});
+    guest.start({host: false});
+    host.leave();
+    await flush(guest);
+    expect(guest.getBootstrapPhase()).toBe("stalled-project");
+    expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(true);
+
+    const connectsBefore = connects;
+    const disconnectsBefore = disconnects;
+    guest.reconnectBootstrap();
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    expect(disconnects).toBe(disconnectsBefore + 1);
+    expect(connects).toBe(connectsBefore + 1);
+    expect(guest.provider.getStatus()).toBe("connected");
+  });
 });
 
 describe("guest staging guard lifecycle", () => {
@@ -544,12 +677,12 @@ describe("guest staging guard lifecycle", () => {
       .getMap<Y.Map<unknown>>("targets")
       .get("s1");
     expect(targetEntry).toBeInstanceOf(Y.Map);
-    const rawJson = targetEntry!.get("json");
+    const rawJson = targetEntry!.get("metadataJson");
     expect(typeof rawJson).toBe("string");
     const parsed = JSON.parse(String(rawJson)) as {name: string};
     parsed.name = "UnsealedDirty";
     guest.domain.ydoc.transact(() => {
-      targetEntry!.set("json", JSON.stringify(parsed));
+      targetEntry!.set("metadataJson", JSON.stringify(parsed));
     }, "test-unsealed-dirty");
 
     releaseFirstSave();
@@ -844,6 +977,63 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(materialized.assets.has(baseball.costumes![0]!.md5ext)).toBe(true);
   });
 
+  it("publishes a new sprite and its costume bytes atomically", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-sprite-atomic",
+      secret: "sprite-atomic-secret-sprite-atomic-12",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    const baseball = sprite("bb", "Baseball");
+    const costumeMd5 = baseball.costumes![0]!.md5ext;
+    let remoteTransactions = 0;
+    a.domain.ydoc.on("afterTransaction", (transaction) => {
+      if (transaction.local) return;
+      if (transaction.changedParentTypes.size === 0) return;
+      remoteTransactions += 1;
+      // Atomic publish: the first time Baseball appears, costume bytes must too.
+      if (a.domain.ydoc.getMap("targets").has("bb")) {
+        const mid = a.domain.materialize();
+        expect(mid.ok).toBe(true);
+        if (mid.ok) expect(mid.assets.has(costumeMd5)).toBe(true);
+      }
+    });
+
+    vmB.addTarget(baseball, true);
+    b.noteLocalChange();
+    await flush(a, b);
+
+    expect(remoteTransactions).toBe(1);
+    expect(vmA.lastApplied()?.targets.some(target => target.id === "bb")).toBe(true);
+    const materialized = a.domain.materialize();
+    expect(materialized.ok).toBe(true);
+    if (!materialized.ok) throw new Error("expected materialize ok");
+    expect(materialized.assets.has(costumeMd5)).toBe(true);
+  });
+
   it("does not overwrite a pending local edit when a remote edit arrives first", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
@@ -888,6 +1078,311 @@ describe("two-session convergence over WebRTC transport", () => {
       .toBe("PendingByB");
     expect(vmB.current().targets.find(target => target.id === "s1")?.name)
       .toBe("FastByA");
+  });
+
+  it("converges concurrent same-section edits without leaving one VM stale", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-same-target-pending",
+      secret: "same-target-pending-secret-same-target",
+    };
+    const a = createCollabSession({
+      ...common,
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      debounceMs: 200,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    // B starts a mid-edit snapshot (forever with only one body block, conceptually).
+    vmB.editTargetName("s1", "IncompleteStack");
+    b.noteLocalChange();
+    // A finishes the stack and publishes first.
+    vmA.editTargetName("s1", "CompleteStack");
+    a.noteLocalChange();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flush(a, b);
+    // B's debounce would have republished IncompleteStack over CompleteStack.
+    await new Promise(resolve => setTimeout(resolve, 220));
+    await flush(a, b);
+
+    const nameA = vmA.current().targets.find(target => target.id === "s1")?.name;
+    const nameB = vmB.current().targets.find(target => target.id === "s1")?.name;
+    expect(nameA).toBe(nameB);
+    expect(["CompleteStack", "IncompleteStack"]).toContain(nameA);
+    const materializeA = a.domain.materialize();
+    expect(materializeA.ok).toBe(true);
+    if (materializeA.ok) {
+      expect(materializeA.document.targets.find(t => t.id === "s1")?.name)
+        .toBe(nameA);
+    }
+  });
+
+  it("keeps a stronger forever nest pending instead of letting a weaker remote win", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const block = (
+      id: string,
+      partial: Record<string, unknown>,
+    ): NonNullable<ScratchTarget["blocks"]>[string] =>
+      ({id, inputs: {}, fields: {}, shadow: false, ...partial}) as NonNullable<
+        ScratchTarget["blocks"]
+      >[string];
+    const incompleteBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "forever",
+        parent: null,
+        topLevel: true,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "flag",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+      move: block("move", {
+        opcode: "motion_movesteps",
+        next: null,
+        parent: null,
+        topLevel: true,
+      }),
+    };
+    const completeBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "forever",
+        parent: null,
+        topLevel: true,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "flag",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: "move",
+        parent: "forever",
+        topLevel: false,
+      }),
+      move: block("move", {
+        opcode: "motion_movesteps",
+        next: null,
+        parent: "turn",
+        topLevel: false,
+      }),
+    };
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-forever-nest",
+      secret: "forever-nest-secret-forever-nest-1234",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      // Long debounce so complete stays pending while the weaker remote arrives.
+      debounceMs: 300,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    expect(a.start({host: true}).ok).toBe(true);
+    expect(b.start({host: false}).ok).toBe(true);
+    await flush(a, b);
+
+    vmB.replaceTarget(sprite("s1", "S1", completeBlocks));
+    b.noteLocalChange();
+
+    // A publishes a weaker same-id graph while B's complete nest is still pending.
+    vmA.replaceTarget(sprite("s1", "Detached", incompleteBlocks));
+    a.noteLocalChange({force: true});
+    await a.flush();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flush(a, b);
+
+    const nested = (target: ScratchTarget | undefined): boolean => {
+      const forever = target?.blocks?.forever as
+        | {inputs?: {SUBSTACK?: [number, string]}}
+        | undefined;
+      const move = target?.blocks?.move as
+        | {parent?: string | null; topLevel?: boolean}
+        | undefined;
+      return forever?.inputs?.SUBSTACK?.[1] === "turn" &&
+        move?.parent === "turn" &&
+        move?.topLevel === false;
+    };
+
+    expect(nested(vmB.current().targets.find(target => target.id === "s1"))).toBe(true);
+    expect(nested(vmA.current().targets.find(target => target.id === "s1"))).toBe(true);
+    const materialize = a.domain.materialize();
+    expect(materialize.ok).toBe(true);
+    if (materialize.ok) {
+      expect(nested(materialize.document.targets.find(t => t.id === "s1"))).toBe(true);
+    }
+  });
+
+  it("lets a guest publish an intentional forever disconnect to the host", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const block = (
+      id: string,
+      partial: Record<string, unknown>,
+    ): NonNullable<ScratchTarget["blocks"]>[string] =>
+      ({id, inputs: {}, fields: {}, shadow: false, ...partial}) as NonNullable<
+        ScratchTarget["blocks"]
+      >[string];
+    const connectedBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "goto",
+        parent: null,
+        topLevel: true,
+      }),
+      goto: block("goto", {
+        opcode: "motion_goto",
+        next: "forever",
+        parent: "flag",
+        topLevel: false,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "goto",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+    };
+    const disconnectedBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "goto",
+        parent: null,
+        topLevel: true,
+      }),
+      goto: block("goto", {
+        opcode: "motion_goto",
+        next: null,
+        parent: "flag",
+        topLevel: false,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: null,
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: true,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+    };
+    const source = project([stage(), sprite("s1", "S1", connectedBlocks)]);
+    const vmHost = fakeVm(source);
+    const vmGuest = fakeVm(source);
+    const common = {
+      roomId: "room-guest-disconnect",
+      secret: "guest-disconnect-secret-guest-disc",
+      debounceMs: 0,
+    };
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: vmHost.materializeLocal,
+      applyRemoteToLocal: vmHost.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      ...common,
+      debounceMs: 300,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: vmGuest.materializeLocal,
+      applyRemoteToLocal: vmGuest.applyRemoteToLocal,
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    expect(guest.start({host: false}).ok).toBe(true);
+    await flush(host, guest);
+
+    vmGuest.replaceTarget(sprite("s1", "S1", disconnectedBlocks));
+    guest.noteLocalChange();
+
+    // A coordinate-only host write arrives while the intentional detach is
+    // pending. The detach must survive and the coordinate must also converge.
+    vmHost.replaceTarget({...sprite("s1", "S1", connectedBlocks), x: 42});
+    host.noteLocalChange({force: true});
+    await flush(host, guest);
+    await new Promise(resolve => setTimeout(resolve, 1_050));
+    await flush(host, guest);
+
+    const foreverDetached = (target: ScratchTarget | undefined): boolean => {
+      const forever = target?.blocks?.forever as
+        | {parent?: string | null; topLevel?: boolean}
+        | undefined;
+      const goto = target?.blocks?.goto as {next?: string | null} | undefined;
+      return forever?.parent == null &&
+        forever?.topLevel === true &&
+        (goto?.next == null || goto.next === "");
+    };
+
+    expect(foreverDetached(vmGuest.current().targets.find(t => t.id === "s1"))).toBe(true);
+    expect(foreverDetached(vmHost.current().targets.find(t => t.id === "s1"))).toBe(true);
+    expect(vmGuest.current().targets.find(t => t.id === "s1")?.x).toBe(42);
+    expect(vmHost.current().targets.find(t => t.id === "s1")?.x).toBe(42);
+    const shared = host.domain.materialize();
+    expect(shared.ok).toBe(true);
+    if (shared.ok) {
+      const sharedTarget = shared.document.targets.find(t => t.id === "s1");
+      expect(foreverDetached(sharedTarget)).toBe(true);
+      expect(sharedTarget?.x).toBe(42);
+    }
   });
 
   it("propagates a local target deletion to every peer", async () => {

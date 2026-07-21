@@ -7,6 +7,7 @@ import type {
 } from "@blocksync/project-schema";
 import {
   DEFAULT_PROJECT_COLLAB_LIMITS,
+  LOCAL_ORIGIN,
   ProjectCollaborationDocument,
 } from "./project-collab.js";
 // Existing Gate 0 API must remain exported and intact.
@@ -115,10 +116,15 @@ describe("ProjectCollaborationDocument materialization", () => {
     const doc = new ProjectCollaborationDocument();
     const source = project([stage(), sprite("s1")]);
     doc.loadLocalProject(source, assetsFor(source));
-    // Target-granular storage: a per-target key exists in the shared map.
-    const targetsRoot = doc.ydoc.getMap("targets");
+    // Target sections are independent Yjs registers: metadata-only events
+    // cannot replace the block graph of the same sprite.
+    const targetsRoot = doc.ydoc.getMap<Y.Map<unknown>>("targets");
     expect(targetsRoot.has("stage")).toBe(true);
     expect(targetsRoot.has("s1")).toBe(true);
+    const spriteEntry = targetsRoot.get("s1")!;
+    expect(spriteEntry.get("metadataJson")).toEqual(expect.any(String));
+    expect(spriteEntry.get("blocksJson")).toEqual(expect.any(String));
+    expect(spriteEntry.has("json")).toBe(false);
   });
 
   it("propagates target deletion through Yjs updates", () => {
@@ -171,7 +177,7 @@ describe("different-target concurrent merge", () => {
   });
 });
 
-describe("same-target conflict semantics (documented)", () => {
+describe("same-target section conflict semantics", () => {
   it("resolves concurrent same-target edits to a single deterministic value", () => {
     const source = project([stage(), sprite("s1")]);
     const a = new ProjectCollaborationDocument();
@@ -190,9 +196,53 @@ describe("same-target conflict semantics (documented)", () => {
     if (!ra.ok || !rb.ok) return;
     const na = ra.document.targets.find((t) => t.id === "s1")!.name;
     const nb = rb.document.targets.find((t) => t.id === "s1")!.name;
-    // Documented: same-target writes are last-write-wins and converge.
+    // Documented: concurrent writes to the same target section are LWW.
     expect(na).toBe(nb);
     expect(["NameA", "NameB"]).toContain(na);
+  });
+
+  it("preserves a block edit when a peer concurrently moves the same sprite", () => {
+    const source = project([stage(), sprite("s1")]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    a.setTarget(sprite("s1", {
+      blocks: {
+        flag: {
+          id: "flag",
+          opcode: "event_whenflagclicked",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 20,
+          y: 20,
+        },
+      },
+    }));
+    b.setTarget(sprite("s1", {x: 42}));
+
+    const updateA = a.encodeState();
+    const updateB = b.encodeState();
+    a.applyRemoteUpdate(updateB);
+    b.applyRemoteUpdate(updateA);
+
+    for (const peer of [a, b]) {
+      const result = peer.materialize();
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const target = result.document.targets.find(item => item.id === "s1")!;
+      expect(target.x).toBe(42);
+      expect(target.blocks.flag).toBeDefined();
+    }
   });
 });
 
@@ -237,9 +287,15 @@ describe("remote state acceptance guards", () => {
 
   it("does not reject when mergeUpdates exceeds the limit but encodeStateAsUpdate does not", () => {
     const sender = new Y.Doc();
+    sender.clientID = 1;
     const values = sender.getMap<string>("values");
-    const receiver = new ProjectCollaborationDocument();
-    const hardLimit = 250;
+    const receiverDoc = new Y.Doc();
+    receiverDoc.clientID = 2;
+    const receiver = new ProjectCollaborationDocument(receiverDoc);
+    // Fixed client IDs make the i=4 state deterministic: mergeUpdates is 244
+    // bytes while encodeStateAsUpdate is 209 bytes. A 225-byte limit must use
+    // the exact encoded state and accept it.
+    const hardLimit = 225;
     let senderVector = Y.encodeStateVector(sender);
     let sawMergeOverEncodeUnder = false;
 
@@ -471,7 +527,8 @@ describe("remote state acceptance guards", () => {
     const targets = evil.getMap<Y.Map<unknown>>("targets");
     evil.transact(() => {
       const t = targets.get("s1")!;
-      t.set("json", JSON.stringify(sprite("s1", {costumes: []})));
+      const {blocks: _blocks, ...metadata} = sprite("s1", {costumes: []});
+      t.set("metadataJson", JSON.stringify(metadata));
     });
     const update = Y.encodeStateAsUpdate(evil);
 
@@ -514,8 +571,8 @@ describe("remote state acceptance guards", () => {
     evil.transact(() => {
       const t = targets.get("s1")!;
       t.set(
-        "json",
-        '{"id":"s1","__proto__":{"polluted":true},"blocks":{}}',
+        "metadataJson",
+        '{"id":"s1","__proto__":{"polluted":true}}',
       );
     });
     const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
@@ -556,6 +613,76 @@ describe("content-addressed assets", () => {
     expect(before.ok && after.ok).toBe(true);
     if (!before.ok || !after.ok) return;
     expect(after.assets.size).toBe(before.assets.size);
+  });
+
+  it("publishes assets and targets in one local transaction", () => {
+    const doc = new ProjectCollaborationDocument();
+    const source = project([stage(), sprite("s1")]);
+    doc.loadLocalProject(source, assetsFor(source));
+    const baseball = sprite("bb");
+    const costumeBytes = new Uint8Array([9, 8, 7, 6]);
+    let localTransactions = 0;
+    doc.ydoc.on("afterTransaction", (transaction: Y.Transaction) => {
+      if (transaction.origin !== LOCAL_ORIGIN) return;
+      if (transaction.changedParentTypes.size === 0) return;
+      localTransactions += 1;
+    });
+    localTransactions = 0;
+    doc.putAssetsAndSetTargets(
+      [baseball],
+      [[baseball.costumes![0]!.md5ext, costumeBytes]],
+    );
+    expect(localTransactions).toBe(1);
+    const result = doc.materialize();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.document.targets.some(target => target.id === "bb")).toBe(true);
+    expect(result.assets.get(baseball.costumes![0]!.md5ext)).toEqual(costumeBytes);
+  });
+
+  it("soft-accepts a remote target that arrives before its assets", () => {
+    const source = project([stage(), sprite("s1")]);
+    const host = new ProjectCollaborationDocument();
+    host.loadLocalProject(source, assetsFor(source));
+    const peer = new ProjectCollaborationDocument();
+    peer.applyRemoteUpdate(host.encodeState());
+
+    const baseball = sprite("bb");
+    const costumeMd5 = baseball.costumes![0]!.md5ext;
+    const costumeBytes = new Uint8Array([9, 8, 7, 6]);
+    host.setTarget(baseball);
+    const targetOnly = Y.encodeStateAsUpdate(host.ydoc, Y.encodeStateVector(peer.ydoc));
+    expect(peer.tryApplyRemoteUpdate(targetOnly).accepted).toBe(true);
+    expect(peer.materialize().ok).toBe(false);
+
+    host.putAsset(costumeMd5, costumeBytes);
+    const assetUpdate = Y.encodeStateAsUpdate(host.ydoc, Y.encodeStateVector(peer.ydoc));
+    expect(peer.tryApplyRemoteUpdate(assetUpdate).accepted).toBe(true);
+    const result = peer.materialize();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.assets.has(costumeMd5)).toBe(true);
+    expect(result.document.targets.some(target => target.id === "bb")).toBe(true);
+  });
+
+  it("still rejects schema-invalid remote updates after soft-accepting missing assets", () => {
+    const source = project([stage(), sprite("s1")]);
+    const good = new ProjectCollaborationDocument();
+    good.loadLocalProject(source, assetsFor(source));
+    const receiver = new ProjectCollaborationDocument();
+    receiver.applyRemoteUpdate(good.encodeState());
+
+    const evil = new Y.Doc();
+    Y.applyUpdate(evil, good.encodeState());
+    const targets = evil.getMap<Y.Map<unknown>>("targets");
+    evil.transact(() => {
+      const t = targets.get("s1")!;
+      const {blocks: _blocks, ...metadata} = sprite("s1", {costumes: []});
+      t.set("metadataJson", JSON.stringify(metadata));
+    });
+    const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
+    expect(outcome.accepted).toBe(false);
+    expect(receiver.materialize().ok).toBe(true);
   });
 });
 

@@ -69,6 +69,8 @@ import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
+import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
+import {loadProjectPreservingEditingTarget} from "./load-project-preserving-editing-target.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
 import {staticAssetUrl} from "./static-url.js";
@@ -120,12 +122,22 @@ interface VmBlocks {
 interface ScratchVm {
   attachStorage(storage: ScratchStorageInstance): void;
   loadProject(project: unknown): Promise<void>;
+  setEditingTarget(targetId: string): void;
+  editingTarget?: {
+    id?: string;
+    isStage?: boolean;
+    getName?: () => string;
+    sprite?: {name?: string};
+  } | null;
   toJSON(): string;
   on(event: string, listener: () => void): void;
   emit(event: string): void;
   runtime: {
+    storage?: ScratchStorageInstance;
     targets: Array<{
+      id: string;
       isStage: boolean;
+      isOriginal?: boolean;
       blocks: VmBlocks;
       getName(): string;
       sprite: {name: string};
@@ -139,7 +151,7 @@ interface ScratchStorageInstance extends MemoryAssetStorage {
       assetType: unknown,
       assetId: string,
       dataFormat: string,
-    ): Promise<unknown>;
+    ): Promise<unknown> | null;
   }): void;
 }
 
@@ -325,12 +337,52 @@ const diagnostic = {
     });
     vm.emit("PROJECT_CHANGED");
   },
+  createTestBlockOnTarget(id: string, targetName: string): void {
+    const target = vm.runtime.targets.find(
+      candidate => !candidate.isStage && candidate.getName() === targetName,
+    );
+    if (!target) throw new Error(`Sprite target missing: ${targetName}`);
+    target.blocks.createBlock({
+      id,
+      opcode: "event_whenflagclicked",
+      next: null,
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 20,
+      y: 20,
+    });
+    vm.emit("PROJECT_CHANGED");
+  },
   hasBlock(id: string, isStage = false): boolean {
     const target = vm.runtime.targets.find(
       candidate => candidate.isStage === isStage,
     );
     return target?.blocks.getBlock(id) !== null &&
       target?.blocks.getBlock(id) !== undefined;
+  },
+  hasBlockOnTarget(id: string, targetName: string): boolean {
+    const target = vm.runtime.targets.find(
+      candidate => !candidate.isStage && candidate.getName() === targetName,
+    );
+    const block = target?.blocks.getBlock(id);
+    return block !== null && block !== undefined;
+  },
+  selectTargetByName(targetName: string): boolean {
+    const target = vm.runtime.targets.find(
+      candidate => candidate.getName() === targetName,
+    );
+    if (!target) return false;
+    vm.setEditingTarget(target.id);
+    return true;
+  },
+  editingTargetName(): string | null {
+    const editing = vm.editingTarget;
+    if (!editing) return null;
+    if (typeof editing.getName === "function") return editing.getName() ?? null;
+    return editing.sprite?.name ?? null;
   },
   getState() {
     return {
@@ -465,13 +517,29 @@ async function maybeRecoverCorruptRecord(
   });
 }
 
+/** Mutable map shared with the memory helper so CDN stores stay attached. */
+const collabMemoryAssets = new Map<string, Uint8Array>();
+let collabMemoryHelperAttached = false;
+
 function attachLocalStorage(record: LocalProjectRecord): void {
-  const assets = assetMap(record);
-  const storage = new GUI.ScratchStorage();
+  collabMemoryAssets.clear();
+  for (const [md5ext, bytes] of assetMap(record)) {
+    if (bytes.byteLength > 0) collabMemoryAssets.set(md5ext, bytes);
+  }
+  const runtimeStorage = vm.runtime.storage as ScratchStorageInstance | undefined;
+  if (runtimeStorage && collabMemoryHelperAttached) {
+    return;
+  }
+  // Prefer the GUI/CDN-backed store when present; only create a bare store as
+  // a fallback so library costume fetches remain available after collab apply.
+  const storage = runtimeStorage ?? new GUI.ScratchStorage();
   storage.addHelper({
-    load: createMemoryAssetLoader(storage, assets),
+    load: createMemoryAssetLoader(storage, collabMemoryAssets),
   });
-  vm.attachStorage(storage);
+  collabMemoryHelperAttached = true;
+  if (!runtimeStorage) {
+    vm.attachStorage(storage);
+  }
 }
 
 function runtimeAssetMap(): Map<string, Uint8Array> {
@@ -683,6 +751,8 @@ async function applyCollaborativeProject(
         generation === collaborationGeneration && collabSession !== null,
       async load(recordToLoad) {
         attachLocalStorage(recordToLoad);
+        // Guest-initial is a different project copy — do not restore the
+        // previous work's selected sprite onto the newly received project.
         await vm.loadProject(documentToProjectJson(recordToLoad.document));
       },
       persist: candidate => store.createOrReplace(candidate, null),
@@ -708,18 +778,73 @@ async function applyCollaborativeProject(
     return applied;
   }
 
-  const next: LocalProjectRecord = {
-    ...current,
-    revision: current.revision + 1,
-    updatedAt: new Date().toISOString(),
-    document,
-    assets: assetRecordsFromMap(document, assets),
-    saveState: "clean",
-  };
-  const saved = await store.createOrReplace(next, current.revision);
-  if (generation !== collaborationGeneration || !collabSession) return false;
-  await loadRecord(saved);
-  return true;
+  const previous = structuredClone(current);
+  let next: LocalProjectRecord;
+  try {
+    next = {
+      ...current,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+      document,
+      assets: assetRecordsFromMap(document, assets),
+      saveState: "clean",
+    };
+  } catch (error) {
+    // Missing costume/sound bytes: still cannot safely materialize a record,
+    // but do not leave the peer stuck — surface save error and abort apply.
+    if (isMissingAssetError(error)) {
+      renderSaveState("error");
+      return false;
+    }
+    throw error;
+  }
+
+  const result = await applyRemoteProjectUpdate({
+    candidate: next,
+    previous,
+    isActive: () =>
+      generation === collaborationGeneration && collabSession !== null,
+    async load(recordToLoad) {
+      attachLocalStorage(recordToLoad);
+      // Remote applies use full loadProject. Scratch regenerates runtime target
+      // ids and forces editingTarget to the first sprite — remap selection via
+      // stable ProjectDocument identity instead of the old runtime id.
+      await loadProjectPreservingEditingTarget(
+        vm,
+        documentToProjectJson(recordToLoad.document),
+        {
+          beforeDocument: previous.document,
+          afterDocument: recordToLoad.document,
+        },
+      );
+    },
+    persist: candidate => store.createOrReplace(candidate, previous.revision),
+    commit(saved, {persisted}) {
+      const session = projectSessions.begin();
+      if (persisted) {
+        current = saved;
+      } else {
+        // Keep remote document in memory but stay on the IDB revision so a
+        // later retry can write without a stale-revision conflict.
+        current = {
+          ...saved,
+          revision: previous.revision,
+          saveState: "error",
+        };
+      }
+      hasCurrent = true;
+      titleInput.value = friendlyProjectTitle(current.title);
+      installSaveCoordinator(session);
+      renderSaveState(persisted ? "clean" : "error");
+    },
+    setSuppressed(value) {
+      suppressVmChanges = value;
+    },
+    onPersistError() {
+      // Status is set in commit({persisted:false}); keep for diagnostics.
+    },
+  });
+  return result.applied;
 }
 
 async function startCollaboration(
@@ -735,6 +860,8 @@ async function startCollaboration(
     roomId: invite.roomId,
     secret: invite.secret,
     participantId,
+    signalingTopic: topic,
+    signalingUrl,
     createProvider: config => createWebRtcProvider({
       ...config,
       signalingUrl,
@@ -985,7 +1112,8 @@ async function getVm(): Promise<ScratchVm> {
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
-    const state = new GUI.EditorState({locale: "ja-Hira"});
+    // 日本語（漢字）。ひらがな版は "ja-Hira"。
+    const state = new GUI.EditorState({locale: "ja"});
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({
