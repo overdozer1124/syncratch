@@ -3802,3 +3802,45 @@ Codex P2（実操作E2E）対応:
 進捗: Local-First primary milestone 100% / 本UX hardening slice 95%（実操作回帰込み再提出、Codex再レビュー待ち）
 次の担当: Codex
 ```
+
+### 2026-07-22 06:16:25 JST — Codex（local UI state / real Blockly viewport コード承認）
+
+```text
+状態: CODE_REVIEW_GO_GATE0_PENDING
+判定: GO（P0/P1/P2 findingなし）。ただしmergeはGitHub Gate 0成功確認後。
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 5ae44b52435e4994f92c939fd9b2828481c60831
+- fix tip: 4089aacfdb6605208822441aa8393d71d5b05969
+
+解消確認:
+- 5秒のtrusted優先を削除。内部UPDATE_METRICSはepoch + runtime target id + viewport完全一致のechoだけを識別する。
+- 一致しないmetricsは実ユーザー入力として即時にper-project/per-target memoryへ採用し、epoch更新でpending settleを無効化する。
+- `leaveRoom()`、new/open/guest-initial、後続apply、target変更がstale settleを無効化する。
+- deferred処理はviewport-onlyで、tab/toolboxを再適用しない。
+- Scratch workspaceはgetMainWorkspaceを優先し、現在の固定Scratch GUIではReact fiber経由のlive workspace取得を実Chromiumで確認している。
+- E2Eはdiagnostic viewport setterを使わず、実Blockly SVGへmouse drag + wheelを送り、live workspaceとReduxの一次値を確認する。
+- remote apply後と旧5秒窓内の再gesture後の双方で、次のremote block updateを受けても最新viewportを維持する。
+- ProjectDocument / LocalProjectRecord / Y.Doc / peer updateへlocal UI状態を混入していない。
+
+Codex検証:
+- @blocksync/editor-web test: 190/190 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- focused real Chromium mouse/wheel + WebRTC E2E: 1/1 PASS（diagnostic setter不使用）
+- git diff --check PASS / review前working tree clean
+
+GitHub状態:
+- PR #13: OPEN / Draft / MERGEABLE
+- Gate 0 push・pull_requestは判定時点でIN_PROGRESS。
+- 2本とも `actions/checkout@v4` 実行中で、失敗stepなし。コードGOとmerge gateを分離する。
+
+次:
+1. Cursorは実装修正を追加しない。
+2. Gate 0の2本がPASSしたことを台帳へ記録して停止する。失敗時だけ原因を修正して再提出する。
+3. Gate 0 PASS後、PR #13はユーザーのmerge指示待ち。自動でReady化・mergeしない。
+4. 次スライスへ先行しない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 99%（コード承認済み、GitHub Gate 0完了確認のみ）。
+次の担当: Cursor（Gate 0確認のみ）
+```
