@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 23:55:49 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `PR10_STABILIZATION_ACCEPTANCE_INSTRUCTED` |
-| 現在の担当 | Cursor（PR #10受け入れ固定・マージ準備） |
-| 現在のTask | PR #10を凍結し、共同編集受け入れE2E・手順・PR説明を完成させる |
+| 最終更新 | 2026-07-22 00:14:56 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（PR #10受け入れレビュー） |
+| 現在のTask | PR #10 stabilization / acceptance をレビューし GO または CHANGES_REQUESTED |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **99%**（Stage 0〜5と主要不具合修正完了。最終受け入れ・レビュー待ち） |
+| Local-First実装進捗 | **99%**（受け入れ証跡提出済み。Codexレビュー待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` / Codex worktree: `cursor/block-graph-sync-f431` |
-| 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
+| 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` |
+| 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 選択保持を含む2ブラウザE2Eと実機チェックリストを追加し、PR #10をREADY_FOR_CODEX_REVIEWへする |
+| 次Task | Codexレビュー。GO後にユーザー承認のもと #8/#9 整理・#10 Ready/merge |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-PR #10へ新機能を追加せず、マージ候補として固定する。実Chromium 2-context E2Eに「双方がBを選択し、片側のB編集後も受信側がBのまま」「片側がAを編集しても相手のB選択は維持」を追加する。`docs/local-first/COLLAB_ACCEPTANCE.md` に新規room前提の短い実機手順を作り、forever nest/detach、Basketball追加、別sprite編集、B選択維持、ローカル保存、Syncratch表示、日本語（漢字）起動、招待URL originを確認する。Gate 0・editor-web typecheck/test/build:e2e・実E2Eを通し、PRタイトル/説明を現在の全範囲へ更新して `READY_FOR_CODEX_REVIEW` とする。PR #8/#9はまだcloseせず、#10への包含比較を台帳とPR本文へ記録する。Codex GO後に整理・close・mergeを行う。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。
+なし（`READY_FOR_CODEX_REVIEW`）。Codex の指摘が出たら対応する。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。PR #8/#9 はまだ close しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3434,3 +3434,41 @@ Cursor実施内容:
 進捗: Local-First primary track 99%（実装完了、最終受け入れとレビュー待ち）。
 ```
 
+
+### 2026-07-22 00:14:56 JST — Cursor（PR #10受け入れ固定完了 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+提出SHA: 4dc49945283432393a62e8183ff032889b0c3fcc
+ブランチ: cursor/guest-bootstrap-stall-reconnect-f431
+PR: https://github.com/overdozer1124/syncratch/pull/10 （Draft維持）
+working tree: clean（本エントリコミット後）
+
+実施内容（新機能なし）:
+1. e2e/editor.spec.ts
+   - 選択保持: 双方Basketball選択 → AがB編集でもB選択維持 → BがA編集でもA側B選択維持
+   - 招待URL origin = http://127.0.0.1:4173
+   - ja漢字ロケール文言（動き / スプライトを選ぶ）とDrive not-configured文へE2E追随
+   - 複数sprite時は named-target diagnostics でblock作成・検証
+   - 実WebRTC 2試験を serial 化（並列flake回避）
+2. docs/local-first/COLLAB_ACCEPTANCE.md 新設（新規room/hard reload前提の実機手順）
+3. PR #10 タイトル/本文を全範囲へ更新（既知限界・#8/#9包含を記載）
+
+PR #8/#9 包含比較:
+- #9 (1d82abb, sprite-add atomic): `git cherry HEAD origin/cursor/sprite-add-atomic-sync-f431` → `-`（patch-equivalent、#10包含済み）
+- #8 (56a9061, rename): cherry `+`（patch-identicalではない）が、#10の ad1b504 で title/brand/README/docs/package を満たし、かな併記まで含む。closeはCodex GO後
+
+検証:
+- pnpm gate0:test PASS
+- pnpm gate0:collab PASS
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test PASS（170/170）
+- @blocksync/editor-web build:e2e PASS
+- Playwright e2e/editor.spec.ts + e2e/collab.spec.ts PASS（14/14）
+
+明示的非目標（未着手）:
+- remote apply部分更新 / 追加UI状態監査 / Chromebookヘッダー / invite実装修正 / PR #7 / block単位CRDT
+
+次の担当: Codex
+進捗: Local-First primary track 99%
+```
