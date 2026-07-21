@@ -69,6 +69,7 @@ import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
+import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
 import {staticAssetUrl} from "./static-url.js";
@@ -725,18 +726,63 @@ async function applyCollaborativeProject(
     return applied;
   }
 
-  const next: LocalProjectRecord = {
-    ...current,
-    revision: current.revision + 1,
-    updatedAt: new Date().toISOString(),
-    document,
-    assets: assetRecordsFromMap(document, assets),
-    saveState: "clean",
-  };
-  const saved = await store.createOrReplace(next, current.revision);
-  if (generation !== collaborationGeneration || !collabSession) return false;
-  await loadRecord(saved);
-  return true;
+  const previous = structuredClone(current);
+  let next: LocalProjectRecord;
+  try {
+    next = {
+      ...current,
+      revision: current.revision + 1,
+      updatedAt: new Date().toISOString(),
+      document,
+      assets: assetRecordsFromMap(document, assets),
+      saveState: "clean",
+    };
+  } catch (error) {
+    // Missing costume/sound bytes: still cannot safely materialize a record,
+    // but do not leave the peer stuck — surface save error and abort apply.
+    if (isMissingAssetError(error)) {
+      renderSaveState("error");
+      return false;
+    }
+    throw error;
+  }
+
+  const result = await applyRemoteProjectUpdate({
+    candidate: next,
+    previous,
+    isActive: () =>
+      generation === collaborationGeneration && collabSession !== null,
+    async load(recordToLoad) {
+      attachLocalStorage(recordToLoad);
+      await vm.loadProject(documentToProjectJson(recordToLoad.document));
+    },
+    persist: candidate => store.createOrReplace(candidate, previous.revision),
+    commit(saved, {persisted}) {
+      const session = projectSessions.begin();
+      if (persisted) {
+        current = saved;
+      } else {
+        // Keep remote document in memory but stay on the IDB revision so a
+        // later retry can write without a stale-revision conflict.
+        current = {
+          ...saved,
+          revision: previous.revision,
+          saveState: "error",
+        };
+      }
+      hasCurrent = true;
+      titleInput.value = friendlyProjectTitle(current.title);
+      installSaveCoordinator(session);
+      renderSaveState(persisted ? "clean" : "error");
+    },
+    setSuppressed(value) {
+      suppressVmChanges = value;
+    },
+    onPersistError() {
+      // Status is set in commit({persisted:false}); keep for diagnostics.
+    },
+  });
+  return result.applied;
 }
 
 async function startCollaboration(

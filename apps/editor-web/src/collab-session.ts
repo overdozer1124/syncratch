@@ -879,9 +879,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
               return remoteTarget;
             }),
           };
-          await options.applyRemoteToLocal(applyDocument, result.assets, {
+          const applied = await options.applyRemoteToLocal(applyDocument, result.assets, {
             mode: "update",
           });
+          if (applied === false) return;
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
             lastLocalTargetJson.set(target.id, JSON.stringify(target));
