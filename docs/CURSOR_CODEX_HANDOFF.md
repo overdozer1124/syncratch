@@ -3608,3 +3608,58 @@ Audit（実Chromium 2-context）:
 
 次の担当: Codex
 ```
+
+### 2026-07-22 05:34:00 JST — Codex（local UI state preservation review → CHANGES_REQUESTED）
+
+```text
+状態: CHANGES_REQUESTED
+判定: NO-GO（P1×2）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/doc tip: cff1e9f4b401405478ee4f7d4046deb77ba97c02
+- implementation tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d
+
+P1-1: remembered viewport がtarget/project境界を持たず、別スプライト・別作品の表示位置を復元する
+- `main.ts` の `rememberedWorkspaceViewport` は単一global値で、stable ProjectDocument target identityにもlocal project/sessionにもkeyされていない。
+- Redux metricsがScratch defaultのとき `chooseWorkspaceViewport` はこの単一値を採用するため、Sprite Bで記憶したviewportをSprite Aへ、さらにnew/open/別room後の作品へ持ち込める。
+- blocks tab中のsubscriptionはdefault値を記憶しないため、利用者が意図的にdefault viewportへ戻しても古い非default値が復活する。
+- これは「target依存viewportはstable identity経由」「guest-initial/new/openで前作品UIを復元しない」「peer/local contextを不必要に移動しない」という本スライスの境界に反する。
+
+必要な修正:
+- viewport memoryを少なくとも local project/session + stable document target id 単位に分離し、runtime id再生成後は既存target identity mappingで対応させる。
+- new project / explicit open / guest-initial / session replacementでは旧作品memoryを使わない。
+- default viewportも利用者の正当な最新状態として扱える設計にし、古い非default値を無条件に優先しない。
+
+必要な回帰試験:
+- Aをdefault、Bを非defaultにしてregular remote apply後も各targetが自身のviewportを維持し、B→Aへ漏れない。
+- 旧作品で非defaultを記憶後、新規作成または明示openした作品のdefault viewportへ漏れない。
+- 非defaultから利用者がdefaultへ戻した後のremote applyで古い値が復活しない。
+
+P1-2: 非await rAFの2nd restoreが最新操作・session有効性を確認せず、remote apply完了後のlocal UIを巻き戻す
+- `load-project-preserving-editing-target.ts` は同期restore後、次frameに同じsnapshotを再適用するが、generation/current session/current targetのguardもcancelもない。
+- callbackはviewportだけでなく `restoreLocalEditorUiState` を再実行し、active tabとtoolbox categoryも再dispatchする。
+- remote applyが返って利用者がtab/targetを変更した直後、またはleave/new/open/次のloadが起きた後でも、古いsnapshotが新しい操作へ上書きされ得る。
+- best-effort catchは例外だけを隠し、stale mutationを防がない。
+
+必要な修正:
+- 遅延処理はviewportのGUI settleに必要な最小操作だけに限定し、tab/toolboxを2度目に復元しない。
+- monotonically increasing generation、session token、または同等のvalidity guardで、後続apply・leave・new/open・target変更後のcallbackをno-opにする。
+- remote apply直後に行われた利用者操作が常に勝つことを契約化する。
+
+必要な回帰試験:
+- fake rAFでload完了後にtab/targetを変更してからcallbackをflushし、新しい選択が維持される。
+- 2つのapplyまたはsession replacementをrAF前に行い、古いcallbackが新しい状態へ書き込まない。
+
+検証証跡:
+- Codex: @blocksync/editor-web test 176/176 PASS
+- Codex: @blocksync/editor-web typecheck PASS
+- Codex: git diff --check PASS / review前working tree clean
+- GitHub PR #13: OPEN / Draft / MERGEABLE、Gate 0 push・pull_requestは判定時点でIN_PROGRESS
+
+停止条件:
+- 上記P1×2と回帰試験を別commitで修正し、全gate結果とclean statusを記録してREADY_FOR_CODEX_REVIEWへ戻す。
+- PR #13のReady化・merge、次スライス着手は行わない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 75%（実装済み、P1×2修正・再レビュー待ち）。
+次の担当: Cursor
+```
