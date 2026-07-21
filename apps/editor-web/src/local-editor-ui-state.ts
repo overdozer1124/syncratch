@@ -115,9 +115,9 @@ export function isDefaultWorkspaceViewport(
  * Resolve which viewport to capture for a remote apply.
  *
  * On the blocks tab, Redux is authoritative — including an intentional return
- * to Scratch defaults. Off the blocks tab, Scratch often rewrites Redux metrics
- * to defaults without the user resetting scroll/zoom, so fall back to the
- * per-target remembered value only when Redux looks like that rewrite.
+ * to Scratch defaults. Off the blocks tab, Scratch rewrites metrics
+ * unpredictably (defaults or partial garbage), so prefer the per-target
+ * remembered value whenever one exists.
  */
 export function chooseWorkspaceViewport(
   reduxViewport: WorkspaceViewport | null,
@@ -125,7 +125,6 @@ export function chooseWorkspaceViewport(
   options: {blocksTabActive: boolean},
 ): WorkspaceViewport | null {
   if (options.blocksTabActive) return reduxViewport;
-  if (!isDefaultWorkspaceViewport(reduxViewport)) return reduxViewport;
   return rememberedViewport ?? reduxViewport;
 }
 

@@ -52,7 +52,7 @@ describe("local editor UI state", () => {
     ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
   });
 
-  it("off blocks tab uses memory only when Redux looks like a Scratch rewrite", () => {
+  it("off blocks tab prefers per-target memory over unreliable Redux metrics", () => {
     expect(
       chooseWorkspaceViewport(
         {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
@@ -62,8 +62,15 @@ describe("local editor UI state", () => {
     ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
     expect(
       chooseWorkspaceViewport(
-        {scrollX: 12, scrollY: 4, scale: 1},
+        {scrollX: -138.5, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
         {scrollX: 48, scrollY: -36, scale: 1.1},
+        {blocksTabActive: false},
+      ),
+    ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 12, scrollY: 4, scale: 1},
+        null,
         {blocksTabActive: false},
       ),
     ).toEqual({scrollX: 12, scrollY: 4, scale: 1});
