@@ -293,14 +293,17 @@ test("editing, save, and reload stay local after initial static load", async ({
 async function connectTwoCollabPeers(
   pageA: Page,
   pageB: Page,
+  driveFileId: string,
 ): Promise<string> {
   await Promise.all([waitUntilReady(pageA), waitUntilReady(pageB)]);
   await Promise.all([
-    pageA.evaluate(() =>
-      window.__blocksyncTask3!.configureCollaborationTestGate("shared-drive"),
+    pageA.evaluate(
+      id => window.__blocksyncTask3!.configureCollaborationTestGate(id),
+      driveFileId,
     ),
-    pageB.evaluate(() =>
-      window.__blocksyncTask3!.configureCollaborationTestGate("shared-drive"),
+    pageB.evaluate(
+      id => window.__blocksyncTask3!.configureCollaborationTestGate(id),
+      driveFileId,
     ),
   ]);
   await Promise.all([
@@ -329,6 +332,10 @@ async function connectTwoCollabPeers(
   return invite;
 }
 
+// Real WebRTC rooms contend for CPU/signaling when run in parallel workers.
+test.describe("real WebRTC collaboration", () => {
+  test.describe.configure({mode: "serial"});
+
 test("two Chromium contexts keep independent sprite selection across remote edits", async ({
   browser,
 }) => {
@@ -343,7 +350,7 @@ test("two Chromium contexts keep independent sprite selection across remote edit
   const pageB = await contextB.newPage();
 
   try {
-    await connectTwoCollabPeers(pageA, pageB);
+    await connectTwoCollabPeers(pageA, pageB, "shared-drive-selection");
 
     await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
     await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
@@ -449,7 +456,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   );
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
-  await connectTwoCollabPeers(pageA, pageB);
+  await connectTwoCollabPeers(pageA, pageB, "shared-drive-converge");
   await expect(pageA.getByTestId("project-status-details")).toContainText(
     "1人といっしょに作っています",
   );
@@ -511,7 +518,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
       window.__blocksyncTask3!.collaborationDebug()),
     bDebug: await pageB.evaluate(() =>
       window.__blocksyncTask3!.collaborationDebug()),
-  }), {timeout: 20_000}).toMatchObject({
+  }), {timeout: 60_000}).toMatchObject({
     aSeesSpriteBlock: true,
     bSeesStageBlock: true,
   });
@@ -556,6 +563,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   expect(await pageA.evaluate(async () => (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
   expect(await pageB.evaluate(async () => (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
   await Promise.all([contextA.close(), contextB.close()]);
+});
 });
 
 test("corrupt stored assets recover automatically on save", async ({page}) => {
