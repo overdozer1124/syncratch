@@ -1,5 +1,20 @@
-import {defineConfig} from "vite";
+import {defineConfig, type Plugin} from "vite";
 import {fileURLToPath} from "node:url";
+import {createGzipStaticMiddleware} from "./src/compress-static.js";
+
+function gzipPublicAssets(): Plugin {
+  const publicDir = fileURLToPath(new URL("./public", import.meta.url));
+  const middleware = createGzipStaticMiddleware(publicDir);
+  return {
+    name: "blocksync-gzip-public-assets",
+    configureServer(server) {
+      server.middlewares.use(middleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware);
+    },
+  };
+}
 
 export default defineConfig(({mode}) => {
   const input: Record<string, string> = {
@@ -12,6 +27,7 @@ export default defineConfig(({mode}) => {
   }
   return {
     base: process.env.BLOCKSYNC_BASE_PATH?.trim() || "/",
+    plugins: [gzipPublicAssets()],
     server: {
       host: "127.0.0.1",
       port: 4173,
