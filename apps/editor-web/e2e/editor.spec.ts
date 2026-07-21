@@ -366,10 +366,22 @@ test("two Chromium contexts keep local editor UI across remote block edits", asy
       "Basketball",
     )).toBe(true);
 
-    // Distinctive local-only UI on the receiving peer. Set the costumes tab
-    // first, then seed viewport last so workspace metric listeners do not
-    // overwrite Redux with Blockly defaults.
+    const spriteA = await pageB.evaluate(() => {
+      const names = window.__blocksyncTask3!.collaborationDebug().vmTargets
+        .filter(target => !target.isStage)
+        .map(target => target.name);
+      return names.find(name => name !== "Basketball") ?? null;
+    });
+    expect(spriteA).toBeTruthy();
+
+    // Per-target viewports must not leak across sprites.
+    expect(await pageB.evaluate(name => {
+      window.__blocksyncTask3!.selectTargetByName(name);
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.setWorkspaceViewport(0, 0, 0.675);
+    }, spriteA)).toBe(true);
     expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
       window.__blocksyncTask3!.setActiveEditorTab(1);
       return window.__blocksyncTask3!.setWorkspaceViewport(48, -36, 1.1);
     })).toBe(true);
@@ -406,12 +418,46 @@ test("two Chromium contexts keep local editor UI across remote block edits", asy
     // Allow a small Scratch resize nudge, but reject the default 0 reset.
     expect(afterScrollY).toBeLessThan(-10);
 
+    // Sprite A's default viewport must remain default (no leak from Basketball).
+    expect(await pageB.evaluate(name => {
+      window.__blocksyncTask3!.selectTargetByName(name);
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.getLocalEditorUiState()?.viewport;
+    }, spriteA)).toMatchObject({scrollX: 0, scrollY: 0, scale: 0.675});
+
+    // Intentional return to default on Basketball must stick across remote apply.
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.setWorkspaceViewport(0, 0, 0.675);
+    })).toBe(true);
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "ui-state-default-viewport-block",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "ui-state-default-viewport-block",
+          "Basketball",
+        )),
+      viewport: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLocalEditorUiState()?.viewport),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      viewport: {scrollX: 0, scrollY: 0, scale: 0.675},
+    });
+
     // Peer A keeps its own UI (code tab) — local contexts stay independent.
     await pageA.evaluate(() => window.__blocksyncTask3!.setActiveEditorTab(0));
     expect(await pageA.evaluate(() =>
       window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex)).toBe(0);
-    expect(await pageB.evaluate(() =>
-      window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex)).toBe(1);
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(1);
+      return window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex;
+    })).toBe(1);
   } finally {
     await Promise.all([contextA.close(), contextB.close()]);
   }

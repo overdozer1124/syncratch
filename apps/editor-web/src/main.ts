@@ -70,7 +70,6 @@ import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
-import {loadProjectPreservingEditingTarget} from "./load-project-preserving-editing-target.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
 import {staticAssetUrl} from "./static-url.js";
@@ -115,13 +114,18 @@ import {
   activateTabAction,
   BLOCKS_TAB_INDEX,
   captureLocalEditorUiState,
-  isDefaultWorkspaceViewport,
   readActiveTabIndex,
   readWorkspaceViewport,
   seedViewportForRuntimeTarget,
   type GuiStoreLike,
   type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
+import {createLocalViewportMemory} from "./local-viewport-memory.js";
+import {
+  captureEditingSelection,
+  loadProjectPreservingEditingTarget,
+  type EditingSelectionRef,
+} from "./load-project-preserving-editing-target.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -302,8 +306,9 @@ function closePanelFor(element: HTMLElement): void {
 let store: ProjectStore;
 let vm: ScratchVm;
 let editorGuiState: EditorGuiState | null = null;
-/** Survives Scratch rewriting Redux metrics to defaults off the blocks tab. */
-let rememberedWorkspaceViewport: WorkspaceViewport | null = null;
+/** Per local-project + stable document-target viewport memory (local-only). */
+const viewportMemory = createLocalViewportMemory();
+let uiRestoreEpoch = 0;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -394,6 +399,7 @@ const diagnostic = {
       candidate => candidate.getName() === targetName,
     );
     if (!target) return false;
+    bumpUiRestoreEpoch();
     vm.setEditingTarget(target.id);
     return true;
   },
@@ -404,31 +410,46 @@ const diagnostic = {
     return editing.sprite?.name ?? null;
   },
   getLocalEditorUiState() {
-    if (!editorGuiState) return null;
+    if (!editorGuiState || !hasCurrent) return null;
+    const selection = captureEditingSelection(
+      vm.editingTarget,
+      current.document,
+    );
     return captureLocalEditorUiState(
       editorGuiState.store,
       vm.editingTarget?.id,
       readToolboxCategoryId(),
-      rememberedWorkspaceViewport,
+      viewportMemory.get(
+        current.localProjectId,
+        selection?.documentId ?? null,
+      ),
     );
   },
   setActiveEditorTab(activeTabIndex: number): void {
     if (!editorGuiState) throw new Error("Editor GUI store missing");
+    bumpUiRestoreEpoch();
     editorGuiState.dispatch(activateTabAction(activeTabIndex));
   },
   setWorkspaceViewport(scrollX: number, scrollY: number, scale: number): boolean {
-    if (!editorGuiState) return false;
+    if (!editorGuiState || !hasCurrent) return false;
     const targetId = vm.editingTarget?.id;
     if (!targetId) return false;
     const viewport = {scrollX, scrollY, scale};
-    rememberedWorkspaceViewport = viewport;
+    const selection = captureEditingSelection(
+      vm.editingTarget,
+      current.document,
+    );
+    rememberViewportForSelection(selection, viewport);
     seedViewportForRuntimeTarget(editorGuiState.store, targetId, viewport);
     applyWorkspaceViewport(viewport);
     const stored = captureLocalEditorUiState(
       editorGuiState.store,
       targetId,
       null,
-      rememberedWorkspaceViewport,
+      viewportMemory.get(
+        current.localProjectId,
+        selection?.documentId ?? null,
+      ),
     ).viewport;
     return Boolean(
       stored &&
@@ -800,6 +821,7 @@ async function applyCollaborativeProject(
       assets: assetRecordsFromMap(document, assets),
       saveState: "clean",
     };
+    clearLocalUiMemoryForProjectReplacement();
     const applied = await applyGuestInitialProject({
       candidate: record,
       previous,
@@ -876,15 +898,20 @@ async function applyCollaborativeProject(
                 store: editorGuiState.store,
                 readToolboxCategoryId,
                 restoreToolboxCategory,
-                rememberedViewport: () => rememberedWorkspaceViewport,
-                rememberViewport: viewport => {
-                  if (!isDefaultWorkspaceViewport(viewport)) {
-                    rememberedWorkspaceViewport = viewport;
-                  }
-                },
+                rememberedViewportForSelection: selection =>
+                  hasCurrent
+                    ? viewportMemory.get(
+                        current.localProjectId,
+                        selection?.documentId ?? null,
+                      )
+                    : null,
+                rememberViewportForSelection,
                 applyViewport: viewport => {
                   applyWorkspaceViewport(viewport);
                 },
+                beginRestoreEpoch: bumpUiRestoreEpoch,
+                isRestoreEpochCurrent: epoch => epoch === uiRestoreEpoch,
+                currentRuntimeEditingTargetId: () => vm.editingTarget?.id,
               }
             : undefined,
         },
@@ -1037,6 +1064,28 @@ async function joinRoom(): Promise<void> {
   }
 }
 
+function bumpUiRestoreEpoch(): number {
+  uiRestoreEpoch += 1;
+  return uiRestoreEpoch;
+}
+
+function clearLocalUiMemoryForProjectReplacement(): void {
+  bumpUiRestoreEpoch();
+  viewportMemory.clearAll();
+}
+
+function rememberViewportForSelection(
+  selection: EditingSelectionRef | null,
+  viewport: WorkspaceViewport,
+): void {
+  if (!hasCurrent || !selection?.documentId) return;
+  viewportMemory.set(
+    current.localProjectId,
+    selection.documentId,
+    viewport,
+  );
+}
+
 function leaveRoom(): void {
   driveAutosave?.cancel();
   // Leave before bumping generation so tentative guest-initial rollback can run.
@@ -1053,6 +1102,7 @@ async function loadRecord(
   signal?: AbortSignal,
 ): Promise<void> {
   driveAutosave?.cancel();
+  clearLocalUiMemoryForProjectReplacement();
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
   const session = projectSessions.begin();
@@ -1269,15 +1319,20 @@ async function getVm(): Promise<ScratchVm> {
     editorGuiState = state;
     state.store.subscribe?.(() => {
       try {
-        if (!vm?.editingTarget?.id) return;
+        if (!hasCurrent || !vm?.editingTarget?.id) return;
+        // On the blocks tab Redux is authoritative, including intentional
+        // returns to Scratch defaults. Off-tab rewrites are ignored here.
         if (readActiveTabIndex(state.store) !== BLOCKS_TAB_INDEX) return;
         const viewport = readWorkspaceViewport(
           state.store,
           vm.editingTarget.id,
         );
-        if (!isDefaultWorkspaceViewport(viewport)) {
-          rememberedWorkspaceViewport = viewport;
-        }
+        if (!viewport) return;
+        const selection = captureEditingSelection(
+          vm.editingTarget,
+          current.document,
+        );
+        rememberViewportForSelection(selection, viewport);
       } catch {
         // ignore store subscription failures
       }

@@ -42,21 +42,57 @@ describe("local editor UI state", () => {
     expect(readWorkspaceViewport(store, "missing")).toBeNull();
   });
 
-  it("captures a local-only snapshot without sharing target ids as document state", () => {
+  it("on blocks tab prefers Redux including intentional defaults", () => {
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        {scrollX: 48, scrollY: -36, scale: 1.1},
+        {blocksTabActive: true},
+      ),
+    ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
+  });
+
+  it("off blocks tab uses memory only when Redux looks like a Scratch rewrite", () => {
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        {scrollX: 48, scrollY: -36, scale: 1.1},
+        {blocksTabActive: false},
+      ),
+    ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 12, scrollY: 4, scale: 1},
+        {scrollX: 48, scrollY: -36, scale: 1.1},
+        {blocksTabActive: false},
+      ),
+    ).toEqual({scrollX: 12, scrollY: 4, scale: 1});
+  });
+
+  it("captures costumes-tab UI with remembered viewport fallback", () => {
     const store = storeWith({
-      editorTab: {activeTabIndex: SOUNDS_TAB_INDEX},
+      editorTab: {activeTabIndex: COSTUMES_TAB_INDEX},
       workspaceMetrics: {
-        targets: {"rt-old": {scrollX: 1, scrollY: 2, scale: 0.675}},
+        targets: {
+          "rt-old": {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        },
       },
     });
-    expect(captureLocalEditorUiState(store, "rt-old", "looks")).toEqual({
-      activeTabIndex: 2,
-      viewport: {scrollX: 1, scrollY: 2, scale: 0.675},
+    expect(
+      captureLocalEditorUiState(
+        store,
+        "rt-old",
+        "looks",
+        {scrollX: 1, scrollY: 2, scale: 0.9},
+      ),
+    ).toEqual({
+      activeTabIndex: COSTUMES_TAB_INDEX,
+      viewport: {scrollX: 1, scrollY: 2, scale: 0.9},
       toolboxCategoryId: "looks",
     });
   });
 
-  it("restores tab and seeds remapped viewport metrics; toolbox is optional", () => {
+  it("restores tab/viewport/toolbox, or viewport-only when asked", () => {
     const store = storeWith({
       editorTab: {activeTabIndex: BLOCKS_TAB_INDEX},
       workspaceMetrics: {targets: {}},
@@ -74,27 +110,31 @@ describe("local editor UI state", () => {
     expect(store.dispatch).toHaveBeenCalledWith(
       activateTabAction(COSTUMES_TAB_INDEX),
     );
+    expect(restoreToolbox).toHaveBeenCalledWith("control");
+
+    store.dispatch.mockClear();
+    restoreToolbox.mockClear();
+    restoreLocalEditorUiState(
+      store,
+      {
+        activeTabIndex: SOUNDS_TAB_INDEX,
+        viewport: {scrollX: 10, scrollY: 20, scale: 1},
+        toolboxCategoryId: "control",
+      },
+      {
+        newRuntimeTargetId: "rt-new",
+        restoreToolboxCategory: restoreToolbox,
+        restoreTabAndToolbox: false,
+      },
+    );
     expect(store.dispatch).toHaveBeenCalledWith(
       updateMetricsAction("rt-new", {scrollX: 10, scrollY: 20, scale: 1}),
     );
-    expect(restoreToolbox).toHaveBeenCalledWith("control");
-    expect(ACTIVATE_TAB_TYPE).toContain("ACTIVATE_TAB");
+    expect(store.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({type: ACTIVATE_TAB_TYPE}),
+    );
+    expect(restoreToolbox).not.toHaveBeenCalled();
     expect(UPDATE_METRICS_TYPE).toContain("UPDATE_METRICS");
-  });
-
-  it("keeps a remembered viewport when Redux falls back to Scratch defaults", () => {
-    expect(
-      chooseWorkspaceViewport(
-        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
-        {scrollX: 48, scrollY: -36, scale: 1.1},
-      ),
-    ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
-    expect(
-      chooseWorkspaceViewport(
-        {scrollX: 12, scrollY: 4, scale: 1},
-        {scrollX: 48, scrollY: -36, scale: 1.1},
-      ),
-    ).toEqual({scrollX: 12, scrollY: 4, scale: 1});
   });
 
   it("does not throw when restore helpers fail", () => {

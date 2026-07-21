@@ -1,7 +1,6 @@
 import type {ProjectDocument} from "@blocksync/project-schema";
 import {
   captureLocalEditorUiState,
-  isDefaultWorkspaceViewport,
   restoreLocalEditorUiState,
   seedViewportForRuntimeTarget,
   type GuiStoreLike,
@@ -51,9 +50,22 @@ export interface LocalUiRestoreHooks {
   store: GuiStoreLike;
   readToolboxCategoryId?: () => string | null;
   restoreToolboxCategory?: (categoryId: string) => boolean;
-  rememberedViewport?: () => WorkspaceViewport | null;
-  rememberViewport?: (viewport: WorkspaceViewport | null) => void;
+  /** Stable ProjectDocument target id for the pre-load editing selection. */
+  rememberedViewportForSelection?: (
+    selection: EditingSelectionRef | null,
+  ) => WorkspaceViewport | null;
+  rememberViewportForSelection?: (
+    selection: EditingSelectionRef | null,
+    viewport: WorkspaceViewport,
+  ) => void;
   applyViewport?: (viewport: WorkspaceViewport) => void;
+  /** Bump and return an epoch for this apply; deferred work must match it. */
+  beginRestoreEpoch?: () => number;
+  isRestoreEpochCurrent?: (epoch: number) => boolean;
+  /** Current runtime editing target id after user actions (stale-guard). */
+  currentRuntimeEditingTargetId?: () => string | null | undefined;
+  /** Injectable scheduler for deterministic tests (defaults to rAF/setTimeout). */
+  scheduleViewportSettle?: (work: () => void) => void;
 }
 
 function targetName(target: EditingTargetLike): string | null {
@@ -135,6 +147,14 @@ export function restoreEditingSelection(
   return runtimeId;
 }
 
+function defaultScheduleViewportSettle(work: () => void): void {
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(work);
+  } else {
+    setTimeout(work, 0);
+  }
+}
+
 /**
  * Preserve the local editing sprite (and optional local-only GUI context) across
  * a whole-project load that regenerates runtime ids.
@@ -152,20 +172,24 @@ export async function loadProjectPreservingEditingTarget(
     vm.editingTarget,
     options.beforeDocument,
   );
+  const restoreEpoch = options.localUi?.beginRestoreEpoch?.() ?? 0;
   let uiSnapshot: LocalEditorUiState | null = null;
   if (options.localUi) {
     try {
+      const remembered = options.localUi.rememberedViewportForSelection?.(
+        selection,
+      ) ?? null;
       uiSnapshot = captureLocalEditorUiState(
         options.localUi.store,
         vm.editingTarget?.id,
         options.localUi.readToolboxCategoryId?.() ?? null,
-        options.localUi.rememberedViewport?.() ?? null,
+        remembered,
       );
-      if (
-        uiSnapshot.viewport &&
-        !isDefaultWorkspaceViewport(uiSnapshot.viewport)
-      ) {
-        options.localUi.rememberViewport?.(uiSnapshot.viewport);
+      if (uiSnapshot.viewport) {
+        options.localUi.rememberViewportForSelection?.(
+          selection,
+          uiSnapshot.viewport,
+        );
       }
     } catch {
       uiSnapshot = null;
@@ -196,32 +220,31 @@ export async function loadProjectPreservingEditingTarget(
     restoreLocalEditorUiState(options.localUi.store, uiSnapshot, {
       newRuntimeTargetId: newRuntimeId,
       restoreToolboxCategory: options.localUi.restoreToolboxCategory,
+      restoreTabAndToolbox: true,
     });
     // Scratch workspaceUpdate/resize can nudge scroll after the first restore.
-    // Schedule a second apply without awaiting — awaiting here would keep
-    // applyRemoteProjectUpdate's suppressVmChanges window open and drop
-    // concurrent local publishes from the receiving peer.
+    // Schedule viewport-only settle without awaiting (keeps suppressVmChanges
+    // short) and without re-applying tab/toolbox after the user may have moved.
     if (uiSnapshot?.viewport && newRuntimeId) {
       const localUi = options.localUi;
       const viewport = uiSnapshot.viewport;
-      const snapshot = uiSnapshot;
       const schedule =
-        typeof requestAnimationFrame === "function"
-          ? requestAnimationFrame
-          : (cb: () => void) => setTimeout(cb, 0);
+        localUi.scheduleViewportSettle ?? defaultScheduleViewportSettle;
       schedule(() => {
         try {
-          seedViewportForRuntimeTarget(
-            localUi.store,
-            newRuntimeId,
-            viewport,
-          );
+          if (
+            localUi.isRestoreEpochCurrent &&
+            !localUi.isRestoreEpochCurrent(restoreEpoch)
+          ) {
+            return;
+          }
+          const currentId = localUi.currentRuntimeEditingTargetId?.();
+          if (currentId !== undefined && currentId !== newRuntimeId) {
+            return;
+          }
+          seedViewportForRuntimeTarget(localUi.store, newRuntimeId, viewport);
           localUi.applyViewport?.(viewport);
-          localUi.rememberViewport?.(viewport);
-          restoreLocalEditorUiState(localUi.store, snapshot, {
-            newRuntimeTargetId: newRuntimeId,
-            restoreToolboxCategory: localUi.restoreToolboxCategory,
-          });
+          localUi.rememberViewportForSelection?.(selection, viewport);
         } catch {
           // Best-effort only.
         }

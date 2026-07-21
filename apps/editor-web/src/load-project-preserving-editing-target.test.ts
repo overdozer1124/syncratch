@@ -5,6 +5,7 @@ import {
   loadProjectPreservingEditingTarget,
   resolveRuntimeEditingTargetId,
 } from "./load-project-preserving-editing-target.js";
+import {ACTIVATE_TAB_TYPE, COSTUMES_TAB_INDEX} from "./local-editor-ui-state.js";
 
 function sprite(id: string, name: string, layerOrder: number): ScratchTarget {
   return {
@@ -137,7 +138,6 @@ describe("editing selection remapping", () => {
         ],
       },
       loadProject: vi.fn(async () => {
-        // Scratch regenerates ids and forces the first sprite.
         vm.editingTarget = {
           id: "runtime-new-a",
           isStage: false,
@@ -169,13 +169,25 @@ describe("editing selection remapping", () => {
     const setEditingTarget = vi.fn();
     const dispatch = vi.fn();
     const restoreToolbox = vi.fn(() => true);
+    const remember = vi.fn();
+    const scheduled: Array<() => void> = [];
+    let currentRuntimeId: string | null = "runtime-new-b";
+    let epoch = 0;
     const vm = {
       editingTarget: {
         id: "runtime-old-b",
         isStage: false,
         getName: () => "Sprite2",
       },
-      setEditingTarget,
+      setEditingTarget: (id: string) => {
+        setEditingTarget(id);
+        currentRuntimeId = id;
+        vm.editingTarget = {
+          id,
+          isStage: false,
+          getName: () => (id.endsWith("b") ? "Sprite2" : "Sprite1"),
+        };
+      },
       runtime: {
         targets: [
           {id: "runtime-old-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
@@ -191,10 +203,10 @@ describe("editing selection remapping", () => {
     const guiStore = {
       getState: () => ({
         scratchGui: {
-          editorTab: {activeTabIndex: 1},
+          editorTab: {activeTabIndex: COSTUMES_TAB_INDEX},
           workspaceMetrics: {
             targets: {
-              "runtime-old-b": {scrollX: 33, scrollY: -8, scale: 1.25},
+              "runtime-old-b": {scrollX: 0, scrollY: 0, scale: 0.675},
             },
           },
         },
@@ -209,10 +221,29 @@ describe("editing selection remapping", () => {
         store: guiStore,
         readToolboxCategoryId: () => "looks",
         restoreToolboxCategory: restoreToolbox,
+        rememberedViewportForSelection: () => ({
+          scrollX: 33,
+          scrollY: -8,
+          scale: 1.25,
+        }),
+        rememberViewportForSelection: remember,
+        beginRestoreEpoch: () => {
+          epoch += 1;
+          return epoch;
+        },
+        isRestoreEpochCurrent: value => value === epoch,
+        currentRuntimeEditingTargetId: () => currentRuntimeId,
+        scheduleViewportSettle: work => {
+          scheduled.push(work);
+        },
       },
     });
 
     expect(setEditingTarget).toHaveBeenCalledWith("runtime-new-b");
+    expect(remember).toHaveBeenCalledWith(
+      expect.objectContaining({documentId: "id-b"}),
+      {scrollX: 33, scrollY: -8, scale: 1.25},
+    );
     const metricCalls = dispatch.mock.calls
       .map(call => call[0] as {type?: string; targetID?: string; scrollX?: number})
       .filter(action => action.type?.includes("UPDATE_METRICS"));
@@ -220,13 +251,89 @@ describe("editing selection remapping", () => {
       targetID: "runtime-new-b",
       scrollX: 33,
     });
-    const orderMetricThenSelect =
-      dispatch.mock.invocationCallOrder[0]! <
-      setEditingTarget.mock.invocationCallOrder[0]!;
-    expect(orderMetricThenSelect).toBe(true);
     expect(restoreToolbox).toHaveBeenCalledWith("looks");
     expect(dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({type: expect.stringContaining("ACTIVATE_TAB"), activeTabIndex: 1}),
+      expect.objectContaining({
+        type: expect.stringContaining("ACTIVATE_TAB"),
+        activeTabIndex: COSTUMES_TAB_INDEX,
+      }),
     );
+
+    // Deferred settle: viewport only; tab must not be redispatched after user moves.
+    dispatch.mockClear();
+    restoreToolbox.mockClear();
+    currentRuntimeId = "runtime-new-a";
+    vm.setEditingTarget("runtime-new-a");
+    setEditingTarget.mockClear();
+    scheduled[0]!();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({type: ACTIVATE_TAB_TYPE}),
+    );
+    expect(restoreToolbox).not.toHaveBeenCalled();
+  });
+
+  it("ignores deferred viewport settle after a newer restore epoch", async () => {
+    const before = documentOf([
+      stage(),
+      sprite("id-a", "Sprite1", 1),
+      sprite("id-b", "Sprite2", 2),
+    ]);
+    const after = before;
+    const dispatch = vi.fn();
+    const applyViewport = vi.fn();
+    const scheduled: Array<() => void> = [];
+    let epoch = 0;
+    const vm = {
+      editingTarget: {
+        id: "runtime-old-b",
+        isStage: false,
+        getName: () => "Sprite2",
+      },
+      setEditingTarget: vi.fn(),
+      runtime: {
+        targets: [
+          {id: "runtime-old-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ],
+      },
+      loadProject: vi.fn(async () => {
+        vm.runtime.targets = [
+          {id: "runtime-new-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ];
+      }),
+    };
+
+    await loadProjectPreservingEditingTarget(vm, {targets: []}, {
+      beforeDocument: before,
+      afterDocument: after,
+      localUi: {
+        store: {
+          getState: () => ({
+            scratchGui: {
+              editorTab: {activeTabIndex: 0},
+              workspaceMetrics: {
+                targets: {
+                  "runtime-old-b": {scrollX: 48, scrollY: -36, scale: 1.1},
+                },
+              },
+            },
+          }),
+          dispatch,
+        },
+        rememberedViewportForSelection: () => null,
+        beginRestoreEpoch: () => ++epoch,
+        isRestoreEpochCurrent: value => value === epoch,
+        currentRuntimeEditingTargetId: () => "runtime-new-b",
+        applyViewport,
+        scheduleViewportSettle: work => {
+          scheduled.push(work);
+        },
+      },
+    });
+
+    epoch += 1; // simulate a later apply / session replacement
+    dispatch.mockClear();
+    scheduled[0]!();
+    expect(applyViewport).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 });

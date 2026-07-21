@@ -97,7 +97,7 @@ export function updateMetricsAction(
   };
 }
 
-/** Scratch's default blocks scale; scroll 0/0 + this scale usually means "unset". */
+/** Scratch's default blocks scale; scroll 0/0 + this scale usually means unset. */
 export const BLOCKS_DEFAULT_SCALE = 0.675;
 
 export function isDefaultWorkspaceViewport(
@@ -112,14 +112,19 @@ export function isDefaultWorkspaceViewport(
 }
 
 /**
- * Prefer live Redux metrics while they look intentional; otherwise keep a
- * remembered viewport. Leaving the blocks tab often rewrites Redux metrics
- * back to Scratch defaults without the user resetting scroll/zoom.
+ * Resolve which viewport to capture for a remote apply.
+ *
+ * On the blocks tab, Redux is authoritative — including an intentional return
+ * to Scratch defaults. Off the blocks tab, Scratch often rewrites Redux metrics
+ * to defaults without the user resetting scroll/zoom, so fall back to the
+ * per-target remembered value only when Redux looks like that rewrite.
  */
 export function chooseWorkspaceViewport(
   reduxViewport: WorkspaceViewport | null,
   rememberedViewport: WorkspaceViewport | null,
+  options: {blocksTabActive: boolean},
 ): WorkspaceViewport | null {
+  if (options.blocksTabActive) return reduxViewport;
   if (!isDefaultWorkspaceViewport(reduxViewport)) return reduxViewport;
   return rememberedViewport ?? reduxViewport;
 }
@@ -130,11 +135,13 @@ export function captureLocalEditorUiState(
   toolboxCategoryId: string | null,
   rememberedViewport: WorkspaceViewport | null = null,
 ): LocalEditorUiState {
+  const activeTabIndex = readActiveTabIndex(store);
   return {
-    activeTabIndex: readActiveTabIndex(store),
+    activeTabIndex,
     viewport: chooseWorkspaceViewport(
       readWorkspaceViewport(store, runtimeTargetId),
       rememberedViewport,
+      {blocksTabActive: activeTabIndex === BLOCKS_TAB_INDEX},
     ),
     toolboxCategoryId,
   };
@@ -143,8 +150,7 @@ export function captureLocalEditorUiState(
 /**
  * Restore local-only UI after loadProject + editingTarget remap.
  * Viewport Redux must be seeded under the *new* runtime id before
- * setEditingTarget triggers workspaceUpdate, so call seedViewport first when
- * restoring selection separately.
+ * setEditingTarget triggers workspaceUpdate.
  */
 export function restoreLocalEditorUiState(
   store: GuiStoreLike,
@@ -152,19 +158,25 @@ export function restoreLocalEditorUiState(
   options: {
     newRuntimeTargetId: string | null;
     restoreToolboxCategory?: (categoryId: string) => boolean;
+    /** When false, only seed viewport metrics (used by deferred settle). */
+    restoreTabAndToolbox?: boolean;
   },
 ): void {
   if (!snapshot) return;
-  try {
-    if (
-      Number.isInteger(snapshot.activeTabIndex) &&
-      snapshot.activeTabIndex >= BLOCKS_TAB_INDEX &&
-      snapshot.activeTabIndex <= SOUNDS_TAB_INDEX
-    ) {
-      store.dispatch(activateTabAction(snapshot.activeTabIndex));
+  const restoreTabAndToolbox = options.restoreTabAndToolbox !== false;
+
+  if (restoreTabAndToolbox) {
+    try {
+      if (
+        Number.isInteger(snapshot.activeTabIndex) &&
+        snapshot.activeTabIndex >= BLOCKS_TAB_INDEX &&
+        snapshot.activeTabIndex <= SOUNDS_TAB_INDEX
+      ) {
+        store.dispatch(activateTabAction(snapshot.activeTabIndex));
+      }
+    } catch {
+      // Best-effort: never fail remote apply for UI restore.
     }
-  } catch {
-    // Best-effort: never fail remote apply for UI restore.
   }
 
   try {
@@ -177,12 +189,14 @@ export function restoreLocalEditorUiState(
     // ignore
   }
 
-  try {
-    if (snapshot.toolboxCategoryId && options.restoreToolboxCategory) {
-      options.restoreToolboxCategory(snapshot.toolboxCategoryId);
+  if (restoreTabAndToolbox) {
+    try {
+      if (snapshot.toolboxCategoryId && options.restoreToolboxCategory) {
+        options.restoreToolboxCategory(snapshot.toolboxCategoryId);
+      }
+    } catch {
+      // ignore
     }
-  } catch {
-    // ignore
   }
 }
 
