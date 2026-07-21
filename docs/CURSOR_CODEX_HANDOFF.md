@@ -3506,3 +3506,23 @@ PR #8/#9 包含比較:
 
 進捗: Local-First primary track 100%（実装・受け入れ・レビュー完了）。
 ```
+
+### 2026-07-22 05:02:58 JST — Cursor（PR #10 merge と #8/#9 close）
+
+```text
+状態: PR10_MERGED
+ユーザー指示: 「マージして」
+実施:
+1. gh pr ready 10
+2. gh pr merge 10 --merge → MERGED
+   - merge commit: 7fb15adc11d36279f8bceb5d7813dbd1b4085a4a
+   - base: feat/local-first-pivot-impl
+   - head included: 77657e4c08b7a49b3d6caf66444b0f0e13598159
+3. 確認: PR #10 head / merge commit とも base の ancestor
+4. PR #8/#9 に superseded by #10 を記録して CLOSED
+   - #8 https://github.com/overdozer1124/syncratch/pull/8
+   - #9 https://github.com/overdozer1124/syncratch/pull/9
+
+次: ユーザーが次スライスを選定するまで待機。
+進捗: Local-First primary track 100%（merge完了）。
+```
