@@ -1,6 +1,8 @@
-# BlockSync AI — Gate 0 lab
+# Syncratch
 
-Experimental monorepo for Gate 0 technical viability checks only. Package APIs are **@experimental** and will not be treated as Release 1 stable.
+Local-first Scratch collaboration editor (formerly referred to as BlockSync in
+earlier design notes). Package APIs under `@blocksync/*` remain the internal
+npm scope for now and are **@experimental**.
 
 See:
 
