@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 05:02:58 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `PR10_MERGED` |
-| 現在の担当 | ユーザー（次スライス選定） |
-| 現在のTask | なし（PR #10 merge と #8/#9 close 完了） |
+| 最終更新 | 2026-07-22 05:05:45 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `LOCAL_UI_STATE_AUDIT_INSTRUCTED` |
+| 現在の担当 | Cursor（監査・再現・最小保全） |
+| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | base: `feat/local-first-pivot-impl` @ `7fb15ad` |
-| 作業worktree | `/workspace`（cloud agent） |
+| 作業ブランチ | Cursorが `feat/local-first-pivot-impl` 最新から `cursor/collab-local-ui-state-audit-f431` を作成 |
+| 作業worktree | Cursorが新規作成 |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 次機能スライスを選定（remote部分更新 / UI状態監査 / Chromebookヘッダー / PR #7 / block単位CRDT は未着手） |
+| 次Task | 実ChromiumでUI状態resetを観測し、再現したlocal-only状態だけをregular remote apply前後で復元 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし。ユーザーが次スライスを指示するまで待機。
+`feat/local-first-pivot-impl` の最新から `cursor/collab-local-ui-state-audit-f431` を作成する。まず実Chromium 2-contextで、remote block更新を受けた側の active tab（コード／コスチューム／音）、Blockly viewport（scroll X/Y・zoom）、toolbox category が変化するかを観測し、結果を試験で固定する。実際にresetするlocal-only状態だけをregular remote apply前後でcapture/restoreする。UI状態をProjectDocument・Y.Doc・相手peerへ同期しない。currentCostume等の作品状態は復元対象にしない。guest-initial、新規作品、別作品openは従来どおり。部分更新、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。監査結果・実装・実Chromium E2E・全Gateを台帳へ記録し `READY_FOR_CODEX_REVIEW` で停止する。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3525,4 +3525,54 @@ PR #8/#9 包含比較:
 
 次: ユーザーが次スライスを選定するまで待機。
 進捗: Local-First primary track 100%（merge完了）。
+```
+
+### 2026-07-22 05:05:45 JST — Codex（次スライス: local UI state audit / minimal preservation）
+
+```text
+状態: LOCAL_UI_STATE_AUDIT_INSTRUCTED
+優先理由:
+- block/asset/target選択の同期は安定し、PR #10でmerge済み。
+- regular remote applyは引き続きwhole-project `vm.loadProject()` を使うため、選択sprite以外のlocal UI状態を破壊する可能性が既知。
+- partial remote applyへ進む前に、実害を一次情報で測定し、小さな境界で保全する方が低リスク。
+
+目標:
+- remote更新を受けても、各利用者のlocal-only編集コンテキストが不必要に移動しない。
+- 観測されない状態や共有すべき作品状態まで推測で保存しない。
+
+Phase 1: read-only audit / failing acceptance
+1. 実Chromium 2-context・新規roomで、受信側をBに固定してremote block更新を送る。
+2. 次を更新前後で採取する:
+   - active editor tab: code / costumes / sounds
+   - Blockly workspace viewport: scroll X / scroll Y / scale
+   - selected toolbox category（取得可能な場合）
+   - selected sprite（既存回帰として維持）
+3. resetする状態だけ、実GUIを使う失敗E2Eとして固定する。テスト専用mockだけで判定しない。
+4. active tab等がresetしないなら「非再現」と証跡化し、実装を追加しない。
+
+Phase 2: minimal implementation
+- regular remote applyのload直前にlocal-only snapshotをcaptureし、loadとeditingTarget復元完了後にrestoreする。
+- target依存viewportは安定ProjectDocument identity経由で新runtime targetへ対応付ける。
+- 対象target/tab/categoryが消失・無効ならScratch標準fallback。例外でremote applyを失敗させない。
+- UI状態はProjectDocument / LocalProjectRecord / Y.Doc / provider updateへ書かない。
+- restore操作からPROJECT_CHANGEDや共同編集publishを発生させない。
+
+明示的な非目標:
+- currentCostume、sprite位置、costume内容等の共有作品状態の巻き戻し
+- guest-initial / new / explicit openで前作品UIを復元
+- VM/projectの部分更新化
+- scroll以外の包括的UIセッション永続化
+- Chromebookヘッダー、PR #7、block単位CRDT
+
+必須試験:
+- remote blockは受信・表示される一方、再現したactive tab / viewport / categoryは受信側で維持。
+- peerごとのUI状態は独立し、相手の状態へ揃わない。
+- selected sprite維持、Basketball、forever nest/detach、local saveの既存E2E回帰なし。
+- editor-web test/typecheck/build:e2e、実Chromium focused E2E、Gate 0 PASS。
+
+停止条件:
+- audit結果と実装（必要な場合）を別コミットで明確化。
+- `READY_FOR_CODEX_REVIEW` で停止し、次候補へ先行しない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 0%（指示完了、Cursor着手待ち）。
 ```
