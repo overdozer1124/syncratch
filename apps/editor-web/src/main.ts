@@ -113,9 +113,14 @@ import {
 import {summarizePreflightIssues} from "@blocksync/collaboration-domain";
 import {
   activateTabAction,
+  BLOCKS_TAB_INDEX,
   captureLocalEditorUiState,
+  isDefaultWorkspaceViewport,
+  readActiveTabIndex,
+  readWorkspaceViewport,
   seedViewportForRuntimeTarget,
   type GuiStoreLike,
+  type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
@@ -297,6 +302,8 @@ function closePanelFor(element: HTMLElement): void {
 let store: ProjectStore;
 let vm: ScratchVm;
 let editorGuiState: EditorGuiState | null = null;
+/** Survives Scratch rewriting Redux metrics to defaults off the blocks tab. */
+let rememberedWorkspaceViewport: WorkspaceViewport | null = null;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -402,6 +409,7 @@ const diagnostic = {
       editorGuiState.store,
       vm.editingTarget?.id,
       readToolboxCategoryId(),
+      rememberedWorkspaceViewport,
     );
   },
   setActiveEditorTab(activeTabIndex: number): void {
@@ -413,14 +421,14 @@ const diagnostic = {
     const targetId = vm.editingTarget?.id;
     if (!targetId) return false;
     const viewport = {scrollX, scrollY, scale};
+    rememberedWorkspaceViewport = viewport;
     seedViewportForRuntimeTarget(editorGuiState.store, targetId, viewport);
     applyWorkspaceViewport(viewport);
-    // Prefer Redux as source of truth — live Blockly may be unavailable or
-    // briefly report defaults while the blocks tab is hidden.
     const stored = captureLocalEditorUiState(
       editorGuiState.store,
       targetId,
       null,
+      rememberedWorkspaceViewport,
     ).viewport;
     return Boolean(
       stored &&
@@ -868,6 +876,12 @@ async function applyCollaborativeProject(
                 store: editorGuiState.store,
                 readToolboxCategoryId,
                 restoreToolboxCategory,
+                rememberedViewport: () => rememberedWorkspaceViewport,
+                rememberViewport: viewport => {
+                  if (!isDefaultWorkspaceViewport(viewport)) {
+                    rememberedWorkspaceViewport = viewport;
+                  }
+                },
               }
             : undefined,
         },
@@ -1250,6 +1264,21 @@ async function getVm(): Promise<ScratchVm> {
     // 日本語（漢字）。ひらがな版は "ja-Hira"。
     const state = new GUI.EditorState({locale: "ja"});
     editorGuiState = state;
+    state.store.subscribe?.(() => {
+      try {
+        if (!vm?.editingTarget?.id) return;
+        if (readActiveTabIndex(state.store) !== BLOCKS_TAB_INDEX) return;
+        const viewport = readWorkspaceViewport(
+          state.store,
+          vm.editingTarget.id,
+        );
+        if (!isDefaultWorkspaceViewport(viewport)) {
+          rememberedWorkspaceViewport = viewport;
+        }
+      } catch {
+        // ignore store subscription failures
+      }
+    });
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({

@@ -1,10 +1,12 @@
 import type {ProjectDocument} from "@blocksync/project-schema";
 import {
   captureLocalEditorUiState,
+  isDefaultWorkspaceViewport,
   restoreLocalEditorUiState,
   seedViewportForRuntimeTarget,
   type GuiStoreLike,
   type LocalEditorUiState,
+  type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
 
 /**
@@ -49,6 +51,8 @@ export interface LocalUiRestoreHooks {
   store: GuiStoreLike;
   readToolboxCategoryId?: () => string | null;
   restoreToolboxCategory?: (categoryId: string) => boolean;
+  rememberedViewport?: () => WorkspaceViewport | null;
+  rememberViewport?: (viewport: WorkspaceViewport | null) => void;
 }
 
 function targetName(target: EditingTargetLike): string | null {
@@ -154,7 +158,14 @@ export async function loadProjectPreservingEditingTarget(
         options.localUi.store,
         vm.editingTarget?.id,
         options.localUi.readToolboxCategoryId?.() ?? null,
+        options.localUi.rememberedViewport?.() ?? null,
       );
+      if (
+        uiSnapshot.viewport &&
+        !isDefaultWorkspaceViewport(uiSnapshot.viewport)
+      ) {
+        options.localUi.rememberViewport?.(uiSnapshot.viewport);
+      }
     } catch {
       uiSnapshot = null;
     }

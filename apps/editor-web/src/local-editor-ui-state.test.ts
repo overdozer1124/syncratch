@@ -1,12 +1,14 @@
 import {describe, expect, it, vi} from "vitest";
 import {
   ACTIVATE_TAB_TYPE,
+  BLOCKS_DEFAULT_SCALE,
   BLOCKS_TAB_INDEX,
   COSTUMES_TAB_INDEX,
   SOUNDS_TAB_INDEX,
   UPDATE_METRICS_TYPE,
   activateTabAction,
   captureLocalEditorUiState,
+  chooseWorkspaceViewport,
   readActiveTabIndex,
   readWorkspaceViewport,
   restoreLocalEditorUiState,
@@ -78,6 +80,21 @@ describe("local editor UI state", () => {
     expect(restoreToolbox).toHaveBeenCalledWith("control");
     expect(ACTIVATE_TAB_TYPE).toContain("ACTIVATE_TAB");
     expect(UPDATE_METRICS_TYPE).toContain("UPDATE_METRICS");
+  });
+
+  it("keeps a remembered viewport when Redux falls back to Scratch defaults", () => {
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        {scrollX: 48, scrollY: -36, scale: 1.1},
+      ),
+    ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 12, scrollY: 4, scale: 1},
+        {scrollX: 48, scrollY: -36, scale: 1.1},
+      ),
+    ).toEqual({scrollX: 12, scrollY: 4, scale: 1});
   });
 
   it("does not throw when restore helpers fail", () => {

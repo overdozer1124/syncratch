@@ -26,6 +26,7 @@ export interface LocalEditorUiState {
 export interface GuiStoreLike {
   getState(): unknown;
   dispatch(action: unknown): unknown;
+  subscribe?(listener: () => void): () => void;
 }
 
 export interface ScratchGuiSlice {
@@ -96,14 +97,45 @@ export function updateMetricsAction(
   };
 }
 
+/** Scratch's default blocks scale; scroll 0/0 + this scale usually means "unset". */
+export const BLOCKS_DEFAULT_SCALE = 0.675;
+
+export function isDefaultWorkspaceViewport(
+  viewport: WorkspaceViewport | null | undefined,
+): boolean {
+  if (!viewport) return true;
+  return (
+    viewport.scale === BLOCKS_DEFAULT_SCALE &&
+    viewport.scrollX === 0 &&
+    viewport.scrollY === 0
+  );
+}
+
+/**
+ * Prefer live Redux metrics while they look intentional; otherwise keep a
+ * remembered viewport. Leaving the blocks tab often rewrites Redux metrics
+ * back to Scratch defaults without the user resetting scroll/zoom.
+ */
+export function chooseWorkspaceViewport(
+  reduxViewport: WorkspaceViewport | null,
+  rememberedViewport: WorkspaceViewport | null,
+): WorkspaceViewport | null {
+  if (!isDefaultWorkspaceViewport(reduxViewport)) return reduxViewport;
+  return rememberedViewport ?? reduxViewport;
+}
+
 export function captureLocalEditorUiState(
   store: GuiStoreLike,
   runtimeTargetId: string | null | undefined,
   toolboxCategoryId: string | null,
+  rememberedViewport: WorkspaceViewport | null = null,
 ): LocalEditorUiState {
   return {
     activeTabIndex: readActiveTabIndex(store),
-    viewport: readWorkspaceViewport(store, runtimeTargetId),
+    viewport: chooseWorkspaceViewport(
+      readWorkspaceViewport(store, runtimeTargetId),
+      rememberedViewport,
+    ),
     toolboxCategoryId,
   };
 }
