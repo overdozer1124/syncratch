@@ -53,6 +53,7 @@ export interface LocalUiRestoreHooks {
   restoreToolboxCategory?: (categoryId: string) => boolean;
   rememberedViewport?: () => WorkspaceViewport | null;
   rememberViewport?: (viewport: WorkspaceViewport | null) => void;
+  applyViewport?: (viewport: WorkspaceViewport) => void;
 }
 
 function targetName(target: EditingTargetLike): string | null {
@@ -196,5 +197,27 @@ export async function loadProjectPreservingEditingTarget(
       newRuntimeTargetId: newRuntimeId,
       restoreToolboxCategory: options.localUi.restoreToolboxCategory,
     });
+    // Scratch workspaceUpdate/resize can nudge scroll after the first restore.
+    // Re-apply once the current frame settles so the captured viewport sticks.
+    if (uiSnapshot?.viewport && newRuntimeId) {
+      await new Promise<void>(resolve => {
+        if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(() => resolve());
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+      seedViewportForRuntimeTarget(
+        options.localUi.store,
+        newRuntimeId,
+        uiSnapshot.viewport,
+      );
+      options.localUi.applyViewport?.(uiSnapshot.viewport);
+      options.localUi.rememberViewport?.(uiSnapshot.viewport);
+      restoreLocalEditorUiState(options.localUi.store, uiSnapshot, {
+        newRuntimeTargetId: newRuntimeId,
+        restoreToolboxCategory: options.localUi.restoreToolboxCategory,
+      });
+    }
   }
 }

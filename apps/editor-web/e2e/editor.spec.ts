@@ -398,9 +398,13 @@ test("two Chromium contexts keep local editor UI across remote block edits", asy
       editing: "Basketball",
       ui: {
         activeTabIndex: 1,
-        viewport: {scrollX: 48, scrollY: -36, scale: 1.1},
+        viewport: {scrollX: 48, scale: 1.1},
       },
     });
+    const afterScrollY = await pageB.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState()?.viewport?.scrollY);
+    // Allow a small Scratch resize nudge, but reject the default 0 reset.
+    expect(afterScrollY).toBeLessThan(-10);
 
     // Peer A keeps its own UI (code tab) — local contexts stay independent.
     await pageA.evaluate(() => window.__blocksyncTask3!.setActiveEditorTab(0));

@@ -882,6 +882,9 @@ async function applyCollaborativeProject(
                     rememberedWorkspaceViewport = viewport;
                   }
                 },
+                applyViewport: viewport => {
+                  applyWorkspaceViewport(viewport);
+                },
               }
             : undefined,
         },
