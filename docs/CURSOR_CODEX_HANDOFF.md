@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 06:27:07 JST |
+| 最終更新 | 2026-07-22 06:53:35 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `GO`（Gate 0 PASS確認済み） |
-| 現在の担当 | ユーザー（PR #13 merge指示待ち） |
-| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（完了・merge待ち） |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（次スライス指示待ち） |
+| 現在のTask | なし（PR #13 merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 100%（コードGO + Gate 0 PASS） |
+| Local-First実装進捗 | **100%**（PR #10 / PR #13 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/collab-local-ui-state-audit-f431` |
+| 作業ブランチ | `feat/local-first-pivot-impl` @ `152b426` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザーの merge 指示待ち。次スライスへ先行しない |
+| 次Task | ユーザー指示待ち。次スライスへ先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（Gate 0 PASS確認済み。PR #13 の Ready化・merge・次スライスはユーザー指示まで停止）。
+なし（PR #13 merge 済み。次スライスはユーザー指示まで停止）。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3900,5 +3900,27 @@ GitHub Gate 0:
 - merge指示があるまで次スライスへ着手しない。
 
 進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（実装・レビュー・Gate 0完了、merge待ち）。
+次の担当: ユーザー
+```
+
+### 2026-07-22 06:53:35 JST — Cursor（PR #13 merge 完了）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+PR: https://github.com/overdozer1124/syncratch/pull/13
+base: feat/local-first-pivot-impl
+head: cursor/collab-local-ui-state-audit-f431
+merge commit: 152b4262cb55489dee3b5899e00912cfaf98435c
+mergedAt: 2026-07-21T21:53:33Z
+
+実施:
+- Gate 0（timestamp追記後の再実行）PASS確認後に Ready 化
+- `gh pr merge --merge` で merge（branch削除なし）
+
+次:
+- 次スライスへ先行しない（ユーザー指示待ち）
+
+進捗: Local-First primary milestone 100% / UI hardening slice 100%（PR #13 merged）
 次の担当: ユーザー
 ```
