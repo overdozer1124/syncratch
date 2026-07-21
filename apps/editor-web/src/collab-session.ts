@@ -24,7 +24,12 @@ import {
 } from "@blocksync/collaboration-domain";
 import type {CollabProvider} from "@blocksync/collab-webrtc";
 import {electLeader, isLeader as leaderMatches, type LeadershipState} from "@blocksync/collab-leader";
-import type {ProjectDocument} from "@blocksync/project-schema";
+import type {ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
+import {
+  blockConnectivityScore,
+  isWeakerBlockGraph,
+  parseTargetJson,
+} from "./block-connectivity.js";
 
 export interface CollabReadinessInput {
   signalingUrl: string;
@@ -138,10 +143,15 @@ export interface BootstrapDiagnostics {
   signalingHost: string | null;
 }
 
+export interface NoteLocalChangeOptions {
+  /** Flush immediately instead of waiting for the debounce window. */
+  force?: boolean;
+}
+
 export interface CollabSession {
   start(options: {host: boolean}): HostPreflightResult | {ok: true};
   leave(): void;
-  noteLocalChange(): void;
+  noteLocalChange(options?: NoteLocalChangeOptions): void;
   reportDriveConflict(): void;
   clearDriveConflict(): void;
   canPersistToDrive(options?: {explicit?: boolean}): {ok: boolean; reason?: string};
@@ -166,6 +176,12 @@ const ICE_NEGOTIATION_STALL_MS = 45_000;
 const EMPTY_ROOM_STALL_MS = 120_000;
 /** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
 const MAX_SIGNALING_AUTO_RECONNECTS = 5;
+/**
+ * When the local graph gets less connected with the same block ids (typical
+ * mid-drag forever insert), wait longer before publishing so the settled nest
+ * can win over a detached snapshot.
+ */
+const CONNECTIVITY_REGRESSION_DEBOUNCE_MS = 1_000;
 
 function signalingHostFromUrl(url: string | undefined): string | null {
   if (!url || url.trim().length === 0) return null;
@@ -263,6 +279,44 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const currentTargetJson = (id: string): unknown => {
     const entry = domain.ydoc.getMap<Y.Map<unknown>>("targets").get(id);
     return entry instanceof Y.Map ? entry.get("json") : undefined;
+  };
+
+  const sharedTarget = (id: string): ScratchTarget | null =>
+    parseTargetJson(currentTargetJson(id));
+
+  const shouldPublishTarget = (
+    target: ScratchTarget,
+  ): boolean => {
+    const shared = sharedTarget(target.id);
+    if (!shared) return true;
+    // Never clobber a more-assembled peer stack with a mid-drag snapshot.
+    if (isWeakerBlockGraph(target, shared)) return false;
+    return true;
+  };
+
+  const dropStaleOrWeakerPending = (): void => {
+    for (const [targetId, pending] of [...pendingTargets.entries()]) {
+      const shared = sharedTarget(targetId);
+      if (!shared) continue;
+      const lastJson = lastLocalTargetJson.get(targetId);
+      const sharedJson = currentTargetJson(targetId);
+      // Remote moved past our last ack: drop pending only when it is not a
+      // stronger (more nested) local stack than the shared snapshot.
+      if (sharedJson !== undefined && sharedJson !== lastJson) {
+        if (blockConnectivityScore(pending) <= blockConnectivityScore(shared)) {
+          pendingTargets.delete(targetId);
+        }
+      }
+    }
+  };
+
+  const hasConnectivityRegression = (
+    previousJson: string | undefined,
+    next: ScratchTarget,
+  ): boolean => {
+    const previous = parseTargetJson(previousJson ?? null);
+    if (!previous) return false;
+    return isWeakerBlockGraph(next, previous);
   };
 
   const syncLocalToDoc = (): void => {
@@ -363,6 +417,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     };
 
     for (const [targetId, target] of pendingTargets) {
+      if (!shouldPublishTarget(target)) {
+        // Shared already has a more-assembled stack — drop the weaker pending.
+        continue;
+      }
       const needed = targetAssetIds(target);
       if (!needed.every(assetReady)) {
         deferred.set(targetId, target);
@@ -805,12 +863,35 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         suppressLocal = true;
         try {
-          await options.applyRemoteToLocal(result.document, result.assets, {
+          // If we still hold a stronger unsynced local stack, apply that
+          // instead of a weaker mid-drag remote snapshot, then publish it.
+          const applyDocument: ProjectDocument = {
+            ...result.document,
+            targets: result.document.targets.map(remoteTarget => {
+              const pending = pendingTargets.get(remoteTarget.id);
+              if (
+                pending &&
+                blockConnectivityScore(pending) >
+                  blockConnectivityScore(remoteTarget)
+              ) {
+                return pending;
+              }
+              return remoteTarget;
+            }),
+          };
+          await options.applyRemoteToLocal(applyDocument, result.assets, {
             mode: "update",
           });
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
             lastLocalTargetJson.set(target.id, JSON.stringify(target));
+          }
+          if (
+            pendingTargets.size > 0 ||
+            pendingTargetDeletions.size > 0 ||
+            pendingAssets.size > 0
+          ) {
+            pushPendingLocalChanges();
           }
         } catch {
           // Preserve last valid VM / revision.
@@ -835,16 +916,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     if (guestApplyInFlight && !createdThisRoom && !guestReady) {
       stagingChangedDuringGuestApply = true;
     }
-    // Same-target LWW: if Y.Doc already moved past our last synced snapshot,
-    // drop the stale pending local edit instead of republishing an older
-    // forever-stack / mid-drag snapshot over the peer's completed work.
-    for (const targetId of [...pendingTargets.keys()]) {
-      const sharedJson = currentTargetJson(targetId);
-      const lastJson = lastLocalTargetJson.get(targetId);
-      if (sharedJson !== undefined && sharedJson !== lastJson) {
-        pendingTargets.delete(targetId);
-      }
-    }
+    // Same-target LWW: drop stale pending only when the remote graph is at
+    // least as assembled. A mid-drag forever snapshot must not discard a
+    // stronger local nest that still needs to publish.
+    dropStaleOrWeakerPending();
     // Cancel the debounce push so a mid-edit VM snapshot cannot republish
     // after we drop stale pending and before loadProject finishes.
     if (localTimer) {
@@ -1045,13 +1120,24 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         void Promise.resolve(options.rollbackGuestInitialLocal());
       }
     },
-    noteLocalChange() {
+    noteLocalChange(changeOptions) {
       if (suppressLocal || !active) return;
       // Guests must not publish project edits before ready.
       if (!createdThisRoom && !guestReady) return;
       capturePendingLocalChanges();
       if (localTimer) clearTimeout(localTimer);
-      localTimer = setTimeout(doLocalPush, debounceMs);
+      if (changeOptions?.force) {
+        doLocalPush();
+        return;
+      }
+      let waitMs = debounceMs;
+      for (const [targetId, target] of pendingTargets) {
+        if (hasConnectivityRegression(lastLocalTargetJson.get(targetId), target)) {
+          waitMs = Math.max(waitMs, CONNECTIVITY_REGRESSION_DEBOUNCE_MS);
+          break;
+        }
+      }
+      localTimer = setTimeout(doLocalPush, waitMs);
     },
     reportDriveConflict() {
       conflict = true;

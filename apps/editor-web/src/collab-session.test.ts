@@ -47,13 +47,13 @@ function stage(): ScratchTarget {
   };
 }
 
-function sprite(id: string, name: string): ScratchTarget {
+function sprite(id: string, name: string, blocks?: ScratchTarget["blocks"]): ScratchTarget {
   const assetId = `${id}${"a".repeat(32 - id.length)}`;
   return {
     id,
     name,
     isStage: false,
-    blocks: {},
+    blocks: blocks ?? {},
     comments: {},
     currentCostume: 0,
     costumes: [costume(assetId, SPRITE_BYTES)],
@@ -123,6 +123,14 @@ function fakeVm(initial: ProjectDocument) {
     editTargetName(id: string, name: string) {
       const target = document.targets.find((t) => t.id === id)!;
       target.name = name;
+    },
+    replaceTarget(target: ScratchTarget) {
+      const index = document.targets.findIndex((t) => t.id === target.id);
+      if (index < 0) {
+        document.targets.push(structuredClone(target));
+        return;
+      }
+      document.targets[index] = structuredClone(target);
     },
     deleteTarget(id: string) {
       document.targets = document.targets.filter(target => target.id !== id);
@@ -1124,6 +1132,130 @@ describe("two-session convergence over WebRTC transport", () => {
     if (materializeA.ok) {
       expect(materializeA.document.targets.find(t => t.id === "s1")?.name)
         .toBe("CompleteStack");
+    }
+  });
+
+  it("keeps a stronger forever nest pending instead of letting a weaker remote win", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const block = (
+      id: string,
+      partial: Record<string, unknown>,
+    ): NonNullable<ScratchTarget["blocks"]>[string] =>
+      ({id, inputs: {}, fields: {}, shadow: false, ...partial}) as NonNullable<
+        ScratchTarget["blocks"]
+      >[string];
+    const incompleteBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "forever",
+        parent: null,
+        topLevel: true,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "flag",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+      move: block("move", {
+        opcode: "motion_movesteps",
+        next: null,
+        parent: null,
+        topLevel: true,
+      }),
+    };
+    const completeBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "forever",
+        parent: null,
+        topLevel: true,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "flag",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: "move",
+        parent: "forever",
+        topLevel: false,
+      }),
+      move: block("move", {
+        opcode: "motion_movesteps",
+        next: null,
+        parent: "turn",
+        topLevel: false,
+      }),
+    };
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(source);
+    const common = {
+      roomId: "room-forever-nest",
+      secret: "forever-nest-secret-forever-nest-1234",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      // Long debounce so complete stays pending while the weaker remote arrives.
+      debounceMs: 300,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    expect(a.start({host: true}).ok).toBe(true);
+    expect(b.start({host: false}).ok).toBe(true);
+    await flush(a, b);
+
+    vmB.replaceTarget(sprite("s1", "S1", completeBlocks));
+    b.noteLocalChange();
+
+    // A publishes a weaker same-id graph while B's complete nest is still pending.
+    vmA.replaceTarget(sprite("s1", "Detached", incompleteBlocks));
+    a.noteLocalChange({force: true});
+    await a.flush();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await flush(a, b);
+
+    const nested = (target: ScratchTarget | undefined): boolean => {
+      const forever = target?.blocks?.forever as
+        | {inputs?: {SUBSTACK?: [number, string]}}
+        | undefined;
+      const move = target?.blocks?.move as
+        | {parent?: string | null; topLevel?: boolean}
+        | undefined;
+      return forever?.inputs?.SUBSTACK?.[1] === "turn" &&
+        move?.parent === "turn" &&
+        move?.topLevel === false;
+    };
+
+    expect(nested(vmB.current().targets.find(target => target.id === "s1"))).toBe(true);
+    expect(nested(vmA.current().targets.find(target => target.id === "s1"))).toBe(true);
+    const materialize = a.domain.materialize();
+    expect(materialize.ok).toBe(true);
+    if (materialize.ok) {
+      expect(nested(materialize.document.targets.find(t => t.id === "s1"))).toBe(true);
     }
   });
 
