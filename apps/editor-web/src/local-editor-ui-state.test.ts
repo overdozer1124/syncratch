@@ -64,6 +64,16 @@ describe("local editor UI state", () => {
     ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
   });
 
+  it("prefers trusted memory over lagging Redux after intentional writes", () => {
+    expect(
+      chooseWorkspaceViewport(
+        {scrollX: 48, scrollY: -22, scale: 1.1},
+        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        {blocksTabActive: true, preferRemembered: true},
+      ),
+    ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
+  });
+
   it("uses Scratch defaults when switching to a target with no memory", () => {
     expect(viewportForTargetSelection(null)).toEqual(DEFAULT_WORKSPACE_VIEWPORT);
     expect(

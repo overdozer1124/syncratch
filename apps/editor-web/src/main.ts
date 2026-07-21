@@ -118,10 +118,14 @@ import {
   readWorkspaceViewport,
   seedViewportForRuntimeTarget,
   viewportForTargetSelection,
+  workspaceViewportsEqual,
   type GuiStoreLike,
   type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
-import {createLocalViewportMemory} from "./local-viewport-memory.js";
+import {
+  createLocalViewportMemory,
+  type ViewportMemorySource,
+} from "./local-viewport-memory.js";
 import {
   captureEditingSelection,
   loadProjectPreservingEditingTarget,
@@ -318,6 +322,8 @@ let lastSyncedEditingTargetId: string | null = null;
  * new target's metrics. Ignore those writes until a settle frame reapplies memory.
  */
 let suppressViewportMemoryCapture = false;
+/** True while a trusted local viewport write may not yet be mirrored in Redux. */
+let preferRememberedViewportCapture = false;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -435,6 +441,10 @@ const diagnostic = {
         current.localProjectId,
         selection?.documentId ?? null,
       ),
+      {
+        preferRemembered:
+          preferRememberedViewportCapture || suppressViewportMemoryCapture,
+      },
     );
   },
   setActiveEditorTab(activeTabIndex: number): void {
@@ -447,26 +457,25 @@ const diagnostic = {
     const targetId = vm.editingTarget?.id;
     if (!targetId) return false;
     // Cancel target-switch settle so it cannot revive a pre-pan viewport.
-    bumpUiRestoreEpoch();
+    const epoch = bumpUiRestoreEpoch();
     lastSyncedEditingTargetId = targetId;
-    suppressViewportMemoryCapture = false;
     const viewport = {scrollX, scrollY, scale};
     const selection = captureEditingSelection(
       vm.editingTarget,
       current.document,
     );
-    rememberViewportForSelection(selection, viewport);
+    // Suppress Redux→memory capture while Scratch may still report the previous
+    // Blockly scroll; settle reapplies the intentional viewport next frame.
+    suppressViewportMemoryCapture = true;
+    preferRememberedViewportCapture = true;
+    rememberViewportForSelection(selection, viewport, "trusted");
     seedViewportForRuntimeTarget(editorGuiState.store, targetId, viewport);
     applyWorkspaceViewport(viewport);
-    const stored = captureLocalEditorUiState(
-      editorGuiState.store,
-      targetId,
-      null,
-      viewportMemory.get(
-        current.localProjectId,
-        selection?.documentId ?? null,
-      ),
-    ).viewport;
+    scheduleViewportMemorySettle(targetId, selection, viewport, epoch);
+    const stored = viewportMemory.get(
+      current.localProjectId,
+      selection?.documentId ?? null,
+    );
     return Boolean(
       stored &&
         stored.scrollX === scrollX &&
@@ -921,7 +930,11 @@ async function applyCollaborativeProject(
                         selection?.documentId ?? null,
                       )
                     : null,
-                rememberViewportForSelection,
+                rememberViewportForSelection: (selection, viewport) =>
+                  rememberViewportForSelection(selection, viewport, "trusted"),
+                preferRememberedViewport: () =>
+                  preferRememberedViewportCapture ||
+                  suppressViewportMemoryCapture,
                 applyViewport: viewport => {
                   applyWorkspaceViewport(viewport);
                 },
@@ -1090,18 +1103,35 @@ function clearLocalUiMemoryForProjectReplacement(): void {
   viewportMemory.clearAll();
   lastSyncedEditingTargetId = null;
   suppressViewportMemoryCapture = false;
+  preferRememberedViewportCapture = false;
 }
 
 function rememberViewportForSelection(
   selection: EditingSelectionRef | null,
   viewport: WorkspaceViewport,
+  source: ViewportMemorySource = "trusted",
 ): void {
   if (!hasCurrent || !selection?.documentId) return;
   viewportMemory.set(
     current.localProjectId,
     selection.documentId,
     viewport,
+    source,
   );
+  if (source === "trusted") {
+    preferRememberedViewportCapture = true;
+  }
+}
+
+function clearPreferRememberedIfReduxMatches(
+  runtimeTargetId: string,
+  viewport: WorkspaceViewport,
+): void {
+  if (!editorGuiState) return;
+  const redux = readWorkspaceViewport(editorGuiState.store, runtimeTargetId);
+  if (workspaceViewportsEqual(redux, viewport)) {
+    preferRememberedViewportCapture = false;
+  }
 }
 
 function scheduleViewportMemorySettle(
@@ -1120,10 +1150,11 @@ function scheduleViewportMemorySettle(
         runtimeTargetId,
         viewport,
       );
-      rememberViewportForSelection(selection, viewport);
+      rememberViewportForSelection(selection, viewport, "trusted");
       if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
         applyWorkspaceViewport(viewport);
       }
+      clearPreferRememberedIfReduxMatches(runtimeTargetId, viewport);
     } catch {
       // Best-effort only.
     } finally {
@@ -1161,7 +1192,7 @@ function syncEditingTargetViewportFromMemory(
     editingTarget.id,
     viewport,
   );
-  rememberViewportForSelection(selection, viewport);
+  rememberViewportForSelection(selection, viewport, "trusted");
   if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
     applyWorkspaceViewport(viewport);
   }
@@ -1433,7 +1464,32 @@ async function getVm(): Promise<ScratchVm> {
           vm.editingTarget,
           current.document,
         );
-        rememberViewportForSelection(selection, viewport);
+        const trusted = viewportMemory.getEntry(
+          current.localProjectId,
+          selection?.documentId ?? null,
+        );
+        if (
+          preferRememberedViewportCapture &&
+          trusted?.source === "trusted" &&
+          !workspaceViewportsEqual(trusted.viewport, viewport)
+        ) {
+          // Scratch still reports the pre-write Blockly scroll — push the
+          // trusted value back instead of clobbering intentional defaults.
+          seedViewportForRuntimeTarget(
+            state.store,
+            editingId,
+            trusted.viewport,
+          );
+          applyWorkspaceViewport(trusted.viewport);
+          return;
+        }
+        rememberViewportForSelection(selection, viewport, "redux");
+        if (
+          trusted?.source === "trusted" &&
+          workspaceViewportsEqual(trusted.viewport, viewport)
+        ) {
+          preferRememberedViewportCapture = false;
+        }
       } catch {
         // ignore store subscription failures
       }

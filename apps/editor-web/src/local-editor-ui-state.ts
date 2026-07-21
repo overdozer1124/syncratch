@@ -128,20 +128,41 @@ export function viewportForTargetSelection(
   return rememberedViewport ?? DEFAULT_WORKSPACE_VIEWPORT;
 }
 
+export function workspaceViewportsEqual(
+  a: WorkspaceViewport | null | undefined,
+  b: WorkspaceViewport | null | undefined,
+): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.scrollX === b.scrollX &&
+    a.scrollY === b.scrollY &&
+    a.scale === b.scale
+  );
+}
+
 /**
  * Resolve which viewport to capture for a remote apply.
  *
  * On the blocks tab, Redux is authoritative — including an intentional return
  * to Scratch defaults — when an entry exists for the current runtime id. A
  * missing Redux entry (new runtime id before seed) is not intentional; fall
- * back to per-target memory. Off the blocks tab, Scratch rewrites metrics
- * unpredictably, so prefer the remembered value whenever one exists.
+ * back to per-target memory. When a trusted local write has not yet been
+ * mirrored by Scratch's lagging Blockly→Redux path, prefer that memory.
+ * Off the blocks tab, Scratch rewrites metrics unpredictably, so prefer the
+ * remembered value whenever one exists.
  */
 export function chooseWorkspaceViewport(
   reduxViewport: WorkspaceViewport | null,
   rememberedViewport: WorkspaceViewport | null,
-  options: {blocksTabActive: boolean},
+  options: {
+    blocksTabActive: boolean;
+    /** Trusted local write that Scratch may not have mirrored yet. */
+    preferRemembered?: boolean;
+  },
 ): WorkspaceViewport | null {
+  if (options.preferRemembered && rememberedViewport) {
+    return rememberedViewport;
+  }
   if (options.blocksTabActive) {
     return reduxViewport ?? rememberedViewport;
   }
@@ -153,6 +174,7 @@ export function captureLocalEditorUiState(
   runtimeTargetId: string | null | undefined,
   toolboxCategoryId: string | null,
   rememberedViewport: WorkspaceViewport | null = null,
+  options?: {preferRemembered?: boolean},
 ): LocalEditorUiState {
   const activeTabIndex = readActiveTabIndex(store);
   return {
@@ -160,7 +182,10 @@ export function captureLocalEditorUiState(
     viewport: chooseWorkspaceViewport(
       readWorkspaceViewport(store, runtimeTargetId),
       rememberedViewport,
-      {blocksTabActive: activeTabIndex === BLOCKS_TAB_INDEX},
+      {
+        blocksTabActive: activeTabIndex === BLOCKS_TAB_INDEX,
+        preferRemembered: options?.preferRemembered,
+      },
     ),
     toolboxCategoryId,
   };

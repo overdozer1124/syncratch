@@ -59,6 +59,11 @@ export interface LocalUiRestoreHooks {
     viewport: WorkspaceViewport,
   ) => void;
   applyViewport?: (viewport: WorkspaceViewport) => void;
+  /**
+   * When true, capture prefers per-target memory over lagging Redux metrics
+   * (e.g. after an intentional viewport write Scratch has not mirrored yet).
+   */
+  preferRememberedViewport?: () => boolean;
   /** Bump and return an epoch for this apply; deferred work must match it. */
   beginRestoreEpoch?: () => number;
   isRestoreEpochCurrent?: (epoch: number) => boolean;
@@ -184,6 +189,10 @@ export async function loadProjectPreservingEditingTarget(
         vm.editingTarget?.id,
         options.localUi.readToolboxCategoryId?.() ?? null,
         remembered,
+        {
+          preferRemembered:
+            options.localUi.preferRememberedViewport?.() ?? false,
+        },
       );
       if (uiSnapshot.viewport) {
         options.localUi.rememberViewportForSelection?.(

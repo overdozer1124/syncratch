@@ -49,4 +49,12 @@ describe("local viewport memory", () => {
       scale: 0.675,
     });
   });
+
+  it("tracks whether a viewport write was trusted or from Redux", () => {
+    const memory = createLocalViewportMemory();
+    memory.set("proj", "t", {scrollX: 1, scrollY: 2, scale: 1}, "trusted");
+    expect(memory.getEntry("proj", "t")?.source).toBe("trusted");
+    memory.set("proj", "t", {scrollX: 3, scrollY: 4, scale: 1}, "redux");
+    expect(memory.getEntry("proj", "t")?.source).toBe("redux");
+  });
 });
