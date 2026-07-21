@@ -1100,6 +1100,9 @@ async function joinRoom(): Promise<void> {
 
 function bumpUiRestoreEpoch(): number {
   uiRestoreEpoch += 1;
+  // Cancelled settles must not leave the capture suppress latch stuck closed,
+  // or real Blockly pan/zoom updates are ignored until the next successful settle.
+  suppressViewportMemoryCapture = false;
   return uiRestoreEpoch;
 }
 
@@ -1199,7 +1202,7 @@ function scheduleViewportMemorySettle(
     } catch {
       // Best-effort only.
     } finally {
-      if (epoch === uiRestoreEpoch) suppressViewportMemoryCapture = false;
+      suppressViewportMemoryCapture = false;
     }
   };
   if (typeof requestAnimationFrame === "function") {
