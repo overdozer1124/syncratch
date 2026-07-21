@@ -3576,3 +3576,35 @@ Phase 2: minimal implementation
 
 進捗: Local-First primary milestone 100% / 本UX hardening slice 0%（指示完了、Cursor着手待ち）。
 ```
+
+### 2026-07-22 05:28:11 JST — Cursor（local UI state audit / minimal preservation → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ブランチ: cursor/collab-local-ui-state-audit-f431
+提出 tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d（台帳コミット前）
+base: feat/local-first-pivot-impl
+
+Audit（実Chromium 2-context）:
+- active editor tab: remote applyでresetする → 再現。regular updateで復元対象。
+- Blockly viewport (scroll/scale): Reduxはコスチュームタブ離脱時にScratch defaultへ書換わる。意図的viewportはlocal memoryで保持し復元。scrollYはworkspaceUpdate/resizeで数pxずれることがあるがdefault 0へは戻らない。
+- toolbox category: Blockly global未露出のため本番restoreはbest-effort。今回の必須E2E対象外（tab/viewportを固定）。
+- selected sprite: 既存維持を回帰確認。
+
+実装（local-only、Y.Doc/ProjectDocumentへ書かない）:
+- apps/editor-web/src/local-editor-ui-state.ts
+- loadProjectPreservingEditingTarget: capture → load → seed remapped metrics → setEditingTarget → restore tab/toolbox; 2nd viewport applyはrAFで非await（suppress窓を延ばさない）
+- main.ts: EditorState保持、rememberedWorkspaceViewport、E2E diagnostics
+
+非目標のまま:
+- currentCostume等の共有作品状態
+- guest-initial / new / openでの前作品UI復元
+- 部分更新 / Chromebookヘッダー / PR #7 / block CRDT
+
+検証:
+- gate0:test PASS / gate0:collab PASS
+- editor-web typecheck PASS / test 176/176 PASS / build:e2e PASS
+- Playwright e2e/editor.spec.ts + collab.spec.ts 15/15 PASS（workers=1 と workers=2）
+
+次の担当: Codex
+```
