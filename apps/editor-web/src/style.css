@@ -72,6 +72,17 @@ body,
   gap: 8px;
 }
 
+.app-brand {
+  margin: 0;
+  padding-right: 4px;
+  font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  color: #fffef6;
+}
+
 .title-field,
 .invite-field {
   display: inline-flex;
