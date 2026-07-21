@@ -141,7 +141,7 @@ interface ScratchStorageInstance extends MemoryAssetStorage {
       assetType: unknown,
       assetId: string,
       dataFormat: string,
-    ): Promise<unknown>;
+    ): Promise<unknown> | null;
   }): void;
 }
 

@@ -291,6 +291,7 @@ test("editing, save, and reload stay local after initial static load", async ({
 test("two Chromium contexts converge different-target edits over WebRTC and recover locally", async ({
   browser,
 }) => {
+  test.setTimeout(180_000);
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
   await contextA.grantPermissions(
@@ -342,6 +343,22 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     "1人といっしょに作っています",
   );
 
+  // Exercise the real Scratch library path, not a synthetic target with
+  // pre-injected bytes. The collaboration memory helper must fall through to
+  // Scratch's CDN before the new target can be saved and published.
+  await pageA.getByRole("button", {name: "スプライトをえらぶ", exact: true}).first().click();
+  await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+  await expect(pageA.getByRole("button", {name: "Basketball", exact: true}))
+    .toBeVisible();
+  await expect(pageA.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
+  await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+    .toBeVisible({timeout: 20_000});
+  await expect(pageB.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
+
   await Promise.all([
     pageA.evaluate(() =>
       window.__blocksyncTask3!.createTestBlock("stage-collab-block", true)),
@@ -365,6 +382,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   // This distinguishes transport/domain convergence from a stale GUI surface.
   await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
+  await openPanel(pageA, "collab-panel");
   await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
   await expect(pageB.getByTestId("collab-status")).not.toContainText("リーダー");
   await pageB.evaluate(() =>

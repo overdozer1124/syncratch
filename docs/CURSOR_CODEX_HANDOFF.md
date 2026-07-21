@@ -42,11 +42,11 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 19:32:44 JST |
+| 最終更新 | 2026-07-21 21:40:40 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `BLOCK_SYNC_FIX_PUSHED_CI_PENDING` |
-| 現在の担当 | Codex CI確認 / ユーザー実機確認 |
-| 現在のTask | PR #10 共同編集ブロックグラフ収束修正 |
+| ワークフロー状態 | `LIBRARY_ASSET_FIX_READY_TO_PUSH` |
+| 現在の担当 | Codex PR反映 / ユーザー実機確認 |
+| 現在のTask | PR #10 新規ライブラリスプライト素材・保存修正 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
@@ -54,7 +54,7 @@
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | PR #10 CI完了後、修正版を再読込して実機2クライアントで forever connect/disconnect を確認 |
+| 次Task | 素材修正をPR #10へ反映し、実機で新規ライブラリスプライトの保存・同期を確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -3223,5 +3223,29 @@ PR #10 head: ffb4618（修正0997a7b含む）
 - 実ブラウザ新ルーム再試験: forever入れ子 Host→Guest / Guest変更→Host / 座標更新でblock巻き戻しなし いずれもPASS
 注意: 招待リンクが旧previewポート4173を含む場合あり。5173へ手動置換で接続成功。要確認。
 進捗: Local-First実装100% / 同期不具合解消 ~95%（CI完了待ち）
+```
+
+### 2026-07-21 21:40:40 JST — Codex（新規ライブラリスプライト保存失敗）
+
+```text
+状態: LIBRARY_ASSET_FIX_READY_TO_PUSH
+ユーザー報告: 共同編集中にBasketballを追加すると追加側が「このパソコンに保存できませんでした」、コスチュームが「？」、相手側へスプライトが届かない。
+根本原因（確度: 高）:
+- 共同編集用 createMemoryAssetLoader がcache miss/type mismatch時に `Promise.resolve(null)` を返していた。
+- scratch-storage 6.2.1 はhelperが同期的な `null` を返した場合だけ次の低優先度helperへ進む。Promiseを返すとresolve値がnullでもhelper chainを終了する。
+- そのためmemory helper装着後はScratch CDN helperへ到達せず、ライブラリ素材がbroken placeholderになった。runtime asset bytesが得られず、LocalProjectRecord保存と共同編集target publishも安全側で拒否された。
+修正:
+- memory asset cache miss/type mismatchは同期的nullを返し、Scratch CDN helperへfallbackさせる。
+- ScratchStorageInstanceのhelper契約を `Promise<unknown> | null` に修正。
+回帰試験:
+- 単体: cache missがPromiseではなく同期nullであることを固定。
+- 実Chromium 2-context WebRTC: 実ScratchライブラリからBasketballを追加し、追加側保存成功、相手側Basketball表示、相手側保存成功まで確認。
+検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- focused Playwright real Chromium: 1/1 PASS
+- git diff --check: PASS
+進捗: Local-First実装100% / 本素材不具合修正100%（PR反映・ユーザー実機確認待ち）。
 ```
 
