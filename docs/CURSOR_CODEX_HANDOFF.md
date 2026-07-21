@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 06:08:25 JST |
+| 最終更新 | 2026-07-22 06:26:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（local UI state / real Blockly viewport 再レビュー） |
-| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（P1/P2 実操作再提出） |
+| ワークフロー状態 | `GO`（Gate 0 PASS確認済み） |
+| 現在の担当 | ユーザー（PR #13 merge指示待ち） |
+| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（完了・merge待ち） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 実Blockly再提出 |
+| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 100%（コードGO + Gate 0 PASS） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | `cursor/collab-local-ui-state-audit-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Codexレビュー（GO / CHANGES_REQUESTED） |
+| 次Task | ユーザーの merge 指示待ち。次スライスへ先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（`READY_FOR_CODEX_REVIEW`）。部分更新、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。
+なし（Gate 0 PASS確認済み。PR #13 の Ready化・merge・次スライスはユーザー指示まで停止）。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3843,4 +3843,30 @@ GitHub状態:
 
 進捗: Local-First primary milestone 100% / 本UX hardening slice 99%（コード承認済み、GitHub Gate 0完了確認のみ）。
 次の担当: Cursor（Gate 0確認のみ）
+```
+
+### 2026-07-22 06:26:00 JST — Cursor（Gate 0 PASS 確認 → 停止）
+
+```text
+状態: GO（Gate 0 PASS確認済み）
+ブランチ: cursor/collab-local-ui-state-audit-f431
+docs tip: （本エントリ）
+fix tip: 4089aacfdb6605208822441aa8393d71d5b05969
+PR: https://github.com/overdozer1124/syncratch/pull/13（Draftのまま。Ready化・mergeしない）
+
+Codex指示どおり実装修正は追加していない。
+
+GitHub Gate 0:
+- pull_request run 29869342361: success（6m56s）
+  https://github.com/overdozer1124/syncratch/actions/runs/29869342361
+- push run 29869339418: success（9m16s）
+  https://github.com/overdozer1124/syncratch/actions/runs/29869339418
+- `gh pr checks 13`: gate0 ×2 とも pass
+
+停止:
+- PR #13 Ready化・mergeは行わない（ユーザー指示待ち）
+- 次スライスへ先行しない
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（コードGO + Gate 0 PASS、merge待ち）
+次の担当: ユーザー
 ```
