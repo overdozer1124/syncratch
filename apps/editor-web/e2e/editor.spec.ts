@@ -38,7 +38,7 @@ test("fresh load mounts the standalone GUI and reports local save ready", async 
   await expect(page.getByTestId("save-status")).toHaveText(
     "このパソコンに保存しました",
   );
-  await expect(page.getByText("うごき", {exact: true}).first()).toBeVisible();
+  await expect(page.getByText("動き", {exact: true}).first()).toBeVisible();
   await expect(
     page.locator('#scratch-gui [aria-label="設定メニュー"]'),
   ).toHaveCount(1);
@@ -102,7 +102,7 @@ test("no Google configuration keeps Drive disabled and local editing available",
   await waitUntilReady(page);
 
   await expect(page.getByTestId("drive-status")).toHaveText(
-    "このパソコンでは使えません",
+    "このパソコンでは Google ドライブを使えません",
   );
   await openPanel(page, "drive-panel");
   await expect(
@@ -345,7 +345,7 @@ test("two Chromium contexts keep independent sprite selection across remote edit
   try {
     await connectTwoCollabPeers(pageA, pageB);
 
-    await pageA.getByRole("button", {name: "スプライトをえらぶ", exact: true}).first().click();
+    await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
     await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
     await expect(pageA.getByRole("button", {name: "Basketball", exact: true}))
       .toBeVisible();
@@ -465,7 +465,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   // Exercise the real Scratch library path, not a synthetic target with
   // pre-injected bytes. The collaboration memory helper must fall through to
   // Scratch's CDN before the new target can be saved and published.
-  await pageA.getByRole("button", {name: "スプライトをえらぶ", exact: true}).first().click();
+  await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
   await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
   await expect(pageA.getByRole("button", {name: "Basketball", exact: true}))
     .toBeVisible();
