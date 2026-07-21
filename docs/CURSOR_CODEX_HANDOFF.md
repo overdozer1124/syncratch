@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 07:00:30 JST |
+| 最終更新 | 2026-07-22 08:51:47 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（mainline 最終受け入れ / promote-to-main PR レビュー） |
-| 現在のTask | `feat/local-first-pivot-impl` 全体の本流（`main`）統合準備 |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（次指示待ち） |
+| 現在のTask | なし（PR #15 を `main` へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 merge 済み） / mainline 受け入れ証跡提出 |
+| Local-First実装進捗 | **100%**（PR #10 / #13 merge 済み） / mainline 受け入れ証跡は `main` 取り込み済み |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/mainline-final-acceptance-f431` |
+| 作業ブランチ | `main`（受け入れ証跡 merge 後） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Codexレビュー（GO / CHANGES_REQUESTED）。default branch 切替・公開デプロイはユーザー指示後 |
+| 次Task | ユーザー指示待ち。default branch 切替・残 Draft retarget/close・公開デプロイ・Manual Google gates は未実施 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（`READY_FOR_CODEX_REVIEW`）。default branch の `main` 切替・残 Draft PR の retarget/close・公開デプロイはユーザー指示まで停止。
+なし（PR #15 merge 済み）。default branch の `main` 切替・残 Draft PR #5/#7 の retarget/close・公開デプロイはユーザー指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3960,4 +3960,28 @@ mergedAt: 2026-07-21T21:53:33Z
 
 進捗: Local-First primary 100% / mainline 受け入れ準備 100%（証跡提出、レビュー待ち）
 次の担当: Codex
+```
+
+### 2026-07-22 08:51:47 JST — Cursor（PR #15 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #15 → base main（docs-only 受け入れ証跡）
+ブランチ: cursor/mainline-final-acceptance-f431
+事前状態: READY_FOR_CODEX_REVIEW / Gate 0 PASS / MERGEABLE・CLEAN
+Codex: 共有台帳・PR reviews に GO / CHANGES_REQUESTED 未記録。ユーザー明示指示により merge 実行。
+
+実施:
+1. 台帳を MERGED に更新
+2. Draft 解除後、merge commit で main へ取り込み
+
+未実施（意図的・ユーザー追加指示待ち）:
+- GitHub default branch の main 切替（現 default は feat/local-first-pivot-impl）
+- 残 Draft PR #5/#7 の retarget/close
+- Manual Google OAuth/Drive gates
+- 公開デプロイ
+
+進捗: Local-First primary 100% / mainline 受け入れ証跡 main 取り込み 100%
+次の担当: ユーザー
 ```
