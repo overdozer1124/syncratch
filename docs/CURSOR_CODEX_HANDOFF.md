@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 22:57:39 JST |
+| 最終更新 | 2026-07-21 23:55:49 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `SPRITE_SELECTION_PRESERVATION_FIX_REQUIRED` |
-| 現在の担当 | Cursor（remote apply時のローカル選択復元） |
-| 現在のTask | PR #10 共同編集remote更新で選択スプライトが先頭へ戻る問題 |
+| ワークフロー状態 | `PR10_STABILIZATION_ACCEPTANCE_INSTRUCTED` |
+| 現在の担当 | Cursor（PR #10受け入れ固定・マージ準備） |
+| 現在のTask | PR #10を凍結し、共同編集受け入れE2E・手順・PR説明を完成させる |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **99%**（Stage 0〜5完了。同期・素材保存は実機PASS、選択保持UX修正待ち） |
+| Local-First実装進捗 | **99%**（Stage 0〜5と主要不具合修正完了。最終受け入れ・レビュー待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` / Codex worktree: `cursor/block-graph-sync-f431` |
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | regular remote apply前後で各ブラウザ固有のediting targetを復元し、2ブラウザE2Eを追加 |
+| 次Task | 選択保持を含む2ブラウザE2Eと実機チェックリストを追加し、PR #10をREADY_FOR_CODEX_REVIEWへする |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-regular remote applyの直前に現在のediting targetを安定した作品内ターゲット識別へ写像し、`vm.loadProject()` 完了後に新しいruntime targetへ解決して `vm.setEditingTarget()` で復元する。選択状態はY.Docへ書かず、各ブラウザ固有のUI状態として扱う。選択対象がremote側で削除された場合だけScratch標準の先頭sprite/stage fallbackを許す。guest-initialと明示的な別作品openは従来どおり新作品の既定選択でよい。VM runtime IDはloadごとに再生成され得るため、古いruntime IDをそのまま再利用しない。下記22:57:39の必須試験を追加してからCodexへ再提出する。
+PR #10へ新機能を追加せず、マージ候補として固定する。実Chromium 2-context E2Eに「双方がBを選択し、片側のB編集後も受信側がBのまま」「片側がAを編集しても相手のB選択は維持」を追加する。`docs/local-first/COLLAB_ACCEPTANCE.md` に新規room前提の短い実機手順を作り、forever nest/detach、Basketball追加、別sprite編集、B選択維持、ローカル保存、Syncratch表示、日本語（漢字）起動、招待URL originを確認する。Gate 0・editor-web typecheck/test/build:e2e・実E2Eを通し、PRタイトル/説明を現在の全範囲へ更新して `READY_FOR_CODEX_REVIEW` とする。PR #8/#9はまだcloseせず、#10への包含比較を台帳とPR本文へ記録する。Codex GO後に整理・close・mergeを行う。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3402,5 +3402,35 @@ Codex P1レビュー反映:
 - editor title / ツールバーブランド表示
 - README、local-first DEPLOYMENT/RECOVERY、root package.json name
 意図的に未変更: @blocksync/* npm scope、invite fragment blocksync-collab、__blocksyncTask3、歴史的設計仕様書
+```
+
+### 2026-07-21 23:55:49 JST — Codex（次作業: PR #10受け入れ固定・マージ準備）
+
+```text
+状態: PR10_STABILIZATION_ACCEPTANCE_INSTRUCTED
+判断: 次は候補1（PR整理）と候補2（共同編集受け入れチェックリスト）を一つのstabilization taskとして実施する。新機能は追加しない。
+
+現状確認:
+- PR #10 head a6c40b2。Draft、MERGEABLEだがGate 0実行中でUNSTABLE。
+- PR #10はlocal-first共同編集、bootstrap/reconnect、block収束、asset同期、選択保持、Syncratch改名、日本語（漢字）初期化まで包含する統合PR。base比較は67 files / 約8,900 insertionsで、これ以上の機能追加はレビューリスクが高い。
+- PR #9 head 1d82abbは `git cherry PR10 PR9` で `-`（patch-equivalent）。#10に実質包含済み。
+- PR #8の改名は#10にもad1b504として再実装されているがpatch-identicalではない。#8をcloseする前に、README/index/style/deployment/recovery/package名の意図が#10で全て満たされることを一覧確認する。
+
+Cursor実施内容:
+1. `apps/editor-web/e2e/editor.spec.ts` の実Chromium 2-context試験へ選択保持を追加する。双方B選択→peer AがB編集→peer BはBのまま、peer BがA編集→peer AはBのまま、かつblock同期・保存成功を確認する。unitだけで完了扱いにしない。
+2. `docs/local-first/COLLAB_ACCEPTANCE.md` を作り、新規room/hard reload前提で次を短く固定する: forever nest、detach、Basketball、別sprite編集、B選択維持、双方local save、Syncratch/シンクラッチ表示、日本語（漢字）初期化、invite URLのorigin/port一致。
+3. PR #10タイトルを現在の範囲へ変更し、本文に主要設計、既知限界（同一sprite blocksJson LWW、whole-project remote load）、自動/実機検証、#8/#9包含状況を記載する。
+4. Gate 0、@blocksync/editor-web test/typecheck/build:e2e、実Chromium 2-context E2Eを実行する。working tree clean、SHA、結果を台帳へ記録し `READY_FOR_CODEX_REVIEW` にする。
+5. PR #10はまだReady化・mergeしない。PR #8/#9もまだcloseしない。Codex GO後にユーザー承認のもと整理する。
+
+明示的な非目標:
+- remote apply部分更新
+- scroll/tab/costume等の追加UI状態監査
+- Chromebookヘッダー圧縮
+- invite実装修正（受け入れで失敗した場合のみ別finding）
+- PR #7性能改善
+- block単位CRDT
+
+進捗: Local-First primary track 99%（実装完了、最終受け入れとレビュー待ち）。
 ```
 
