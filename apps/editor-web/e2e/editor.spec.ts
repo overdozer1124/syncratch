@@ -322,6 +322,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   );
   const invite = await pageA.getByLabel("いっしょに作るリンク").inputValue();
   expect(invite).not.toContain("driveFileId");
+  await openPanel(pageA, "collab-panel");
   await pageA.getByRole("button", {name: "リンクをコピー"}).click();
   await expect(pageA.locator("#collab-feedback")).toHaveText(
     "コピーしました。いっしょに作りたい友だちに送ってね。",
@@ -360,6 +361,9 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     aSeesSpriteBlock: true,
     bSeesStageBlock: true,
   });
+  // The receiving VM and the actual Scratch Blockly workspace must both move.
+  // This distinguishes transport/domain convergence from a stale GUI surface.
+  await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
   await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
   await expect(pageB.getByTestId("collab-status")).not.toContainText("リーダー");
@@ -370,6 +374,7 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   );
   expect(await pageB.evaluate(async () =>
     (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
+  await openPanel(pageB, "collab-panel");
   await pageB.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
 
   await Promise.all([

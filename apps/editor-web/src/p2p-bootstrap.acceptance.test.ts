@@ -566,7 +566,7 @@ describe("§13 acceptance: Drive-independent P2P bootstrap", () => {
     poison.transact(() => {
       const targets = poison.getMap<Y.Map<unknown>>("targets");
       const entry = targets.get("s1");
-      entry?.set("json", "{not-json");
+      entry?.set("metadataJson", "{not-json");
     });
     const update = Y.encodeStateAsUpdate(
       poison,

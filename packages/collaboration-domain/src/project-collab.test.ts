@@ -116,10 +116,15 @@ describe("ProjectCollaborationDocument materialization", () => {
     const doc = new ProjectCollaborationDocument();
     const source = project([stage(), sprite("s1")]);
     doc.loadLocalProject(source, assetsFor(source));
-    // Target-granular storage: a per-target key exists in the shared map.
-    const targetsRoot = doc.ydoc.getMap("targets");
+    // Target sections are independent Yjs registers: metadata-only events
+    // cannot replace the block graph of the same sprite.
+    const targetsRoot = doc.ydoc.getMap<Y.Map<unknown>>("targets");
     expect(targetsRoot.has("stage")).toBe(true);
     expect(targetsRoot.has("s1")).toBe(true);
+    const spriteEntry = targetsRoot.get("s1")!;
+    expect(spriteEntry.get("metadataJson")).toEqual(expect.any(String));
+    expect(spriteEntry.get("blocksJson")).toEqual(expect.any(String));
+    expect(spriteEntry.has("json")).toBe(false);
   });
 
   it("propagates target deletion through Yjs updates", () => {
@@ -172,7 +177,7 @@ describe("different-target concurrent merge", () => {
   });
 });
 
-describe("same-target conflict semantics (documented)", () => {
+describe("same-target section conflict semantics", () => {
   it("resolves concurrent same-target edits to a single deterministic value", () => {
     const source = project([stage(), sprite("s1")]);
     const a = new ProjectCollaborationDocument();
@@ -191,9 +196,53 @@ describe("same-target conflict semantics (documented)", () => {
     if (!ra.ok || !rb.ok) return;
     const na = ra.document.targets.find((t) => t.id === "s1")!.name;
     const nb = rb.document.targets.find((t) => t.id === "s1")!.name;
-    // Documented: same-target writes are last-write-wins and converge.
+    // Documented: concurrent writes to the same target section are LWW.
     expect(na).toBe(nb);
     expect(["NameA", "NameB"]).toContain(na);
+  });
+
+  it("preserves a block edit when a peer concurrently moves the same sprite", () => {
+    const source = project([stage(), sprite("s1")]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    a.setTarget(sprite("s1", {
+      blocks: {
+        flag: {
+          id: "flag",
+          opcode: "event_whenflagclicked",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 20,
+          y: 20,
+        },
+      },
+    }));
+    b.setTarget(sprite("s1", {x: 42}));
+
+    const updateA = a.encodeState();
+    const updateB = b.encodeState();
+    a.applyRemoteUpdate(updateB);
+    b.applyRemoteUpdate(updateA);
+
+    for (const peer of [a, b]) {
+      const result = peer.materialize();
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const target = result.document.targets.find(item => item.id === "s1")!;
+      expect(target.x).toBe(42);
+      expect(target.blocks.flag).toBeDefined();
+    }
   });
 });
 
@@ -472,7 +521,8 @@ describe("remote state acceptance guards", () => {
     const targets = evil.getMap<Y.Map<unknown>>("targets");
     evil.transact(() => {
       const t = targets.get("s1")!;
-      t.set("json", JSON.stringify(sprite("s1", {costumes: []})));
+      const {blocks: _blocks, ...metadata} = sprite("s1", {costumes: []});
+      t.set("metadataJson", JSON.stringify(metadata));
     });
     const update = Y.encodeStateAsUpdate(evil);
 
@@ -515,8 +565,8 @@ describe("remote state acceptance guards", () => {
     evil.transact(() => {
       const t = targets.get("s1")!;
       t.set(
-        "json",
-        '{"id":"s1","__proto__":{"polluted":true},"blocks":{}}',
+        "metadataJson",
+        '{"id":"s1","__proto__":{"polluted":true}}',
       );
     });
     const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
@@ -621,7 +671,8 @@ describe("content-addressed assets", () => {
     const targets = evil.getMap<Y.Map<unknown>>("targets");
     evil.transact(() => {
       const t = targets.get("s1")!;
-      t.set("json", JSON.stringify(sprite("s1", {costumes: []})));
+      const {blocks: _blocks, ...metadata} = sprite("s1", {costumes: []});
+      t.set("metadataJson", JSON.stringify(metadata));
     });
     const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
     expect(outcome.accepted).toBe(false);

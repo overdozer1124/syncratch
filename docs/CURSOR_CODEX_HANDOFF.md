@@ -42,19 +42,19 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-19 04:38:00 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `PIVOT_DESIGN_READY` |
-| 現在の担当 | Cursor |
-| 現在のTask | Local-First pivot specification |
+| 最終更新 | 2026-07-21 19:18:44 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `BLOCK_SYNC_FIX_IMPLEMENTED` |
+| 現在の担当 | Cursor / ユーザー実機確認 |
+| 現在のTask | PR #10 共同編集ブロックグラフ収束修正 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **0%**（設計確定、Stage 0 未着手） |
+| Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `feat/local-first-pivot-impl` |
-| 作業worktree | `C:\cursor\NewScratchEditor-local-first-pivot` |
+| 作業ブランチ | `cursor/block-graph-sync-f431` |
+| 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 0 browser-safe core：V1 contract/hashを凍結したブラウザー安全境界と versioned LocalProjectRecord contract |
+| 次Task | 修正コミットをPR #10へ反映し、実機2クライアントで forever connect/disconnect を確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -3147,5 +3147,52 @@ Local-First実装進捗: Stage 0〜5 100%
 - Google実アカウントDrive操作は手動release gate（CIへ認証情報を置かない）
 - Apps Scriptは任意で、停止・quota超過でもCommunity editorを停止しない
 - AI、中央backup、大人数room、新School directoryは初回release対象外
+```
+
+### 2026-07-21 19:18:44 JST — Codex（PR #10 ブロックグラフ同期不全）
+
+```text
+状態: BLOCK_SYNC_FIX_IMPLEMENTED / USER_DEVICE_VALIDATION_PENDING
+対象: PR #10 head 3f2b37b9a4de0c0f461a30ea9ca8389822f440f2
+作業ブランチ: cursor/block-graph-sync-f431
+全体進捗: Local-First Stage 0〜5 100% / 本不具合修正 100%（実機確認待ち）
+
+根本原因（確度: 高）:
+1. collaboration-domain が ScratchTarget 全体を1個の Y.Map `json` に保存していた。座標・名前等の更新も同じスプライトの blocks を含む whole-target LWW となり、相手のブロック編集を丸ごと巻き戻した。
+2. collab-session の connectivity score ガードが「接続数の少ない状態」を mid-drag とみなし、意図した forever の切り離しも pending から破棄した。接続数だけでは両者を識別できない。
+3. remote apply 中に debounce timerをcancel/pendingをdropする経路が、上記の片方向に見える症状を増幅した。
+
+除外できた主因:
+- WebRTC は既存双方向試験と実Chromium 2-context E2Eで host→guest / guest→host とも更新を確認。
+- VM loadProject 後の Blockly 表示も、受信側SVG `[data-id="sprite-collab-block"]` の出現を実E2Eで確認。VMだけ更新されGUIが古い経路は今回の再現では否定。
+- VM moveBlock はグラフ変更後に PROJECT_CHANGED を発火するため、documentFromVm() の単純なイベント順逆転は主因ではない。
+
+修正:
+- target storageを `metadataJson` と `blocksJson` に分割。座標/名前/素材メタデータだけの更新が block graph を上書きしない。
+- legacy `json` はbootstrap読取のみ互換。現行peerが書くとsplit形式を正とする（mixed-version live roomは非対応）。
+- connectivity scoreによるpending破棄を撤廃。弱いgraphはmid-drag対策として1秒debounceするが、破棄しない。
+- pending local editをremote targetへfield-level 3-way rebaseし、再ベース後snapshotを送信キューにも戻す。意図したdetachと相手の座標更新を両方保持。
+
+追加/強化した再現:
+- 同一spriteで peer A がblocks追加、peer Bがx座標変更 → 修正前はblocks消失、修正後は双方保持。
+- guestがforeverを意図的にdetachしてpending中、hostが同一spriteのxを変更 → detachとx=42がhost/guest/shared Y.Docすべてで収束。
+- 実Chromium 2-context WebRTCで受信側VMだけでなくBlockly SVGにもremote blockが出現。
+
+検証:
+- @blocksync/collaboration-domain: 36/36 PASS
+- @blocksync/editor-web: 164/164 PASS
+- @blocksync/collab-webrtc: 35/35 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- Playwright 実Chromium 2-context WebRTC focused E2E: 1/1 PASS
+- git diff --check: PASS
+
+設計限界:
+- blocksJson内部はまだblock graph全体のLWW。同一spriteのblock graphを両peerが真に同時編集した場合は一方が決定的に勝つだけで、操作の意味的mergeはしない。
+- 完全な同時編集には、parent/next/input不変条件を保つblock単位CRDTまたはBlockly operation/transactionモデルが必要。単純なblock field分割は壊れたgraphを作るため採用しない。
+
+次の担当:
+- Cursor: 本コミットをPR #10へ取り込み/反映。
+- ユーザー: 実機2画面で host forever入れ子 → guest反映、guest detach → host反映、sprite移動でblockを巻き戻さないことを確認。
 ```
 

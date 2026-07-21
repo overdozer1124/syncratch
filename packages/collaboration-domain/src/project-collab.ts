@@ -1,19 +1,19 @@
 /**
  * @experimental Local-First project collaboration model (schema 2).
  *
- * The shared Y.Doc stores project state at TARGET granularity, not as a single
- * last-write-wins JSON blob:
+ * The shared Y.Doc stores project state below TARGET granularity, not as a
+ * single project or target last-write-wins JSON blob:
  *   - `meta`    : Y.Map with schemaVersion, extensions, monitors, and meta.
- *   - `targets` : Y.Map keyed by target id; each value is a per-target Y.Map
- *                 whose `json` holds the canonical ScratchTarget.
+ *   - `targets` : Y.Map keyed by target id; each value separates
+ *                 `metadataJson` from `blocksJson`. Coordinate/name/costume
+ *                 edits therefore cannot replace a peer's block graph.
  *   - `assets`  : Y.Map keyed by content-address md5ext; each value is the raw
  *                 Uint8Array. Because keys are content addresses, identical
  *                 asset writes converge without conflict.
  *
- * Concurrent edits to DIFFERENT targets merge (distinct keys). Concurrent edits
- * to the SAME target are last-write-wins on that target's `json` and converge to
- * a single deterministic value (see docs/CONFLICTS below). This is intentional
- * and is NOT distributed locking.
+ * Concurrent edits to different target sections merge. Concurrent writes to the
+ * same section (notably the same block graph) remain deterministic LWW. This is
+ * intentional for this transport generation and is NOT distributed locking.
  *
  * Origin tracking: local edits transact under LOCAL_ORIGIN and remote updates
  * apply under REMOTE_ORIGIN, so callers can bind VM -> Yjs and Yjs -> VM without
@@ -275,8 +275,30 @@ export class ProjectCollaborationDocument {
       entry = new Y.Map<unknown>();
       this.targets.set(target.id, entry);
     }
-    entry.set("id", target.id);
-    entry.set("json", JSON.stringify(target));
+    const {blocks, ...metadata} = target;
+    const metadataJson = JSON.stringify(metadata);
+    const blocksJson = JSON.stringify(blocks ?? {});
+    if (entry.get("id") !== target.id) entry.set("id", target.id);
+    if (entry.get("metadataJson") !== metadataJson) {
+      entry.set("metadataJson", metadataJson);
+    }
+    if (entry.get("blocksJson") !== blocksJson) {
+      entry.set("blocksJson", blocksJson);
+    }
+    // Accept a legacy target snapshot at bootstrap. Once a current peer writes
+    // the target, the split representation becomes authoritative. Mixed-version
+    // live rooms are intentionally unsupported because rooms are ephemeral.
+    if (entry.has("json")) entry.delete("json");
+  }
+
+  /** Read one target from either the split representation or a legacy json entry. */
+  getTarget(targetId: string): ScratchTarget | null {
+    const entry = this.targets.get(targetId);
+    if (!(entry instanceof Y.Map)) return null;
+    const decoded = decodeTargetEntry(entry);
+    if (!decoded.ok) return null;
+    const target = decoded.target as Partial<ScratchTarget>;
+    return typeof target.id === "string" ? target as ScratchTarget : null;
   }
 
   /** Update a single target locally (target-granular, local origin). */
@@ -553,6 +575,50 @@ function parseJsonField<T>(raw: unknown, fallback: T): T {
   }
 }
 
+type DecodedTargetEntry =
+  | {ok: true; target: unknown}
+  | {ok: false; message: string};
+
+function decodeTargetEntry(entry: Y.Map<unknown>): DecodedTargetEntry {
+  const metadataRaw = entry.get("metadataJson");
+  const blocksRaw = entry.get("blocksJson");
+  if (typeof metadataRaw === "string" || typeof blocksRaw === "string") {
+    if (typeof metadataRaw !== "string" || typeof blocksRaw !== "string") {
+      return {ok: false, message: "split target entry is incomplete"};
+    }
+    try {
+      const metadata = JSON.parse(metadataRaw) as unknown;
+      const blocks = JSON.parse(blocksRaw) as unknown;
+      if (
+        typeof metadata !== "object" ||
+        metadata === null ||
+        Array.isArray(metadata) ||
+        typeof blocks !== "object" ||
+        blocks === null ||
+        Array.isArray(blocks)
+      ) {
+        return {ok: false, message: "split target entry must contain objects"};
+      }
+      return {
+        ok: true,
+        target: {...metadata as Record<string, unknown>, blocks},
+      };
+    } catch {
+      return {ok: false, message: "split target entry is not valid JSON"};
+    }
+  }
+
+  const legacyRaw = entry.get("json");
+  if (typeof legacyRaw !== "string") {
+    return {ok: false, message: "target data missing"};
+  }
+  try {
+    return {ok: true, target: JSON.parse(legacyRaw)};
+  } catch {
+    return {ok: false, message: "target json is not valid JSON"};
+  }
+}
+
 function materializeAndValidate(
   ydoc: Y.Doc,
   limits: ProjectCollabLimits,
@@ -572,18 +638,12 @@ function materializeAndValidate(
       issues.push(issue("INVALID_DOCUMENT", "target entry is not a map", `targets.${id}`));
       return;
     }
-    const raw = entry.get("json");
-    if (typeof raw !== "string") {
-      issues.push(issue("INVALID_DOCUMENT", "target json missing", `targets.${id}`));
+    const decoded = decodeTargetEntry(entry);
+    if (!decoded.ok) {
+      issues.push(issue("INVALID_DOCUMENT", decoded.message, `targets.${id}`));
       return;
     }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      issues.push(issue("INVALID_DOCUMENT", "target json is not valid JSON", `targets.${id}`));
-      return;
-    }
+    const parsed = decoded.target;
     assertSafeKeys(parsed, issues, `targets.${id}`);
     targets.push(parsed as ScratchTarget);
   });

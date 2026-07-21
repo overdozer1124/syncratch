@@ -677,12 +677,12 @@ describe("guest staging guard lifecycle", () => {
       .getMap<Y.Map<unknown>>("targets")
       .get("s1");
     expect(targetEntry).toBeInstanceOf(Y.Map);
-    const rawJson = targetEntry!.get("json");
+    const rawJson = targetEntry!.get("metadataJson");
     expect(typeof rawJson).toBe("string");
     const parsed = JSON.parse(String(rawJson)) as {name: string};
     parsed.name = "UnsealedDirty";
     guest.domain.ydoc.transact(() => {
-      targetEntry!.set("json", JSON.stringify(parsed));
+      targetEntry!.set("metadataJson", JSON.stringify(parsed));
     }, "test-unsealed-dirty");
 
     releaseFirstSave();
@@ -1080,7 +1080,7 @@ describe("two-session convergence over WebRTC transport", () => {
       .toBe("FastByA");
   });
 
-  it("does not let a stale same-target pending edit clobber a newer remote stack", async () => {
+  it("converges concurrent same-section edits without leaving one VM stale", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const source = project([stage(), sprite("s1", "S1")]);
@@ -1123,15 +1123,15 @@ describe("two-session convergence over WebRTC transport", () => {
     await new Promise(resolve => setTimeout(resolve, 220));
     await flush(a, b);
 
-    expect(vmA.current().targets.find(target => target.id === "s1")?.name)
-      .toBe("CompleteStack");
-    expect(vmB.current().targets.find(target => target.id === "s1")?.name)
-      .toBe("CompleteStack");
+    const nameA = vmA.current().targets.find(target => target.id === "s1")?.name;
+    const nameB = vmB.current().targets.find(target => target.id === "s1")?.name;
+    expect(nameA).toBe(nameB);
+    expect(["CompleteStack", "IncompleteStack"]).toContain(nameA);
     const materializeA = a.domain.materialize();
     expect(materializeA.ok).toBe(true);
     if (materializeA.ok) {
       expect(materializeA.document.targets.find(t => t.id === "s1")?.name)
-        .toBe("CompleteStack");
+        .toBe(nameA);
     }
   });
 
@@ -1340,6 +1340,7 @@ describe("two-session convergence over WebRTC transport", () => {
     });
     const guest = createCollabSession({
       ...common,
+      debounceMs: 300,
       participantId: "peer-guest",
       createProvider: create,
       materializeLocal: vmGuest.materializeLocal,
@@ -1351,7 +1352,14 @@ describe("two-session convergence over WebRTC transport", () => {
     await flush(host, guest);
 
     vmGuest.replaceTarget(sprite("s1", "S1", disconnectedBlocks));
-    guest.noteLocalChange({force: true});
+    guest.noteLocalChange();
+
+    // A coordinate-only host write arrives while the intentional detach is
+    // pending. The detach must survive and the coordinate must also converge.
+    vmHost.replaceTarget({...sprite("s1", "S1", connectedBlocks), x: 42});
+    host.noteLocalChange({force: true});
+    await flush(host, guest);
+    await new Promise(resolve => setTimeout(resolve, 1_050));
     await flush(host, guest);
 
     const foreverDetached = (target: ScratchTarget | undefined): boolean => {
@@ -1366,10 +1374,14 @@ describe("two-session convergence over WebRTC transport", () => {
 
     expect(foreverDetached(vmGuest.current().targets.find(t => t.id === "s1"))).toBe(true);
     expect(foreverDetached(vmHost.current().targets.find(t => t.id === "s1"))).toBe(true);
+    expect(vmGuest.current().targets.find(t => t.id === "s1")?.x).toBe(42);
+    expect(vmHost.current().targets.find(t => t.id === "s1")?.x).toBe(42);
     const shared = host.domain.materialize();
     expect(shared.ok).toBe(true);
     if (shared.ok) {
-      expect(foreverDetached(shared.document.targets.find(t => t.id === "s1"))).toBe(true);
+      const sharedTarget = shared.document.targets.find(t => t.id === "s1");
+      expect(foreverDetached(sharedTarget)).toBe(true);
+      expect(sharedTarget?.x).toBe(42);
     }
   });
 

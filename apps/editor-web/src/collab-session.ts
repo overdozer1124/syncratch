@@ -26,7 +26,6 @@ import type {CollabProvider} from "@blocksync/collab-webrtc";
 import {electLeader, isLeader as leaderMatches, type LeadershipState} from "@blocksync/collab-leader";
 import type {ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
 import {
-  blockConnectivityScore,
   isWeakerBlockGraph,
   parseTargetJson,
 } from "./block-connectivity.js";
@@ -277,27 +276,33 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const isSeeded = (): boolean => domain.ydoc.getMap("targets").size > 0;
 
   const currentTargetJson = (id: string): unknown => {
-    const entry = domain.ydoc.getMap<Y.Map<unknown>>("targets").get(id);
-    return entry instanceof Y.Map ? entry.get("json") : undefined;
+    const target = domain.getTarget(id);
+    return target ? JSON.stringify(target) : undefined;
   };
 
-  const sharedTarget = (id: string): ScratchTarget | null =>
-    parseTargetJson(currentTargetJson(id));
-
-  const dropStaleOrWeakerPending = (): void => {
-    for (const [targetId, pending] of [...pendingTargets.entries()]) {
-      const shared = sharedTarget(targetId);
-      if (!shared) continue;
-      const lastJson = lastLocalTargetJson.get(targetId);
-      const sharedJson = currentTargetJson(targetId);
-      if (sharedJson === undefined || sharedJson === lastJson) continue;
-      // Peer advanced past our last ack. Keep pending only when it is a
-      // strictly stronger block nest than the shared snapshot (finish a
-      // forever stack). Otherwise drop — including name-only stale edits
-      // and mid-drag graphs weaker than the peer.
-      if (isWeakerBlockGraph(shared, pending)) continue;
-      pendingTargets.delete(targetId);
+  const mergePendingTarget = (
+    baseJson: string | undefined,
+    pending: ScratchTarget,
+    remote: ScratchTarget,
+  ): ScratchTarget => {
+    const base = parseTargetJson(baseJson ?? null);
+    if (!base) return pending;
+    const baseRecord = base as unknown as Record<string, unknown>;
+    const pendingRecord = pending as unknown as Record<string, unknown>;
+    const mergedRecord = structuredClone(remote) as unknown as Record<string, unknown>;
+    const keys = new Set([...Object.keys(baseRecord), ...Object.keys(pendingRecord)]);
+    for (const key of keys) {
+      if (key === "id") continue;
+      if (JSON.stringify(baseRecord[key]) === JSON.stringify(pendingRecord[key])) {
+        continue;
+      }
+      if (pendingRecord[key] === undefined) {
+        delete mergedRecord[key];
+      } else {
+        mergedRecord[key] = structuredClone(pendingRecord[key]);
+      }
     }
+    return mergedRecord as unknown as ScratchTarget;
   };
 
   const hasConnectivityRegression = (
@@ -849,20 +854,20 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         suppressLocal = true;
         try {
-          // If we still hold a stronger unsynced local stack, apply that
-          // instead of a weaker mid-drag remote snapshot, then publish it.
+          // Rebase every pending local field onto the newest remote target.
+          // Connectivity is not a quality signal: a weaker graph may be an
+          // intentional detach, so it must survive unrelated remote metadata.
           const applyDocument: ProjectDocument = {
             ...result.document,
             targets: result.document.targets.map(remoteTarget => {
               const pending = pendingTargets.get(remoteTarget.id);
-              if (
-                pending &&
-                blockConnectivityScore(pending) >
-                  blockConnectivityScore(remoteTarget)
-              ) {
-                return pending;
-              }
-              return remoteTarget;
+              return pending
+                ? mergePendingTarget(
+                    lastLocalTargetJson.get(remoteTarget.id),
+                    pending,
+                    remoteTarget,
+                  )
+                : remoteTarget;
             }),
           };
           const applied = await options.applyRemoteToLocal(applyDocument, result.assets, {
@@ -871,20 +876,27 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           if (applied === false) return;
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
-            lastLocalTargetJson.set(target.id, JSON.stringify(target));
-          }
-          if (
-            pendingTargets.size > 0 ||
-            pendingTargetDeletions.size > 0 ||
-            pendingAssets.size > 0
-          ) {
-            pushPendingLocalChanges();
+            // Pending edits still need their pre-edit base for the next rebase.
+            if (pendingTargets.has(target.id)) {
+              // Publish the rebased snapshot, not the pre-remote snapshot;
+              // otherwise its stale metadata could undo the remote change.
+              pendingTargets.set(target.id, target);
+            } else {
+              lastLocalTargetJson.set(target.id, JSON.stringify(target));
+            }
           }
         } catch {
           // Preserve last valid VM / revision.
           issueCodes = ["REMOTE_APPLY_FAILED"];
         } finally {
           suppressLocal = false;
+        }
+        if (
+          pendingTargets.size > 0 ||
+          pendingTargetDeletions.size > 0 ||
+          pendingAssets.size > 0
+        ) {
+          pushPendingLocalChanges();
         }
       })
       .catch(() => undefined);
@@ -902,23 +914,6 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     markProgress("peer");
     if (guestApplyInFlight && !createdThisRoom && !guestReady) {
       stagingChangedDuringGuestApply = true;
-    }
-    // Same-target LWW: drop stale pending only when the remote graph is at
-    // least as assembled. A mid-drag forever snapshot must not discard a
-    // stronger local nest that still needs to publish.
-    dropStaleOrWeakerPending();
-    // Cancel the debounce push so a mid-edit VM snapshot cannot republish
-    // after we drop stale pending and before loadProject finishes.
-    if (localTimer) {
-      clearTimeout(localTimer);
-      localTimer = null;
-    }
-    if (
-      pendingTargets.size > 0 ||
-      pendingTargetDeletions.size > 0 ||
-      pendingAssets.size > 0
-    ) {
-      pushPendingLocalChanges();
     }
     if (!createdThisRoom && !guestReady) {
       scheduleGuestEvaluate();
@@ -1012,6 +1007,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   provider.on("awareness", recomputeLeadership);
 
   const doLocalPush = (): void => {
+    if (suppressLocal) {
+      localTimer = setTimeout(doLocalPush, Math.max(debounceMs, 20));
+      return;
+    }
     localTimer = null;
     pushPendingLocalChanges();
   };
