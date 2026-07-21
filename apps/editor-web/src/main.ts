@@ -70,6 +70,7 @@ import {readSb3File} from "./import-file.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
+import {loadProjectPreservingEditingTarget} from "./load-project-preserving-editing-target.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
 import {staticAssetUrl} from "./static-url.js";
@@ -121,6 +122,8 @@ interface VmBlocks {
 interface ScratchVm {
   attachStorage(storage: ScratchStorageInstance): void;
   loadProject(project: unknown): Promise<void>;
+  setEditingTarget(targetId: string): void;
+  editingTarget?: {id?: string} | null;
   toJSON(): string;
   on(event: string, listener: () => void): void;
   emit(event: string): void;
@@ -701,7 +704,12 @@ async function applyCollaborativeProject(
         generation === collaborationGeneration && collabSession !== null,
       async load(recordToLoad) {
         attachLocalStorage(recordToLoad);
-        await vm.loadProject(documentToProjectJson(recordToLoad.document));
+        // Guest-initial may still restore a previous local project on cancel;
+        // keep the user's selected sprite across that load too.
+        await loadProjectPreservingEditingTarget(
+          vm,
+          documentToProjectJson(recordToLoad.document),
+        );
       },
       persist: candidate => store.createOrReplace(candidate, null),
       remove: saved => store.delete(saved.localProjectId),
@@ -754,7 +762,13 @@ async function applyCollaborativeProject(
       generation === collaborationGeneration && collabSession !== null,
     async load(recordToLoad) {
       attachLocalStorage(recordToLoad);
-      await vm.loadProject(documentToProjectJson(recordToLoad.document));
+      // Remote collab applies use full loadProject, which Scratch resets to the
+      // first sprite. Restore the local editing target so peer edits do not
+      // yank the user's selected sprite (e.g. B → A).
+      await loadProjectPreservingEditingTarget(
+        vm,
+        documentToProjectJson(recordToLoad.document),
+      );
     },
     persist: candidate => store.createOrReplace(candidate, previous.revision),
     commit(saved, {persisted}) {

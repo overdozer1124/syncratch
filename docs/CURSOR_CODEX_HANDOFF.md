@@ -3321,3 +3321,14 @@ PR #10 head: afee93b（code head 9d8e276 + 台帳）
 進捗: Local-First実装100% / 素材不具合修正100% / サーバ準備完了（ユーザー実機確認待ち）
 ```
 
+### 2026-07-21 22:51:15 JST — Cursor（共同編集時のスプライト選択維持）
+
+```text
+状態: EDITING_TARGET_PRESERVE_IMPLEMENTED
+ユーザー報告: 双方がスプライトBを選択中に片方でブロック追加すると、もう一方がスプライトAへ強制切替される。
+根本原因: リモート適用が毎回 vm.loadProject を呼び、Scratch VM の installTargets(wholeProject=true) が editingTarget を targets[1]（先頭スプライト）へリセットする。選択復元がなかった。
+修正: loadProjectPreservingEditingTarget で load 前後に editingTarget.id を保存・復元。共同編集の guest-initial / update 適用経路に接続。
+検証: typecheck PASS、unit 2/2 PASS。
+次: ユーザーが hard reload + 新ルームで、B選択のまま相手の編集を受けても選択が維持されることを確認。
+```
+
