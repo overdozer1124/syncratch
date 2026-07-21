@@ -284,29 +284,19 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const sharedTarget = (id: string): ScratchTarget | null =>
     parseTargetJson(currentTargetJson(id));
 
-  const shouldPublishTarget = (
-    target: ScratchTarget,
-  ): boolean => {
-    const shared = sharedTarget(target.id);
-    if (!shared) return true;
-    // Never clobber a more-assembled peer stack with a mid-drag snapshot.
-    if (isWeakerBlockGraph(target, shared)) return false;
-    return true;
-  };
-
   const dropStaleOrWeakerPending = (): void => {
     for (const [targetId, pending] of [...pendingTargets.entries()]) {
       const shared = sharedTarget(targetId);
       if (!shared) continue;
       const lastJson = lastLocalTargetJson.get(targetId);
       const sharedJson = currentTargetJson(targetId);
-      // Remote moved past our last ack: drop pending only when it is not a
-      // stronger (more nested) local stack than the shared snapshot.
-      if (sharedJson !== undefined && sharedJson !== lastJson) {
-        if (blockConnectivityScore(pending) <= blockConnectivityScore(shared)) {
-          pendingTargets.delete(targetId);
-        }
-      }
+      if (sharedJson === undefined || sharedJson === lastJson) continue;
+      // Peer advanced past our last ack. Keep pending only when it is a
+      // strictly stronger block nest than the shared snapshot (finish a
+      // forever stack). Otherwise drop — including name-only stale edits
+      // and mid-drag graphs weaker than the peer.
+      if (isWeakerBlockGraph(shared, pending)) continue;
+      pendingTargets.delete(targetId);
     }
   };
 
@@ -417,10 +407,6 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     };
 
     for (const [targetId, target] of pendingTargets) {
-      if (!shouldPublishTarget(target)) {
-        // Shared already has a more-assembled stack — drop the weaker pending.
-        continue;
-      }
       const needed = targetAssetIds(target);
       if (!needed.every(assetReady)) {
         deferred.set(targetId, target);

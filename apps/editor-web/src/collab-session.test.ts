@@ -1259,6 +1259,120 @@ describe("two-session convergence over WebRTC transport", () => {
     }
   });
 
+  it("lets a guest publish an intentional forever disconnect to the host", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const block = (
+      id: string,
+      partial: Record<string, unknown>,
+    ): NonNullable<ScratchTarget["blocks"]>[string] =>
+      ({id, inputs: {}, fields: {}, shadow: false, ...partial}) as NonNullable<
+        ScratchTarget["blocks"]
+      >[string];
+    const connectedBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "goto",
+        parent: null,
+        topLevel: true,
+      }),
+      goto: block("goto", {
+        opcode: "motion_goto",
+        next: "forever",
+        parent: "flag",
+        topLevel: false,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: "goto",
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: false,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+    };
+    const disconnectedBlocks: ScratchTarget["blocks"] = {
+      flag: block("flag", {
+        opcode: "event_whenflagclicked",
+        next: "goto",
+        parent: null,
+        topLevel: true,
+      }),
+      goto: block("goto", {
+        opcode: "motion_goto",
+        next: null,
+        parent: "flag",
+        topLevel: false,
+      }),
+      forever: block("forever", {
+        opcode: "control_forever",
+        next: null,
+        parent: null,
+        inputs: {SUBSTACK: [2, "turn"]},
+        topLevel: true,
+      }),
+      turn: block("turn", {
+        opcode: "motion_turnright",
+        next: null,
+        parent: "forever",
+        topLevel: false,
+      }),
+    };
+    const source = project([stage(), sprite("s1", "S1", connectedBlocks)]);
+    const vmHost = fakeVm(source);
+    const vmGuest = fakeVm(source);
+    const common = {
+      roomId: "room-guest-disconnect",
+      secret: "guest-disconnect-secret-guest-disc",
+      debounceMs: 0,
+    };
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: vmHost.materializeLocal,
+      applyRemoteToLocal: vmHost.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      ...common,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: vmGuest.materializeLocal,
+      applyRemoteToLocal: vmGuest.applyRemoteToLocal,
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    expect(guest.start({host: false}).ok).toBe(true);
+    await flush(host, guest);
+
+    vmGuest.replaceTarget(sprite("s1", "S1", disconnectedBlocks));
+    guest.noteLocalChange({force: true});
+    await flush(host, guest);
+
+    const foreverDetached = (target: ScratchTarget | undefined): boolean => {
+      const forever = target?.blocks?.forever as
+        | {parent?: string | null; topLevel?: boolean}
+        | undefined;
+      const goto = target?.blocks?.goto as {next?: string | null} | undefined;
+      return forever?.parent == null &&
+        forever?.topLevel === true &&
+        (goto?.next == null || goto.next === "");
+    };
+
+    expect(foreverDetached(vmGuest.current().targets.find(t => t.id === "s1"))).toBe(true);
+    expect(foreverDetached(vmHost.current().targets.find(t => t.id === "s1"))).toBe(true);
+    const shared = host.domain.materialize();
+    expect(shared.ok).toBe(true);
+    if (shared.ok) {
+      expect(foreverDetached(shared.document.targets.find(t => t.id === "s1"))).toBe(true);
+    }
+  });
+
   it("propagates a local target deletion to every peer", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
