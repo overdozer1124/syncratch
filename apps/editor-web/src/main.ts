@@ -446,6 +446,10 @@ const diagnostic = {
     if (!editorGuiState || !hasCurrent) return false;
     const targetId = vm.editingTarget?.id;
     if (!targetId) return false;
+    // Cancel target-switch settle so it cannot revive a pre-pan viewport.
+    bumpUiRestoreEpoch();
+    lastSyncedEditingTargetId = targetId;
+    suppressViewportMemoryCapture = false;
     const viewport = {scrollX, scrollY, scale};
     const selection = captureEditingSelection(
       vm.editingTarget,
