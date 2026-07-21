@@ -11,6 +11,12 @@ const indexHtml = await readFile(join(dist, "index.html"), "utf8");
 if (!indexHtml.includes(`${base}generated/gui/scratch-gui-standalone.js`)) {
   throw new Error(`Static GUI asset is not rooted at ${base}`);
 }
+if (!indexHtml.includes('rel="preload"') || !indexHtml.includes("as=\"script\"")) {
+  throw new Error("Production index must preload the Scratch GUI script");
+}
+if (/<script[^>]+scratch-gui-standalone\.js/i.test(indexHtml)) {
+  throw new Error("Scratch GUI must load asynchronously, not via a blocking script tag");
+}
 if (indexHtml.includes("collab-harness")) {
   throw new Error("Production build must not publish the E2E collaboration harness");
 }
