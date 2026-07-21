@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 06:53:35 JST |
+| 最終更新 | 2026-07-22 07:00:30 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次スライス指示待ち） |
-| 現在のTask | なし（PR #13 merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（mainline 最終受け入れ / promote-to-main PR レビュー） |
+| 現在のTask | `feat/local-first-pivot-impl` 全体の本流（`main`）統合準備 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / PR #13 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 merge 済み） / mainline 受け入れ証跡提出 |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `feat/local-first-pivot-impl` @ `152b426` |
+| 作業ブランチ | `cursor/mainline-final-acceptance-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。次スライスへ先行しない |
+| 次Task | Codexレビュー（GO / CHANGES_REQUESTED）。default branch 切替・公開デプロイはユーザー指示後 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #13 merge 済み。次スライスはユーザー指示まで停止）。
+なし（`READY_FOR_CODEX_REVIEW`）。default branch の `main` 切替・残 Draft PR の retarget/close・公開デプロイはユーザー指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
