@@ -3393,3 +3393,14 @@ Codex P1レビュー反映:
 次: hard reload + 新ルームで双方B選択のまま相手編集を受けてもB維持を確認
 ```
 
+### 2026-07-21 23:49:01 JST — Cursor（製品名を Syncratch / シンクラッチ に統一）
+
+```text
+状態: PRODUCT_RENAME_SYNCRATCH
+正式名称: Syncratch（シンクラッチ）
+変更:
+- editor title / ツールバーブランド表示
+- README、local-first DEPLOYMENT/RECOVERY、root package.json name
+意図的に未変更: @blocksync/* npm scope、invite fragment blocksync-collab、__blocksyncTask3、歴史的設計仕様書
+```
+

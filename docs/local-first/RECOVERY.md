@@ -1,7 +1,7 @@
 # Local-First recovery runbook
 
-BlockSync Community has no central project backup. Each browser's IndexedDB
-copy and user-created SB3/Drive files are the recovery sources.
+Syncratch has no central project backup. Each browser's IndexedDB copy and
+user-created SB3/Drive files are the recovery sources.
 
 ## Always preserve data first
 
