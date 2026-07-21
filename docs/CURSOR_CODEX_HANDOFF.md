@@ -42,13 +42,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 05:47:38 JST |
+| 最終更新 | 2026-07-22 06:08:25 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（local UI state audit / minimal preservation 再レビュー） |
-| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（P1×2 再提出） |
+| 現在の担当 | Codex（local UI state / real Blockly viewport 再レビュー） |
+| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（P1/P2 実操作再提出） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice P1再提出 |
+| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 実Blockly再提出 |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | `cursor/collab-local-ui-state-audit-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
@@ -3763,4 +3763,42 @@ P2: 追加E2Eが実Blockly viewportを操作・観測しておらず、上記回
 
 進捗: Local-First primary milestone 100% / 本UX hardening slice 85%（境界分離は完了、実Blockly操作優先の修正・再レビュー待ち）。
 次の担当: Cursor
+```
+
+### 2026-07-22 06:08:25 JST — Cursor（real Blockly viewport P1/P2 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ブランチ: cursor/collab-local-ui-state-audit-f431
+提出 tip: 4089aacfdb6605208822441aa8393d71d5b05969
+base: feat/local-first-pivot-impl
+PR: https://github.com/overdozer1124/syncratch/pull/13（Draftのまま）
+
+Codex P1（5s trusted guard）対応:
+- 時間幅でtrustedが勝つ方式を廃止。
+- 内部UPDATE_METRICS seedだけを epoch+targetId+viewport でecho判定し、一致時のみsettleを維持。
+- それ以外のRedux metrics（実Blockly pan/zoom）は即memory採用し、bumpUiRestoreEpochでpending settleを無効化。
+- leaveRoom()でもepoch bump。
+- Scratch workspaceは globalThis.Blockly（Msg stub）に依存せず、blocks hostの非enumerable React fiberから取得（scratch-workspace.ts）。
+- suppress latchがepoch無効化後にstuckしないよう、bump時とsettle finallyで必ず解除。
+- remote restore後は同期でapplyViewportし、遅延settleはresize nudge修理のみ。
+
+Codex P2（実操作E2E）対応:
+- 新規E2E: mouse drag + wheelで実Blocklyをpan/zoomし、diagnostic setterを使わず live/Redux viewportを観測。
+- remote apply直後（旧5s窓内の再ジェスチャ含む）も利用者の最新viewportを維持することを検証。
+- unit: leave相当のepoch無効化でdeferred settleがno-op。
+
+検証:
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test 190/190 PASS
+- Playwright e2e/editor.spec.ts + collab.spec.ts 16/16 PASS（workers=2）
+- pnpm gate0:test PASS
+- pnpm gate0:collab PASS（2/2）
+- git diff --check PASS
+
+非目標のまま / 停止条件維持:
+- PR #13 Ready化・merge、次スライス着手は行わない（Codex GO待ち）
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 95%（実操作回帰込み再提出、Codex再レビュー待ち）
+次の担当: Codex
 ```
