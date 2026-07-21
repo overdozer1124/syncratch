@@ -3924,3 +3924,31 @@ mergedAt: 2026-07-21T21:53:33Z
 進捗: Local-First primary milestone 100% / UI hardening slice 100%（PR #13 merged）
 次の担当: ユーザー
 ```
+
+### 2026-07-22 07:06:39 JST — Codex（共同編集リンク作成失敗: 実行環境同期）
+
+```text
+状態: WAITING_USER_RETEST
+事象:
+- ホストで「いっしょに作るリンクを作る」を押すと「リンクを作れませんでした。インターネットをたしかめてください」と表示。
+
+診断結果:
+- 実行worktree `C:\cursor\NewScratchEditor-local-first-pivot` は origin/feat/local-first-pivot-impl より87commit遅れ（9341830）だった。
+- sourceは旧Drive必須createRoom、配信物/5173画面は新local-first UIという不整合状態だった。
+- preview 4174/4180は長時間起動したまま、distも旧生成日時だった。
+- signaling `ws://127.0.0.1:4455` はLISTEN中でTCP疎通PASS。インターネット断そのものは確認されない。
+
+実施:
+- clean worktreeを `git pull --ff-only` で統合済みtip 48b94c499a496dbf6c15ecee63c57f6e8e256258へ更新。
+- `pnpm --filter @blocksync/editor-web build` PASS。
+- preview 4174が新production bundle `assets/main-DhXSluty.js` を配信することを確認。
+- コード変更なし。承認済み設計書変更なし。
+
+次の確認:
+1. ユーザーは開いているSyncratchをハードリロード（Ctrl+F5）し、リンク作成を再試行する。
+2. 成功したら本件はruntime driftとして完了。
+3. まだ失敗する場合は、利用URL（5173 / 4174 / 4180等）と発生時刻を記録する。次スライスでは `createRoom()` の汎用 `catch {}` を、例外codeを診断ログへ残しつつ子ども向け表示を維持する形に修正し、materialize/preflight/WebSocket constructorのどこで失敗したか固定する。
+
+進捗: Local-First primary milestone 100% / 本障害対応 80%（環境同期・build・signaling疎通完了、ユーザー再試験待ち）。
+次の担当: ユーザー
+```
