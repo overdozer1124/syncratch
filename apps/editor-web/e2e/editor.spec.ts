@@ -332,9 +332,300 @@ async function connectTwoCollabPeers(
   return invite;
 }
 
+async function panBlocklyWorkspace(
+  page: Page,
+  deltaX: number,
+  deltaY: number,
+): Promise<void> {
+  const svg = page.locator('#scratch-gui svg.blocklySvg').first();
+  await expect(svg).toBeVisible({timeout: 20_000});
+  const box = await svg.boundingBox();
+  expect(box).toBeTruthy();
+  const startX = box!.x + box!.width * 0.62;
+  const startY = box!.y + box!.height * 0.55;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY + deltaY, {steps: 8});
+  await page.mouse.up();
+}
+
+async function zoomBlocklyWorkspace(page: Page, deltaY: number): Promise<void> {
+  const svg = page.locator('#scratch-gui svg.blocklySvg').first();
+  await expect(svg).toBeVisible({timeout: 20_000});
+  const box = await svg.boundingBox();
+  expect(box).toBeTruthy();
+  await page.mouse.move(box!.x + box!.width * 0.62, box!.y + box!.height * 0.55);
+  await page.mouse.wheel(0, deltaY);
+}
+
 // Real WebRTC rooms contend for CPU/signaling when run in parallel workers.
 test.describe("real WebRTC collaboration", () => {
   test.describe.configure({mode: "serial"});
+
+test("two Chromium contexts keep local editor UI across remote block edits", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  try {
+    await connectTwoCollabPeers(pageA, pageB, "shared-drive-ui-state");
+
+    await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
+    await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+    await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+      .toBeVisible({timeout: 20_000});
+
+    expect(await pageA.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+    expect(await pageB.evaluate(
+      name => window.__blocksyncTask3!.selectTargetByName(name),
+      "Basketball",
+    )).toBe(true);
+
+    const spriteA = await pageB.evaluate(() => {
+      const names = window.__blocksyncTask3!.collaborationDebug().vmTargets
+        .filter(target => !target.isStage)
+        .map(target => target.name);
+      return names.find(name => name !== "Basketball") ?? null;
+    });
+    expect(spriteA).toBeTruthy();
+
+    // Per-target viewports must not leak across sprites.
+    expect(await pageB.evaluate(name => {
+      window.__blocksyncTask3!.selectTargetByName(name);
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.setWorkspaceViewport(0, 0, 0.675);
+    }, spriteA)).toBe(true);
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(1);
+      return window.__blocksyncTask3!.setWorkspaceViewport(48, -36, 1.1);
+    })).toBe(true);
+    const before = await pageB.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState());
+    expect(before?.activeTabIndex).toBe(1);
+    expect(before?.viewport).toMatchObject({scrollX: 48, scrollY: -36, scale: 1.1});
+
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "ui-state-remote-block",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "ui-state-remote-block",
+          "Basketball",
+        )),
+      editing: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.editingTargetName()),
+      ui: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLocalEditorUiState()),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      editing: "Basketball",
+      ui: {
+        activeTabIndex: 1,
+        viewport: {scrollX: 48, scale: 1.1},
+      },
+    });
+    const afterScrollY = await pageB.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState()?.viewport?.scrollY);
+    // Allow a small Scratch resize nudge, but reject the default 0 reset.
+    expect(afterScrollY).toBeLessThan(-10);
+
+    // Sprite A's default viewport must remain default (no leak from Basketball).
+    expect(await pageB.evaluate(name => {
+      window.__blocksyncTask3!.selectTargetByName(name);
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.getLocalEditorUiState()?.viewport;
+    }, spriteA)).toMatchObject({scrollX: 0, scrollY: 0, scale: 0.675});
+
+    // Intentional return to default on Basketball must stick across remote apply.
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.setWorkspaceViewport(0, 0, 0.675);
+    })).toBe(true);
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "ui-state-default-viewport-block",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "ui-state-default-viewport-block",
+          "Basketball",
+        )),
+      viewport: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLocalEditorUiState()?.viewport),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      viewport: {scrollX: 0, scrollY: 0, scale: 0.675},
+    });
+
+    // Peer A keeps its own UI (code tab) — local contexts stay independent.
+    await pageA.evaluate(() => window.__blocksyncTask3!.setActiveEditorTab(0));
+    expect(await pageA.evaluate(() =>
+      window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex)).toBe(0);
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(1);
+      return window.__blocksyncTask3!.getLocalEditorUiState()?.activeTabIndex;
+    })).toBe(1);
+  } finally {
+    await Promise.all([contextA.close(), contextB.close()]);
+  }
+});
+
+test("real Blockly pan/zoom survives remote apply without diagnostic setters", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+
+  try {
+    await connectTwoCollabPeers(pageA, pageB, "shared-drive-real-viewport");
+
+    await pageA.getByRole("button", {name: "スプライトを選ぶ", exact: true}).first().click();
+    await pageA.getByRole("button", {name: "Basketball", exact: true}).click();
+    await expect(pageB.getByRole("button", {name: "Basketball", exact: true}))
+      .toBeVisible({timeout: 20_000});
+
+    expect(await pageB.evaluate(() => {
+      window.__blocksyncTask3!.selectTargetByName("Basketball");
+      window.__blocksyncTask3!.setActiveEditorTab(0);
+      return window.__blocksyncTask3!.editingTargetName();
+    })).toBe("Basketball");
+
+    const before = await pageB.evaluate(() => ({
+      live: window.__blocksyncTask3!.getLiveWorkspaceViewport(),
+      redux: window.__blocksyncTask3!.getReduxWorkspaceViewport(),
+    }));
+    expect(before.live).toBeTruthy();
+
+    await panBlocklyWorkspace(pageB, -120, -80);
+    await zoomBlocklyWorkspace(pageB, -180);
+
+    let afterGesture!: {
+      live: {scrollX: number; scrollY: number; scale: number};
+      redux: {scrollX: number; scrollY: number; scale: number} | null;
+    };
+    await expect.poll(async () => {
+      const current = await pageB.evaluate(() => ({
+        live: window.__blocksyncTask3!.getLiveWorkspaceViewport(),
+        redux: window.__blocksyncTask3!.getReduxWorkspaceViewport(),
+      }));
+      if (!current.live || !before.live) return null;
+      const moved =
+        current.live.scrollX !== before.live.scrollX ||
+        current.live.scrollY !== before.live.scrollY ||
+        current.live.scale !== before.live.scale;
+      const reduxMatches = Boolean(
+        current.redux &&
+          current.redux.scrollX === current.live.scrollX &&
+          current.redux.scrollY === current.live.scrollY &&
+          current.redux.scale === current.live.scale,
+      );
+      if (moved && reduxMatches) {
+        afterGesture = {
+          live: current.live,
+          redux: current.redux,
+        };
+        return true;
+      }
+      return false;
+    }, {timeout: 10_000}).toBe(true);
+
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "real-viewport-remote-1",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "real-viewport-remote-1",
+          "Basketball",
+        )),
+      live: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLiveWorkspaceViewport()),
+      redux: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getReduxWorkspaceViewport()),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      live: {
+        scrollX: afterGesture.live.scrollX,
+        scrollY: afterGesture.live.scrollY,
+        scale: afterGesture.live.scale,
+      },
+      redux: {
+        scrollX: afterGesture.live.scrollX,
+        scrollY: afterGesture.live.scrollY,
+        scale: afterGesture.live.scale,
+      },
+    });
+
+    // Immediate second gesture (within the old 5s guard window) must win.
+    await panBlocklyWorkspace(pageB, 90, 40);
+    let secondGesture!: {scrollX: number; scrollY: number; scale: number};
+    await expect.poll(async () => {
+      const live = await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLiveWorkspaceViewport());
+      if (!live) return false;
+      if (
+        live.scrollX !== afterGesture.live.scrollX ||
+        live.scrollY !== afterGesture.live.scrollY
+      ) {
+        secondGesture = live;
+        return true;
+      }
+      return false;
+    }, {timeout: 10_000}).toBe(true);
+
+    await pageA.evaluate(() =>
+      window.__blocksyncTask3!.createTestBlockOnTarget(
+        "real-viewport-remote-2",
+        "Basketball",
+      ));
+    await expect.poll(async () => ({
+      hasBlock: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.hasBlockOnTarget(
+          "real-viewport-remote-2",
+          "Basketball",
+        )),
+      live: await pageB.evaluate(() =>
+        window.__blocksyncTask3!.getLiveWorkspaceViewport()),
+    }), {timeout: 30_000}).toMatchObject({
+      hasBlock: true,
+      live: {
+        scrollX: secondGesture.scrollX,
+        scrollY: secondGesture.scrollY,
+        scale: secondGesture.scale,
+      },
+    });
+  } finally {
+    await Promise.all([contextA.close(), contextB.close()]);
+  }
+});
 
 test("two Chromium contexts keep independent sprite selection across remote edits", async ({
   browser,
@@ -648,6 +939,24 @@ declare global {
       hasBlockOnTarget(id: string, targetName: string): boolean;
       selectTargetByName(targetName: string): boolean;
       editingTargetName(): string | null;
+      getLocalEditorUiState(): {
+        activeTabIndex: number;
+        viewport: {scrollX: number; scrollY: number; scale: number} | null;
+        toolboxCategoryId: string | null;
+      } | null;
+      getReduxWorkspaceViewport(): {
+        scrollX: number;
+        scrollY: number;
+        scale: number;
+      } | null;
+      getLiveWorkspaceViewport(): {
+        scrollX: number;
+        scrollY: number;
+        scale: number;
+      } | null;
+      setActiveEditorTab(activeTabIndex: number): void;
+      setWorkspaceViewport(scrollX: number, scrollY: number, scale: number): boolean;
+      selectToolboxCategory(categoryId: string): boolean;
       getState(): {
         localProjectId: string;
         revision: number;

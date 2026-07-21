@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 05:05:45 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `LOCAL_UI_STATE_AUDIT_INSTRUCTED` |
-| 現在の担当 | Cursor（監査・再現・最小保全） |
-| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全 |
+| 最終更新 | 2026-07-22 06:27:07 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `GO`（Gate 0 PASS確認済み） |
+| 現在の担当 | ユーザー（PR #13 merge指示待ち） |
+| 現在のTask | regular remote apply時のローカルUI状態監査と最小保全（完了・merge待ち） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 merge 済み） / UI hardening slice 100%（コードGO + Gate 0 PASS） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | Cursorが `feat/local-first-pivot-impl` 最新から `cursor/collab-local-ui-state-audit-f431` を作成 |
-| 作業worktree | Cursorが新規作成 |
+| 作業ブランチ | `cursor/collab-local-ui-state-audit-f431` |
+| 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 実ChromiumでUI状態resetを観測し、再現したlocal-only状態だけをregular remote apply前後で復元 |
+| 次Task | ユーザーの merge 指示待ち。次スライスへ先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-`feat/local-first-pivot-impl` の最新から `cursor/collab-local-ui-state-audit-f431` を作成する。まず実Chromium 2-contextで、remote block更新を受けた側の active tab（コード／コスチューム／音）、Blockly viewport（scroll X/Y・zoom）、toolbox category が変化するかを観測し、結果を試験で固定する。実際にresetするlocal-only状態だけをregular remote apply前後でcapture/restoreする。UI状態をProjectDocument・Y.Doc・相手peerへ同期しない。currentCostume等の作品状態は復元対象にしない。guest-initial、新規作品、別作品openは従来どおり。部分更新、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。監査結果・実装・実Chromium E2E・全Gateを台帳へ記録し `READY_FOR_CODEX_REVIEW` で停止する。
+なし（Gate 0 PASS確認済み。PR #13 の Ready化・merge・次スライスはユーザー指示まで停止）。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3575,4 +3575,330 @@ Phase 2: minimal implementation
 - `READY_FOR_CODEX_REVIEW` で停止し、次候補へ先行しない。
 
 進捗: Local-First primary milestone 100% / 本UX hardening slice 0%（指示完了、Cursor着手待ち）。
+```
+
+### 2026-07-22 05:28:11 JST — Cursor（local UI state audit / minimal preservation → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ブランチ: cursor/collab-local-ui-state-audit-f431
+提出 tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d（実装 tip） / docs tip = branch HEAD
+base: feat/local-first-pivot-impl
+
+Audit（実Chromium 2-context）:
+- active editor tab: remote applyでresetする → 再現。regular updateで復元対象。
+- Blockly viewport (scroll/scale): Reduxはコスチュームタブ離脱時にScratch defaultへ書換わる。意図的viewportはlocal memoryで保持し復元。scrollYはworkspaceUpdate/resizeで数pxずれることがあるがdefault 0へは戻らない。
+- toolbox category: Blockly global未露出のため本番restoreはbest-effort。今回の必須E2E対象外（tab/viewportを固定）。
+- selected sprite: 既存維持を回帰確認。
+
+実装（local-only、Y.Doc/ProjectDocumentへ書かない）:
+- apps/editor-web/src/local-editor-ui-state.ts
+- loadProjectPreservingEditingTarget: capture → load → seed remapped metrics → setEditingTarget → restore tab/toolbox; 2nd viewport applyはrAFで非await（suppress窓を延ばさない）
+- main.ts: EditorState保持、rememberedWorkspaceViewport、E2E diagnostics
+
+非目標のまま:
+- currentCostume等の共有作品状態
+- guest-initial / new / openでの前作品UI復元
+- 部分更新 / Chromebookヘッダー / PR #7 / block CRDT
+
+検証:
+- gate0:test PASS / gate0:collab PASS
+- editor-web typecheck PASS / test 176/176 PASS / build:e2e PASS
+- Playwright e2e/editor.spec.ts + collab.spec.ts 15/15 PASS（workers=1 と workers=2）
+
+次の担当: Codex
+```
+
+### 2026-07-22 05:34:00 JST — Codex（local UI state preservation review → CHANGES_REQUESTED）
+
+```text
+状態: CHANGES_REQUESTED
+判定: NO-GO（P1×2）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/doc tip: cff1e9f4b401405478ee4f7d4046deb77ba97c02
+- implementation tip: 908e7b79a37eda1fca0cf4b741e85055987cee8d
+
+P1-1: remembered viewport がtarget/project境界を持たず、別スプライト・別作品の表示位置を復元する
+- `main.ts` の `rememberedWorkspaceViewport` は単一global値で、stable ProjectDocument target identityにもlocal project/sessionにもkeyされていない。
+- Redux metricsがScratch defaultのとき `chooseWorkspaceViewport` はこの単一値を採用するため、Sprite Bで記憶したviewportをSprite Aへ、さらにnew/open/別room後の作品へ持ち込める。
+- blocks tab中のsubscriptionはdefault値を記憶しないため、利用者が意図的にdefault viewportへ戻しても古い非default値が復活する。
+- これは「target依存viewportはstable identity経由」「guest-initial/new/openで前作品UIを復元しない」「peer/local contextを不必要に移動しない」という本スライスの境界に反する。
+
+必要な修正:
+- viewport memoryを少なくとも local project/session + stable document target id 単位に分離し、runtime id再生成後は既存target identity mappingで対応させる。
+- new project / explicit open / guest-initial / session replacementでは旧作品memoryを使わない。
+- default viewportも利用者の正当な最新状態として扱える設計にし、古い非default値を無条件に優先しない。
+
+必要な回帰試験:
+- Aをdefault、Bを非defaultにしてregular remote apply後も各targetが自身のviewportを維持し、B→Aへ漏れない。
+- 旧作品で非defaultを記憶後、新規作成または明示openした作品のdefault viewportへ漏れない。
+- 非defaultから利用者がdefaultへ戻した後のremote applyで古い値が復活しない。
+
+P1-2: 非await rAFの2nd restoreが最新操作・session有効性を確認せず、remote apply完了後のlocal UIを巻き戻す
+- `load-project-preserving-editing-target.ts` は同期restore後、次frameに同じsnapshotを再適用するが、generation/current session/current targetのguardもcancelもない。
+- callbackはviewportだけでなく `restoreLocalEditorUiState` を再実行し、active tabとtoolbox categoryも再dispatchする。
+- remote applyが返って利用者がtab/targetを変更した直後、またはleave/new/open/次のloadが起きた後でも、古いsnapshotが新しい操作へ上書きされ得る。
+- best-effort catchは例外だけを隠し、stale mutationを防がない。
+
+必要な修正:
+- 遅延処理はviewportのGUI settleに必要な最小操作だけに限定し、tab/toolboxを2度目に復元しない。
+- monotonically increasing generation、session token、または同等のvalidity guardで、後続apply・leave・new/open・target変更後のcallbackをno-opにする。
+- remote apply直後に行われた利用者操作が常に勝つことを契約化する。
+
+必要な回帰試験:
+- fake rAFでload完了後にtab/targetを変更してからcallbackをflushし、新しい選択が維持される。
+- 2つのapplyまたはsession replacementをrAF前に行い、古いcallbackが新しい状態へ書き込まない。
+
+検証証跡:
+- Codex: @blocksync/editor-web test 176/176 PASS
+- Codex: @blocksync/editor-web typecheck PASS
+- Codex: git diff --check PASS / review前working tree clean
+- GitHub PR #13: OPEN / Draft / MERGEABLE、Gate 0 push・pull_requestは判定時点でIN_PROGRESS
+
+停止条件:
+- 上記P1×2と回帰試験を別commitで修正し、全gate結果とclean statusを記録してREADY_FOR_CODEX_REVIEWへ戻す。
+- PR #13のReady化・merge、次スライス着手は行わない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 75%（実装済み、P1×2修正・再レビュー待ち）。
+次の担当: Cursor
+```
+
+### 2026-07-22 05:47:38 JST — Cursor（local UI state P1×2 再提出 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ブランチ: cursor/collab-local-ui-state-audit-f431
+提出 tip: 6d50157b6f609f9f7de1f150a5f86af53b8c7300
+docs tip: （本エントリ commit）
+base: feat/local-first-pivot-impl
+PR: https://github.com/overdozer1124/syncratch/pull/13（Draftのまま）
+
+Codex P1×2 対応:
+P1-1 viewport memory境界
+- localProjectId + stable document target id で分離（local-viewport-memory.ts）
+- blocks tab: Redux権威（意図的default含む）。Redux欠落時はmemoryへfallback
+- off-tab: memory優先（Scratchのdefault/ゴミ書換を無視）
+- new/open/guest-initial/loadRecord で clearAll
+- ターゲット切替時: setEditingTarget前に per-target memory（なければScratch default）をseed
+- 意図的viewport書き込みは trusted source。ScratchのBlockly→Redux遅延に対し短時間memory優先 + live Blockly一致時のみRedux→memory採用
+
+P1-2 遅延rAF settle
+- 2nd restoreはviewportのみ（tab/toolbox再dispatchなし）
+- uiRestoreEpoch + currentRuntimeEditingTargetId でstale no-op
+- ターゲット切替/意図的panでepoch bumpし、古いsettleを無効化
+
+回帰試験:
+- A=default / B=非default → remote apply後も相互に漏れない（E2E）
+- 非default→意図的default後のremote applyで古い値が復活しない（E2E）
+- fake rAF: load後のtab/target変更および二重applyで古いcallbackが勝たない（unit）
+
+検証:
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test 185/185 PASS
+- Playwright e2e/editor.spec.ts + collab.spec.ts 15/15 PASS（workers=2）
+- pnpm gate0:test PASS
+- pnpm gate0:collab PASS（2/2）
+- git diff --check PASS / working tree clean（docs commit前）
+
+非目標のまま:
+- currentCostume等の共有作品状態
+- guest-initial/new/openでの前作品UI「復元機能」追加（漏えい禁止は維持）
+- 部分更新 / Chromebookヘッダー / PR #7 / block CRDT
+
+停止条件維持:
+- PR #13のReady化・merge、次スライス着手は行わない（Codex GO待ち）
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 90%（P1再提出済み、Codex再レビュー待ち）
+次の担当: Codex
+```
+
+### 2026-07-22 05:56:35 JST — Codex（local UI state P1再レビュー → CHANGES_REQUESTED）
+
+```text
+状態: CHANGES_REQUESTED
+判定: NO-GO（P1×1 / P2×1）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 366c45a901d1f443371d6d0e86094a6208bb5d8d
+- fix tip: 6d50157b6f609f9f7de1f150a5f86af53b8c7300
+
+解消確認:
+- 前回P1-1: viewport memoryは localProjectId + stable document target id に分離され、new/open/guest-initial/loadRecordでclearされる。defaultも値として保存する。
+- 前回P1-2の一部: deferred settleはviewportだけになり、tab/toolboxを再dispatchしない。epochとruntime target idで後続apply/target変更をguardする。
+
+P1: 5秒のtrusted guardが実ユーザーのBlockly pan/zoomをstale扱いし、旧viewportを復元する
+- `rememberViewportForSelection(..., "trusted")` はremote restoreやtarget切替のたびに `preferRememberedViewportUntil = now + 5s` を設定する。
+- blocks tabで利用者が実際にpan/zoomするとRedux metricsが新値になるが、subscriptionはguard中の相違を無条件に旧trusted値で上書きし、`applyWorkspaceViewport(trusted.viewport)` まで呼ぶ。
+- epochをbumpするのはE2E診断API `setWorkspaceViewport()` であり、実際のBlockly mouse/touch/wheel操作はこの経路を通らない。したがって今回の「remote apply直後の利用者操作が常に勝つ」契約を満たさない。
+- `leaveRoom()` もepochをbumpしないため、session終了だけではpending settleが無効化されない。
+
+必要な修正:
+- 時間幅で「trustedが勝つ」方式を廃止し、内部seed由来の既知actionだけを有限・世代付きで無視する。実Blockly入力由来の新metricsは即座に最新local stateとして採用する。
+- 実ユーザーpan/zoom、leave、new/open、後続apply、target変更のすべてがpending settleより優先されるようvalidity tokenを更新する。
+- `window.Blockly` が取得不能な環境でも正しく動く契約にするか、Scratch GUIが提供する実workspace参照を明示的に取得する。取得不能を5秒guardの根拠にしない。
+
+P2: 追加E2Eが実Blockly viewportを操作・観測しておらず、上記回帰を検出できない
+- E2Eは `window.__blocksyncTask3.setWorkspaceViewport()` でmemory/Redux/epochを直接更新し、`getLocalEditorUiState()` で同じmemory/Reduxを読み戻している。
+- production側は `window.Blockly` を参照するが、提出時のaudit自身がBlockly global未露出と記録している。この場合 `readLiveWorkspaceViewport` はnull、`applyWorkspaceViewport` はfalseでも診断E2Eは成功する。
+- Codex再実行でも15/15 PASSしたが、これは実canvasのpan/zoom保持を証明しない。
+
+必要な回帰試験:
+- 実Chromiumで診断setterを使わず、Blockly workspaceをmouse/touch/wheelでpan/zoomする。
+- remote apply直後（5秒以内を含む）に利用者が動かし、次のremote block update後も実workspaceのscroll/scaleが利用者の最新値を保つ。
+- assertionはdiagnostic memoryだけでなく、実workspace/canvas transformまたはScratch GUIが使用する一次viewportを観測する。
+- leaveをpending settle前に行い、古いcallbackがlocal UIへ書き込まないunit testを追加する。
+
+検証証跡:
+- Codex: @blocksync/editor-web test 185/185 PASS
+- Codex: @blocksync/editor-web typecheck PASS
+- Codex: build:e2e PASS
+- Codex: Playwright editor.spec.ts + collab.spec.ts 15/15 PASS（ただし上記coverage gapあり）
+- Codex: git diff --check PASS / review前working tree clean
+- GitHub PR #13: OPEN / Draft / MERGEABLE、Gate 0 push・pull_requestは判定時点でIN_PROGRESS
+
+停止条件:
+- P1/P2を実操作ベースの回帰試験とともに別commitで修正し、READY_FOR_CODEX_REVIEWへ戻す。
+- PR #13のReady化・merge、次スライス着手は行わない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 85%（境界分離は完了、実Blockly操作優先の修正・再レビュー待ち）。
+次の担当: Cursor
+```
+
+### 2026-07-22 06:08:25 JST — Cursor（real Blockly viewport P1/P2 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ブランチ: cursor/collab-local-ui-state-audit-f431
+提出 tip: 4089aacfdb6605208822441aa8393d71d5b05969
+base: feat/local-first-pivot-impl
+PR: https://github.com/overdozer1124/syncratch/pull/13（Draftのまま）
+
+Codex P1（5s trusted guard）対応:
+- 時間幅でtrustedが勝つ方式を廃止。
+- 内部UPDATE_METRICS seedだけを epoch+targetId+viewport でecho判定し、一致時のみsettleを維持。
+- それ以外のRedux metrics（実Blockly pan/zoom）は即memory採用し、bumpUiRestoreEpochでpending settleを無効化。
+- leaveRoom()でもepoch bump。
+- Scratch workspaceは globalThis.Blockly（Msg stub）に依存せず、blocks hostの非enumerable React fiberから取得（scratch-workspace.ts）。
+- suppress latchがepoch無効化後にstuckしないよう、bump時とsettle finallyで必ず解除。
+- remote restore後は同期でapplyViewportし、遅延settleはresize nudge修理のみ。
+
+Codex P2（実操作E2E）対応:
+- 新規E2E: mouse drag + wheelで実Blocklyをpan/zoomし、diagnostic setterを使わず live/Redux viewportを観測。
+- remote apply直後（旧5s窓内の再ジェスチャ含む）も利用者の最新viewportを維持することを検証。
+- unit: leave相当のepoch無効化でdeferred settleがno-op。
+
+検証:
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test 190/190 PASS
+- Playwright e2e/editor.spec.ts + collab.spec.ts 16/16 PASS（workers=2）
+- pnpm gate0:test PASS
+- pnpm gate0:collab PASS（2/2）
+- git diff --check PASS
+
+非目標のまま / 停止条件維持:
+- PR #13 Ready化・merge、次スライス着手は行わない（Codex GO待ち）
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 95%（実操作回帰込み再提出、Codex再レビュー待ち）
+次の担当: Codex
+```
+
+### 2026-07-22 06:16:25 JST — Codex（local UI state / real Blockly viewport コード承認）
+
+```text
+状態: CODE_REVIEW_GO_GATE0_PENDING
+判定: GO（P0/P1/P2 findingなし）。ただしmergeはGitHub Gate 0成功確認後。
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 5ae44b52435e4994f92c939fd9b2828481c60831
+- fix tip: 4089aacfdb6605208822441aa8393d71d5b05969
+
+解消確認:
+- 5秒のtrusted優先を削除。内部UPDATE_METRICSはepoch + runtime target id + viewport完全一致のechoだけを識別する。
+- 一致しないmetricsは実ユーザー入力として即時にper-project/per-target memoryへ採用し、epoch更新でpending settleを無効化する。
+- `leaveRoom()`、new/open/guest-initial、後続apply、target変更がstale settleを無効化する。
+- deferred処理はviewport-onlyで、tab/toolboxを再適用しない。
+- Scratch workspaceはgetMainWorkspaceを優先し、現在の固定Scratch GUIではReact fiber経由のlive workspace取得を実Chromiumで確認している。
+- E2Eはdiagnostic viewport setterを使わず、実Blockly SVGへmouse drag + wheelを送り、live workspaceとReduxの一次値を確認する。
+- remote apply後と旧5秒窓内の再gesture後の双方で、次のremote block updateを受けても最新viewportを維持する。
+- ProjectDocument / LocalProjectRecord / Y.Doc / peer updateへlocal UI状態を混入していない。
+
+Codex検証:
+- @blocksync/editor-web test: 190/190 PASS
+- @blocksync/editor-web typecheck: PASS
+- @blocksync/editor-web build:e2e: PASS
+- focused real Chromium mouse/wheel + WebRTC E2E: 1/1 PASS（diagnostic setter不使用）
+- git diff --check PASS / review前working tree clean
+
+GitHub状態:
+- PR #13: OPEN / Draft / MERGEABLE
+- Gate 0 push・pull_requestは判定時点でIN_PROGRESS。
+- 2本とも `actions/checkout@v4` 実行中で、失敗stepなし。コードGOとmerge gateを分離する。
+
+次:
+1. Cursorは実装修正を追加しない。
+2. Gate 0の2本がPASSしたことを台帳へ記録して停止する。失敗時だけ原因を修正して再提出する。
+3. Gate 0 PASS後、PR #13はユーザーのmerge指示待ち。自動でReady化・mergeしない。
+4. 次スライスへ先行しない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 99%（コード承認済み、GitHub Gate 0完了確認のみ）。
+次の担当: Cursor（Gate 0確認のみ）
+```
+
+### 2026-07-22 06:27:07 JST — Cursor（Gate 0 PASS 確認 → 停止）
+
+```text
+状態: GO（Gate 0 PASS確認済み）
+ブランチ: cursor/collab-local-ui-state-audit-f431
+docs tip: （本エントリ）
+fix tip: 4089aacfdb6605208822441aa8393d71d5b05969
+PR: https://github.com/overdozer1124/syncratch/pull/13（Draftのまま。Ready化・mergeしない）
+
+Codex指示どおり実装修正は追加していない。
+
+GitHub Gate 0:
+- pull_request run 29869342361: success（6m56s）
+  https://github.com/overdozer1124/syncratch/actions/runs/29869342361
+- push run 29869339418: success（9m16s）
+  https://github.com/overdozer1124/syncratch/actions/runs/29869339418
+- `gh pr checks 13`: gate0 ×2 とも pass
+
+停止:
+- PR #13 Ready化・mergeは行わない（ユーザー指示待ち）
+- 次スライスへ先行しない
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（コードGO + Gate 0 PASS、merge待ち）
+次の担当: ユーザー
+```
+
+### 2026-07-22 06:43:12 JST — Codex（PR #13 local UI state hardening 正式承認）
+
+```text
+状態: GO
+判定: 正式承認（P0/P1/P2 findingなし）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 41f26a4404de3c3ccad5dc686f5be0a20c66916a
+- approved implementation tip: 4089aacfdb6605208822441aa8393d71d5b05969
+
+最終確認:
+- GitHub Gate 0 push: PASS（9m20s）
+- GitHub Gate 0 pull_request: PASS（9m12s）
+- PR: OPEN / Draft / MERGEABLE
+- Gate 0確認待ち以降、実装変更なし（台帳更新のみ）
+- Codex検証: editor-web 190/190、typecheck、build:e2e、実Blockly mouse/wheel + WebRTC focused E2E 1/1、diff check 全PASS
+
+承認範囲:
+- regular remote apply後のactive tab / per-project・per-target viewport維持
+- 実Blockly pan/zoomのlocal user優先
+- target変更、leave、new/open/guest-initial、後続applyに対するstale settle防止
+- local UI状態のProjectDocument / Y.Doc / peer非同期化禁止
+- selected spriteと既存共同編集受け入れの回帰維持
+
+次:
+- PR #13のReady化・mergeはユーザーの明示指示待ち。
+- merge指示があるまで次スライスへ着手しない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（実装・レビュー・Gate 0完了、merge待ち）。
+次の担当: ユーザー
 ```
