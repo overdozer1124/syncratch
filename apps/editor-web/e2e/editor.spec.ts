@@ -497,6 +497,19 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     aSeesSpriteBlock: true,
     bSeesStageBlock: true,
   });
+  // Blockly only renders the editing target. Adding Basketball leaves that sprite
+  // selected, so switch back to the sprite that received the remote block.
+  const spriteWithRemoteBlock = await pageA.evaluate(() => {
+    const names = window.__blocksyncTask3!.collaborationDebug().vmTargets
+      .filter(target => !target.isStage)
+      .map(target => target.name);
+    return names.find(name => name !== "Basketball") ?? names[0] ?? null;
+  });
+  expect(spriteWithRemoteBlock).toBeTruthy();
+  expect(await pageA.evaluate(
+    name => window.__blocksyncTask3!.selectTargetByName(name),
+    spriteWithRemoteBlock,
+  )).toBe(true);
   // The receiving VM and the actual Scratch Blockly workspace must both move.
   // This distinguishes transport/domain convergence from a stale GUI surface.
   await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
