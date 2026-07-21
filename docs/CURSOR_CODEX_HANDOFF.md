@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 00:16:30 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（PR #10受け入れレビュー） |
-| 現在のTask | PR #10 stabilization / acceptance をレビューし GO または CHANGES_REQUESTED |
+| 最終更新 | 2026-07-22 04:47:30 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `GO_PR10_READY_FOR_USER_MERGE_DECISION` |
+| 現在の担当 | ユーザー（PR #10 Ready化・merge・#8/#9整理の承認） |
+| 現在のTask | PR #10 stabilization / acceptance 正式承認済み |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **99%**（受け入れ証跡提出済み。Codexレビュー待ち） |
+| Local-First実装進捗 | **100%**（PR #10実装・受け入れ・Codexレビュー完了） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Codexレビュー。GO後にユーザー承認のもと #8/#9 整理・#10 Ready/merge |
+| 次Task | ユーザー承認後、PR #10をReady化・mergeし、包含済みPR #8/#9をsupersededとしてclose |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（`READY_FOR_CODEX_REVIEW`）。Codex の指摘が出たら対応する。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTには着手しない。PR #8/#9 はまだ close しない。
+なし。PR #10はCodex GO。ユーザーがmergeを指示した場合のみ、PR #10をReady for reviewへ変更してbase `feat/local-first-pivot-impl`へmergeし、結果を再確認してからPR #8/#9へ「#10に包含・superseded」と記録してcloseする。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTにはまだ着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3472,4 +3472,37 @@ PR #8/#9 包含比較:
 
 次の担当: Codex
 進捗: Local-First primary track 99%
+```
+
+### 2026-07-22 04:47:30 JST — Codex（PR #10 stabilization / acceptance 正式承認）
+
+```text
+判定: GO（P0/P1/P2 findingなし）
+レビュー対象:
+- PR #10 https://github.com/overdozer1124/syncratch/pull/10
+- branch HEAD / docs tip: 0724ea23f27cfbf7ec50058ad02ac6833ba6a76f
+- acceptance code tip: 4dc49945283432393a62e8183ff032889b0c3fcc
+
+確認内容:
+- 実Chromium 2-context E2Eは、双方Basketball選択、peer AのB編集後もpeer BがB、peer BのA編集後もpeer AがB、対象block同期、双方local saveを検証する。
+- named-target diagnosticsはE2E modeでのみwindow公開され、production modeへテストAPIを露出しない。
+- `COLLAB_ACCEPTANCE.md` はhard reload / 新規room、forever nest/detach、Basketball、別sprite、選択維持、local save、ブランド、日本語、invite origin、既知限界を網羅する。
+- PRタイトル/本文は統合範囲、既知限界、検証、#8/#9包含関係を正しく説明する。
+- PR #9はpatch-equivalent。PR #8はpatch-identicalではないが、#10のad1b504が対象ファイルと改名意図を包含し、かな併記を追加している。
+
+検証証跡:
+- GitHub Gate 0 push / pull_request: PASS
+- GitHub r1-persist: PASS
+- Cursor: gate0:test PASS / gate0:collab PASS / editor-web 170/170 / typecheck PASS / build:e2e PASS / Playwright 14/14 PASS
+- Codex再実行: editor-web 170/170 PASS
+- Codex再実行: editor-web typecheck PASS
+- Codex再実行: focused real WebRTC selection E2E 1/1 PASS（21.4s）
+- git diff --check PASS / working tree clean（GO台帳更新前）
+
+次:
+- merge/closeはまだ未実行。ユーザー承認後にPR #10をReady化・mergeする。
+- #10 merge確認後、PR #8/#9をsuperseded by #10としてcloseする。
+- 次の機能スライスはmerge完了後に別途選定する。
+
+進捗: Local-First primary track 100%（実装・受け入れ・レビュー完了）。
 ```
