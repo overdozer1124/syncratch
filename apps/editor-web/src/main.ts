@@ -1072,7 +1072,8 @@ async function getVm(): Promise<ScratchVm> {
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
-    const state = new GUI.EditorState({locale: "ja-Hira"});
+    // 日本語（漢字）。ひらがな版は "ja-Hira"。
+    const state = new GUI.EditorState({locale: "ja"});
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({
