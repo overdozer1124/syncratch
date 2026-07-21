@@ -42,10 +42,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 21:40:40 JST |
+| 最終更新 | 2026-07-21 21:55:42 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `LIBRARY_ASSET_FIX_READY_TO_PUSH` |
-| 現在の担当 | Codex PR反映 / ユーザー実機確認 |
+| ワークフロー状態 | `LIBRARY_ASSET_FIX_PUSHED_CI_PENDING` |
+| 現在の担当 | Codex CI確認 / ユーザー実機確認 |
 | 現在のTask | PR #10 新規ライブラリスプライト素材・保存修正 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
@@ -54,7 +54,7 @@
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 素材修正をPR #10へ反映し、実機で新規ライブラリスプライトの保存・同期を確認 |
+| 次Task | PR #10 CI完了後、最新bundleで新規ライブラリスプライトの保存・同期を実機確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -3247,5 +3247,22 @@ PR #10 head: ffb4618（修正0997a7b含む）
 - focused Playwright real Chromium: 1/1 PASS
 - git diff --check: PASS
 進捗: Local-First実装100% / 本素材不具合修正100%（PR反映・ユーザー実機確認待ち）。
+```
+
+### 2026-07-21 21:55:42 JST — Codex（素材修正rebase・PR反映完了）
+
+```text
+状態: LIBRARY_ASSET_FIX_PUSHED_CI_PENDING
+競合対応: Cursorのb7401b8（block syncローカル再検証記録）を保持し、Codex素材修正をその上へrebase。台帳は両記録を時系列で保持。
+素材修正SHA: f6508d0843cc16076330c1609a048a48bf570730
+PR #10 head: f6508d0843cc16076330c1609a048a48bf570730
+push: b7401b8..f6508d0 fast-forward成功
+rebase後検証:
+- @blocksync/editor-web: 165/165 PASS
+- @blocksync/editor-web typecheck: PASS
+- git diff --check: PASS
+事前実GUI検証: Basketball追加、追加側保存、相手側表示・保存を実Chromium 2-contextでPASS。
+CI: Gate 0 2ジョブ実行中。
+進捗: Local-First実装100% / 本素材不具合修正100%（PR反映済み、CI・ユーザー実機確認待ち）。
 ```
 
