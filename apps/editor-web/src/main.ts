@@ -44,12 +44,26 @@ import {
   composeProjectStatus,
 } from "./project-status.js";
 import {
+  drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
 } from "./ui-copy.js";
-import {friendlyProjectTitle} from "./project-title.js";
+import {
+  DEFAULT_GUEST_COLLAB_TITLE,
+  friendlyProjectTitle,
+} from "./project-title.js";
 import {installScratchAccessibility} from "./scratch-accessibility.js";
-import {driveConflictAction} from "./drive-conflict-status.js";
+import {
+  DRIVE_OVERWRITE_CONFIRMATION_REASON,
+  driveConflictAction,
+  shouldLatchDriveOverwriteConfirmation,
+} from "./drive-conflict-status.js";
+import {
+  closeOpenToolPanels,
+  shouldCloseToolPanelsOnKey,
+  shouldCloseToolPanelsOnOutsideTarget,
+} from "./tool-panel-dismiss.js";
+import {shouldLeaveCollaborationOnGoogleDisconnect} from "./google-disconnect-policy.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
@@ -242,6 +256,16 @@ for (const panel of toolPanels) {
   });
 }
 
+document.addEventListener("pointerdown", event => {
+  if (!shouldCloseToolPanelsOnOutsideTarget(event.target, toolPanels)) return;
+  closeOpenToolPanels(toolPanels);
+});
+
+document.addEventListener("keydown", event => {
+  if (!shouldCloseToolPanelsOnKey(event.key)) return;
+  closeOpenToolPanels(toolPanels);
+});
+
 function closePanelFor(element: HTMLElement): void {
   const panel = element.closest<HTMLDetailsElement>(".tool-panel");
   if (panel) panel.open = false;
@@ -269,6 +293,7 @@ let collaborationTestGate = false;
 let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
 let lastDriveMessage: string | undefined;
+let driveOverwriteConfirmationRequired = false;
 let lastCollabState: CollabState | null = null;
 let lastCollabIdleMessage = "ひとりで作っています";
 let fatalBootError: string | undefined;
@@ -659,7 +684,7 @@ async function applyCollaborativeProject(
     const record: LocalProjectRecord = {
       format: LOCAL_PROJECT_FORMAT,
       localProjectId: crypto.randomUUID(),
-      title: context.projectTitle ?? "共同編集プロジェクト",
+      title: context.projectTitle ?? DEFAULT_GUEST_COLLAB_TITLE,
       revision: 0,
       updatedAt: new Date().toISOString(),
       document,
@@ -772,8 +797,11 @@ async function startCollaboration(
     collabSession = null;
     activeInvite = null;
     renderCollabIdle(summary.summary);
-    collabStatus.title = "作品の素材や内容を確認してください。";
+    collabStatus.title = summary.codes.length > 0
+      ? `${summary.codes.join(", ")} / 作品の素材や内容を確認してください。`
+      : "作品の素材や内容を確認してください。";
   }
+  closePanelFor(host ? createRoomButton : joinRoomButton);
 }
 
 async function createRoom(): Promise<void> {
@@ -1061,26 +1089,34 @@ function buildPicker(options: PickerBuildOptions) {
   };
 }
 
-const driveStatusText: Record<EditorDriveStatus, string> = {
-  "not-configured": "このパソコンでは使えません",
-  disconnected: "つながっていません",
-  connected: "つながりました",
-  syncing: "保存中…",
-  synced: "保存しました",
-  unsynced: "まだ保存していません",
-  conflict: "別の場所で作品が変わっています",
-};
-
 function renderDriveStatus(
   status: EditorDriveStatus,
   message?: string,
 ): void {
-  const friendlyMessage = friendlyDriveMessage(message);
+  const previousStatus = lastDriveStatus;
+  const conflictAction = driveConflictAction(status);
+  if (
+    conflictAction === "clear" &&
+    shouldLatchDriveOverwriteConfirmation(previousStatus, status)
+  ) {
+    driveOverwriteConfirmationRequired = true;
+  }
+  if (status === "synced") {
+    driveOverwriteConfirmationRequired = false;
+  }
+
+  const detailMessage = message ?? (
+    driveOverwriteConfirmationRequired &&
+      (status === "connected" || status === "unsynced")
+      ? DRIVE_OVERWRITE_CONFIRMATION_REASON
+      : undefined
+  );
+  const friendlyMessage = friendlyDriveMessage(detailMessage);
   lastDriveStatus = status;
   lastDriveMessage = friendlyMessage;
   driveStatus.textContent = friendlyMessage
-    ? `${driveStatusText[status]}：${friendlyMessage}`
-    : driveStatusText[status];
+    ? `${drivePanelStatusText[status]}：${friendlyMessage}`
+    : drivePanelStatusText[status];
   driveStatus.title = friendlyMessage ?? "";
   const configured = status !== "not-configured";
   const connected = !["not-configured", "disconnected", "syncing"]
@@ -1094,7 +1130,6 @@ function renderDriveStatus(
   saveDriveButton.disabled = !driveReady || !connected;
   disconnectGoogleButton.disabled =
     !driveReady || !configured || status === "disconnected";
-  const conflictAction = driveConflictAction(status);
   if (conflictAction === "report") collabSession?.reportDriveConflict();
   if (conflictAction === "clear") collabSession?.clearDriveConflict();
   if (!collabSession) renderCollabIdle();
@@ -1179,8 +1214,20 @@ function setupDriveIntegration(): EditorDriveIntegration {
     createSnapshotId: () => crypto.randomUUID(),
     onStatus: renderDriveStatus,
     getLeadershipEpoch: () => collabSession?.leadershipEpoch() ?? "0",
-    canPersistToDrive: options =>
-      collabSession?.canPersistToDrive(options) ?? {ok: true},
+    canPersistToDrive: options => {
+      const base = collabSession?.canPersistToDrive(options) ?? {ok: true};
+      if (!base.ok) return base;
+      if (
+        driveOverwriteConfirmationRequired &&
+        options?.explicit !== true
+      ) {
+        return {
+          ok: false,
+          reason: DRIVE_OVERWRITE_CONFIRMATION_REASON,
+        };
+      }
+      return base;
+    },
   });
 }
 
@@ -1210,14 +1257,16 @@ driveAutosave = createDriveAutosave({
   delayMs: 2_000,
   isEligible: () => {
     const state = collabSession?.getState();
-    return hasCurrent && isDriveAutosaveEligible({
-      driveConnected: driveIntegration.isConnected(),
-      createdThisRoom: Boolean(state?.createdThisRoom),
-      bootstrapReady: state?.bootstrapPhase === "ready",
-      driveFileId: current.driveFileId,
-      collaborationConnected: state?.status === "connected",
-      conflict: Boolean(state?.conflict),
-    });
+    return hasCurrent &&
+      !driveOverwriteConfirmationRequired &&
+      isDriveAutosaveEligible({
+        driveConnected: driveIntegration.isConnected(),
+        createdThisRoom: Boolean(state?.createdThisRoom),
+        bootstrapReady: state?.bootstrapPhase === "ready",
+        driveFileId: current.driveFileId,
+        collaborationConnected: state?.status === "connected",
+        conflict: Boolean(state?.conflict),
+      });
   },
   save: () => driveIntegration.saveToDrive({explicit: false}),
 });
@@ -1253,18 +1302,35 @@ saveButton.addEventListener("click", () => {
 });
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
 connectGoogleButton.addEventListener("click", () => {
-  void driveIntegration.connect();
+  void driveIntegration.connect().finally(() => {
+    closePanelFor(connectGoogleButton);
+  });
 });
 openDriveButton.addEventListener("click", () => {
-  void driveIntegration.openFromDrive();
+  void driveIntegration.openFromDrive().finally(() => {
+    closePanelFor(openDriveButton);
+  });
 });
 saveDriveButton.addEventListener("click", () => {
   driveAutosave.cancel();
-  void driveIntegration.saveToDrive({explicit: true});
+  if (driveOverwriteConfirmationRequired) {
+    const confirmed = window.confirm(
+      "Google ドライブの作品とちがうかもしれません。このパソコンの内容で上書きしますか？",
+    );
+    if (!confirmed) return;
+    // Latch clears only after a successful synced status update.
+  }
+  void driveIntegration.saveToDrive({explicit: true}).finally(() => {
+    closePanelFor(saveDriveButton);
+  });
 });
 disconnectGoogleButton.addEventListener("click", () => {
   driveAutosave.cancel();
+  if (shouldLeaveCollaborationOnGoogleDisconnect()) {
+    leaveRoom();
+  }
   driveIntegration.disconnect();
+  closePanelFor(disconnectGoogleButton);
 });
 createRoomButton.addEventListener("click", () => void createRoom());
 joinRoomButton.addEventListener("click", () => void joinRoom());
@@ -1281,7 +1347,10 @@ copyInviteButton.addEventListener("click", () => {
         "コピーできませんでした。リンクを選んでコピーしてください。";
     });
 });
-leaveRoomButton.addEventListener("click", leaveRoom);
+leaveRoomButton.addEventListener("click", () => {
+  leaveRoom();
+  closePanelFor(leaveRoomButton);
+});
 collabReconnectButton.addEventListener("click", () => {
   collabSession?.reconnectBootstrap();
 });

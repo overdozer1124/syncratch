@@ -11,3 +11,19 @@ export function driveConflictAction(
   }
   return "none";
 }
+
+/**
+ * Clearing collab conflict on Drive disconnect is correct (room continues),
+ * but observations are wiped so the next save can silently overwrite Drive.
+ * Latch an explicit confirmation requirement across that transition.
+ */
+export function shouldLatchDriveOverwriteConfirmation(
+  previousStatus: EditorDriveStatus,
+  nextStatus: EditorDriveStatus,
+): boolean {
+  if (previousStatus !== "conflict") return false;
+  return nextStatus === "disconnected" || nextStatus === "not-configured";
+}
+
+export const DRIVE_OVERWRITE_CONFIRMATION_REASON =
+  "Confirm Drive overwrite after a previous conflict";

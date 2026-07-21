@@ -1,5 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {
+  drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
 } from "./ui-copy.js";
@@ -16,6 +17,33 @@ describe("friendlyDriveMessage", () => {
       "Google ドライブでエラーが起きました。もう一度ためしてください。",
     );
   });
+
+  it("maps collaboration write-gate reasons without calling them Drive faults", () => {
+    expect(
+      friendlyDriveMessage("Collaboration bootstrap is not ready"),
+    ).toBe(
+      "作品を受け取っています。準備が終わるまで、Google ドライブへの保存は待ちます。",
+    );
+    expect(
+      friendlyDriveMessage(
+        "Collaboration is disconnected; Drive saving is paused",
+      ),
+    ).toBe(
+      "友だちとのつながりが切れている間は、Google ドライブへの自動保存を止めています。",
+    );
+    expect(
+      friendlyDriveMessage(
+        "Resolve the collaboration conflict before saving to Drive",
+      ),
+    ).toBe(
+      "作品のちがいを確認してから、Google ドライブに保存してください。",
+    );
+    expect(
+      friendlyDriveMessage("Confirm Drive overwrite after a previous conflict"),
+    ).toBe(
+      "前にちがいがあったので、上書きする前に「Google ドライブに保存」を押してください。",
+    );
+  });
 });
 
 describe("friendlyCollaborationMessage", () => {
@@ -29,5 +57,12 @@ describe("friendlyCollaborationMessage", () => {
     expect(friendlyCollaborationMessage("unknown transport failure")).toBe(
       "友だちとつながりませんでした。インターネットをたしかめてください。",
     );
+  });
+});
+
+describe("drivePanelStatusText", () => {
+  it("keeps Google Drive prefix so synced is not mistaken for local save", () => {
+    expect(drivePanelStatusText.synced).toContain("Google ドライブ");
+    expect(drivePanelStatusText.unsynced).toContain("Google ドライブ");
   });
 });

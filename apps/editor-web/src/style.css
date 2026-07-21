@@ -49,7 +49,17 @@ body,
 
 .toolbar button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  color: #5a7390;
+  background: #d9e3ef;
+  border-color: #b7c6d8;
+  opacity: 1;
+}
+
+.toolbar button:focus-visible,
+.toolbar input:focus-visible,
+.tool-panel summary:focus-visible {
+  outline: 3px solid #ffe082;
+  outline-offset: 2px;
 }
 
 .primary-controls,
@@ -124,6 +134,7 @@ body,
 }
 
 .tool-panel {
+  position: relative;
   border: 1px solid rgb(255 255 255 / 35%);
   border-radius: 9px;
   background: rgb(18 71 130 / 22%);
@@ -148,11 +159,13 @@ body,
 }
 
 .panel-content {
+  /* Anchor to the open column so Scratch under other columns stays usable. */
   position: absolute;
   z-index: 30;
   top: calc(100% + 6px);
-  right: 0;
   left: 0;
+  right: 0;
+  width: max(100%, min(360px, 92vw));
   box-sizing: border-box;
   max-height: min(45vh, 300px);
   overflow: auto;
@@ -161,6 +174,16 @@ body,
   border-radius: 10px;
   background: #0f5b99;
   box-shadow: 0 10px 26px rgb(0 28 71 / 35%);
+}
+
+.file-panel .panel-content {
+  left: 0;
+  right: auto;
+}
+
+.drive-panel .panel-content {
+  left: auto;
+  right: 0;
 }
 
 .panel-status {
