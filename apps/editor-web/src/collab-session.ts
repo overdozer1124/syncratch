@@ -97,6 +97,11 @@ export interface CollabSessionOptions {
     assets: Map<string, Uint8Array>,
     context: ApplyRemoteContext,
   ) => void | boolean | Promise<void | boolean>;
+  /**
+   * Restore the pre-guest-initial local project when bootstrap cannot reach
+   * ready after a tentative guest-initial apply (awaiting / invalid / leave).
+   */
+  rollbackGuestInitialLocal?: () => void | boolean | Promise<void | boolean>;
   /** Kept for diagnostics/compat; never authorizes Drive writes. */
   eligible?: boolean;
   reobserveDriveBeforeLeadership?: () => void | Promise<void>;
@@ -161,8 +166,15 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let sealGeneration = 0;
   let sealTimer: ReturnType<typeof setTimeout> | null = null;
   let lastBootstrapId: string | null = null;
+  let active = false;
+  let guestApplyInFlight = false;
+  let stagingChangedDuringGuestApply = false;
+  let guestInitialCopyApplied = false;
+  const isInvalidProject = (): boolean =>
+    bootstrapPhase === "invalid-project";
 
   const applyRemoteUpdate = (update: Uint8Array): boolean => {
+    if (!active || isInvalidProject()) return false;
     receivedBytes += update.byteLength;
     markProgress("bytes");
     if (!createdThisRoom && !guestReady) {
@@ -192,7 +204,6 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     isLocalOrigin: (origin) => origin === LOCAL_ORIGIN,
   });
 
-  let active = false;
   let conflict = false;
   let suppressLocal = false;
   let leadership: LeadershipState | null = null;
@@ -400,6 +411,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const enterInvalid = (codes: string[]): void => {
     bootstrapPhase = "invalid-project";
     issueCodes = codes;
+    stagingChangedDuringGuestApply = false;
+    domain.releaseStagingGuardResources();
     if (stallTimer) {
       clearTimeout(stallTimer);
       stallTimer = null;
@@ -483,10 +496,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }, Math.max(debounceMs, 20));
   };
 
-  const evaluateGuestBootstrap = async (): Promise<void> => {
-    if (!active || createdThisRoom || guestReady) return;
-    if (bootstrapPhase === "invalid-project") return;
-
+  const validateCurrentGuestStaging = (): LocalMaterialization | null => {
     const checkpoint = readBootstrapCheckpoint(domain.ydoc);
     if (checkpoint?.assetManifest) {
       expectedAssets = checkpoint.assetManifest.length;
@@ -497,8 +507,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
     if (
       bootstrapPhase !== "stalled-project" &&
-      bootstrapPhase !== "saving-local-copy" &&
-      bootstrapPhase !== "local-save-failed"
+      bootstrapPhase !== "saving-local-copy"
     ) {
       bootstrapPhase = "verifying-project";
     }
@@ -513,7 +522,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       }
       emitState();
       armStallTimer();
-      return;
+      return null;
     }
 
     if (result.status === "awaiting-newer-seal") {
@@ -523,48 +532,117 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       markProgress("manifest");
       emitState();
       armStallTimer();
-      return;
+      return null;
     }
 
     if (result.status === "invalid") {
       enterInvalid(result.issues.map(item => item.code));
-      return;
+      return null;
     }
 
-    // ready to save
-    if (!result.document || !result.assets) return;
+    if (!result.document || !result.assets) return null;
     validatedMaterialization = {
       document: result.document,
       assets: new Map(result.assets),
     };
     validatedTitle = normalizeProjectTitle(checkpoint?.projectTitle);
+    return validatedMaterialization;
+  };
+
+  const rollbackTentativeGuestInitial = async (): Promise<void> => {
+    if (!guestInitialCopyApplied || guestReady) return;
+    guestInitialCopyApplied = false;
+    if (!options.rollbackGuestInitialLocal) return;
+    try {
+      await options.rollbackGuestInitialLocal();
+    } catch {
+      // Rollback best-effort; phase handling belongs to the caller.
+    }
+    lastLocalTargetJson.clear();
+    for (const target of options.materializeLocal().document.targets) {
+      lastLocalTargetJson.set(target.id, JSON.stringify(target));
+    }
+  };
+
+  const evaluateGuestBootstrap = async (): Promise<void> => {
+    if (!active || createdThisRoom || guestReady || guestApplyInFlight) return;
+    if (
+      bootstrapPhase === "invalid-project" ||
+      bootstrapPhase === "local-save-failed"
+    ) {
+      return;
+    }
+
+    let nextMaterialization = validateCurrentGuestStaging();
+    if (!nextMaterialization) return;
+    guestApplyInFlight = true;
     bootstrapPhase = "saving-local-copy";
     emitState();
     try {
       suppressLocal = true;
-      const applied = await options.applyRemoteToLocal(result.document, result.assets, {
-        mode: "guest-initial",
-        projectTitle: validatedTitle,
-      });
-      if (!active || applied === false) return;
-      lastLocalTargetJson.clear();
-      for (const target of options.materializeLocal().document.targets) {
-        lastLocalTargetJson.set(target.id, JSON.stringify(target));
-      }
-      guestReady = true;
-      bootstrapPhase = "ready";
-      issueCodes = [];
-      if (stallTimer) {
-        clearTimeout(stallTimer);
-        stallTimer = null;
+      while (nextMaterialization) {
+        stagingChangedDuringGuestApply = false;
+        const mode: ApplyRemoteMode = guestInitialCopyApplied
+          ? "update"
+          : "guest-initial";
+        const applied = await options.applyRemoteToLocal(
+          nextMaterialization.document,
+          nextMaterialization.assets,
+          mode === "guest-initial"
+            ? {mode, projectTitle: validatedTitle}
+            : {mode},
+        );
+        // false means the apply layer cancelled and already kept/restored previous.
+        if (applied === false) return;
+        if (mode === "guest-initial") {
+          guestInitialCopyApplied = true;
+        }
+
+        if (!active || isInvalidProject()) {
+          await rollbackTentativeGuestInitial();
+          return;
+        }
+
+        guestInitialCopyApplied = true;
+        lastLocalTargetJson.clear();
+        for (const target of options.materializeLocal().document.targets) {
+          lastLocalTargetJson.set(target.id, JSON.stringify(target));
+        }
+
+        if (!stagingChangedDuringGuestApply) {
+          guestReady = true;
+          bootstrapPhase = "ready";
+          issueCodes = [];
+          domain.releaseStagingGuardResources();
+          if (stallTimer) {
+            clearTimeout(stallTimer);
+            stallTimer = null;
+          }
+          return;
+        }
+
+        nextMaterialization = validateCurrentGuestStaging();
+        if (!nextMaterialization) {
+          // awaiting / incomplete / invalid: keep previous local project.
+          await rollbackTentativeGuestInitial();
+          return;
+        }
+        bootstrapPhase = "saving-local-copy";
+        emitState();
       }
     } catch {
-      if (!active) return;
+      if (!active || isInvalidProject()) {
+        await rollbackTentativeGuestInitial();
+        return;
+      }
+      stagingChangedDuringGuestApply = false;
       bootstrapPhase = "local-save-failed";
       issueCodes = ["LOCAL_SAVE_FAILED"];
     } finally {
       suppressLocal = false;
-      if (active) emitState();
+      guestApplyInFlight = false;
+      stagingChangedDuringGuestApply = false;
+      if (active && !isInvalidProject()) emitState();
     }
   };
 
@@ -667,6 +745,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
   domain.onRemoteChange(() => {
     markProgress("peer");
+    if (guestApplyInFlight && !createdThisRoom && !guestReady) {
+      stagingChangedDuringGuestApply = true;
+    }
     if (
       pendingTargets.size > 0 ||
       pendingTargetDeletions.size > 0 ||
@@ -728,8 +809,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         bootstrapPhase = "ready";
         guestReady = true;
-        provider.connect();
         active = true;
+        provider.connect();
         wasLeader = true;
         recomputeLeadership();
         emitState();
@@ -738,13 +819,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       bootstrapPhase = "receiving-project";
       lastProgressAt = Date.now();
       armStallTimer();
-      provider.connect();
       active = true;
+      provider.connect();
       recomputeLeadership();
       emitState();
       return {ok: true as const};
     },
     leave() {
+      const shouldRollbackGuestInitial =
+        guestInitialCopyApplied && !guestReady;
+      domain.releaseStagingGuardResources();
       if (localTimer) {
         clearTimeout(localTimer);
         localTimer = null;
@@ -774,6 +858,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       maySeed = false;
       createdThisRoom = false;
       guestReady = false;
+      guestApplyInFlight = false;
+      stagingChangedDuringGuestApply = false;
+      guestInitialCopyApplied = false;
       bootstrapPhase = "idle";
       validatedMaterialization = null;
       leadership = null;
@@ -784,6 +871,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       conflict = false;
       issueCodes = [];
       emitState();
+      if (shouldRollbackGuestInitial && options.rollbackGuestInitialLocal) {
+        void Promise.resolve(options.rollbackGuestInitialLocal());
+      }
     },
     noteLocalChange() {
       if (suppressLocal || !active) return;
@@ -887,27 +977,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       if (bootstrapPhase !== "local-save-failed" || !validatedMaterialization) {
         return;
       }
-      bootstrapPhase = "saving-local-copy";
+      bootstrapPhase = "receiving-project";
+      issueCodes = [];
       emitState();
-      try {
-        suppressLocal = true;
-        const applied = await options.applyRemoteToLocal(
-          validatedMaterialization.document,
-          validatedMaterialization.assets,
-          {mode: "guest-initial", projectTitle: validatedTitle},
-        );
-        if (!active || applied === false) return;
-        guestReady = true;
-        bootstrapPhase = "ready";
-        issueCodes = [];
-      } catch {
-        if (!active) return;
-        bootstrapPhase = "local-save-failed";
-        issueCodes = ["LOCAL_SAVE_FAILED"];
-      } finally {
-        suppressLocal = false;
-        if (active) emitState();
+      if (guestEvaluateTimer) {
+        clearTimeout(guestEvaluateTimer);
+        guestEvaluateTimer = null;
       }
+      await evaluateGuestBootstrap();
     },
     reconnectBootstrap() {
       if (bootstrapPhase !== "stalled-project") return;

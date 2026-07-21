@@ -8,6 +8,7 @@ import {
   createCollabSession,
   evaluateCollabReadiness,
   type ApplyRemoteContext,
+  type CollabProviderConfig,
   type CollabSession,
 } from "./collab-session.js";
 
@@ -88,6 +89,11 @@ function fakeVm(initial: ProjectDocument) {
   let document = structuredClone(initial);
   let assets = assetsFor(document);
   const appliedDocs: ProjectDocument[] = [];
+  let previousBeforeGuestInitial: {
+    document: ProjectDocument;
+    assets: Map<string, Uint8Array>;
+  } | null = null;
+  let rollbackCount = 0;
   return {
     materializeLocal() {
       return {document: structuredClone(document), assets: new Map(assets)};
@@ -95,11 +101,24 @@ function fakeVm(initial: ProjectDocument) {
     applyRemoteToLocal(
       doc: ProjectDocument,
       remoteAssets: Map<string, Uint8Array>,
-      _context: ApplyRemoteContext,
+      context: ApplyRemoteContext,
     ) {
+      if (context.mode === "guest-initial") {
+        previousBeforeGuestInitial = {
+          document: structuredClone(document),
+          assets: new Map(assets),
+        };
+      }
       document = structuredClone(doc);
       assets = new Map(remoteAssets);
       appliedDocs.push(structuredClone(doc));
+    },
+    rollbackGuestInitialLocal() {
+      if (!previousBeforeGuestInitial) return;
+      document = previousBeforeGuestInitial.document;
+      assets = previousBeforeGuestInitial.assets;
+      previousBeforeGuestInitial = null;
+      rollbackCount += 1;
     },
     editTargetName(id: string, name: string) {
       const target = document.targets.find((t) => t.id === id)!;
@@ -121,6 +140,7 @@ function fakeVm(initial: ProjectDocument) {
     },
     current: () => document,
     lastApplied: () => appliedDocs[appliedDocs.length - 1],
+    rollbackCount: () => rollbackCount,
   };
 }
 
@@ -153,6 +173,541 @@ describe("evaluateCollabReadiness", () => {
   it("requires only configured signaling", () => {
     expect(evaluateCollabReadiness({signalingUrl: ""}).ok).toBe(false);
     expect(evaluateCollabReadiness({signalingUrl: "ws://x"}).ok).toBe(true);
+  });
+});
+
+describe("guest bootstrap terminal-state guards", () => {
+  it("ignores every update after invalid-project without changing state, counters, or staging", async () => {
+    const mesh = createMemoryMesh();
+    let deliverRemoteUpdate!: (update: Uint8Array) => boolean;
+    const create = (config: CollabProviderConfig) => {
+      deliverRemoteUpdate = config.applyRemoteUpdate;
+      return createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+    };
+    const stateEvents: string[] = [];
+    const vm = fakeVm(project([stage()]));
+    const guest = createCollabSession({
+      roomId: "room-invalid-terminal",
+      secret: "invalid-terminal-secret-invalid-terminal",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: vm.materializeLocal,
+      applyRemoteToLocal: vm.applyRemoteToLocal,
+      onState: state => stateEvents.push(state.bootstrapPhase),
+    });
+    guest.start({host: false});
+
+    expect(deliverRemoteUpdate(new Uint8Array(16 * 1024 * 1024 + 1))).toBe(false);
+    expect(guest.getBootstrapPhase()).toBe("invalid-project");
+    expect(guest.domain.tryApplyStagingUpdate(new Uint8Array([0, 0])).accepted)
+      .toBe(false);
+    const frozenDiagnostics = guest.getDiagnostics();
+    const frozenState = guest.domain.encodeState();
+    const frozenEventCount = stateEvents.length;
+
+    const laterRemote = new Y.Doc();
+    laterRemote.getMap("probe").set("post-invalid", "must-not-apply");
+    const laterUpdate = Y.encodeStateAsUpdate(laterRemote);
+    expect(deliverRemoteUpdate(laterUpdate)).toBe(false);
+    await guest.flush();
+
+    expect(guest.getDiagnostics()).toEqual(frozenDiagnostics);
+    expect(guest.domain.encodeState()).toEqual(frozenState);
+    expect(guest.domain.ydoc.getMap("probe").has("post-invalid")).toBe(false);
+    expect(stateEvents).toHaveLength(frozenEventCount);
+  });
+
+  it("keeps invalid-project terminal when an earlier local save finishes", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const previousGuestProject = project([stage(), sprite("local", "KeepMe")]);
+    const guestVm = fakeVm(previousGuestProject);
+    let deliverGuestUpdate!: (update: Uint8Array) => boolean;
+    let markSaveStarted!: () => void;
+    let releaseSave!: () => void;
+    const saveStarted = new Promise<void>(resolve => {
+      markSaveStarted = resolve;
+    });
+    const saveGate = new Promise<void>(resolve => {
+      releaseSave = resolve;
+    });
+    const stateEvents: string[] = [];
+    const host = createCollabSession({
+      roomId: "room-invalid-in-flight",
+      secret: "invalid-in-flight-secret-invalid-in-flight",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      roomId: "room-invalid-in-flight",
+      secret: "invalid-in-flight-secret-invalid-in-flight",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: (config: CollabProviderConfig) => {
+        deliverGuestUpdate = config.applyRemoteUpdate;
+        return create(config);
+      },
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        markSaveStarted();
+        await saveGate;
+        guestVm.applyRemoteToLocal(document, assets, context);
+        return true;
+      },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
+      onState: state => stateEvents.push(state.bootstrapPhase),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const pendingGuestFlush = guest.flush();
+    await saveStarted;
+
+    expect(deliverGuestUpdate(new Uint8Array(16 * 1024 * 1024 + 1))).toBe(false);
+    expect(guest.getBootstrapPhase()).toBe("invalid-project");
+    const frozenDiagnostics = guest.getDiagnostics();
+    const frozenState = guest.getState();
+    const frozenEncodedState = guest.domain.encodeState();
+    const frozenEventCount = stateEvents.length;
+
+    releaseSave();
+    await pendingGuestFlush;
+
+    expect(guest.getBootstrapPhase()).toBe("invalid-project");
+    expect(guest.getDiagnostics()).toEqual(frozenDiagnostics);
+    expect(guest.getState()).toEqual(frozenState);
+    expect(guest.domain.encodeState()).toEqual(frozenEncodedState);
+    expect(stateEvents).toHaveLength(frozenEventCount);
+    expect(guestVm.current().targets.find(target => target.id === "local")?.name)
+      .toBe("KeepMe");
+    expect(guestVm.rollbackCount()).toBe(1);
+  });
+
+  it("keeps invalid-project terminal when a retry save finishes", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    let deliverGuestUpdate!: (update: Uint8Array) => boolean;
+    let markRetryStarted!: () => void;
+    let releaseRetry!: () => void;
+    const retryStarted = new Promise<void>(resolve => {
+      markRetryStarted = resolve;
+    });
+    const retryGate = new Promise<void>(resolve => {
+      releaseRetry = resolve;
+    });
+    let saveAttempt = 0;
+    const stateEvents: string[] = [];
+    const host = createCollabSession({
+      roomId: "room-invalid-retry",
+      secret: "invalid-retry-secret-invalid-retry",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      roomId: "room-invalid-retry",
+      secret: "invalid-retry-secret-invalid-retry",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: (config: CollabProviderConfig) => {
+        deliverGuestUpdate = config.applyRemoteUpdate;
+        return create(config);
+      },
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: async () => {
+        saveAttempt += 1;
+        if (saveAttempt === 1) throw new Error("initial save failed");
+        markRetryStarted();
+        await retryGate;
+        return true;
+      },
+      onState: state => stateEvents.push(state.bootstrapPhase),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("local-save-failed");
+
+    const pendingRetry = guest.retryLocalSave();
+    await retryStarted;
+    expect(deliverGuestUpdate(new Uint8Array(16 * 1024 * 1024 + 1))).toBe(false);
+    expect(guest.getBootstrapPhase()).toBe("invalid-project");
+    const frozenDiagnostics = guest.getDiagnostics();
+    const frozenState = guest.getState();
+    const frozenEncodedState = guest.domain.encodeState();
+    const frozenEventCount = stateEvents.length;
+
+    releaseRetry();
+    await pendingRetry;
+
+    expect(guest.getBootstrapPhase()).toBe("invalid-project");
+    expect(guest.getDiagnostics()).toEqual(frozenDiagnostics);
+    expect(guest.getState()).toEqual(frozenState);
+    expect(guest.domain.encodeState()).toEqual(frozenEncodedState);
+    expect(stateEvents).toHaveLength(frozenEventCount);
+  });
+
+  it("ignores queued remote updates after leave without changing idle state", () => {
+    const mesh = createMemoryMesh();
+    let deliverRemoteUpdate!: (update: Uint8Array) => boolean;
+    const create = (config: CollabProviderConfig) => {
+      deliverRemoteUpdate = config.applyRemoteUpdate;
+      return createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      });
+    };
+    const stateEvents: string[] = [];
+    const vm = fakeVm(project([stage()]));
+    const guest = createCollabSession({
+      roomId: "room-inactive-queued-update",
+      secret: "inactive-queued-update-secret-inactive",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: vm.materializeLocal,
+      applyRemoteToLocal: vm.applyRemoteToLocal,
+      onState: state => stateEvents.push(state.bootstrapPhase),
+    });
+    guest.start({host: false});
+    guest.leave();
+    const frozenDiagnostics = guest.getDiagnostics();
+    const frozenState = guest.domain.encodeState();
+    const frozenEventCount = stateEvents.length;
+    const queuedRemote = new Y.Doc();
+    queuedRemote.getMap("queued").set("after-leave", true);
+
+    expect(deliverRemoteUpdate(Y.encodeStateAsUpdate(queuedRemote))).toBe(false);
+
+    expect(guest.getBootstrapPhase()).toBe("idle");
+    expect(guest.getDiagnostics()).toEqual(frozenDiagnostics);
+    expect(guest.domain.encodeState()).toEqual(frozenState);
+    expect(stateEvents).toHaveLength(frozenEventCount);
+  });
+});
+
+describe("guest staging guard lifecycle", () => {
+  it("releases staging resources when a guest becomes ready and when it leaves", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const host = createCollabSession({
+      roomId: "room-staging-lifecycle",
+      secret: "staging-lifecycle-secret-staging-lifecycle",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guestVm = fakeVm(project([stage()]));
+    const guest = createCollabSession({
+      roomId: "room-staging-lifecycle",
+      secret: "staging-lifecycle-secret-staging-lifecycle",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: guestVm.applyRemoteToLocal,
+    });
+    const releaseSpy = vi.spyOn(
+      guest.domain,
+      "releaseStagingGuardResources",
+    );
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+    guest.leave();
+    expect(releaseSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates newer staged state before retrying a failed local save", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Original")]));
+    const guestVm = fakeVm(project([stage()]));
+    let failGuestSave = true;
+    const host = createCollabSession({
+      roomId: "room-retry-latest-staging",
+      secret: "retry-latest-staging-secret-retry-latest",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-retry-latest-staging",
+      secret: "retry-latest-staging-secret-retry-latest",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        if (failGuestSave) throw new Error("initial local save failed");
+        return guestVm.applyRemoteToLocal(document, assets, context);
+      },
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("local-save-failed");
+
+    hostVm.editTargetName("s1", "NewerWhileSaveFailed");
+    host.noteLocalChange();
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("local-save-failed");
+
+    failGuestSave = false;
+    await guest.retryLocalSave();
+
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    expect(guestVm.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("NewerWhileSaveFailed");
+  });
+
+  it("rolls back guest-initial when staging becomes awaiting-newer-seal during save", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Original")]));
+    const previousGuestProject = project([stage(), sprite("local", "KeepMe")]);
+    const guestVm = fakeVm(previousGuestProject);
+    let markFirstSaveStarted!: () => void;
+    let releaseFirstSave!: () => void;
+    const firstSaveStarted = new Promise<void>(resolve => {
+      markFirstSaveStarted = resolve;
+    });
+    const firstSaveGate = new Promise<void>(resolve => {
+      releaseFirstSave = resolve;
+    });
+    const host = createCollabSession({
+      roomId: "room-rollback-awaiting-seal",
+      secret: "rollback-awaiting-seal-secret-rollback-await",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-rollback-awaiting-seal",
+      secret: "rollback-awaiting-seal-secret-rollback-await",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        markFirstSaveStarted();
+        await firstSaveGate;
+        guestVm.applyRemoteToLocal(document, assets, context);
+        return true;
+      },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const initialFlush = guest.flush();
+    await firstSaveStarted;
+
+    // Dirty staging content without a newer seal → awaiting-newer-seal after apply.
+    const targetEntry = guest.domain.ydoc
+      .getMap<Y.Map<unknown>>("targets")
+      .get("s1");
+    expect(targetEntry).toBeInstanceOf(Y.Map);
+    const rawJson = targetEntry!.get("json");
+    expect(typeof rawJson).toBe("string");
+    const parsed = JSON.parse(String(rawJson)) as {name: string};
+    parsed.name = "UnsealedDirty";
+    guest.domain.ydoc.transact(() => {
+      targetEntry!.set("json", JSON.stringify(parsed));
+    }, "test-unsealed-dirty");
+
+    releaseFirstSave();
+    await initialFlush;
+
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    expect(guestVm.current().targets.find(target => target.id === "local")?.name)
+      .toBe("KeepMe");
+    expect(guestVm.rollbackCount()).toBe(1);
+  });
+
+  it("serializes newer staging state behind an in-flight initial local copy", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Original")]));
+    const guestVm = fakeVm(project([stage()]));
+    let markFirstSaveStarted!: () => void;
+    let releaseFirstSave!: () => void;
+    const firstSaveStarted = new Promise<void>(resolve => {
+      markFirstSaveStarted = resolve;
+    });
+    const firstSaveGate = new Promise<void>(resolve => {
+      releaseFirstSave = resolve;
+    });
+    const appliedModes: string[] = [];
+    let applyAttempt = 0;
+    const host = createCollabSession({
+      roomId: "room-serialized-bootstrap-save",
+      secret: "serialized-bootstrap-save-secret-serialized",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-serialized-bootstrap-save",
+      secret: "serialized-bootstrap-save-secret-serialized",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        applyAttempt += 1;
+        appliedModes.push(context.mode);
+        if (applyAttempt === 1) {
+          markFirstSaveStarted();
+          await firstSaveGate;
+        }
+        guestVm.applyRemoteToLocal(document, assets, context);
+      },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const initialFlush = guest.flush();
+    await firstSaveStarted;
+
+    hostVm.editTargetName("s1", "NewerDuringInitialSave");
+    host.noteLocalChange();
+    await host.flush();
+    await guest.provider.flush();
+    await guest.flush();
+
+    releaseFirstSave();
+    await initialFlush;
+
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    expect(guestVm.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("NewerDuringInitialSave");
+    expect(appliedModes).toEqual(["guest-initial", "update"]);
+  });
+
+  it("keeps reconciling when staging changes during the follow-up update", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Original")]));
+    const guestVm = fakeVm(project([stage()]));
+    let markFirstStarted!: () => void;
+    let markSecondStarted!: () => void;
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    const firstStarted = new Promise<void>(resolve => {
+      markFirstStarted = resolve;
+    });
+    const secondStarted = new Promise<void>(resolve => {
+      markSecondStarted = resolve;
+    });
+    const firstGate = new Promise<void>(resolve => {
+      releaseFirst = resolve;
+    });
+    const secondGate = new Promise<void>(resolve => {
+      releaseSecond = resolve;
+    });
+    const modes: string[] = [];
+    let attempt = 0;
+    const host = createCollabSession({
+      roomId: "room-looped-bootstrap-save",
+      secret: "looped-bootstrap-save-secret-looped-save",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-looped-bootstrap-save",
+      secret: "looped-bootstrap-save-secret-looped-save",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        attempt += 1;
+        modes.push(context.mode);
+        if (attempt === 1) {
+          markFirstStarted();
+          await firstGate;
+        } else if (attempt === 2) {
+          markSecondStarted();
+          await secondGate;
+        }
+        guestVm.applyRemoteToLocal(document, assets, context);
+      },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const initialFlush = guest.flush();
+    await firstStarted;
+
+    hostVm.editTargetName("s1", "Second");
+    host.noteLocalChange();
+    await host.flush();
+    await guest.provider.flush();
+    await guest.flush();
+    releaseFirst();
+    await secondStarted;
+
+    hostVm.editTargetName("s1", "Third");
+    host.noteLocalChange();
+    await host.flush();
+    await guest.provider.flush();
+    await guest.flush();
+    releaseSecond();
+    await initialFlush;
+
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    expect(guestVm.current().targets.find(target => target.id === "s1")?.name)
+      .toBe("Third");
+    expect(modes).toEqual(["guest-initial", "update", "update"]);
+    expect(guestVm.rollbackCount()).toBe(0);
   });
 });
 

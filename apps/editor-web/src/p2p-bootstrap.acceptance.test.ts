@@ -489,6 +489,8 @@ describe("§13 acceptance: Drive-independent P2P bootstrap", () => {
     guestVm.setFailSave(false);
     await guest.retryLocalSave();
     expect(guest.getBootstrapPhase()).toBe("ready");
+    expect(guest.domain.tryApplyStagingUpdate(new Uint8Array([0, 0])).accepted)
+      .toBe(false);
     expect(guestVm.meta().driveFileId).toBeUndefined();
   });
 
