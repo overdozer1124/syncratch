@@ -254,14 +254,13 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       domain.loadLocalProject(document, assets);
       return;
     }
-    for (const target of document.targets) {
-      if (currentTargetJson(target.id) !== JSON.stringify(target)) {
-        domain.setTarget(target);
-      }
-    }
     const assetMap = domain.ydoc.getMap<Uint8Array>("assets");
-    for (const [md5ext, bytes] of assets) {
-      if (!assetMap.has(md5ext)) domain.putAsset(md5ext, bytes);
+    const missingAssets = [...assets].filter(([md5ext]) => !assetMap.has(md5ext));
+    const dirtyTargets = document.targets.filter(
+      target => currentTargetJson(target.id) !== JSON.stringify(target),
+    );
+    if (dirtyTargets.length > 0 || missingAssets.length > 0) {
+      domain.putAssetsAndSetTargets(dirtyTargets, missingAssets);
     }
   };
 
@@ -329,30 +328,62 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }
     pendingTargetDeletions.clear();
 
-    for (const [md5ext, bytes] of pendingAssets) domain.putAsset(md5ext, bytes);
-    pendingAssets.clear();
     const sharedAssets = domain.ydoc.getMap<Uint8Array>("assets");
-    for (const [md5ext, bytes] of assets) {
-      if (!sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
-    }
+    const localAssetBytes = (md5ext: string): Uint8Array | undefined =>
+      assets.get(md5ext) ?? pendingAssets.get(md5ext);
 
     const deferred = new Map<string, ProjectDocument["targets"][number]>();
+    const readyTargets: ProjectDocument["targets"][number][] = [];
+    const assetsToPublish = new Map<string, Uint8Array>();
+    const assetReady = (md5ext: string): boolean => {
+      if (sharedAssets.has(md5ext)) {
+        const existing = sharedAssets.get(md5ext);
+        return existing instanceof Uint8Array && existing.byteLength > 0;
+      }
+      const bytes = localAssetBytes(md5ext);
+      return bytes instanceof Uint8Array && bytes.byteLength > 0;
+    };
+
     for (const [targetId, target] of pendingTargets) {
       const needed = targetAssetIds(target);
-      const ready = needed.every(
-        md5ext => sharedAssets.has(md5ext) || assets.has(md5ext),
-      );
-      if (!ready) {
+      if (!needed.every(assetReady)) {
         deferred.set(targetId, target);
         continue;
       }
       for (const md5ext of needed) {
-        const bytes = assets.get(md5ext);
-        if (bytes && !sharedAssets.has(md5ext)) domain.putAsset(md5ext, bytes);
+        if (sharedAssets.has(md5ext) || assetsToPublish.has(md5ext)) continue;
+        const bytes = localAssetBytes(md5ext);
+        if (bytes) assetsToPublish.set(md5ext, bytes);
       }
-      domain.setTarget(target);
+      readyTargets.push(target);
       lastLocalTargetJson.set(targetId, JSON.stringify(target));
     }
+
+    // Orphan assets (not yet referenced by a ready target) still sync, but
+    // never ahead of a target that still lacks costume/sound bytes.
+    for (const [md5ext, bytes] of pendingAssets) {
+      if (
+        bytes.byteLength > 0 &&
+        !sharedAssets.has(md5ext) &&
+        !assetsToPublish.has(md5ext)
+      ) {
+        assetsToPublish.set(md5ext, bytes);
+      }
+    }
+    for (const [md5ext, bytes] of assets) {
+      if (
+        bytes.byteLength > 0 &&
+        !sharedAssets.has(md5ext) &&
+        !assetsToPublish.has(md5ext)
+      ) {
+        assetsToPublish.set(md5ext, bytes);
+      }
+    }
+
+    if (readyTargets.length > 0 || assetsToPublish.size > 0) {
+      domain.putAssetsAndSetTargets(readyTargets, assetsToPublish);
+    }
+    pendingAssets.clear();
     pendingTargets.clear();
     for (const [targetId, target] of deferred) {
       pendingTargets.set(targetId, target);
@@ -739,8 +770,15 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         const result = domain.materialize();
         if (!result.ok) {
-          issueCodes = result.issues.map(item => String(item.code));
-          emitState();
+          // Incomplete asset arrivals are expected while Y.Docs converge; keep
+          // the last valid VM and avoid flashing transient MISSING_ASSET noise.
+          const onlyMissingAssets =
+            result.issues.length > 0 &&
+            result.issues.every(item => String(item.code) === "MISSING_ASSET");
+          if (!onlyMissingAssets) {
+            issueCodes = result.issues.map(item => String(item.code));
+            emitState();
+          }
           return;
         }
         suppressLocal = true;
