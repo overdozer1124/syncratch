@@ -42,10 +42,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-21 19:18:44 JST |
+| 最終更新 | 2026-07-21 19:32:44 JST |
 | 更新者 | Codex |
-| ワークフロー状態 | `BLOCK_SYNC_FIX_IMPLEMENTED` |
-| 現在の担当 | Cursor / ユーザー実機確認 |
+| ワークフロー状態 | `BLOCK_SYNC_FIX_PUSHED_CI_PENDING` |
+| 現在の担当 | Codex CI確認 / ユーザー実機確認 |
 | 現在のTask | PR #10 共同編集ブロックグラフ収束修正 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 0〜5完了。本同期不具合修正100%、実機確認待ち） |
@@ -54,7 +54,7 @@
 | 作業worktree | `C:\Users\overd\AppData\Local\Temp\syncratch-pr10-review` |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 修正コミットをPR #10へ反映し、実機2クライアントで forever connect/disconnect を確認 |
+| 次Task | PR #10 CI完了後、修正版を再読込して実機2クライアントで forever connect/disconnect を確認 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -3194,5 +3194,18 @@ Local-First実装進捗: Stage 0〜5 100%
 次の担当:
 - Cursor: 本コミットをPR #10へ取り込み/反映。
 - ユーザー: 実機2画面で host forever入れ子 → guest反映、guest detach → host反映、sprite移動でblockを巻き戻さないことを確認。
+```
+
+### 2026-07-21 19:32:44 JST — Codex（修正版未反映の切り分け）
+
+```text
+状態: BLOCK_SYNC_FIX_PUSHED_CI_PENDING
+ユーザー報告: 2画面で座標・接続人数は一致するがblock graphが不一致のスクリーンショット。
+切り分け結果: 報告時点のPR #10 headは旧SHA 3f2b37bで、修正0997a7bはローカル隔離ブランチにしか存在しなかった。したがって当該画像は修正版の失敗証拠ではなく旧版の既知再現。
+対応: 0997a7bを `cursor/guest-bootstrap-stall-reconnect-f431` へfast-forward push。PR #10 headが0997a7bになったことをGitHubで確認。
+CI: Gate 0 2ジョブ実行中。
+進捗: Local-First実装100% / 本不具合解消90%（PR反映済み、CIと実機再確認待ち）。
+注意: CI完了後に修正版をhard reloadまたは新規起動し、新しいroomで再試験する。既存room/旧bundle/旧dev serverは判定に使わない。
+再現継続時の次手: PROJECT_CHANGEDごとのvm.toJSON block graph、pending/base/remote/rebased、Y.Doc blocksJson hashをparticipant別に採取し、実Blockly dragイベント列で再現する。
 ```
 
