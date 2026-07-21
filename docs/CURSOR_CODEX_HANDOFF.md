@@ -3870,3 +3870,35 @@ GitHub Gate 0:
 進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（コードGO + Gate 0 PASS、merge待ち）
 次の担当: ユーザー
 ```
+
+### 2026-07-22 06:43:12 JST — Codex（PR #13 local UI state hardening 正式承認）
+
+```text
+状態: GO
+判定: 正式承認（P0/P1/P2 findingなし）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 41f26a4404de3c3ccad5dc686f5be0a20c66916a
+- approved implementation tip: 4089aacfdb6605208822441aa8393d71d5b05969
+
+最終確認:
+- GitHub Gate 0 push: PASS（9m20s）
+- GitHub Gate 0 pull_request: PASS（9m12s）
+- PR: OPEN / Draft / MERGEABLE
+- Gate 0確認待ち以降、実装変更なし（台帳更新のみ）
+- Codex検証: editor-web 190/190、typecheck、build:e2e、実Blockly mouse/wheel + WebRTC focused E2E 1/1、diff check 全PASS
+
+承認範囲:
+- regular remote apply後のactive tab / per-project・per-target viewport維持
+- 実Blockly pan/zoomのlocal user優先
+- target変更、leave、new/open/guest-initial、後続applyに対するstale settle防止
+- local UI状態のProjectDocument / Y.Doc / peer非同期化禁止
+- selected spriteと既存共同編集受け入れの回帰維持
+
+次:
+- PR #13のReady化・mergeはユーザーの明示指示待ち。
+- merge指示があるまで次スライスへ着手しない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 100%（実装・レビュー・Gate 0完了、merge待ち）。
+次の担当: ユーザー
+```
