@@ -4,6 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BlockSync Editor</title>
+    <!-- Start downloading the large Scratch bundle while the shell paints. -->
+    <link
+      rel="preload"
+      as="script"
+      href="%BASE_URL%generated/gui/scratch-gui-standalone.js"
+    />
+    <style>
+      html,
+      body,
+      #app {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: system-ui, sans-serif;
+      }
+      #app {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      #scratch-gui {
+        flex: 1 1 auto;
+        min-height: 0;
+        position: relative;
+        background: #e8eef5;
+      }
+      #scratch-gui.gui-loading::before {
+        content: "エディターを読み込み中…";
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        color: #16324f;
+        font-size: 1.05rem;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+        background:
+          radial-gradient(circle at 20% 20%, #fff8 0, transparent 40%),
+          linear-gradient(160deg, #d7e6f5, #eef3f8 55%, #dfeaf5);
+        z-index: 1;
+      }
+    </style>
   </head>
   <body>
     <main id="app">
@@ -54,7 +97,12 @@
           <span aria-hidden="true" class="status-secondary" data-testid="collab-status" id="collab-status">Solo</span>
         </span>
       </header>
-      <section data-testid="scratch-gui" id="scratch-gui"></section>
+      <section
+        aria-busy="true"
+        class="gui-loading"
+        data-testid="scratch-gui"
+        id="scratch-gui"
+      ></section>
     </main>
     <script>
       // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
@@ -64,7 +112,6 @@
         window.__BLOCKSYNC_GUI_PUBLIC_PATH__ = base;
       })();
     </script>
-    <script src="/generated/gui/scratch-gui-standalone.js"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

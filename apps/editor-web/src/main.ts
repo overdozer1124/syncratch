@@ -43,6 +43,10 @@ import {composeProjectStatus} from "./project-status.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
 import {readSb3File} from "./import-file.js";
+import {
+  loadScratchGui,
+  setGuiLoadingVisible,
+} from "./load-scratch-gui.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
@@ -927,6 +931,9 @@ function download(bytes: Uint8Array): void {
 }
 
 async function getVm(): Promise<ScratchVm> {
+  setGuiLoadingVisible(guiHost, true);
+  saveStatus.textContent = "Loading editor…";
+  await loadScratchGui();
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
@@ -935,7 +942,10 @@ async function getVm(): Promise<ScratchVm> {
     root.render({
       canEditTitle: false,
       canSave: false,
-      onVmInit: resolve,
+      onVmInit: vmInstance => {
+        setGuiLoadingVisible(guiHost, false);
+        resolve(vmInstance);
+      },
     });
   });
 }
@@ -1140,8 +1150,10 @@ function setupDriveIntegration(): EditorDriveIntegration {
 }
 
 async function boot(): Promise<void> {
+  // Overlap IndexedDB open with the large Scratch GUI download.
+  const guiReady = getVm();
   store = await openProjectStore();
-  vm = await getVm();
+  vm = await guiReady;
   vm.on("PROJECT_CHANGED", markDirty);
   const latest = await store.getLatest();
   if (latest === null) {
