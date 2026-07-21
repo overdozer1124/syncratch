@@ -89,6 +89,11 @@ function fakeVm(initial: ProjectDocument) {
   let document = structuredClone(initial);
   let assets = assetsFor(document);
   const appliedDocs: ProjectDocument[] = [];
+  let previousBeforeGuestInitial: {
+    document: ProjectDocument;
+    assets: Map<string, Uint8Array>;
+  } | null = null;
+  let rollbackCount = 0;
   return {
     materializeLocal() {
       return {document: structuredClone(document), assets: new Map(assets)};
@@ -96,11 +101,24 @@ function fakeVm(initial: ProjectDocument) {
     applyRemoteToLocal(
       doc: ProjectDocument,
       remoteAssets: Map<string, Uint8Array>,
-      _context: ApplyRemoteContext,
+      context: ApplyRemoteContext,
     ) {
+      if (context.mode === "guest-initial") {
+        previousBeforeGuestInitial = {
+          document: structuredClone(document),
+          assets: new Map(assets),
+        };
+      }
       document = structuredClone(doc);
       assets = new Map(remoteAssets);
       appliedDocs.push(structuredClone(doc));
+    },
+    rollbackGuestInitialLocal() {
+      if (!previousBeforeGuestInitial) return;
+      document = previousBeforeGuestInitial.document;
+      assets = previousBeforeGuestInitial.assets;
+      previousBeforeGuestInitial = null;
+      rollbackCount += 1;
     },
     editTargetName(id: string, name: string) {
       const target = document.targets.find((t) => t.id === id)!;
@@ -122,6 +140,7 @@ function fakeVm(initial: ProjectDocument) {
     },
     current: () => document,
     lastApplied: () => appliedDocs[appliedDocs.length - 1],
+    rollbackCount: () => rollbackCount,
   };
 }
 
@@ -210,6 +229,8 @@ describe("guest bootstrap terminal-state guards", () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
     const source = project([stage(), sprite("s1", "S1")]);
+    const previousGuestProject = project([stage(), sprite("local", "KeepMe")]);
+    const guestVm = fakeVm(previousGuestProject);
     let deliverGuestUpdate!: (update: Uint8Array) => boolean;
     let markSaveStarted!: () => void;
     let releaseSave!: () => void;
@@ -238,12 +259,14 @@ describe("guest bootstrap terminal-state guards", () => {
         deliverGuestUpdate = config.applyRemoteUpdate;
         return create(config);
       },
-      materializeLocal: fakeVm(project([stage()])).materializeLocal,
-      applyRemoteToLocal: async () => {
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
         markSaveStarted();
         await saveGate;
+        guestVm.applyRemoteToLocal(document, assets, context);
         return true;
       },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
       onState: state => stateEvents.push(state.bootstrapPhase),
     });
 
@@ -269,6 +292,9 @@ describe("guest bootstrap terminal-state guards", () => {
     expect(guest.getState()).toEqual(frozenState);
     expect(guest.domain.encodeState()).toEqual(frozenEncodedState);
     expect(stateEvents).toHaveLength(frozenEventCount);
+    expect(guestVm.current().targets.find(target => target.id === "local")?.name)
+      .toBe("KeepMe");
+    expect(guestVm.rollbackCount()).toBe(1);
   });
 
   it("keeps invalid-project terminal when a retry save finishes", async () => {
@@ -467,6 +493,74 @@ describe("guest staging guard lifecycle", () => {
       .toBe("NewerWhileSaveFailed");
   });
 
+  it("rolls back guest-initial when staging becomes awaiting-newer-seal during save", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Original")]));
+    const previousGuestProject = project([stage(), sprite("local", "KeepMe")]);
+    const guestVm = fakeVm(previousGuestProject);
+    let markFirstSaveStarted!: () => void;
+    let releaseFirstSave!: () => void;
+    const firstSaveStarted = new Promise<void>(resolve => {
+      markFirstSaveStarted = resolve;
+    });
+    const firstSaveGate = new Promise<void>(resolve => {
+      releaseFirstSave = resolve;
+    });
+    const host = createCollabSession({
+      roomId: "room-rollback-awaiting-seal",
+      secret: "rollback-awaiting-seal-secret-rollback-await",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-rollback-awaiting-seal",
+      secret: "rollback-awaiting-seal-secret-rollback-await",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        markFirstSaveStarted();
+        await firstSaveGate;
+        guestVm.applyRemoteToLocal(document, assets, context);
+        return true;
+      },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const initialFlush = guest.flush();
+    await firstSaveStarted;
+
+    // Dirty staging content without a newer seal → awaiting-newer-seal after apply.
+    const targetEntry = guest.domain.ydoc
+      .getMap<Y.Map<unknown>>("targets")
+      .get("s1");
+    expect(targetEntry).toBeInstanceOf(Y.Map);
+    const rawJson = targetEntry!.get("json");
+    expect(typeof rawJson).toBe("string");
+    const parsed = JSON.parse(String(rawJson)) as {name: string};
+    parsed.name = "UnsealedDirty";
+    guest.domain.ydoc.transact(() => {
+      targetEntry!.set("json", JSON.stringify(parsed));
+    }, "test-unsealed-dirty");
+
+    releaseFirstSave();
+    await initialFlush;
+
+    expect(guest.getBootstrapPhase()).toBe("receiving-project");
+    expect(guestVm.current().targets.find(target => target.id === "local")?.name)
+      .toBe("KeepMe");
+    expect(guestVm.rollbackCount()).toBe(1);
+  });
+
   it("serializes newer staging state behind an in-flight initial local copy", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
@@ -507,6 +601,7 @@ describe("guest staging guard lifecycle", () => {
         }
         guestVm.applyRemoteToLocal(document, assets, context);
       },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
     });
 
     expect(host.start({host: true}).ok).toBe(true);
@@ -582,6 +677,7 @@ describe("guest staging guard lifecycle", () => {
         }
         guestVm.applyRemoteToLocal(document, assets, context);
       },
+      rollbackGuestInitialLocal: () => guestVm.rollbackGuestInitialLocal(),
     });
 
     expect(host.start({host: true}).ok).toBe(true);
@@ -611,6 +707,7 @@ describe("guest staging guard lifecycle", () => {
     expect(guestVm.current().targets.find(target => target.id === "s1")?.name)
       .toBe("Third");
     expect(modes).toEqual(["guest-initial", "update", "update"]);
+    expect(guestVm.rollbackCount()).toBe(0);
   });
 });
 

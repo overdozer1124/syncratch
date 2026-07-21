@@ -232,6 +232,11 @@ let failNextWrite = false;
 let collabSession: CollabSession | null = null;
 let activeInvite: CollabInvite | null = null;
 let collaborationGeneration = 0;
+let guestInitialRollback: {
+  generation: number;
+  previous?: LocalProjectRecord;
+  savedId: string;
+} | null = null;
 let collaborationTestGate = false;
 let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
@@ -566,6 +571,9 @@ function renderCollabIdle(message = "Solo"): void {
 
 function renderCollabState(state: CollabState): void {
   lastCollabState = state;
+  if (state.bootstrapPhase === "ready") {
+    guestInitialRollback = null;
+  }
   const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
   const conflict = state.conflict ? " · conflict; Drive paused" : "";
   const assets =
@@ -587,15 +595,31 @@ function renderCollabState(state: CollabState): void {
   renderProjectStatus();
 }
 
+async function rollbackGuestInitialLocal(generation: number): Promise<void> {
+  const pending = guestInitialRollback;
+  if (!pending || pending.generation !== generation) return;
+  guestInitialRollback = null;
+  try {
+    await store.delete(pending.savedId);
+  } catch {
+    // Best-effort cleanup of the tentative guest copy.
+  }
+  if (pending.previous) {
+    await loadRecord(pending.previous);
+    return;
+  }
+  hasCurrent = false;
+}
+
 async function applyCollaborativeProject(
   generation: number,
   document: ProjectDocument,
   assets: Map<string, Uint8Array>,
   context: ApplyRemoteContext,
 ): Promise<void | boolean> {
-  if (generation !== collaborationGeneration || !collabSession) return;
+  if (generation !== collaborationGeneration || !collabSession) return false;
   await saveCoordinator.flush();
-  if (generation !== collaborationGeneration || !collabSession) return;
+  if (generation !== collaborationGeneration || !collabSession) return false;
 
   if (context.mode === "guest-initial") {
     driveAutosave?.cancel();
@@ -610,7 +634,7 @@ async function applyCollaborativeProject(
       assets: assetRecordsFromMap(document, assets),
       saveState: "clean",
     };
-    return applyGuestInitialProject({
+    const applied = await applyGuestInitialProject({
       candidate: record,
       previous,
       isActive: () =>
@@ -632,7 +656,14 @@ async function applyCollaborativeProject(
         suppressVmChanges = value;
       },
     });
-    return;
+    if (applied) {
+      guestInitialRollback = {
+        generation,
+        previous,
+        savedId: current.localProjectId,
+      };
+    }
+    return applied;
   }
 
   const next: LocalProjectRecord = {
@@ -644,8 +675,9 @@ async function applyCollaborativeProject(
     saveState: "clean",
   };
   const saved = await store.createOrReplace(next, current.revision);
-  if (generation !== collaborationGeneration || !collabSession) return;
+  if (generation !== collaborationGeneration || !collabSession) return false;
   await loadRecord(saved);
+  return true;
 }
 
 async function startCollaboration(
@@ -674,12 +706,20 @@ async function startCollaboration(
       return {document: documentFromVm(assets), assets};
     },
     applyRemoteToLocal: async (document, assets, context) => {
-      await applyCollaborativeProject(generation, document, assets, context);
+      const applied = await applyCollaborativeProject(
+        generation,
+        document,
+        assets,
+        context,
+      );
+      if (applied === false) return false;
       if (collabSession?.createdThisRoom()) {
         driveIntegration.markLocalChange();
         driveAutosave.noteChange();
       }
+      return true;
     },
+    rollbackGuestInitialLocal: () => rollbackGuestInitialLocal(generation),
     projectTitle: () => titleInput.value,
     reobserveDriveBeforeLeadership: async () => {
       if (collaborationTestGate) return;
@@ -746,8 +786,9 @@ async function joinRoom(): Promise<void> {
 
 function leaveRoom(): void {
   driveAutosave?.cancel();
-  collaborationGeneration += 1;
+  // Leave before bumping generation so tentative guest-initial rollback can run.
   collabSession?.leave();
+  collaborationGeneration += 1;
   collabSession = null;
   activeInvite = null;
   renderCollabIdle();

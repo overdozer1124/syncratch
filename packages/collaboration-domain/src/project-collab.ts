@@ -362,8 +362,8 @@ export class ProjectCollaborationDocument {
 
   /**
    * Accept a remote update into a staging document without requiring a complete
-   * asset set. A monotonic novel-byte upper bound admits safely-small updates;
-   * only near-boundary updates require merging the accumulated update chunks.
+   * asset set. Novel-byte sums and mergeUpdates lengths are conservative upper
+   * bounds only; the hard-limit decision uses encodeStateAsUpdate length.
    */
   tryApplyStagingUpdate(
     update: Uint8Array,
@@ -444,21 +444,33 @@ export class ProjectCollaborationDocument {
         );
       }
 
-      const exactUpdate = Y.mergeUpdates(
+      // Near the bound: mergeUpdates is only a conservative filter. When it
+      // overshoots, measure the real encodeStateAsUpdate length on a trial doc.
+      const mergedUpperBound = Y.mergeUpdates(
         isDuplicate
           ? [...stagingUpdateChunks.values()]
           : [...stagingUpdateChunks.values(), novelUpdate],
       );
-      const exactBytes = exactUpdate.byteLength;
-      if (exactBytes > maxStagingStateBytes) {
-        return this.rememberRawAndSemanticStagingResult(
-          rawCacheKey,
-          semanticCacheKey,
-          {
-            accepted: false,
-            issues: [issue("INVALID_DOCUMENT", "cumulative staging state exceeds hard limit")],
-          },
-        );
+      if (mergedUpperBound.byteLength > maxStagingStateBytes) {
+        const trial = new Y.Doc();
+        try {
+          Y.applyUpdate(trial, this.encodeState());
+          if (!isDuplicate) {
+            Y.applyUpdate(trial, novelUpdate);
+          }
+          if (Y.encodeStateAsUpdate(trial).byteLength > maxStagingStateBytes) {
+            return this.rememberRawAndSemanticStagingResult(
+              rawCacheKey,
+              semanticCacheKey,
+              {
+                accepted: false,
+                issues: [issue("INVALID_DOCUMENT", "cumulative staging state exceeds hard limit")],
+              },
+            );
+          }
+        } finally {
+          trial.destroy();
+        }
       }
       if (!isDuplicate) {
         Y.applyUpdate(this.ydoc, novelUpdate, STAGING_ORIGIN);
@@ -466,8 +478,9 @@ export class ProjectCollaborationDocument {
         this.stagingRawResultCache.clear();
         this.stagingSemanticResultCache.clear();
       }
-      this.stagingNovelByteUpperBound = exactBytes;
-      this.replaceStagingUpdateChunks(exactUpdate);
+      const encodedState = this.encodeState();
+      this.stagingNovelByteUpperBound = encodedState.byteLength;
+      this.replaceStagingUpdateChunks(encodedState);
       return this.rememberRawAndSemanticStagingResult(
         rawCacheKey,
         semanticCacheKey,

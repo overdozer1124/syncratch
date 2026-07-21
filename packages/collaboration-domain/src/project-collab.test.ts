@@ -235,6 +235,47 @@ describe("remote state acceptance guards", () => {
     expect(receiver.materialize().ok).toBe(false);
   });
 
+  it("does not reject when mergeUpdates exceeds the limit but encodeStateAsUpdate does not", () => {
+    const sender = new Y.Doc();
+    const values = sender.getMap<string>("values");
+    const receiver = new ProjectCollaborationDocument();
+    const hardLimit = 250;
+    let senderVector = Y.encodeStateVector(sender);
+    let sawMergeOverEncodeUnder = false;
+
+    for (let i = 0; i < 12; i += 1) {
+      values.set(`k${i}`, "x".repeat(30 + (i % 20)));
+      if (i % 5 === 4) values.delete(`k${i - 1}`);
+      const update = Y.encodeStateAsUpdate(sender, senderVector);
+      senderVector = Y.encodeStateVector(sender);
+      expect(update.byteLength).toBeLessThan(hardLimit);
+
+      const before = receiver.encodeState();
+      const novel = Y.diffUpdate(update, Y.encodeStateVector(receiver.ydoc));
+      const merged = Y.mergeUpdates([before, novel]);
+      const trial = new Y.Doc();
+      Y.applyUpdate(trial, before);
+      Y.applyUpdate(trial, novel);
+      const encodedAfter = Y.encodeStateAsUpdate(trial).byteLength;
+      trial.destroy();
+      const outcome = receiver.tryApplyStagingUpdate(update, hardLimit);
+
+      if (merged.byteLength > hardLimit && encodedAfter <= hardLimit) {
+        sawMergeOverEncodeUnder = true;
+        expect(outcome.accepted).toBe(true);
+        expect(receiver.encodeState().byteLength).toBeLessThanOrEqual(hardLimit);
+        break;
+      }
+      if (encodedAfter > hardLimit) {
+        expect(outcome.accepted).toBe(false);
+        break;
+      }
+      expect(outcome.accepted).toBe(true);
+    }
+
+    expect(sawMergeOverEncodeUnder).toBe(true);
+  });
+
   it("rejects individually-small updates that cumulatively exceed the staging limit without changing live state", () => {
     const sender = new Y.Doc();
     const values = sender.getMap<string>("values");
