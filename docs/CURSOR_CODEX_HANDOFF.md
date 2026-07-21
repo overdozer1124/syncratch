@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 04:47:30 JST |
-| 更新者 | Codex |
-| ワークフロー状態 | `GO_PR10_READY_FOR_USER_MERGE_DECISION` |
-| 現在の担当 | ユーザー（PR #10 Ready化・merge・#8/#9整理の承認） |
-| 現在のTask | PR #10 stabilization / acceptance 正式承認済み |
+| 最終更新 | 2026-07-22 05:02:58 JST |
+| 更新者 | Cursor |
+| ワークフロー状態 | `PR10_MERGED` |
+| 現在の担当 | ユーザー（次スライス選定） |
+| 現在のTask | なし（PR #10 merge と #8/#9 close 完了） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10実装・受け入れ・Codexレビュー完了） |
+| Local-First実装進捗 | **100%**（PR #10 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | PR: `cursor/guest-bootstrap-stall-reconnect-f431` |
+| 作業ブランチ | base: `feat/local-first-pivot-impl` @ `7fb15ad` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー承認後、PR #10をReady化・mergeし、包含済みPR #8/#9をsupersededとしてclose |
+| 次Task | 次機能スライスを選定（remote部分更新 / UI状態監査 / Chromebookヘッダー / PR #7 / block単位CRDT は未着手） |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし。PR #10はCodex GO。ユーザーがmergeを指示した場合のみ、PR #10をReady for reviewへ変更してbase `feat/local-first-pivot-impl`へmergeし、結果を再確認してからPR #8/#9へ「#10に包含・superseded」と記録してcloseする。remote部分更新、追加UI状態監査、Chromebookヘッダー、PR #7、block単位CRDTにはまだ着手しない。
+なし。ユーザーが次スライスを指示するまで待機。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
