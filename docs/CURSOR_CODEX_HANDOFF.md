@@ -3924,3 +3924,40 @@ mergedAt: 2026-07-21T21:53:33Z
 進捗: Local-First primary milestone 100% / UI hardening slice 100%（PR #13 merged）
 次の担当: ユーザー
 ```
+
+### 2026-07-22 07:00:30 JST — Cursor（mainline 最終受け入れ・PR準備 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー指示: feat/local-first-pivot-impl 全体を本流へ統合するための最終受け入れ・PR準備
+ブランチ: cursor/mainline-final-acceptance-f431
+基準 tip（実装）: 48b94c499a496dbf6c15ecee63c57f6e8e256258
+本流: origin/main を同一 tip で新設（これまで remote に main/master が無く、default は feat/local-first-pivot-impl）
+
+実施（実装コード変更なし）:
+1. RELEASE_CHECKLIST 相当の自動ゲートを tip 上で再実行し FINAL_ACCEPTANCE_REPORT.md に固定
+2. COLLAB_ACCEPTANCE.md を PR #13 後の tab/viewport 保全に合わせて更新
+3. RELEASE_CHECKLIST.md に最新自動結果を反映
+4. main 向け Draft PR を作成（受け入れ証跡の本流取り込み + default branch 切替手順）
+
+自動ゲート（すべて PASS）:
+- gate0:test / gate0:collab
+- editor-web typecheck / test 190 / build / verify:static(/) / Playwright 16/16
+- google-drive-sync 25 / classroom-apps-script 14 / collaboration-domain 36
+- collab-webrtc 35 / collab-signaling 17 / collab-invite 13
+- r1:persist:test / r1:auth:test（frozen School track）
+- production dist: index.html あり / collab-harness.html なし
+- git diff --check
+
+未実施（意図的）:
+- Manual Google OAuth/Drive 実ユーザー gates（CI 資格情報では実行不可）
+- GitHub default branch の main 切替
+- 残 Draft PR #5/#7 の retarget/close
+- 公開デプロイ
+
+停止条件:
+- Codex GO とユーザー指示があるまで Ready化・merge・default branch 切替を行わない
+
+進捗: Local-First primary 100% / mainline 受け入れ準備 100%（証跡提出、レビュー待ち）
+次の担当: Codex
+```
