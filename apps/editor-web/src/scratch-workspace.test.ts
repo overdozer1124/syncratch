@@ -16,18 +16,22 @@ describe("scratch workspace access", () => {
     ).toBe(workspace);
   });
 
-  it("walks React fibers from the injection host when Blockly is a stub", () => {
+  it("walks React fibers from the blocks host when Blockly is a stub", () => {
     const workspace = {scrollX: 4, scrollY: -5, scale: 1.1};
-    const injection = {
-      className: "injectionDiv",
-      __reactFiber$test: {
+    const blocksHost = {
+      className: "blocks_blocks_test",
+    };
+    Object.defineProperty(blocksHost, "__reactFiber$test", {
+      value: {
         stateNode: {workspace},
         return: null,
       },
-    };
+      enumerable: false,
+      configurable: true,
+    });
     const root = {
       querySelector(selector: string) {
-        return selector.includes("injectionDiv") ? injection : null;
+        return selector.includes("blocks_blocks") ? blocksHost : null;
       },
     };
     expect(

@@ -60,28 +60,32 @@ export function resolveScratchWorkspace(
   }
 
   if (!root || typeof root.querySelector !== "function") return null;
-  const start =
-    root.querySelector(".injectionDiv") ??
-    root.querySelector("svg.blocklySvg") ??
-    root.querySelector('[class*="blocks_blocks"]');
-  if (!start) return null;
+  const starts = [
+    root.querySelector('[class*="blocks_blocks"]'),
+    root.querySelector(".injectionDiv"),
+    root.querySelector("svg.blocklySvg"),
+  ].filter((node): node is Element => Boolean(node));
 
-  const fiberKey = Object.keys(start).find(
-    key =>
-      key.startsWith("__reactFiber$") ||
-      key.startsWith("__reactInternalInstance$"),
-  );
-  let fiber: {stateNode?: {workspace?: unknown}; return?: unknown} | null =
-    fiberKey
-      ? ((start as unknown as Record<string, unknown>)[fiberKey] as {
-          stateNode?: {workspace?: unknown};
-          return?: unknown;
-        })
-      : null;
-  for (let depth = 0; fiber && depth < 40; depth += 1) {
-    const workspace = asWorkspace(fiber.stateNode?.workspace);
-    if (workspace) return workspace;
-    fiber = (fiber.return as typeof fiber) ?? null;
+  for (const start of starts) {
+    // React fiber keys are non-enumerable — Object.keys misses them.
+    const fiberKey = Object.getOwnPropertyNames(start).find(
+      key =>
+        key.startsWith("__reactFiber$") ||
+        key.startsWith("__reactInternalInstance$") ||
+        key.startsWith("__reactContainer$"),
+    );
+    let fiber: {stateNode?: {workspace?: unknown}; return?: unknown} | null =
+      fiberKey
+        ? ((start as unknown as Record<string, unknown>)[fiberKey] as {
+            stateNode?: {workspace?: unknown};
+            return?: unknown;
+          })
+        : null;
+    for (let depth = 0; fiber && depth < 80; depth += 1) {
+      const workspace = asWorkspace(fiber.stateNode?.workspace);
+      if (workspace) return workspace;
+      fiber = (fiber.return as typeof fiber) ?? null;
+    }
   }
   return null;
 }
@@ -120,6 +124,10 @@ export function applyViewportToScratchWorkspace(
   }
 }
 
+function metricsNumberClose(a: number, b: number): boolean {
+  return Math.abs(a - b) < 1e-6;
+}
+
 /** True when a Redux metrics update is only the echo of our own seed. */
 export function isInternalMetricsEcho(
   pending: {
@@ -137,8 +145,8 @@ export function isInternalMetricsEcho(
   if (pending.epoch !== current.epoch) return false;
   if (pending.targetId !== current.targetId) return false;
   return (
-    pending.viewport.scrollX === current.viewport.scrollX &&
-    pending.viewport.scrollY === current.viewport.scrollY &&
-    pending.viewport.scale === current.viewport.scale
+    metricsNumberClose(pending.viewport.scrollX, current.viewport.scrollX) &&
+    metricsNumberClose(pending.viewport.scrollY, current.viewport.scrollY) &&
+    metricsNumberClose(pending.viewport.scale, current.viewport.scale)
   );
 }
