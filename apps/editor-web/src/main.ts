@@ -117,21 +117,24 @@ import {
   readActiveTabIndex,
   readWorkspaceViewport,
   seedViewportForRuntimeTarget,
+  UPDATE_METRICS_TYPE,
   viewportForTargetSelection,
-  workspaceViewportsEqual,
   type GuiStoreLike,
   type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
-import {
-  createLocalViewportMemory,
-  type ViewportMemorySource,
-} from "./local-viewport-memory.js";
+import {createLocalViewportMemory} from "./local-viewport-memory.js";
 import {
   captureEditingSelection,
   loadProjectPreservingEditingTarget,
   type EditingSelectionRef,
   type EditingTargetLike,
 } from "./load-project-preserving-editing-target.js";
+import {
+  applyViewportToScratchWorkspace,
+  isInternalMetricsEcho,
+  readWorkspaceViewportFromScratch,
+  resolveScratchWorkspace,
+} from "./scratch-workspace.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -318,22 +321,16 @@ let uiRestoreEpoch = 0;
 /** Runtime id whose Redux metrics are considered synced from per-target memory. */
 let lastSyncedEditingTargetId: string | null = null;
 /**
- * After a target switch, Scratch may copy the previous workspace scroll into the
- * new target's metrics. Ignore those writes until a settle frame reapplies memory.
+ * Brief sync window while we seed metrics before Scratch listeners run. Not a
+ * timed "trusted wins over user pan" guard.
  */
 let suppressViewportMemoryCapture = false;
-/** True while a trusted local viewport write may not yet be mirrored in Redux. */
-let preferRememberedViewportCapture = false;
-/** Prefer trusted memory until this timestamp (Scratch lag guard). */
-let preferRememberedViewportUntil = 0;
-const PREFER_REMEMBERED_VIEWPORT_MS = 5_000;
-
-function isPreferRememberedViewportActive(): boolean {
-  return (
-    preferRememberedViewportCapture &&
-    Date.now() < preferRememberedViewportUntil
-  );
-}
+/** Last UPDATE_METRICS we dispatched; ignore that exact echo for one epoch. */
+let pendingInternalMetricsSeed: {
+  epoch: number;
+  targetId: string;
+  viewport: WorkspaceViewport;
+} | null = null;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -451,11 +448,15 @@ const diagnostic = {
         current.localProjectId,
         selection?.documentId ?? null,
       ),
-      {
-        preferRemembered:
-          isPreferRememberedViewportActive() || suppressViewportMemoryCapture,
-      },
+      {preferRemembered: suppressViewportMemoryCapture},
     );
+  },
+  getReduxWorkspaceViewport() {
+    if (!editorGuiState || !vm?.editingTarget?.id) return null;
+    return readWorkspaceViewport(editorGuiState.store, vm.editingTarget.id);
+  },
+  getLiveWorkspaceViewport() {
+    return readLiveWorkspaceViewport();
   },
   setActiveEditorTab(activeTabIndex: number): void {
     if (!editorGuiState) throw new Error("Editor GUI store missing");
@@ -474,12 +475,9 @@ const diagnostic = {
       vm.editingTarget,
       current.document,
     );
-    // Suppress Redux→memory capture while Scratch may still report the previous
-    // Blockly scroll; settle reapplies the intentional viewport next frame.
     suppressViewportMemoryCapture = true;
-    preferRememberedViewportCapture = true;
-    rememberViewportForSelection(selection, viewport, "trusted");
-    seedViewportForRuntimeTarget(editorGuiState.store, targetId, viewport);
+    rememberViewportForSelection(selection, viewport);
+    dispatchInternalViewportMetrics(targetId, viewport);
     applyWorkspaceViewport(viewport);
     scheduleViewportMemorySettle(targetId, selection, viewport, epoch);
     const stored = viewportMemory.get(
@@ -930,7 +928,7 @@ async function applyCollaborativeProject(
           afterDocument: recordToLoad.document,
           localUi: editorGuiState
             ? {
-                store: editorGuiState.store,
+                store: guiStoreTrackingInternalMetrics(editorGuiState.store),
                 readToolboxCategoryId,
                 restoreToolboxCategory,
                 rememberedViewportForSelection: selection =>
@@ -940,11 +938,8 @@ async function applyCollaborativeProject(
                         selection?.documentId ?? null,
                       )
                     : null,
-                rememberViewportForSelection: (selection, viewport) =>
-                  rememberViewportForSelection(selection, viewport, "trusted"),
-                preferRememberedViewport: () =>
-                  isPreferRememberedViewportActive() ||
-                  suppressViewportMemoryCapture,
+                rememberViewportForSelection,
+                preferRememberedViewport: () => suppressViewportMemoryCapture,
                 applyViewport: viewport => {
                   applyWorkspaceViewport(viewport);
                 },
@@ -1113,26 +1108,76 @@ function clearLocalUiMemoryForProjectReplacement(): void {
   viewportMemory.clearAll();
   lastSyncedEditingTargetId = null;
   suppressViewportMemoryCapture = false;
-  preferRememberedViewportCapture = false;
-  preferRememberedViewportUntil = 0;
+  pendingInternalMetricsSeed = null;
 }
 
 function rememberViewportForSelection(
   selection: EditingSelectionRef | null,
   viewport: WorkspaceViewport,
-  source: ViewportMemorySource = "trusted",
 ): void {
   if (!hasCurrent || !selection?.documentId) return;
   viewportMemory.set(
     current.localProjectId,
     selection.documentId,
     viewport,
-    source,
   );
-  if (source === "trusted") {
-    preferRememberedViewportCapture = true;
-    preferRememberedViewportUntil = Date.now() + PREFER_REMEMBERED_VIEWPORT_MS;
-  }
+}
+
+function noteInternalMetricsSeed(
+  runtimeTargetId: string,
+  viewport: WorkspaceViewport,
+): void {
+  pendingInternalMetricsSeed = {
+    epoch: uiRestoreEpoch,
+    targetId: runtimeTargetId,
+    viewport: {...viewport},
+  };
+}
+
+function dispatchInternalViewportMetrics(
+  runtimeTargetId: string,
+  viewport: WorkspaceViewport,
+): void {
+  if (!editorGuiState) return;
+  noteInternalMetricsSeed(runtimeTargetId, viewport);
+  seedViewportForRuntimeTarget(
+    editorGuiState.store,
+    runtimeTargetId,
+    viewport,
+  );
+}
+
+/** Store wrapper so loadProject seed dispatches are tracked as internal echoes. */
+function guiStoreTrackingInternalMetrics(base: GuiStoreLike): GuiStoreLike {
+  return {
+    getState: () => base.getState(),
+    subscribe: base.subscribe?.bind(base),
+    dispatch(action: unknown) {
+      if (action && typeof action === "object") {
+        const metrics = action as {
+          type?: string;
+          targetID?: string;
+          scrollX?: number;
+          scrollY?: number;
+          scale?: number;
+        };
+        if (
+          metrics.type === UPDATE_METRICS_TYPE &&
+          typeof metrics.targetID === "string" &&
+          typeof metrics.scrollX === "number" &&
+          typeof metrics.scrollY === "number" &&
+          typeof metrics.scale === "number"
+        ) {
+          noteInternalMetricsSeed(metrics.targetID, {
+            scrollX: metrics.scrollX,
+            scrollY: metrics.scrollY,
+            scale: metrics.scale,
+          });
+        }
+      }
+      return base.dispatch(action);
+    },
+  };
 }
 
 function scheduleViewportMemorySettle(
@@ -1146,12 +1191,8 @@ function scheduleViewportMemorySettle(
       if (epoch !== uiRestoreEpoch) return;
       if (vm?.editingTarget?.id !== runtimeTargetId) return;
       if (!editorGuiState) return;
-      seedViewportForRuntimeTarget(
-        editorGuiState.store,
-        runtimeTargetId,
-        viewport,
-      );
-      rememberViewportForSelection(selection, viewport, "trusted");
+      dispatchInternalViewportMetrics(runtimeTargetId, viewport);
+      rememberViewportForSelection(selection, viewport);
       if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
         applyWorkspaceViewport(viewport);
       }
@@ -1187,12 +1228,8 @@ function syncEditingTargetViewportFromMemory(
   // re-enter and recurse while seeding metrics for this runtime id.
   lastSyncedEditingTargetId = editingTarget.id;
   suppressViewportMemoryCapture = true;
-  seedViewportForRuntimeTarget(
-    editorGuiState.store,
-    editingTarget.id,
-    viewport,
-  );
-  rememberViewportForSelection(selection, viewport, "trusted");
+  dispatchInternalViewportMetrics(editingTarget.id, viewport);
+  rememberViewportForSelection(selection, viewport);
   if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
     applyWorkspaceViewport(viewport);
   }
@@ -1215,6 +1252,9 @@ function noteEditingTargetMaybeChanged(): void {
 
 function leaveRoom(): void {
   driveAutosave?.cancel();
+  // Invalidate pending UI settles before tearing down the session.
+  bumpUiRestoreEpoch();
+  pendingInternalMetricsSeed = null;
   // Leave before bumping generation so tentative guest-initial rollback can run.
   collabSession?.leave();
   collaborationGeneration += 1;
@@ -1357,34 +1397,16 @@ function download(bytes: Uint8Array): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-type ScratchWorkspace = {
-  scrollX?: number;
-  scrollY?: number;
-  scale?: number;
-  resize?: () => void;
-  getToolbox?: () => {
-    getSelectedItem?: () => {getId?: () => string} | null;
-    getToolboxItemById?: (id: string) => unknown;
-    setSelectedItem?: (item: unknown) => void;
-    selectCategoryByName?: (name: string) => void;
-  } | null;
-};
-
-function scratchBlocksApi(): {
-  getMainWorkspace?: () => ScratchWorkspace | null;
-} | null {
-  const globalObject = window as unknown as {
-    Blockly?: {
-      getMainWorkspace?: () => ScratchWorkspace | null;
-    };
-  };
-  return globalObject.Blockly ?? null;
+function scratchWorkspace() {
+  const blocksApi = (
+    globalThis as unknown as {Blockly?: Parameters<typeof resolveScratchWorkspace>[1]}
+  ).Blockly;
+  return resolveScratchWorkspace(guiHost, blocksApi ?? null);
 }
 
 function readToolboxCategoryId(): string | null {
   try {
-    const workspace = scratchBlocksApi()?.getMainWorkspace?.();
-    const selected = workspace?.getToolbox?.()?.getSelectedItem?.();
+    const selected = scratchWorkspace()?.getToolbox?.()?.getSelectedItem?.();
     const id = selected?.getId?.();
     if (typeof id === "string" && id.length > 0) return id;
   } catch {
@@ -1399,7 +1421,7 @@ function readToolboxCategoryId(): string | null {
 
 function restoreToolboxCategory(categoryId: string): boolean {
   try {
-    const toolbox = scratchBlocksApi()?.getMainWorkspace?.()?.getToolbox?.();
+    const toolbox = scratchWorkspace()?.getToolbox?.();
     if (!toolbox) return false;
     if (typeof toolbox.getToolboxItemById === "function" &&
       typeof toolbox.setSelectedItem === "function") {
@@ -1420,24 +1442,7 @@ function restoreToolboxCategory(categoryId: string): boolean {
 }
 
 function readLiveWorkspaceViewport(): WorkspaceViewport | null {
-  try {
-    const workspace = scratchBlocksApi()?.getMainWorkspace?.();
-    if (!workspace) return null;
-    if (
-      typeof workspace.scrollX !== "number" ||
-      typeof workspace.scrollY !== "number" ||
-      typeof workspace.scale !== "number"
-    ) {
-      return null;
-    }
-    return {
-      scrollX: workspace.scrollX,
-      scrollY: workspace.scrollY,
-      scale: workspace.scale,
-    };
-  } catch {
-    return null;
-  }
+  return readWorkspaceViewportFromScratch(scratchWorkspace());
 }
 
 function applyWorkspaceViewport(viewport: {
@@ -1445,17 +1450,7 @@ function applyWorkspaceViewport(viewport: {
   scrollY: number;
   scale: number;
 }): boolean {
-  try {
-    const workspace = scratchBlocksApi()?.getMainWorkspace?.();
-    if (!workspace) return false;
-    workspace.scrollX = viewport.scrollX;
-    workspace.scrollY = viewport.scrollY;
-    workspace.scale = viewport.scale;
-    workspace.resize?.();
-    return true;
-  } catch {
-    return false;
-  }
+  return applyViewportToScratchWorkspace(scratchWorkspace(), viewport);
 }
 
 async function getVm(): Promise<ScratchVm> {
@@ -1485,32 +1480,23 @@ async function getVm(): Promise<ScratchVm> {
           vm.editingTarget,
           current.document,
         );
-        const trusted = viewportMemory.getEntry(
-          current.localProjectId,
-          selection?.documentId ?? null,
-        );
         if (
-          isPreferRememberedViewportActive() &&
-          trusted?.source === "trusted" &&
-          !workspaceViewportsEqual(trusted.viewport, viewport)
+          isInternalMetricsEcho(pendingInternalMetricsSeed, {
+            epoch: uiRestoreEpoch,
+            targetId: editingId,
+            viewport,
+          })
         ) {
-          // Scratch's Blockly→Redux path often replays the previous scroll
-          // after an intentional write. Hold the trusted value for a short
-          // guard window so remote apply capture cannot see the stale metrics.
-          seedViewportForRuntimeTarget(
-            state.store,
-            editingId,
-            trusted.viewport,
-          );
-          applyWorkspaceViewport(trusted.viewport);
+          // Exact echo of our seed — keep memory aligned, do not cancel settle.
+          rememberViewportForSelection(selection, viewport);
+          pendingInternalMetricsSeed = null;
           return;
         }
-        const live = readLiveWorkspaceViewport();
-        // Only accept Redux→memory updates that match live Blockly. Lagging
-        // metrics that disagree with the workspace are ignored.
-        if (!live || !workspaceViewportsEqual(live, viewport)) return;
-        rememberViewportForSelection(selection, viewport, "redux");
-        preferRememberedViewportCapture = false;
+        // Real Blockly pan/zoom (or any non-echo metrics): adopt immediately
+        // and invalidate pending restore settles so the user always wins.
+        bumpUiRestoreEpoch();
+        pendingInternalMetricsSeed = null;
+        rememberViewportForSelection(selection, viewport);
       } catch {
         // ignore store subscription failures
       }

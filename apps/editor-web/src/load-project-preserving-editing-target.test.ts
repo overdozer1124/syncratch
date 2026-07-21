@@ -332,6 +332,73 @@ describe("editing selection remapping", () => {
 
     epoch += 1; // simulate a later apply / session replacement
     dispatch.mockClear();
+    applyViewport.mockClear();
+    scheduled[0]!();
+    expect(applyViewport).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("ignores deferred viewport settle after leave invalidates the restore epoch", async () => {
+    const before = documentOf([
+      stage(),
+      sprite("id-b", "Sprite2", 1),
+    ]);
+    const after = before;
+    const dispatch = vi.fn();
+    const applyViewport = vi.fn();
+    const scheduled: Array<() => void> = [];
+    let epoch = 0;
+    const vm = {
+      editingTarget: {
+        id: "runtime-old-b",
+        isStage: false,
+        getName: () => "Sprite2",
+      },
+      setEditingTarget: vi.fn(),
+      runtime: {
+        targets: [
+          {id: "runtime-old-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ],
+      },
+      loadProject: vi.fn(async () => {
+        vm.runtime.targets = [
+          {id: "runtime-new-b", isStage: false, getName: () => "Sprite2", isOriginal: true},
+        ];
+      }),
+    };
+
+    await loadProjectPreservingEditingTarget(vm, {targets: []}, {
+      beforeDocument: before,
+      afterDocument: after,
+      localUi: {
+        store: {
+          getState: () => ({
+            scratchGui: {
+              editorTab: {activeTabIndex: 0},
+              workspaceMetrics: {
+                targets: {
+                  "runtime-old-b": {scrollX: 48, scrollY: -36, scale: 1.1},
+                },
+              },
+            },
+          }),
+          dispatch,
+        },
+        rememberedViewportForSelection: () => null,
+        beginRestoreEpoch: () => ++epoch,
+        isRestoreEpochCurrent: value => value === epoch,
+        currentRuntimeEditingTargetId: () => "runtime-new-b",
+        applyViewport,
+        scheduleViewportSettle: work => {
+          scheduled.push(work);
+        },
+      },
+    });
+
+    // leaveRoom() bumps the UI restore epoch before tearing down the session.
+    epoch += 1;
+    dispatch.mockClear();
+    applyViewport.mockClear();
     scheduled[0]!();
     expect(applyViewport).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();

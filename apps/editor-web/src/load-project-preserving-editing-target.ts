@@ -231,10 +231,15 @@ export async function loadProjectPreservingEditingTarget(
       restoreToolboxCategory: options.localUi.restoreToolboxCategory,
       restoreTabAndToolbox: true,
     });
-    // Scratch workspaceUpdate/resize can nudge scroll after the first restore.
-    // Schedule viewport-only settle without awaiting (keeps suppressVmChanges
-    // short) and without re-applying tab/toolbox after the user may have moved.
+    // Push the captured viewport onto the live Blockly workspace immediately so
+    // Scratch's translate/zoom → Redux path echoes our seed instead of the
+    // previous sprite scroll. A deferred settle only repairs resize nudges.
     if (uiSnapshot?.viewport && newRuntimeId) {
+      try {
+        options.localUi.applyViewport?.(uiSnapshot.viewport);
+      } catch {
+        // Best-effort only.
+      }
       const localUi = options.localUi;
       const viewport = uiSnapshot.viewport;
       const schedule =

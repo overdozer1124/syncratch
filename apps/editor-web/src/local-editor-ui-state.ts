@@ -146,8 +146,9 @@ export function workspaceViewportsEqual(
  * On the blocks tab, Redux is authoritative — including an intentional return
  * to Scratch defaults — when an entry exists for the current runtime id. A
  * missing Redux entry (new runtime id before seed) is not intentional; fall
- * back to per-target memory. When a trusted local write has not yet been
- * mirrored by Scratch's lagging Blockly→Redux path, prefer that memory.
+ * back to per-target memory. During a brief internal seed window, prefer memory
+ * over Redux so a capture that races the seed does not observe a stale echo.
+ * This is not a timed "trusted beats user pan" lock.
  * Off the blocks tab, Scratch rewrites metrics unpredictably, so prefer the
  * remembered value whenever one exists.
  */
@@ -156,7 +157,7 @@ export function chooseWorkspaceViewport(
   rememberedViewport: WorkspaceViewport | null,
   options: {
     blocksTabActive: boolean;
-    /** Trusted local write that Scratch may not have mirrored yet. */
+    /** True only while an internal seed/suppress window is open. */
     preferRemembered?: boolean;
   },
 ): WorkspaceViewport | null {
