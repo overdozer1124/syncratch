@@ -412,12 +412,22 @@ const diagnostic = {
     if (!editorGuiState) return false;
     const targetId = vm.editingTarget?.id;
     if (!targetId) return false;
-    seedViewportForRuntimeTarget(editorGuiState.store, targetId, {
-      scrollX,
-      scrollY,
-      scale,
-    });
-    return applyWorkspaceViewport({scrollX, scrollY, scale});
+    const viewport = {scrollX, scrollY, scale};
+    seedViewportForRuntimeTarget(editorGuiState.store, targetId, viewport);
+    applyWorkspaceViewport(viewport);
+    // Prefer Redux as source of truth — live Blockly may be unavailable or
+    // briefly report defaults while the blocks tab is hidden.
+    const stored = captureLocalEditorUiState(
+      editorGuiState.store,
+      targetId,
+      null,
+    ).viewport;
+    return Boolean(
+      stored &&
+        stored.scrollX === scrollX &&
+        stored.scrollY === scrollY &&
+        stored.scale === scale,
+    );
   },
   selectToolboxCategory(categoryId: string): boolean {
     return restoreToolboxCategory(categoryId);

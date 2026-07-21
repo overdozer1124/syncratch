@@ -366,13 +366,13 @@ test("two Chromium contexts keep local editor UI across remote block edits", asy
       "Basketball",
     )).toBe(true);
 
-    // Distinctive local-only UI on the receiving peer (costumes tab + scrolled code viewport).
-    await pageB.evaluate(() => {
-      window.__blocksyncTask3!.setActiveEditorTab(0);
-      window.__blocksyncTask3!.setWorkspaceViewport(48, -36, 1.1);
-      window.__blocksyncTask3!.selectToolboxCategory("looks");
+    // Distinctive local-only UI on the receiving peer. Set the costumes tab
+    // first, then seed viewport last so workspace metric listeners do not
+    // overwrite Redux with Blockly defaults.
+    expect(await pageB.evaluate(() => {
       window.__blocksyncTask3!.setActiveEditorTab(1);
-    });
+      return window.__blocksyncTask3!.setWorkspaceViewport(48, -36, 1.1);
+    })).toBe(true);
     const before = await pageB.evaluate(() =>
       window.__blocksyncTask3!.getLocalEditorUiState());
     expect(before?.activeTabIndex).toBe(1);
