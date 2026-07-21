@@ -524,6 +524,7 @@ describe("guest bootstrap terminal-state guards", () => {
     const connectsBefore = connects;
     const disconnectsBefore = disconnects;
     guest.reconnectBootstrap();
+    await new Promise(resolve => setTimeout(resolve, 0));
 
     expect(guest.getBootstrapPhase()).toBe("receiving-project");
     expect(disconnects).toBe(disconnectsBefore + 1);

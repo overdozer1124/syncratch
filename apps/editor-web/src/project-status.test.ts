@@ -9,6 +9,7 @@ function collabState(partial: Partial<CollabState> & Pick<CollabState, "status" 
     issueCodes: [],
     signalingPeerCount: 0,
     joinedTopic: true,
+    signalingError: null,
     ...partial,
   };
 }

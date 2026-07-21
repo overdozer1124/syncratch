@@ -47,6 +47,21 @@ describe("join and membership", () => {
     expect(a.last()).toMatchObject({t: "peer", peer: "peer-b"});
   });
 
+  it("replaces a stale membership when the same peer id rejoins", () => {
+    const stale = new FakeConnection("stale");
+    const fresh = new FakeConnection("fresh");
+    const other = new FakeConnection("other");
+    join(stale, "peer-a");
+    join(other, "peer-b");
+    join(fresh, "peer-a");
+
+    expect(stale.closed).toEqual({code: 4000, reason: "replaced"});
+    expect(fresh.last()).toMatchObject({t: "joined", peers: ["peer-b"]});
+    expect(other.sent.some(item => (item as {t: string}).t === "leave")).toBe(true);
+    expect(other.last()).toMatchObject({t: "peer", peer: "peer-a"});
+    expect(hub.stats().peers).toBe(2);
+  });
+
   it("removes a peer on close and notifies the remaining peers", () => {
     const a = new FakeConnection("a");
     const b = new FakeConnection("b");

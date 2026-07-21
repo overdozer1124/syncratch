@@ -66,6 +66,7 @@ export interface CollabState {
   issueCodes: string[];
   signalingPeerCount: number;
   joinedTopic: boolean;
+  signalingError: string | null;
 }
 
 export interface LocalMaterialization {
@@ -113,6 +114,10 @@ export interface CollabSessionOptions {
   onState?: (state: CollabState) => void;
   /** Optional injection for deterministic bootstrap ids in tests. */
   randomBootstrapId?: () => string;
+  /** Hashed signaling topic (diagnostics only). */
+  signalingTopic?: string;
+  /** Configured signaling URL (diagnostics only; host shown, not full secret path). */
+  signalingUrl?: string;
 }
 
 export interface BootstrapDiagnostics {
@@ -129,6 +134,8 @@ export interface BootstrapDiagnostics {
   sawSignalingPeer: boolean;
   joinedTopic: boolean;
   signalingError: string | null;
+  topicPrefix: string | null;
+  signalingHost: string | null;
 }
 
 export interface CollabSession {
@@ -155,8 +162,19 @@ export interface CollabSession {
 const DEFAULT_STALL_MS = 15_000;
 /** Extra wait while signaling sees a peer but the data channel is still negotiating. */
 const ICE_NEGOTIATION_STALL_MS = 45_000;
+/** Guest joined an empty room: wait longer for the host to (re)appear. */
+const EMPTY_ROOM_STALL_MS = 120_000;
 /** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
 const MAX_SIGNALING_AUTO_RECONNECTS = 5;
+
+function signalingHostFromUrl(url: string | undefined): string | null {
+  if (!url || url.trim().length === 0) return null;
+  try {
+    return new URL(url).host || null;
+  } catch {
+    return null;
+  }
+}
 
 export function createCollabSession(options: CollabSessionOptions): CollabSession {
   const domain = new ProjectCollaborationDocument();
@@ -409,6 +427,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       issueCodes: [...issueCodes],
       signalingPeerCount: provider.getSignalingPeers().length,
       joinedTopic: provider.hasJoinedTopic(),
+      signalingError: provider.getSignalingError(),
     });
   };
 
@@ -425,11 +444,17 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   };
 
   const currentStallMs = (): number => {
-    const negotiating =
-      sawSignalingPeer && provider.getPeers().length === 0;
-    return negotiating
-      ? Math.max(stallInactivityMs, ICE_NEGOTIATION_STALL_MS)
-      : stallInactivityMs;
+    if (sawSignalingPeer && provider.getPeers().length === 0) {
+      return Math.max(stallInactivityMs, ICE_NEGOTIATION_STALL_MS);
+    }
+    if (
+      !createdThisRoom &&
+      provider.hasJoinedTopic() &&
+      provider.getSignalingPeers().length === 0
+    ) {
+      return Math.max(stallInactivityMs, EMPTY_ROOM_STALL_MS);
+    }
+    return stallInactivityMs;
   };
 
   const armStallTimer = (): void => {
@@ -834,10 +859,19 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     sawPeerDuringBootstrap = false;
     try {
       provider.disconnect();
-      provider.connect();
-    } finally {
+    } catch {
       ignoreEmptyPeerStall = false;
+      return;
     }
+    // Yield so the signaling hub can finish closing the previous socket
+    // before we re-join with the same peer id.
+    queueMicrotask(() => {
+      try {
+        provider.connect();
+      } finally {
+        ignoreEmptyPeerStall = false;
+      }
+    });
   };
 
   provider.on("status", () => {
@@ -891,12 +925,15 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     recomputeLeadership();
   });
   provider.on("signaling", () => {
-    if (provider.getSignalingPeers().length === 0) return;
-    sawSignalingPeer = true;
-    if (!createdThisRoom && !guestReady) {
-      markProgress("signaling");
-      emitState();
+    const signalingPeers = provider.getSignalingPeers();
+    if (signalingPeers.length > 0) {
+      sawSignalingPeer = true;
+      if (!createdThisRoom && !guestReady) {
+        markProgress("signaling");
+      }
     }
+    // Host/guest: surface join failures instead of looking "connected & waiting".
+    emitState();
   });
   provider.on("awareness", recomputeLeadership);
 
@@ -1066,6 +1103,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         issueCodes: [...issueCodes],
         signalingPeerCount: provider.getSignalingPeers().length,
         joinedTopic: provider.hasJoinedTopic(),
+        signalingError: provider.getSignalingError(),
       };
     },
     async flush() {
@@ -1136,6 +1174,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         sawSignalingPeer,
         joinedTopic: provider.hasJoinedTopic(),
         signalingError: provider.getSignalingError(),
+        topicPrefix: options.signalingTopic
+          ? options.signalingTopic.slice(0, 12)
+          : null,
+        signalingHost: signalingHostFromUrl(options.signalingUrl),
       };
     },
     getValidatedMaterialization() {

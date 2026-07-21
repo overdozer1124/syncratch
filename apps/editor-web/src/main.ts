@@ -752,6 +752,8 @@ async function startCollaboration(
     roomId: invite.roomId,
     secret: invite.secret,
     participantId,
+    signalingTopic: topic,
+    signalingUrl,
     createProvider: config => createWebRtcProvider({
       ...config,
       signalingUrl,

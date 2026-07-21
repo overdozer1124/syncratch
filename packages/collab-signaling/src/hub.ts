@@ -208,8 +208,26 @@ export class SignalingHub {
       return;
     }
     if (room.has(peer)) {
-      this.error(conn, "duplicate_peer");
-      return;
+      // Reconnect race: the previous WebSocket close may not have been
+      // processed yet. Replace the stale membership so the host stays in the
+      // room instead of failing with duplicate_peer while looking "connected".
+      const previous = room.get(peer)!;
+      if (previous.conn.id === conn.id) {
+        this.error(conn, "already_joined");
+        return;
+      }
+      room.delete(peer);
+      previous.topic = "";
+      previous.peer = "";
+      this.members.delete(previous.conn.id);
+      for (const other of room.values()) {
+        other.conn.send(JSON.stringify({t: "leave", topic, peer}));
+      }
+      try {
+        previous.conn.close(4000, "replaced");
+      } catch {
+        // ignore
+      }
     }
     member.topic = topic;
     member.peer = peer;

@@ -46,6 +46,12 @@ export function collaborationStatusText(state: CollabState): string {
   if (state.status === "connecting") {
     return "友だちとつないでいます…";
   }
+  if (state.signalingError) {
+    return "つながりに失敗しました。もう一度つないでください";
+  }
+  if (state.status === "connected" && !state.joinedTopic) {
+    return "友だちとつないでいます…";
+  }
   // Guest joined an empty signaling room — host is not present yet.
   if (
     !state.createdThisRoom &&
