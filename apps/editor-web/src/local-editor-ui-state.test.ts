@@ -4,6 +4,7 @@ import {
   BLOCKS_DEFAULT_SCALE,
   BLOCKS_TAB_INDEX,
   COSTUMES_TAB_INDEX,
+  DEFAULT_WORKSPACE_VIEWPORT,
   SOUNDS_TAB_INDEX,
   UPDATE_METRICS_TYPE,
   activateTabAction,
@@ -14,6 +15,7 @@ import {
   restoreLocalEditorUiState,
   seedViewportForRuntimeTarget,
   updateMetricsAction,
+  viewportForTargetSelection,
 } from "./local-editor-ui-state.js";
 
 function storeWith(gui: unknown) {
@@ -50,6 +52,23 @@ describe("local editor UI state", () => {
         {blocksTabActive: true},
       ),
     ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
+  });
+
+  it("on blocks tab falls back to memory when Redux has no entry yet", () => {
+    expect(
+      chooseWorkspaceViewport(
+        null,
+        {scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE},
+        {blocksTabActive: true},
+      ),
+    ).toEqual({scrollX: 0, scrollY: 0, scale: BLOCKS_DEFAULT_SCALE});
+  });
+
+  it("uses Scratch defaults when switching to a target with no memory", () => {
+    expect(viewportForTargetSelection(null)).toEqual(DEFAULT_WORKSPACE_VIEWPORT);
+    expect(
+      viewportForTargetSelection({scrollX: 48, scrollY: -36, scale: 1.1}),
+    ).toEqual({scrollX: 48, scrollY: -36, scale: 1.1});
   });
 
   it("off blocks tab prefers per-target memory over unreliable Redux metrics", () => {

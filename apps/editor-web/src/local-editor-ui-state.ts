@@ -100,6 +100,12 @@ export function updateMetricsAction(
 /** Scratch's default blocks scale; scroll 0/0 + this scale usually means unset. */
 export const BLOCKS_DEFAULT_SCALE = 0.675;
 
+export const DEFAULT_WORKSPACE_VIEWPORT: WorkspaceViewport = {
+  scrollX: 0,
+  scrollY: 0,
+  scale: BLOCKS_DEFAULT_SCALE,
+};
+
 export function isDefaultWorkspaceViewport(
   viewport: WorkspaceViewport | null | undefined,
 ): boolean {
@@ -112,19 +118,33 @@ export function isDefaultWorkspaceViewport(
 }
 
 /**
+ * Viewport to seed when the editing target changes. Missing memory means the
+ * target was never panned — use Scratch defaults so the previous sprite's
+ * workspace scroll cannot leak through Blockly's live metrics.
+ */
+export function viewportForTargetSelection(
+  rememberedViewport: WorkspaceViewport | null,
+): WorkspaceViewport {
+  return rememberedViewport ?? DEFAULT_WORKSPACE_VIEWPORT;
+}
+
+/**
  * Resolve which viewport to capture for a remote apply.
  *
  * On the blocks tab, Redux is authoritative — including an intentional return
- * to Scratch defaults. Off the blocks tab, Scratch rewrites metrics
- * unpredictably (defaults or partial garbage), so prefer the per-target
- * remembered value whenever one exists.
+ * to Scratch defaults — when an entry exists for the current runtime id. A
+ * missing Redux entry (new runtime id before seed) is not intentional; fall
+ * back to per-target memory. Off the blocks tab, Scratch rewrites metrics
+ * unpredictably, so prefer the remembered value whenever one exists.
  */
 export function chooseWorkspaceViewport(
   reduxViewport: WorkspaceViewport | null,
   rememberedViewport: WorkspaceViewport | null,
   options: {blocksTabActive: boolean},
 ): WorkspaceViewport | null {
-  if (options.blocksTabActive) return reduxViewport;
+  if (options.blocksTabActive) {
+    return reduxViewport ?? rememberedViewport;
+  }
   return rememberedViewport ?? reduxViewport;
 }
 

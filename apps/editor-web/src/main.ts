@@ -117,6 +117,7 @@ import {
   readActiveTabIndex,
   readWorkspaceViewport,
   seedViewportForRuntimeTarget,
+  viewportForTargetSelection,
   type GuiStoreLike,
   type WorkspaceViewport,
 } from "./local-editor-ui-state.js";
@@ -125,6 +126,7 @@ import {
   captureEditingSelection,
   loadProjectPreservingEditingTarget,
   type EditingSelectionRef,
+  type EditingTargetLike,
 } from "./load-project-preserving-editing-target.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
@@ -150,7 +152,7 @@ interface ScratchVm {
     sprite?: {name?: string};
   } | null;
   toJSON(): string;
-  on(event: string, listener: () => void): void;
+  on(event: string, listener: (...args: unknown[]) => void): void;
   emit(event: string): void;
   runtime: {
     storage?: ScratchStorageInstance;
@@ -309,6 +311,13 @@ let editorGuiState: EditorGuiState | null = null;
 /** Per local-project + stable document-target viewport memory (local-only). */
 const viewportMemory = createLocalViewportMemory();
 let uiRestoreEpoch = 0;
+/** Runtime id whose Redux metrics are considered synced from per-target memory. */
+let lastSyncedEditingTargetId: string | null = null;
+/**
+ * After a target switch, Scratch may copy the previous workspace scroll into the
+ * new target's metrics. Ignore those writes until a settle frame reapplies memory.
+ */
+let suppressViewportMemoryCapture = false;
 let current: LocalProjectRecord;
 let hasCurrent = false;
 let saveCoordinator: SaveCoordinator;
@@ -400,6 +409,9 @@ const diagnostic = {
     );
     if (!target) return false;
     bumpUiRestoreEpoch();
+    // Seed per-target memory under the new runtime id *before* setEditingTarget
+    // so Scratch workspaceUpdate cannot copy the previous sprite's scroll.
+    syncEditingTargetViewportFromMemory(target);
     vm.setEditingTarget(target.id);
     return true;
   },
@@ -1072,6 +1084,8 @@ function bumpUiRestoreEpoch(): number {
 function clearLocalUiMemoryForProjectReplacement(): void {
   bumpUiRestoreEpoch();
   viewportMemory.clearAll();
+  lastSyncedEditingTargetId = null;
+  suppressViewportMemoryCapture = false;
 }
 
 function rememberViewportForSelection(
@@ -1084,6 +1098,84 @@ function rememberViewportForSelection(
     selection.documentId,
     viewport,
   );
+}
+
+function scheduleViewportMemorySettle(
+  runtimeTargetId: string,
+  selection: EditingSelectionRef | null,
+  viewport: WorkspaceViewport,
+  epoch: number,
+): void {
+  const run = () => {
+    try {
+      if (epoch !== uiRestoreEpoch) return;
+      if (vm?.editingTarget?.id !== runtimeTargetId) return;
+      if (!editorGuiState) return;
+      seedViewportForRuntimeTarget(
+        editorGuiState.store,
+        runtimeTargetId,
+        viewport,
+      );
+      rememberViewportForSelection(selection, viewport);
+      if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
+        applyWorkspaceViewport(viewport);
+      }
+    } catch {
+      // Best-effort only.
+    } finally {
+      if (epoch === uiRestoreEpoch) suppressViewportMemoryCapture = false;
+    }
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(run);
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
+/**
+ * Apply per-target remembered viewport (or Scratch defaults) for the editing
+ * sprite. Prevents Blockly's live workspace scroll from leaking across targets
+ * when setEditingTarget regenerates / swaps metrics keys.
+ */
+function syncEditingTargetViewportFromMemory(
+  editingTarget: EditingTargetLike | null | undefined = vm?.editingTarget,
+): void {
+  if (!editorGuiState || !hasCurrent || !editingTarget?.id) return;
+  const selection = captureEditingSelection(editingTarget, current.document);
+  const remembered = viewportMemory.get(
+    current.localProjectId,
+    selection?.documentId ?? null,
+  );
+  const viewport = viewportForTargetSelection(remembered);
+  // Mark synced before dispatching so store subscribers / targetsUpdate cannot
+  // re-enter and recurse while seeding metrics for this runtime id.
+  lastSyncedEditingTargetId = editingTarget.id;
+  suppressViewportMemoryCapture = true;
+  seedViewportForRuntimeTarget(
+    editorGuiState.store,
+    editingTarget.id,
+    viewport,
+  );
+  rememberViewportForSelection(selection, viewport);
+  if (readActiveTabIndex(editorGuiState.store) === BLOCKS_TAB_INDEX) {
+    applyWorkspaceViewport(viewport);
+  }
+  scheduleViewportMemorySettle(
+    editingTarget.id,
+    selection,
+    viewport,
+    uiRestoreEpoch,
+  );
+}
+
+function noteEditingTargetMaybeChanged(): void {
+  const editingId = vm?.editingTarget?.id ?? null;
+  if (!editingId || !hasCurrent || !editorGuiState) return;
+  if (editingId === lastSyncedEditingTargetId) return;
+  if (suppressViewportMemoryCapture) return;
+  bumpUiRestoreEpoch();
+  syncEditingTargetViewportFromMemory(vm.editingTarget);
 }
 
 function leaveRoom(): void {
@@ -1320,13 +1412,18 @@ async function getVm(): Promise<ScratchVm> {
     state.store.subscribe?.(() => {
       try {
         if (!hasCurrent || !vm?.editingTarget?.id) return;
+        const editingId = vm.editingTarget.id;
+        if (editingId !== lastSyncedEditingTargetId) {
+          // GUI sprite click path: restore per-target memory before Redux
+          // pollution from the previous workspace scroll is recorded.
+          noteEditingTargetMaybeChanged();
+          return;
+        }
+        if (suppressViewportMemoryCapture) return;
         // On the blocks tab Redux is authoritative, including intentional
         // returns to Scratch defaults. Off-tab rewrites are ignored here.
         if (readActiveTabIndex(state.store) !== BLOCKS_TAB_INDEX) return;
-        const viewport = readWorkspaceViewport(
-          state.store,
-          vm.editingTarget.id,
-        );
+        const viewport = readWorkspaceViewport(state.store, editingId);
         if (!viewport) return;
         const selection = captureEditingSelection(
           vm.editingTarget,
@@ -1571,6 +1668,9 @@ async function boot(): Promise<void> {
   store = await openProjectStore();
   vm = await getVm();
   vm.on("PROJECT_CHANGED", markDirty);
+  vm.on("targetsUpdate", () => {
+    noteEditingTargetMaybeChanged();
+  });
   const latest = await store.getLatest();
   if (latest === null) {
     const initial = await loadFixtureRecord();
