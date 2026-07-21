@@ -624,25 +624,10 @@ function renderCollabIdle(message = "ひとりで作っています"): void {
 
 function renderCollabState(state: CollabState): void {
   lastCollabState = state;
-<<<<<<< HEAD
   if (state.bootstrapPhase === "ready") {
     guestInitialRollback = null;
   }
-  const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
-  const conflict = state.conflict ? " · conflict; Drive paused" : "";
-  const assets =
-    state.bootstrapPhase === "ready" || state.expectedAssets === 0
-      ? ""
-      : ` · 素材 ${state.verifiedAssets}/${state.expectedAssets}`;
-  const phase =
-    state.bootstrapPhase === "ready"
-      ? "ready"
-      : state.bootstrapPhase;
-  collabStatus.textContent =
-    `${state.status} · ${peers} · ${phase}${assets}${conflict}`;
-=======
   collabStatus.textContent = collaborationStatusText(state);
->>>>>>> fb8a990 (Localize editor UX for young Japanese users)
   driveAutosave?.eligibilityChanged();
   createRoomButton.disabled = true;
   joinRoomButton.disabled = true;
