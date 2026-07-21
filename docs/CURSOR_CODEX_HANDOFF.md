@@ -3304,3 +3304,20 @@ PR #10 code head: 9d8e276717456971b933bd2e5a0e83285c65643b
 進捗: Local-First実装100% / 本素材不具合修正100% / 自動検証・CI 100%（ユーザー実機確認のみ待ち）。
 ```
 
+### 2026-07-21 22:38:22 JST — Cursor（素材修正版の取得・サーバ再起動）
+
+```text
+状態: LIBRARY_ASSET_FIX_SERVERS_RESTARTED / USER_VALIDATION_READY
+PR #10 head: afee93b（code head 9d8e276 + 台帳）
+作業:
+- origin/cursor/guest-bootstrap-stall-reconnect-f431 を fast-forward
+- CI Gate0: SUCCESS 確認
+- signaling(ws://127.0.0.1:4444) と vite(http://127.0.0.1:5173/) を再起動
+ユーザー実機:
+- 2画面とも hard reload
+- 旧roomではなく新規room
+- Scratchライブラリから Basketball を追加し、追加側保存成功・相手側表示・相手側保存を確認
+- 旧版で「？」になったスプライトは新規作品または再追加で判定
+進捗: Local-First実装100% / 素材不具合修正100% / サーバ準備完了（ユーザー実機確認待ち）
+```
+
