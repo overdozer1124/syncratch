@@ -13,32 +13,66 @@ export interface ProjectStatusInput {
 }
 
 const localStatusText: Record<LocalSaveState, string> = {
-  clean: "Saved",
-  dirty: "Unsaved",
-  saving: "Saving…",
-  error: "Save failed",
-  conflict: "Conflict",
+  clean: "このパソコンに保存しました",
+  dirty: "変更を保存します…",
+  saving: "このパソコンに保存中…",
+  error: "このパソコンに保存できませんでした",
+  conflict: "もう一度保存してください",
 };
 
 const driveDetailText: Record<EditorDriveStatus, string | null> = {
   "not-configured": null,
-  disconnected: "Drive disconnected",
-  connected: "Drive connected",
-  syncing: "Drive syncing",
-  synced: "Drive synced",
-  unsynced: "Drive unsynced",
-  conflict: "Drive conflict",
+  disconnected: "Google ドライブ：つながっていません",
+  connected: "Google ドライブにつながりました",
+  syncing: "Google ドライブに保存中…",
+  synced: "Google ドライブにも保存しました",
+  unsynced: "Google ドライブにはまだ保存していません",
+  conflict: "Google ドライブの作品が別の場所で変わっています",
 };
 
-function collabDetail(state: CollabState | null, idleMessage?: string): string | null {
-  if (!state) return idleMessage && idleMessage !== "Solo" ? idleMessage : null;
-  const peers = `${state.peerCount} ${state.peerCount === 1 ? "peer" : "peers"}`;
-  if (state.status === "disconnected") return "Collab disconnected";
-  if (state.bootstrapPhase !== "ready" && state.bootstrapPhase !== "idle") {
-    return `Collab ${state.bootstrapPhase}`;
+const bootstrapText: Partial<Record<CollabState["bootstrapPhase"], string>> = {
+  "receiving-project": "作品を受け取り中…",
+  "verifying-project": "作品を確認中…",
+  "saving-local-copy": "受け取った作品をこのパソコンに保存中…",
+  "stalled-project": "作品の受け取りが止まりました",
+  "invalid-project": "このリンクの作品を開けませんでした",
+  "local-save-failed": "受け取った作品をこのパソコンに保存できませんでした",
+};
+
+export function collaborationStatusText(state: CollabState): string {
+  if (state.status === "disconnected") {
+    return "友だちとのつながりが切れました";
   }
-  if (state.conflict) return `${peers} · Drive paused`;
-  return `${peers} connected`;
+  if (state.status === "connecting") {
+    return "友だちとつないでいます…";
+  }
+  const phaseText = bootstrapText[state.bootstrapPhase];
+  if (phaseText) {
+    const assetProgress =
+      state.bootstrapPhase === "receiving-project" && state.expectedAssets > 0
+        ? `（素材 ${state.verifiedAssets}/${state.expectedAssets}）`
+        : "";
+    return `${phaseText}${assetProgress}`;
+  }
+  const connected =
+    state.peerCount === 0
+      ? "友だちの参加を待っています"
+      : `${state.peerCount}人といっしょに作っています`;
+  return state.conflict
+    ? `${connected} · Google ドライブへの保存を止めています`
+    : connected;
+}
+
+function collabDetail(
+  state: CollabState | null,
+  idleMessage?: string,
+): string | null {
+  if (!state) {
+    return idleMessage && idleMessage !== "ひとりで作っています"
+      ? idleMessage
+      : null;
+  }
+  return collaborationStatusText(state);
 }
 
 export function composeProjectStatus(input: ProjectStatusInput): {
@@ -46,12 +80,12 @@ export function composeProjectStatus(input: ProjectStatusInput): {
   details: string;
 } {
   if (input.fatalError) {
-    return {primary: "Error", details: input.fatalError};
+    return {primary: "エラー", details: input.fatalError};
   }
   const primary = input.localError ?? localStatusText[input.local];
   const details = [
     input.driveMessage
-      ? `${driveDetailText[input.drive] ?? "Drive"}: ${input.driveMessage}`
+      ? `${driveDetailText[input.drive] ?? "Google ドライブ"}：${input.driveMessage}`
       : driveDetailText[input.drive],
     collabDetail(input.collab, input.collabIdleMessage),
   ]

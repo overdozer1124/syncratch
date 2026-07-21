@@ -12,6 +12,6 @@ export function downloadFilename(title: string): string {
     .join("")
     .replace(/[ .]+$/g, "");
   const safeName =
-    limited && !WINDOWS_RESERVED_NAME.test(limited) ? limited : "project";
+    limited && !WINDOWS_RESERVED_NAME.test(limited) ? limited : "作品";
   return `${safeName}.sb3`;
 }

@@ -19,7 +19,7 @@ describe("composeProjectStatus", () => {
       collab: null,
     });
 
-    expect(status.primary).toBe("Unsaved");
+    expect(status.primary).toBe("変更を保存します…");
     expect(status.details).toBe("");
   });
 
@@ -39,8 +39,10 @@ describe("composeProjectStatus", () => {
       }),
     });
 
-    expect(status.primary).toBe("Saved");
-    expect(status.details).toBe("Drive synced · 2 peers connected");
+    expect(status.primary).toBe("このパソコンに保存しました");
+    expect(status.details).toBe(
+      "Google ドライブにも保存しました · 2人といっしょに作っています",
+    );
   });
 
   it("surfaces bootstrap and disconnected collab phases in details", () => {
@@ -73,9 +75,11 @@ describe("composeProjectStatus", () => {
       }),
     });
 
-    expect(receiving.details).toContain("Collab receiving-project");
-    expect(disconnected.details).toContain("Collab disconnected");
-    expect(disconnected.details).toContain("Drive disconnected");
+    expect(receiving.details).toContain("作品を受け取り中…（素材 1/3）");
+    expect(disconnected.details).toContain("友だちとのつながりが切れました");
+    expect(disconnected.details).toContain(
+      "Google ドライブ：つながっていません",
+    );
   });
 
   it("keeps a fatal boot error primary during later status recomposition", () => {
@@ -83,23 +87,23 @@ describe("composeProjectStatus", () => {
       local: "clean",
       drive: "not-configured",
       collab: null,
-      fatalError: "IndexedDB failed to open",
+      fatalError: "エディターを始められませんでした。ページを読み直してください。",
     });
 
-    expect(status.primary).toBe("Error");
-    expect(status.details).toContain("IndexedDB failed to open");
+    expect(status.primary).toBe("エラー");
+    expect(status.details).toContain("ページを読み直してください");
   });
 
   it("keeps an import failure primary during secondary status updates", () => {
     const status = composeProjectStatus({
       local: "clean",
-      localError: "Import failed",
+      localError: "作品ファイルを開けませんでした",
       drive: "synced",
       collab: null,
     });
 
-    expect(status.primary).toBe("Import failed");
-    expect(status.details).toBe("Drive synced");
+    expect(status.primary).toBe("作品ファイルを開けませんでした");
+    expect(status.details).toBe("Google ドライブにも保存しました");
   });
 
   it("prioritizes collaboration disconnection over bootstrap progress", () => {
@@ -118,6 +122,6 @@ describe("composeProjectStatus", () => {
       }),
     });
 
-    expect(status.details).toBe("Collab disconnected");
+    expect(status.details).toBe("友だちとのつながりが切れました");
   });
 });

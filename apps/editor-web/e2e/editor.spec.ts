@@ -6,10 +6,23 @@ async function waitUntilReady(page: Page): Promise<void> {
   await page.goto("/");
   await page.waitForFunction(
     () =>
-      window.__blocksyncTask3?.ready === true ||
-      window.__blocksyncTask3?.error !== null,
+      window.__blocksyncTask3 !== undefined &&
+      (
+        window.__blocksyncTask3.ready === true ||
+        window.__blocksyncTask3.error !== null
+      ),
   );
   expect(await page.evaluate(() => window.__blocksyncTask3?.error)).toBeNull();
+}
+
+async function openPanel(
+  page: Page,
+  testId: "file-panel" | "collab-panel" | "drive-panel",
+): Promise<void> {
+  const panel = page.getByTestId(testId);
+  if (await panel.getAttribute("open") === null) {
+    await panel.locator("summary").click();
+  }
 }
 
 test("fresh load mounts the standalone GUI and reports local save ready", async ({
@@ -17,11 +30,59 @@ test("fresh load mounts the standalone GUI and reports local save ready", async 
 }) => {
   await waitUntilReady(page);
 
+  await expect(page.locator("html")).toHaveAttribute("lang", "ja");
+  await expect(page.getByLabel("作品の名前")).toHaveValue(/.+/);
   await expect(page.locator('[data-testid="scratch-gui"]')).toBeVisible();
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
+  await expect(page.getByText("うごき", {exact: true}).first()).toBeVisible();
+  await expect(
+    page.locator('#scratch-gui [aria-label="設定メニュー"]'),
+  ).toHaveCount(1);
+  await expect(
+    page.locator('#scratch-gui [aria-label="Settings menu"]'),
+  ).toHaveCount(0);
+  await expect(page.getByText("Debug", {exact: true})).toBeHidden();
+  await expect(page.getByTestId("file-panel")).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("collab-panel")).not.toHaveAttribute("open", "");
+  await openPanel(page, "file-panel");
+  await openPanel(page, "collab-panel");
+  await expect(page.getByTestId("file-panel")).not.toHaveAttribute("open", "");
+  await expect(page.getByTestId("collab-panel")).toHaveAttribute("open", "");
   expect(
     await page.evaluate(() => window.__blocksyncTask3?.getState().revision),
   ).toBe(0);
+});
+
+test("narrow screens keep editor height and allow horizontal Scratch scrolling", async ({
+  page,
+}) => {
+  await page.setViewportSize({width: 768, height: 800});
+  await waitUntilReady(page);
+  const scratch = page.getByTestId("scratch-gui");
+  const initialHeight = await scratch.evaluate(element => element.clientHeight);
+
+  await openPanel(page, "collab-panel");
+  expect(await scratch.evaluate(element => element.clientHeight)).toBe(
+    initialHeight,
+  );
+  await openPanel(page, "file-panel");
+  await expect(page.getByTestId("collab-panel")).not.toHaveAttribute("open", "");
+  expect(await scratch.evaluate(element => element.clientHeight)).toBe(
+    initialHeight,
+  );
+
+  const scroll = await scratch.evaluate(element => {
+    element.scrollLeft = element.scrollWidth;
+    return {
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      scrollLeft: element.scrollLeft,
+    };
+  });
+  expect(scroll.scrollWidth).toBeGreaterThan(scroll.clientWidth);
+  expect(scroll.scrollLeft).toBeGreaterThan(0);
 });
 
 test("no Google configuration keeps Drive disabled and local editing available", async ({
@@ -38,15 +99,20 @@ test("no Google configuration keeps Drive disabled and local editing available",
   });
   await waitUntilReady(page);
 
-  await expect(page.getByTestId("drive-status")).toHaveText("Not configured");
+  await expect(page.getByTestId("drive-status")).toHaveText(
+    "このパソコンでは使えません",
+  );
+  await openPanel(page, "drive-panel");
   await expect(
-    page.getByRole("button", {name: "Connect Google"}),
+    page.getByRole("button", {name: "Google とつなぐ"}),
   ).toBeDisabled();
   await page.evaluate(
     id => window.__blocksyncTask3!.createTestBlock(id),
     "drive-unconfigured-local-block",
   );
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
 
   expect(googleRequests).toEqual([]);
 });
@@ -58,7 +124,9 @@ test("VM block mutation autosaves and survives reload", async ({page}) => {
     id => window.__blocksyncTask3!.createTestBlock(id),
     TEST_BLOCK_ID,
   );
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
 
   await page.reload();
   await page.waitForFunction(() => window.__blocksyncTask3?.ready === true);
@@ -79,7 +147,9 @@ test("exports the current project and imports it as a new local project", async 
     id => window.__blocksyncTask3!.createTestBlock(id),
     TEST_BLOCK_ID,
   );
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   const originalId = await page.evaluate(
     () => window.__blocksyncTask3!.getState().localProjectId,
   );
@@ -127,16 +197,21 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
     buffer: Buffer.from([1, 2, 3]),
   });
 
-  await expect(page.getByTestId("save-status")).toHaveText("Import failed");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "作品ファイルを開けませんでした。今の作品はそのままです。",
+  );
   expect(
     await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
   ).toBe(originalId);
   await page.evaluate(() =>
     window.__blocksyncTask3!.configureCollaborationTestGate("import-failure"),
   );
-  await expect(page.getByTestId("save-status")).toHaveText("Import failed");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "作品ファイルを開けませんでした。今の作品はそのままです。",
+  );
+  await openPanel(page, "file-panel");
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", {name: "Download to this device"}).click();
+  await page.getByRole("button", {name: "作品ファイルをダウンロード"}).click();
   expect((await downloadPromise).suggestedFilename()).toMatch(/\.sb3$/);
 
   await page.locator("#open-file").setInputFiles({
@@ -144,7 +219,9 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
     mimeType: "application/x.scratch.sb3",
     buffer: Buffer.from(validBytes),
   });
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   expect(
     await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
   ).not.toBe(originalId);
@@ -161,9 +238,12 @@ test("save failure is recoverable and does not disable SB3 download", async ({
     TEST_BLOCK_ID,
   );
 
-  await expect(page.getByTestId("save-status")).toHaveText("Save failed");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存できませんでした",
+  );
+  await openPanel(page, "file-panel");
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", {name: "Download to this device"}).click();
+  await page.getByRole("button", {name: "作品ファイルをダウンロード"}).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.sb3$/);
   expect((await download.createReadStream()).readable).toBe(true);
@@ -193,7 +273,9 @@ test("editing, save, and reload stay local after initial static load", async ({
     id => window.__blocksyncTask3!.createTestBlock(id),
     TEST_BLOCK_ID,
   );
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   await page.reload();
   await page.waitForFunction(() => window.__blocksyncTask3?.ready === true);
 
@@ -211,6 +293,10 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
 }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
+  await contextA.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    {origin: "http://127.0.0.1:4173"},
+  );
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
   await Promise.all([waitUntilReady(pageA), waitUntilReady(pageB)]);
@@ -223,19 +309,36 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     ),
   ]);
 
-  await pageA.getByRole("button", {name: "Create room"}).click();
-  await expect(pageA.getByTestId("collab-status")).toContainText("ready");
-  const invite = await pageA.getByLabel("Collaboration invite").inputValue();
+  await Promise.all([
+    openPanel(pageA, "collab-panel"),
+    openPanel(pageB, "collab-panel"),
+  ]);
+  await pageA.getByRole(
+    "button",
+    {name: "いっしょに作るリンクを作る"},
+  ).click();
+  await expect(pageA.getByTestId("collab-status")).toContainText(
+    "友だちの参加を待っています",
+  );
+  const invite = await pageA.getByLabel("いっしょに作るリンク").inputValue();
   expect(invite).not.toContain("driveFileId");
-  await pageB.getByLabel("Collaboration invite").fill(invite);
-  await pageB.getByRole("button", {name: "Join invite"}).click();
-  await expect(pageA.getByTestId("collab-status")).toContainText("1 peer");
-  await expect(pageB.getByTestId("collab-status")).toContainText("ready");
+  await pageA.getByRole("button", {name: "リンクをコピー"}).click();
+  await expect(pageA.locator("#collab-feedback")).toHaveText(
+    "コピーしました。いっしょに作りたい友だちに送ってね。",
+  );
+  await pageB.getByLabel("いっしょに作るリンク").fill(invite);
+  await pageB.getByRole("button", {name: "友だちの作品に入る"}).click();
+  await expect(pageA.getByTestId("collab-status")).toContainText(
+    "1人といっしょに作っています",
+  );
+  await expect(pageB.getByTestId("collab-status")).toContainText(
+    "1人といっしょに作っています",
+  );
   await expect(pageA.getByTestId("project-status-details")).toContainText(
-    "1 peer",
+    "1人といっしょに作っています",
   );
   await expect(pageB.getByTestId("project-status-details")).toContainText(
-    "1 peer",
+    "1人といっしょに作っています",
   );
 
   await Promise.all([
@@ -258,14 +361,16 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
     bSeesStageBlock: true,
   });
 
-  await pageA.getByRole("button", {name: "Leave room"}).click();
-  await expect(pageB.getByTestId("collab-status")).not.toContainText("leader");
+  await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
+  await expect(pageB.getByTestId("collab-status")).not.toContainText("リーダー");
   await pageB.evaluate(() =>
     window.__blocksyncTask3!.createTestBlock("handoff-block"));
-  await expect(pageB.getByTestId("save-status")).toHaveText("Saved");
+  await expect(pageB.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   expect(await pageB.evaluate(async () =>
     (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
-  await pageB.getByRole("button", {name: "Leave room"}).click();
+  await pageB.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
 
   await Promise.all([
     pageA.waitForFunction(() => window.__blocksyncTask3!.getState().saveState === "clean"),
@@ -295,7 +400,9 @@ test("corrupt stored assets recover automatically on save", async ({page}) => {
     window.__blocksyncTask3!.createTestBlock("recovered-after-corrupt");
   });
 
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   const recoveredId = await page.evaluate(
     () => window.__blocksyncTask3!.getState().localProjectId,
   );
@@ -318,7 +425,9 @@ test("unified status shows local save as primary with optional secondary details
   page,
 }) => {
   await waitUntilReady(page);
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   await expect(page.getByTestId("project-status-details")).toBeHidden();
 });
 
@@ -330,14 +439,22 @@ test("signaling outage leaves local editing and SB3 export available", async ({
   await page.evaluate(() =>
     window.__blocksyncTask3!.configureCollaborationTestGate("offline-drive"),
   );
+  await openPanel(page, "collab-panel");
   await context.setOffline(true);
-  await page.getByRole("button", {name: "Create room"}).click();
-  await expect(page.getByTestId("collab-status")).toContainText("disconnected");
+  await page.getByRole(
+    "button",
+    {name: "いっしょに作るリンクを作る"},
+  ).click();
+  await expect(page.getByTestId("collab-status")).toContainText(
+    "友だちとのつながりが切れました",
+  );
 
   await page.evaluate(() => window.__blocksyncTask3!.renameTarget(false, "Offline edit"));
   expect(await page.evaluate(async () => (await window.__blocksyncTask3!.exportSb3()).length)).toBeGreaterThan(0);
   await context.setOffline(false);
-  await expect(page.getByTestId("save-status")).toHaveText("Saved");
+  await expect(page.getByTestId("save-status")).toHaveText(
+    "このパソコンに保存しました",
+  );
   await page.reload();
   await page.waitForFunction(() => window.__blocksyncTask3?.ready === true);
   expect(await page.evaluate(() =>
