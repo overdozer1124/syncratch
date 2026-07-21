@@ -3712,3 +3712,55 @@ P1-2 遅延rAF settle
 進捗: Local-First primary milestone 100% / 本UX hardening slice 90%（P1再提出済み、Codex再レビュー待ち）
 次の担当: Codex
 ```
+
+### 2026-07-22 05:56:35 JST — Codex（local UI state P1再レビュー → CHANGES_REQUESTED）
+
+```text
+状態: CHANGES_REQUESTED
+判定: NO-GO（P1×1 / P2×1）
+レビュー対象:
+- PR #13 https://github.com/overdozer1124/syncratch/pull/13
+- branch/docs tip: 366c45a901d1f443371d6d0e86094a6208bb5d8d
+- fix tip: 6d50157b6f609f9f7de1f150a5f86af53b8c7300
+
+解消確認:
+- 前回P1-1: viewport memoryは localProjectId + stable document target id に分離され、new/open/guest-initial/loadRecordでclearされる。defaultも値として保存する。
+- 前回P1-2の一部: deferred settleはviewportだけになり、tab/toolboxを再dispatchしない。epochとruntime target idで後続apply/target変更をguardする。
+
+P1: 5秒のtrusted guardが実ユーザーのBlockly pan/zoomをstale扱いし、旧viewportを復元する
+- `rememberViewportForSelection(..., "trusted")` はremote restoreやtarget切替のたびに `preferRememberedViewportUntil = now + 5s` を設定する。
+- blocks tabで利用者が実際にpan/zoomするとRedux metricsが新値になるが、subscriptionはguard中の相違を無条件に旧trusted値で上書きし、`applyWorkspaceViewport(trusted.viewport)` まで呼ぶ。
+- epochをbumpするのはE2E診断API `setWorkspaceViewport()` であり、実際のBlockly mouse/touch/wheel操作はこの経路を通らない。したがって今回の「remote apply直後の利用者操作が常に勝つ」契約を満たさない。
+- `leaveRoom()` もepochをbumpしないため、session終了だけではpending settleが無効化されない。
+
+必要な修正:
+- 時間幅で「trustedが勝つ」方式を廃止し、内部seed由来の既知actionだけを有限・世代付きで無視する。実Blockly入力由来の新metricsは即座に最新local stateとして採用する。
+- 実ユーザーpan/zoom、leave、new/open、後続apply、target変更のすべてがpending settleより優先されるようvalidity tokenを更新する。
+- `window.Blockly` が取得不能な環境でも正しく動く契約にするか、Scratch GUIが提供する実workspace参照を明示的に取得する。取得不能を5秒guardの根拠にしない。
+
+P2: 追加E2Eが実Blockly viewportを操作・観測しておらず、上記回帰を検出できない
+- E2Eは `window.__blocksyncTask3.setWorkspaceViewport()` でmemory/Redux/epochを直接更新し、`getLocalEditorUiState()` で同じmemory/Reduxを読み戻している。
+- production側は `window.Blockly` を参照するが、提出時のaudit自身がBlockly global未露出と記録している。この場合 `readLiveWorkspaceViewport` はnull、`applyWorkspaceViewport` はfalseでも診断E2Eは成功する。
+- Codex再実行でも15/15 PASSしたが、これは実canvasのpan/zoom保持を証明しない。
+
+必要な回帰試験:
+- 実Chromiumで診断setterを使わず、Blockly workspaceをmouse/touch/wheelでpan/zoomする。
+- remote apply直後（5秒以内を含む）に利用者が動かし、次のremote block update後も実workspaceのscroll/scaleが利用者の最新値を保つ。
+- assertionはdiagnostic memoryだけでなく、実workspace/canvas transformまたはScratch GUIが使用する一次viewportを観測する。
+- leaveをpending settle前に行い、古いcallbackがlocal UIへ書き込まないunit testを追加する。
+
+検証証跡:
+- Codex: @blocksync/editor-web test 185/185 PASS
+- Codex: @blocksync/editor-web typecheck PASS
+- Codex: build:e2e PASS
+- Codex: Playwright editor.spec.ts + collab.spec.ts 15/15 PASS（ただし上記coverage gapあり）
+- Codex: git diff --check PASS / review前working tree clean
+- GitHub PR #13: OPEN / Draft / MERGEABLE、Gate 0 push・pull_requestは判定時点でIN_PROGRESS
+
+停止条件:
+- P1/P2を実操作ベースの回帰試験とともに別commitで修正し、READY_FOR_CODEX_REVIEWへ戻す。
+- PR #13のReady化・merge、次スライス着手は行わない。
+
+進捗: Local-First primary milestone 100% / 本UX hardening slice 85%（境界分離は完了、実Blockly操作優先の修正・再レビュー待ち）。
+次の担当: Cursor
+```
