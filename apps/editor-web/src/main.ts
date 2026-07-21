@@ -233,6 +233,8 @@ let collabSession: CollabSession | null = null;
 let activeInvite: CollabInvite | null = null;
 let collaborationGeneration = 0;
 let collaborationTestGate = false;
+let guestJoinPrevious: LocalProjectRecord | undefined;
+let guestJoinCommittedId: string | undefined;
 let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
 let lastDriveMessage: string | undefined;
@@ -600,6 +602,8 @@ async function applyCollaborativeProject(
   if (context.mode === "guest-initial") {
     driveAutosave?.cancel();
     const previous = hasCurrent ? structuredClone(current) : undefined;
+    guestJoinPrevious = previous;
+    guestJoinCommittedId = undefined;
     const record: LocalProjectRecord = {
       format: LOCAL_PROJECT_FORMAT,
       localProjectId: crypto.randomUUID(),
@@ -622,6 +626,7 @@ async function applyCollaborativeProject(
       persist: candidate => store.createOrReplace(candidate, null),
       remove: saved => store.delete(saved.localProjectId),
       commit(saved) {
+        guestJoinCommittedId = saved.localProjectId;
         const session = projectSessions.begin();
         current = saved;
         hasCurrent = true;
@@ -632,7 +637,6 @@ async function applyCollaborativeProject(
         suppressVmChanges = value;
       },
     });
-    return;
   }
 
   const next: LocalProjectRecord = {
@@ -680,6 +684,27 @@ async function startCollaboration(
         driveAutosave.noteChange();
       }
     },
+    rollbackGuestInitial: async () => {
+      const previous = guestJoinPrevious;
+      const committedId = guestJoinCommittedId;
+      guestJoinPrevious = undefined;
+      guestJoinCommittedId = undefined;
+      if (committedId) {
+        try {
+          await store.delete(committedId);
+        } catch {
+          // Best-effort cleanup of the abandoned guest copy.
+        }
+      }
+      if (!previous) return;
+      attachLocalStorage(previous);
+      await vm.loadProject(documentToProjectJson(previous.document));
+      const session = projectSessions.begin();
+      current = previous;
+      hasCurrent = true;
+      titleInput.value = previous.title;
+      installSaveCoordinator(session);
+    },
     projectTitle: () => titleInput.value,
     reobserveDriveBeforeLeadership: async () => {
       if (collaborationTestGate) return;
@@ -688,7 +713,13 @@ async function startCollaboration(
         throw new Error("Drive changed during collaboration handoff");
       }
     },
-    onState: renderCollabState,
+    onState: state => {
+      if (state.bootstrapPhase === "ready") {
+        guestJoinPrevious = undefined;
+        guestJoinCommittedId = undefined;
+      }
+      renderCollabState(state);
+    },
   });
   collabSession = session;
   activeInvite = invite;

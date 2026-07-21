@@ -97,6 +97,11 @@ export interface CollabSessionOptions {
     assets: Map<string, Uint8Array>,
     context: ApplyRemoteContext,
   ) => void | boolean | Promise<void | boolean>;
+  /**
+   * Restore the guest's previous local project when guest-initial was committed
+   * but bootstrap did not reach ready (awaiting seal, invalid, leave, etc.).
+   */
+  rollbackGuestInitial?: () => void | Promise<void>;
   /** Kept for diagnostics/compat; never authorizes Drive writes. */
   eligible?: boolean;
   reobserveDriveBeforeLeadership?: () => void | Promise<void>;
@@ -544,6 +549,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     return validatedMaterialization;
   };
 
+  const revertGuestInitialIfNotReady = async (): Promise<void> => {
+    if (!guestInitialCopyApplied || guestReady) return;
+    if (options.rollbackGuestInitial) {
+      await options.rollbackGuestInitial();
+    }
+    guestInitialCopyApplied = false;
+    lastLocalTargetJson.clear();
+    validatedMaterialization = null;
+  };
+
   const evaluateGuestBootstrap = async (): Promise<void> => {
     if (!active || createdThisRoom || guestReady || guestApplyInFlight) return;
     if (
@@ -572,9 +587,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
             ? {mode, projectTitle: validatedTitle}
             : {mode},
         );
-        if (!active || applied === false || isInvalidProject()) return;
+        if (applied !== false && mode === "guest-initial") {
+          guestInitialCopyApplied = true;
+        }
+        if (!active || applied === false || isInvalidProject()) {
+          await revertGuestInitialIfNotReady();
+          return;
+        }
 
-        guestInitialCopyApplied = true;
         lastLocalTargetJson.clear();
         for (const target of options.materializeLocal().document.targets) {
           lastLocalTargetJson.set(target.id, JSON.stringify(target));
@@ -593,11 +613,15 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
 
         nextMaterialization = validateCurrentGuestStaging();
-        if (!nextMaterialization) return;
+        if (!nextMaterialization) {
+          await revertGuestInitialIfNotReady();
+          return;
+        }
         bootstrapPhase = "saving-local-copy";
         emitState();
       }
     } catch {
+      await revertGuestInitialIfNotReady();
       if (!active || isInvalidProject()) return;
       stagingChangedDuringGuestApply = false;
       bootstrapPhase = "local-save-failed";
@@ -773,6 +797,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
         bootstrapPhase = "ready";
         guestReady = true;
+        domain.releaseStagingGuardResources();
         active = true;
         provider.connect();
         wasLeader = true;
@@ -790,6 +815,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       return {ok: true as const};
     },
     leave() {
+      if (guestInitialCopyApplied && !guestReady && options.rollbackGuestInitial) {
+        void options.rollbackGuestInitial();
+      }
       domain.releaseStagingGuardResources();
       if (localTimer) {
         clearTimeout(localTimer);

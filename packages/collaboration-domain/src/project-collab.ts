@@ -444,12 +444,20 @@ export class ProjectCollaborationDocument {
         );
       }
 
-      const exactUpdate = Y.mergeUpdates(
-        isDuplicate
-          ? [...stagingUpdateChunks.values()]
-          : [...stagingUpdateChunks.values(), novelUpdate],
-      );
-      const exactBytes = exactUpdate.byteLength;
+      // Near the bound, mergeUpdates length is only a conservative proxy and can
+      // exceed encodeStateAsUpdate (e.g. delete-heavy fragments). Reject solely
+      // on the encoded staging state length that initialize/accounting use.
+      const trial = new Y.Doc();
+      let exactBytes: number;
+      try {
+        Y.applyUpdate(trial, this.encodeState());
+        if (!isDuplicate) {
+          Y.applyUpdate(trial, novelUpdate);
+        }
+        exactBytes = Y.encodeStateAsUpdate(trial).byteLength;
+      } finally {
+        trial.destroy();
+      }
       if (exactBytes > maxStagingStateBytes) {
         return this.rememberRawAndSemanticStagingResult(
           rawCacheKey,
@@ -467,7 +475,7 @@ export class ProjectCollaborationDocument {
         this.stagingSemanticResultCache.clear();
       }
       this.stagingNovelByteUpperBound = exactBytes;
-      this.replaceStagingUpdateChunks(exactUpdate);
+      this.replaceStagingUpdateChunks(this.encodeState());
       return this.rememberRawAndSemanticStagingResult(
         rawCacheKey,
         semanticCacheKey,

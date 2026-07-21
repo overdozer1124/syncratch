@@ -1,6 +1,10 @@
 import {describe, expect, it, vi} from "vitest";
 import * as Y from "yjs";
-import {sha256Hex} from "@blocksync/collaboration-domain";
+import {
+  LOCAL_ORIGIN,
+  sha256Hex,
+  writeBootstrapSeeding,
+} from "@blocksync/collaboration-domain";
 import {createCollabProvider} from "@blocksync/collab-webrtc";
 import {createMemoryMesh} from "@blocksync/collab-webrtc";
 import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
@@ -88,6 +92,8 @@ function assetsFor(document: ProjectDocument): Map<string, Uint8Array> {
 function fakeVm(initial: ProjectDocument) {
   let document = structuredClone(initial);
   let assets = assetsFor(document);
+  let previousDocument: ProjectDocument | null = null;
+  let previousAssets: Map<string, Uint8Array> | null = null;
   const appliedDocs: ProjectDocument[] = [];
   return {
     materializeLocal() {
@@ -96,11 +102,22 @@ function fakeVm(initial: ProjectDocument) {
     applyRemoteToLocal(
       doc: ProjectDocument,
       remoteAssets: Map<string, Uint8Array>,
-      _context: ApplyRemoteContext,
+      context: ApplyRemoteContext,
     ) {
+      if (context.mode === "guest-initial") {
+        previousDocument = structuredClone(document);
+        previousAssets = new Map(assets);
+      }
       document = structuredClone(doc);
       assets = new Map(remoteAssets);
       appliedDocs.push(structuredClone(doc));
+    },
+    rollbackGuestInitial() {
+      if (!previousDocument || !previousAssets) return;
+      document = previousDocument;
+      assets = previousAssets;
+      previousDocument = null;
+      previousAssets = null;
     },
     editTargetName(id: string, name: string) {
       const target = document.targets.find((t) => t.id === id)!;
@@ -611,6 +628,68 @@ describe("guest staging guard lifecycle", () => {
     expect(guestVm.current().targets.find(target => target.id === "s1")?.name)
       .toBe("Third");
     expect(modes).toEqual(["guest-initial", "update", "update"]);
+  });
+
+  it("restores the previous local project when guest-initial cannot reach ready", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "HostSprite")]));
+    const previousGuest = project([stage(), sprite("local", "MyLocalProject")]);
+    const guestVm = fakeVm(previousGuest);
+    let markFirstSaveStarted!: () => void;
+    let releaseFirstSave!: () => void;
+    const firstSaveStarted = new Promise<void>(resolve => {
+      markFirstSaveStarted = resolve;
+    });
+    const firstSaveGate = new Promise<void>(resolve => {
+      releaseFirstSave = resolve;
+    });
+    const host = createCollabSession({
+      roomId: "room-guest-initial-rollback",
+      secret: "guest-initial-rollback-secret-guest-rb",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: hostVm.applyRemoteToLocal,
+    });
+    const guest = createCollabSession({
+      roomId: "room-guest-initial-rollback",
+      secret: "guest-initial-rollback-secret-guest-rb",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: async (document, assets, context) => {
+        if (context.mode === "guest-initial") {
+          markFirstSaveStarted();
+          await firstSaveGate;
+        }
+        guestVm.applyRemoteToLocal(document, assets, context);
+      },
+      rollbackGuestInitial: () => guestVm.rollbackGuestInitial(),
+    });
+
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await host.provider.flush();
+    await guest.provider.flush();
+    const initialFlush = guest.flush();
+    await firstSaveStarted;
+
+    // Interrupt the sealed checkpoint while the guest-initial save is in flight.
+    writeBootstrapSeeding(host.domain.ydoc, "interrupted-seal", LOCAL_ORIGIN);
+    await host.provider.flush();
+    await guest.provider.flush();
+    await guest.flush();
+
+    releaseFirstSave();
+    await initialFlush;
+
+    expect(guest.getBootstrapPhase()).not.toBe("ready");
+    expect(guestVm.current().targets.find(target => target.id === "local")?.name)
+      .toBe("MyLocalProject");
+    expect(guestVm.current().targets.some(target => target.id === "s1")).toBe(false);
   });
 });
 

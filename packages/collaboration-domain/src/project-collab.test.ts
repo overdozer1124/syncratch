@@ -262,6 +262,67 @@ describe("remote state acceptance guards", () => {
     expect(receiver.ydoc.getMap("values").has("second")).toBe(false);
   });
 
+  it("accepts when encoded staging state fits even if mergeUpdates exceeds the limit", () => {
+    const sender = new Y.Doc();
+    const values = sender.getMap<string>("values");
+    values.set("keep", "k".repeat(800));
+    values.set("temp", "t".repeat(800));
+    const baseUpdate = Y.encodeStateAsUpdate(sender);
+    const baseVector = Y.encodeStateVector(sender);
+    values.delete("temp");
+    values.set("after", "a".repeat(40));
+    const deleteHeavyUpdate = Y.encodeStateAsUpdate(sender, baseVector);
+    const encodedAfter = Y.encodeStateAsUpdate(sender);
+
+    const receiver = new ProjectCollaborationDocument();
+    expect(receiver.tryApplyStagingUpdate(baseUpdate, 16 * 1024).accepted).toBe(true);
+    const chunks = [
+      ...(receiver as unknown as {
+        stagingUpdateChunks: Map<number, Uint8Array>;
+      }).stagingUpdateChunks.values(),
+      Y.diffUpdate(deleteHeavyUpdate, Y.encodeStateVector(receiver.ydoc)),
+    ];
+    const mergedBytes = Y.mergeUpdates(chunks).byteLength;
+    const hardLimit = encodedAfter.byteLength + 8;
+
+    expect(encodedAfter.byteLength).toBeLessThanOrEqual(hardLimit);
+    expect(mergedBytes).toBeGreaterThan(hardLimit);
+    expect(deleteHeavyUpdate.byteLength).toBeLessThanOrEqual(hardLimit);
+
+    const before = receiver.encodeState();
+    // Force the exact path by making the novel-byte upper bound appear over limit.
+    (receiver as unknown as {stagingNovelByteUpperBound: number})
+      .stagingNovelByteUpperBound = hardLimit;
+    const outcome = receiver.tryApplyStagingUpdate(deleteHeavyUpdate, hardLimit);
+
+    expect(outcome.accepted).toBe(true);
+    expect(receiver.encodeState().byteLength).toBeLessThanOrEqual(hardLimit);
+    expect(receiver.encodeState()).not.toEqual(before);
+    expect(receiver.ydoc.getMap("values").has("temp")).toBe(false);
+    expect(receiver.ydoc.getMap("values").get("after")).toBe("a".repeat(40));
+  });
+
+  it("rejects exactly when encoded staging state is over the limit", () => {
+    const sender = new Y.Doc();
+    const values = sender.getMap<string>("values");
+    values.set("base", "b".repeat(256));
+    const baseUpdate = Y.encodeStateAsUpdate(sender);
+    const baseVector = Y.encodeStateVector(sender);
+    values.set("overflow", "o".repeat(256));
+    const overflowUpdate = Y.encodeStateAsUpdate(sender, baseVector);
+    const encodedAfter = Y.encodeStateAsUpdate(sender);
+    const hardLimit = encodedAfter.byteLength - 1;
+
+    const receiver = new ProjectCollaborationDocument();
+    expect(receiver.tryApplyStagingUpdate(baseUpdate, hardLimit).accepted).toBe(true);
+    const before = receiver.encodeState();
+    const outcome = receiver.tryApplyStagingUpdate(overflowUpdate, hardLimit);
+
+    expect(encodedAfter.byteLength).toBeGreaterThan(hardLimit);
+    expect(outcome.accepted).toBe(false);
+    expect(receiver.encodeState()).toEqual(before);
+  });
+
   it("does not repeatedly encode near-limit staging state for duplicate small frames", () => {
     const sender = new Y.Doc();
     const values = sender.getMap<string>("values");
