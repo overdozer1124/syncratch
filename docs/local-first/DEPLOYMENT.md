@@ -111,6 +111,19 @@ Build bakes `VITE_COLLAB_SIGNALING_URL=same-origin` and `BLOCKSYNC_BASE_PATH=/`.
 Runtime listens on `PORT` (Railway injects this) and serves
 `STATIC_ROOT` (default `apps/editor-web/dist`).
 
+### Current verification deployment
+
+| Item | Value |
+| --- | --- |
+| Public editor | `https://syncratch-production.up.railway.app/` |
+| Health | `https://syncratch-production.up.railway.app/healthz` |
+| Signaling | `wss://syncratch-production.up.railway.app/signal` |
+| Railway project | `radiant-cooperation` / service `syncratch` |
+| Deploy branch (until PR merge) | `cursor/railway-collab-host-f431` |
+
+Daily coding stays local. Use the Railway URL for online collab checks only.
+After PR merge into `main`, switch the Railway service branch to `main`.
+
 This path intentionally omits TURN. Peers behind restrictive NAT/firewalls may
 still fail to establish a WebRTC data channel; local edit and SB3 export must
 remain available.

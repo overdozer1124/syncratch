@@ -4,8 +4,14 @@
 
 ローカル検証の既定:
 
-- Editor: `http://127.0.0.1:5173/`（本番相当ならデプロイ origin）
-- Signaling: `ws://127.0.0.1:4444`（`VITE_COLLAB_SIGNALING_URL` と一致）
+- Editor: `http://127.0.0.1:5173/`（Vite dev）または `http://127.0.0.1:8080/`（`collab-host`）
+- Signaling: 明示 `ws://…`、または same-origin ホストでは `ws://<editor-host>/signal`
+
+オンライン検証（Railway `collab-host`、TURN なし）:
+
+- Editor: `https://syncratch-production.up.railway.app/`
+- Signaling: `wss://syncratch-production.up.railway.app/signal`（`VITE_COLLAB_SIGNALING_URL=same-origin`）
+- 2026-07-22 確認: `/healthz` → `ok`、招待 URL 自動参加、host/guest 双方「いっしょに作っています」
 
 ## チェックリスト
 

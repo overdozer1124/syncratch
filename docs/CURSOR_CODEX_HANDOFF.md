@@ -42,11 +42,11 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 20:10:44 JST |
+| 最終更新 | 2026-07-22 22:00:43 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（セルフレビュー可） |
-| 現在のTask | Railway 検証ホスト（静的 + signaling、TURN なし） |
+| 現在の担当 | ユーザー（マージ指示待ち） / Codex（セルフレビュー可） |
+| 現在のTask | Railway 検証ホスト（オンライン smoke PASS） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み）+ Railway 検証ホスト実装完了（レビュー待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
@@ -54,13 +54,13 @@
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Railway 上でのオンライン smoke（ユーザーが Railway プロジェクト接続後）。Phase 2・TURN・default branch 切替は先行しない |
+| 次Task | PR #17 を main へ merge 後、Railway 接続ブランチを main に切替。Phase 2・TURN・default branch 切替は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-PR レビュー指摘対応、またはユーザーの Railway 接続後の追加修正。TURN / Cloudflare / Phase 2 は着手しない。
+ユーザーが「マージして」と言ったら PR #17 を main へ merge し、Railway ブランチ切替を案内する。Phase 2 は指示があるまで着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4566,5 +4566,25 @@ branch: cursor/railway-collab-host-f431
 "vendor/scratch-editor missing"
 対応: scripts/ensure-vendor-scratch-editor.sh を追加し、Dockerfile が欠落時に pin SHA を clone
 次: ユーザーが Redeploy
+```
+
+### 2026-07-22 22:00:43 JST — Cursor（Railway オンライン受け入れ + 開発継続）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー: オンライン確認成功。日常開発はローカル、URL は検証用。開発継続。
+
+オンライン証跡 (https://syncratch-production.up.railway.app):
+- /healthz → 200 ok
+- editor root 200 / same-origin bundle
+- wss /signal open
+- Playwright 2-peer: host/guest「いっしょに作っています」
+
+追加実装:
+- COLLAB_ACCEPTANCE / DEPLOYMENT に Railway 検証 URL を記録
+- e2e: invite URL 自動参加回帰試験 PASS
+
+停止: merge は「マージして」待ち。Phase 2 / TURN / default branch 切替はしない
+次: PR #17 merge → Railway branch を main へ
 ```
 
