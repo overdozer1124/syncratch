@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 22:10:49 JST |
+| 最終更新 | 2026-07-22 23:17:18 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次指示待ち） |
-| 現在のTask | なし（PR #17 を main へ merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（セルフレビュー可） |
+| 現在のTask | Editor load perf（gzip + async Scratch GUI）を main へ載せ替え |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（PR #17 merge 後） |
+| 作業ブランチ | `cursor/editor-load-perf-main-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。Railway 接続ブランチを main へ切替推奨。Phase 2・TURN・default branch 切替は先行しない |
+| 次Task | 本 PR レビュー/merge。GitHub default branch の main 切替はユーザー操作（API 403）。Phase 2/TURN は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #17 merge 済み）。Railway の deploy branch を `main` に切り替える作業はユーザー側。Phase 2 は指示まで停止。
+Editor load perf PR の指摘対応。default branch 切替はユーザー側。Phase 2 は指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4610,5 +4610,21 @@ merge: a9f32d4ac8de07f46fffa98fc982f8830f4786cc
 
 進捗: Local-First primary 100% / Railway 検証ホスト 100%（merged）
 次の担当: ユーザー
+```
+
+### 2026-07-22 23:17:18 JST — Cursor（次作業: editor load perf → main）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー: Railway を main に切替済み。「次の作業に移って」
+選定: draft PR #7（gzip + async GUI）を main へ載せ替え。Phase 2/TURN は未着手。
+default branch API 切替は 403（ユーザーが GitHub Settings で main にする必要あり）
+
+実装:
+- cherry-pick 5ca9805 onto main + Syncratch index 衝突解消
+- 読み込み文言を日本語化、gui-loading を style.css へ
+- collab-host に gzip（Railway 本番転送改善）
+
+試験: editor-web 206 PASS + typecheck / collab-host 4 PASS + typecheck
 ```
 
