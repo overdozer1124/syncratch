@@ -935,13 +935,16 @@ function materializeAndValidate(
     issues.push(issue("INVALID_DOCUMENT", "project exceeds byte limit"));
   }
 
-  if (issues.length > 0) {
-    return {ok: false, issues};
-  }
-
+  // Always run schema/cycle validation even when MISSING_ASSET issues are
+  // already present. Otherwise tryApplyRemoteUpdate's soft-accept path
+  // (only-MISSING_ASSET) would commit structurally invalid graphs into Y.Doc.
   const schemaResult = validateProject(document);
   if (!schemaResult.ok) {
-    return {ok: false, issues: schemaResult.issues};
+    issues.push(...schemaResult.issues);
+  }
+
+  if (issues.length > 0) {
+    return {ok: false, issues};
   }
 
   return {ok: true, document, assets};

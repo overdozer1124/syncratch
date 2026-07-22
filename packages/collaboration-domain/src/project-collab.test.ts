@@ -946,6 +946,49 @@ describe("block-level Phase 1 convergence", () => {
     }
   });
 
+  it("rejects a cyclic graph even when the update also has missing assets", () => {
+    const good = new ProjectCollaborationDocument();
+    const source = project([stage(), sprite("s1")]);
+    good.loadLocalProject(source, assetsFor(source));
+    const receiver = new ProjectCollaborationDocument();
+    receiver.applyRemoteUpdate(good.encodeState());
+
+    const evil = new Y.Doc();
+    Y.applyUpdate(evil, good.encodeState());
+    evil.transact(() => {
+      const entry = evil.getMap<Y.Map<unknown>>("targets").get("s1")!;
+      const blocks = entry.get("blocks") as Y.Map<string>;
+      blocks.set(
+        "a",
+        JSON.stringify(topBlock("a", "control_forever", {next: "b", topLevel: true})),
+      );
+      blocks.set(
+        "b",
+        JSON.stringify(
+          topBlock("b", "motion_movesteps", {
+            next: "a",
+            parent: "a",
+            topLevel: false,
+          }),
+        ),
+      );
+      const {blocks: _b, ...metadata} = sprite("s1", {
+        costumes: [
+          costume("missing", "dddddddddddddddddddddddddddddddd"),
+        ],
+      });
+      entry.set("metadataJson", JSON.stringify(metadata));
+    });
+
+    const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
+    expect(outcome.accepted).toBe(false);
+    expect(outcome.issues?.some(item => String(item.code) !== "MISSING_ASSET"))
+      .toBe(true);
+    expect(receiver.materialize().ok).toBe(true);
+    const kept = receiver.getTarget("s1");
+    expect(kept?.blocks.a).toBeUndefined();
+  });
+
   it("rejects cyclic remote block graphs without mutating the live doc", () => {
     const good = new ProjectCollaborationDocument();
     const source = project([stage(), sprite("s1")]);

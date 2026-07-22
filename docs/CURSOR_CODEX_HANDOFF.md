@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 11:38:15 JST |
+| 最終更新 | 2026-07-22 12:11:07 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（セルフレビュー再走可） |
@@ -4454,3 +4454,32 @@ PR: https://github.com/overdozer1124/syncratch/pull/16（base=main）
 次の担当: Codex（またはセルフレビュー再走）
 ```
 
+### 2026-07-22 12:11:07 JST — Cursor（セルフレビュー再走 → P1修正 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+方式: サブエージェント A〜D + 親統合
+対象 tip（再走時）: 397249d
+PR: https://github.com/overdozer1124/syncratch/pull/16（base=main）
+
+観点結果:
+- A Domain: NO_GO → P1 修正後 Closed
+  - P1: MISSING_ASSET 早期 return が validateProject をスキップし、cycle+missing が Y.Doc に入る
+  - 修正: materializeAndValidate は常に validateProject を実行してから issues を返す
+  - 試験: rejects a cyclic graph even when the update also has missing assets
+  - P2 note: setTarget full-replace / applyTargetPatch without metadata は契約上の注意（session は full write for new sprite）
+- B Session: GO（prior race/metadata Closed、両 race 試験 PASS）
+- C Coverage: 試験網は GO。受け入れ文書の同時編集ピン不足は P2 として文言補強
+- D Limits: NO_GO（handoff EOF 空行）→ 修正。mixed 表現の既知限界文言をコード範囲に合わせて縮小
+
+統合判定: 再走で検出した P1/P2 を同一 branch で修正し再提出。
+
+ゲート:
+- collaboration-domain: 43 PASS + tsc
+- editor-web: 196 PASS + typecheck
+- git diff --check: PASS
+
+停止: 自動 merge / 公開 deploy / Phase 2 着手しない
+進捗: Local-First 100% / Phase 1 100%（レビュー待ち）
+次の担当: Codex（またはセルフレビュー再走）
+```
