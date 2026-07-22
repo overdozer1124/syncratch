@@ -287,6 +287,23 @@ body,
   min-height: 0;
   position: relative;
   overflow: auto;
+  background: #e8eef5;
+}
+
+#scratch-gui.gui-loading::before {
+  content: "エディターを読み込み中…";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: #16324f;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  background:
+    radial-gradient(circle at 20% 20%, rgb(255 255 255 / 50%) 0, transparent 40%),
+    linear-gradient(160deg, #d7e6f5, #eef3f8 55%, #dfeaf5);
+  z-index: 1;
 }
 
 #scratch-gui > div {

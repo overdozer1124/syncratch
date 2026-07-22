@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Syncratch（シンクラッチ）</title>
+    <!-- Start downloading the large Scratch bundle while the shell paints. -->
+    <link
+      rel="preload"
+      as="script"
+      href="%BASE_URL%generated/gui/scratch-gui-standalone.js"
+    />
   </head>
   <body>
     <main id="app">
@@ -119,7 +125,12 @@
           </details>
         </div>
       </header>
-      <section data-testid="scratch-gui" id="scratch-gui"></section>
+      <section
+        aria-busy="true"
+        class="gui-loading"
+        data-testid="scratch-gui"
+        id="scratch-gui"
+      ></section>
     </main>
     <script>
       // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
@@ -129,7 +140,6 @@
         window.__BLOCKSYNC_GUI_PUBLIC_PATH__ = base;
       })();
     </script>
-    <script src="/generated/gui/scratch-gui-standalone.js"></script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

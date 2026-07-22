@@ -2,7 +2,12 @@ import {mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {describe, expect, it} from "vitest";
-import {contentTypeFor, resolveSafePath} from "./static.js";
+import {
+  contentTypeFor,
+  resolveSafePath,
+  shouldGzipFile,
+  wantsGzip,
+} from "./static.js";
 
 describe("collab-host static helpers", () => {
   it("maps common asset content types", () => {
@@ -19,5 +24,13 @@ describe("collab-host static helpers", () => {
     expect(resolveSafePath(root, "/assets/app.js")).toBe(
       join(root, "assets/app.js"),
     );
+  });
+
+  it("gzips large JS when the client accepts gzip", () => {
+    expect(wantsGzip("gzip, deflate")).toBe(true);
+    expect(wantsGzip("identity")).toBe(false);
+    expect(shouldGzipFile("bundle.js", 20_000)).toBe(true);
+    expect(shouldGzipFile("bundle.js", 100)).toBe(false);
+    expect(shouldGzipFile("photo.png", 20_000)).toBe(false);
   });
 });
