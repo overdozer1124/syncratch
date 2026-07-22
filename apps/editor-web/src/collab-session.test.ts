@@ -1291,8 +1291,8 @@ describe("two-session convergence over WebRTC transport", () => {
         .toBeNull();
       expect((blocks.move as {topLevel: boolean}).topLevel).toBe(true);
       expect(
-        (blocks.other as {fields: {KEY_OPTION: [string, null]}}).fields
-          .KEY_OPTION[0],
+        (blocks.other as unknown as {fields: {KEY_OPTION: [string, null]}})
+          .fields.KEY_OPTION[0],
       ).toBe("right arrow");
     }
   });
