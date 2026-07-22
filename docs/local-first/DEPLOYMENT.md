@@ -60,6 +60,10 @@ Set `VITE_COLLAB_SIGNALING_URL` to an explicit `wss://` endpoint running
 only offer/answer/ICE messages under a hashed topic; Yjs updates and project
 snapshots travel over encrypted WebRTC data channels.
 
+For same-origin hosts (Railway `collab-host`), set
+`VITE_COLLAB_SIGNALING_URL=same-origin`. The editor resolves that sentinel at
+runtime to `wss://<page-host>/signal` (or `ws:` on `http:`).
+
 The reference service enforces connection, topic, peer, message-size, and idle
 limits. It is not TURN. Restrictive school networks can therefore prevent peer
 connection; the editor must continue local save and SB3 export in that case.
@@ -71,6 +75,34 @@ WebSocket Hibernation API and preserve the protocol documented in
 can change and excess free operations fail rather than becoming an availability
 guarantee:
 <https://developers.cloudflare.com/durable-objects/platform/pricing/>.
+
+## Railway (static + signaling, no TURN)
+
+Use this for online verification when GitHub Pages alone is not enough because
+collaboration needs a `wss://` signaling endpoint. The repo ships:
+
+- `apps/collab-host` — HTTP static files + WebSocket `/signal`
+- `Dockerfile` + `railway.toml` — production image build
+
+### Deploy steps
+
+1. Create a Railway project from this GitHub repository.
+2. Enable **GitHub submodules** so `vendor/scratch-editor` is present at build.
+3. Confirm `railway.toml` picks the root `Dockerfile` (builder `DOCKERFILE`).
+4. Optional Drive verification: set Docker build args / env
+   `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, `VITE_GOOGLE_APP_ID`, and
+   register the Railway HTTPS origin under Google **Authorized JavaScript origins**.
+5. Deploy. Open the generated `https://*.up.railway.app/` URL.
+6. Smoke-check: editor loads, `GET /healthz` returns `ok`, create/join room works
+   between two browsers (or two profiles) on ordinary networks.
+
+Build bakes `VITE_COLLAB_SIGNALING_URL=same-origin` and `BLOCKSYNC_BASE_PATH=/`.
+Runtime listens on `PORT` (Railway injects this) and serves
+`STATIC_ROOT` (default `apps/editor-web/dist`).
+
+This path intentionally omits TURN. Peers behind restrictive NAT/firewalls may
+still fail to establish a WebRTC data channel; local edit and SB3 export must
+remain available.
 
 ## Optional classroom adapter
 

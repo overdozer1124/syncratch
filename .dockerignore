@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/.turbo
+**/test-results
+**/playwright-report
+.git
+**/.git
+vendor/scratch-editor/.git

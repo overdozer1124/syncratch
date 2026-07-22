@@ -48,11 +48,19 @@ pnpm --filter @blocksync/collab-signaling start   # PORT env, default 4444
 
 Two real Chromium contexts connect to this server to establish a room in E2E.
 
+## Same-origin Node host (Railway)
+
+`startSignalingServer({ httpServer, path: "/signal" })` attaches the upgrade
+handler to an existing HTTP server. `apps/collab-host` uses that to serve
+`editor-web` static files and signaling on one origin. Set the editor build
+variable `VITE_COLLAB_SIGNALING_URL=same-origin`. See
+`docs/local-first/DEPLOYMENT.md` (Railway section).
+
 ## Free-tier deployment (Cloudflare Worker + Durable Object)
 
 The routing logic maps directly onto a Worker that upgrades WebSocket
 connections and forwards them to a Durable Object keyed by `topic`. The DO holds
 only ephemeral membership (the same `SignalingHub` semantics) and relays
 `signal` messages; it persists nothing. Equivalent free-tier options (Deno
-Deploy, Fly.io free allowance, a tiny always-on Node process) work the same way
-because the server is stateless per message.
+Deploy, Fly.io, Railway `collab-host`, a tiny always-on Node process) work the
+same way because the server is stateless per message.

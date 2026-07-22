@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 12:21:33 JST |
+| 最終更新 | 2026-07-22 13:18:48 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次指示待ち） |
-| 現在のTask | なし（PR #16 を main へ merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（セルフレビュー可） |
+| 現在のTask | Railway 検証ホスト（静的 + signaling、TURN なし） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み）+ Railway 検証ホスト実装完了（レビュー待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（PR #16 merge 後） |
+| 作業ブランチ | `cursor/railway-collab-host-f431`（base: `main`） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md` |
+| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。Phase 2・公開deploy・default branch 切替は先行しない |
+| 次Task | Railway 上でのオンライン smoke（ユーザーが Railway プロジェクト接続後）。Phase 2・TURN・default branch 切替は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #16 merge 済み）。次スライスはユーザー指示まで停止。
+PR レビュー指摘対応、またはユーザーの Railway 接続後の追加修正。TURN / Cloudflare / Phase 2 は着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4502,5 +4502,38 @@ head: c8ef034b4018263b3b849d79a554b2942c0920bb
 
 進捗: Local-First primary 100% / block-level collaboration Phase 1 100%（merged）
 次の担当: ユーザー
+```
+
+### 2026-07-22 13:18:48 JST — Cursor（Railway collab-host 実装）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー指示: Railway で検証したいので実装して
+base: origin/main @ bfe2d4a
+branch: cursor/railway-collab-host-f431
+
+目的:
+- オンライン検証用に静的 editor + wss signaling を同一 origin で同居
+- TURN なし（意図的）。GitHub Pages 単体では collab 不可だった穴を埋める
+
+実装:
+- packages/collab-signaling: httpServer + path=/signal で attach 可能に
+- apps/collab-host: STATIC_ROOT 配信 + /signal + /healthz
+- editor-web: VITE_COLLAB_SIGNALING_URL=same-origin を runtime 解決
+- Dockerfile / railway.toml / .dockerignore
+- docs/local-first/DEPLOYMENT.md Railway 節
+
+試験:
+- collab-signaling: 18 PASS
+- collab-host: 3 PASS + typecheck
+- editor-web signaling-url + full unit: 201 PASS + typecheck
+- pnpm deploy --legacy 成果物で healthz / static / ws open smoke PASS
+
+停止:
+- 実際の Railway アカウント操作・本番公開告知はユーザー側
+- TURN / Phase 2 / default branch 切替はしない
+
+進捗: Local-First primary 100% / Railway 検証ホスト 実装完了（レビュー待ち）
+次の担当: Codex（またはセルフレビュー）→ ユーザーが Railway へ接続
 ```
 

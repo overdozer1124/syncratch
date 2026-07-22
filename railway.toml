@@ -1,0 +1,13 @@
+# Railway verification deploy: static editor + same-origin signaling (/signal).
+# Dashboard: enable GitHub submodules so vendor/scratch-editor is present at build.
+# Set optional Docker build args / env for Drive: VITE_GOOGLE_CLIENT_ID, etc.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/healthz"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 10

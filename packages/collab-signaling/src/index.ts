@@ -6,6 +6,7 @@ export {
   type SignalingLimits,
 } from "./hub.js";
 export {
+  DEFAULT_SIGNALING_PATH,
   startSignalingServer,
   type SignalingServerHandle,
   type StartSignalingServerOptions,

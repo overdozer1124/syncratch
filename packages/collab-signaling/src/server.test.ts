@@ -1,13 +1,27 @@
+import {createServer, type Server} from "node:http";
 import {afterEach, describe, expect, it} from "vitest";
 import {WebSocket} from "ws";
-import {startSignalingServer, type SignalingServerHandle} from "./server.js";
+import {
+  DEFAULT_SIGNALING_PATH,
+  startSignalingServer,
+  type SignalingServerHandle,
+} from "./server.js";
 
 const TOPIC = "b".repeat(43);
 let handle: SignalingServerHandle | undefined;
+let httpServer: Server | undefined;
 
 afterEach(async () => {
   await handle?.close();
   handle = undefined;
+  await new Promise<void>((resolve, reject) => {
+    if (!httpServer) {
+      resolve();
+      return;
+    }
+    httpServer.close((err) => (err ? reject(err) : resolve()));
+  });
+  httpServer = undefined;
 });
 
 function open(url: string): Promise<WebSocket> {
@@ -57,6 +71,34 @@ describe("startSignalingServer", () => {
       from: "peer-a",
       data: {kind: "offer"},
     });
+
+    a.close();
+    b.close();
+  });
+
+  it("attaches to an HTTP server path for same-origin hosting", async () => {
+    httpServer = createServer((_req, res) => {
+      res.writeHead(200, {"content-type": "text/plain"});
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => {
+      httpServer!.listen(0, "127.0.0.1", () => resolve());
+    });
+
+    handle = await startSignalingServer({httpServer, path: DEFAULT_SIGNALING_PATH});
+    expect(handle.path).toBe(DEFAULT_SIGNALING_PATH);
+    expect(handle.url.endsWith(DEFAULT_SIGNALING_PATH)).toBe(true);
+
+    const a = await open(handle.url);
+    const b = await open(handle.url);
+    const aJoined = nextMessage(a, (m) => m.t === "joined");
+    a.send(JSON.stringify({t: "join", topic: TOPIC, peer: "peer-a"}));
+    await aJoined;
+
+    const aSeesB = nextMessage(a, (m) => m.t === "peer" && m.peer === "peer-b");
+    const bJoined = nextMessage(b, (m) => m.t === "joined");
+    b.send(JSON.stringify({t: "join", topic: TOPIC, peer: "peer-b"}));
+    await Promise.all([aSeesB, bJoined]);
 
     a.close();
     b.close();

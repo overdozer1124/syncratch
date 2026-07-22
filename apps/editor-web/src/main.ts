@@ -135,6 +135,7 @@ import {
   readWorkspaceViewportFromScratch,
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
+import {resolveCollabSignalingUrl} from "./signaling-url.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -758,8 +759,9 @@ function markDirty(): void {
   collabSession?.noteLocalChange();
 }
 
-const signalingUrl =
-  import.meta.env.VITE_COLLAB_SIGNALING_URL?.trim() ?? "";
+const signalingUrl = resolveCollabSignalingUrl(
+  import.meta.env.VITE_COLLAB_SIGNALING_URL,
+);
 
 function randomParticipantId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
