@@ -5,15 +5,19 @@
  * single project or target last-write-wins JSON blob:
  *   - `meta`    : Y.Map with schemaVersion, extensions, monitors, and meta.
  *   - `targets` : Y.Map keyed by target id; each value separates
- *                 `metadataJson` from `blocksJson`. Coordinate/name/costume
- *                 edits therefore cannot replace a peer's block graph.
+ *                 `metadataJson` from a per-block-id `blocks` Y.Map.
+ *                 Coordinate/name/costume edits cannot replace a peer's blocks,
+ *                 and independent block ids on the same sprite merge.
  *   - `assets`  : Y.Map keyed by content-address md5ext; each value is the raw
  *                 Uint8Array. Because keys are content addresses, identical
  *                 asset writes converge without conflict.
  *
- * Concurrent edits to different target sections merge. Concurrent writes to the
- * same section (notably the same block graph) remain deterministic LWW. This is
- * intentional for this transport generation and is NOT distributed locking.
+ * Concurrent edits to different targets, metadata vs blocks, and different
+ * block ids merge. Concurrent writes to the same block id remain deterministic
+ * LWW (Phase 1 does not promise semantic merge of competing connections).
+ *
+ * Legacy `blocksJson` (whole graph string) remains readable. Fresh writers use
+ * only `blocks`. Mixed `blocks` + `blocksJson` on one target is fail-closed.
  *
  * Origin tracking: local edits transact under LOCAL_ORIGIN and remote updates
  * apply under REMOTE_ORIGIN, so callers can bind VM -> Yjs and Yjs -> VM without
@@ -76,8 +80,84 @@ export interface ApplyRemoteResult {
   issues?: ValidationIssue[];
 }
 
+/** Block-id upserts/deletes relative to a shared baseline. */
+export interface BlockMapPatch {
+  upserts: Record<string, unknown>;
+  deletes: string[];
+}
+
+export interface TargetCollabPatch {
+  /** Full ScratchTarget minus blocks; omitted when metadata is unchanged. */
+  metadata?: Omit<ScratchTarget, "blocks">;
+  /** Block-id diff; omitted when the block graph is unchanged. */
+  blocks?: BlockMapPatch;
+}
+
 function issue(code: string, message: string, path?: string): ValidationIssue {
   return {code: code as ValidationIssue["code"], message, path};
+}
+
+/** Diff local blocks against the last accepted shared baseline. */
+export function diffBlocks(
+  baseline: Record<string, unknown>,
+  local: Record<string, unknown>,
+): BlockMapPatch {
+  const upserts: Record<string, unknown> = {};
+  const deletes: string[] = [];
+  for (const [id, block] of Object.entries(local)) {
+    if (JSON.stringify(baseline[id]) !== JSON.stringify(block)) {
+      upserts[id] = block;
+    }
+  }
+  for (const id of Object.keys(baseline)) {
+    if (!Object.prototype.hasOwnProperty.call(local, id)) {
+      deletes.push(id);
+    }
+  }
+  return {upserts, deletes};
+}
+
+/**
+ * Three-way merge of block maps so a pending local whole-`blocks` field cannot
+ * erase unrelated remote block ids that arrived while the edit was pending.
+ */
+export function mergeBlocksThreeWay(
+  baseBlocks: Record<string, unknown> | undefined,
+  pendingBlocks: Record<string, unknown> | undefined,
+  remoteBlocks: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const base = baseBlocks ?? {};
+  const pending = pendingBlocks ?? {};
+  const remote = remoteBlocks ?? {};
+  const ids = new Set([
+    ...Object.keys(base),
+    ...Object.keys(pending),
+    ...Object.keys(remote),
+  ]);
+  const merged: Record<string, unknown> = {};
+  for (const id of ids) {
+    const baseJson = JSON.stringify(base[id]);
+    const pendingJson = JSON.stringify(pending[id]);
+    if (baseJson !== pendingJson) {
+      if (pending[id] !== undefined) {
+        merged[id] = structuredClone(pending[id]);
+      }
+      continue;
+    }
+    if (remote[id] !== undefined) {
+      merged[id] = structuredClone(remote[id]);
+    }
+  }
+  return merged;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function blocksMapFromEntry(entry: Y.Map<unknown>): Y.Map<string> | null {
+  const blocks = entry.get("blocks");
+  return blocks instanceof Y.Map ? (blocks as Y.Map<string>) : null;
 }
 
 /** Reject prototype-polluting keys and non-plain nested objects. */
@@ -269,29 +349,88 @@ export class ProjectCollaborationDocument {
     }, LOCAL_ORIGIN);
   }
 
-  private writeTarget(target: ScratchTarget): void {
-    let entry = this.targets.get(target.id);
+  private ensureTargetEntry(targetId: string): Y.Map<unknown> {
+    let entry = this.targets.get(targetId);
     if (!entry) {
       entry = new Y.Map<unknown>();
-      this.targets.set(target.id, entry);
+      this.targets.set(targetId, entry);
     }
-    const {blocks, ...metadata} = target;
+    return entry;
+  }
+
+  private writeMetadata(entry: Y.Map<unknown>, metadata: Omit<ScratchTarget, "blocks">): void {
     const metadataJson = JSON.stringify(metadata);
-    const blocksJson = JSON.stringify(blocks ?? {});
-    if (entry.get("id") !== target.id) entry.set("id", target.id);
+    if (entry.get("id") !== metadata.id) entry.set("id", metadata.id);
     if (entry.get("metadataJson") !== metadataJson) {
       entry.set("metadataJson", metadataJson);
     }
-    if (entry.get("blocksJson") !== blocksJson) {
-      entry.set("blocksJson", blocksJson);
+  }
+
+  /**
+   * Authoritatively replace the per-block map to match `blocks`. Used for
+   * bootstrap / new-sprite publish. Deletes legacy `blocksJson` / `json`.
+   */
+  private replaceBlocksMap(
+    entry: Y.Map<unknown>,
+    blocks: Record<string, unknown>,
+  ): void {
+    let blocksMap = blocksMapFromEntry(entry);
+    if (!blocksMap) {
+      blocksMap = new Y.Map<string>();
+      entry.set("blocks", blocksMap);
     }
-    // Accept a legacy target snapshot at bootstrap. Once a current peer writes
-    // the target, the split representation becomes authoritative. Mixed-version
-    // live rooms are intentionally unsupported because rooms are ephemeral.
+    const desired = new Set(Object.keys(blocks));
+    for (const key of [...blocksMap.keys()]) {
+      if (!desired.has(key)) blocksMap.delete(key);
+    }
+    for (const [blockId, block] of Object.entries(blocks)) {
+      const json = JSON.stringify(block);
+      if (blocksMap.get(blockId) !== json) blocksMap.set(blockId, json);
+    }
+    if (entry.has("blocksJson")) entry.delete("blocksJson");
     if (entry.has("json")) entry.delete("json");
   }
 
-  /** Read one target from either the split representation or a legacy json entry. */
+  private applyBlocksPatch(entry: Y.Map<unknown>, patch: BlockMapPatch): void {
+    let blocksMap = blocksMapFromEntry(entry);
+    if (!blocksMap) {
+      // Explicit upgrade from legacy blocksJson: materialize baseline first so
+      // deletes/upserts apply on top of the readable legacy graph.
+      blocksMap = new Y.Map<string>();
+      const legacy = entry.get("blocksJson");
+      if (typeof legacy === "string") {
+        try {
+          const parsed = JSON.parse(legacy) as unknown;
+          if (isPlainObject(parsed)) {
+            for (const [blockId, block] of Object.entries(parsed)) {
+              blocksMap.set(blockId, JSON.stringify(block));
+            }
+          }
+        } catch {
+          // leave empty; materialize will fail closed if still inconsistent
+        }
+      }
+      entry.set("blocks", blocksMap);
+    }
+    for (const blockId of patch.deletes) {
+      blocksMap.delete(blockId);
+    }
+    for (const [blockId, block] of Object.entries(patch.upserts)) {
+      const json = JSON.stringify(block);
+      if (blocksMap.get(blockId) !== json) blocksMap.set(blockId, json);
+    }
+    if (entry.has("blocksJson")) entry.delete("blocksJson");
+    if (entry.has("json")) entry.delete("json");
+  }
+
+  private writeTarget(target: ScratchTarget): void {
+    const entry = this.ensureTargetEntry(target.id);
+    const {blocks, ...metadata} = target;
+    this.writeMetadata(entry, metadata);
+    this.replaceBlocksMap(entry, (blocks ?? {}) as Record<string, unknown>);
+  }
+
+  /** Read one target from v2 blocks map, legacy blocksJson, or legacy json. */
   getTarget(targetId: string): ScratchTarget | null {
     const entry = this.targets.get(targetId);
     if (!(entry instanceof Y.Map)) return null;
@@ -301,7 +440,10 @@ export class ProjectCollaborationDocument {
     return typeof target.id === "string" ? target as ScratchTarget : null;
   }
 
-  /** Update a single target locally (target-granular, local origin). */
+  /**
+   * Authoritative local write of a full target (metadata + complete blocks map).
+   * Prefer {@link applyTargetPatch} for incremental same-sprite edits.
+   */
   setTarget(target: ScratchTarget): void {
     this.ydoc.transact(() => {
       this.writeTarget(target);
@@ -309,7 +451,25 @@ export class ProjectCollaborationDocument {
   }
 
   /**
-   * Publish costume/sound bytes and one or more targets in a single Yjs
+   * Apply metadata and/or block-id diffs without replacing unrelated remote
+   * block ids. Intended for debounced session publish against a shared baseline.
+   */
+  applyTargetPatch(targetId: string, patch: TargetCollabPatch): void {
+    this.ydoc.transact(() => {
+      const entry = this.ensureTargetEntry(targetId);
+      if (patch.metadata) {
+        this.writeMetadata(entry, patch.metadata);
+      } else if (!entry.has("id")) {
+        entry.set("id", targetId);
+      }
+      if (patch.blocks) {
+        this.applyBlocksPatch(entry, patch.blocks);
+      }
+    }, LOCAL_ORIGIN);
+  }
+
+  /**
+   * Publish costume/sound bytes and one or more full targets in a single Yjs
    * transaction so peers never observe a target without its assets.
    */
   putAssetsAndSetTargets(
@@ -323,6 +483,31 @@ export class ProjectCollaborationDocument {
       }
       for (const target of targets) {
         this.writeTarget(target);
+      }
+    }, LOCAL_ORIGIN);
+  }
+
+  /**
+   * Publish assets plus incremental target patches in one transaction.
+   * Full targets (new sprites) may be mixed with patches for existing sprites.
+   */
+  putAssetsAndApplyTargetChanges(
+    fullTargets: ScratchTarget[],
+    patches: Array<{targetId: string; patch: TargetCollabPatch}>,
+    assets: Iterable<readonly [string, Uint8Array]>,
+  ): void {
+    this.ydoc.transact(() => {
+      for (const [md5ext, bytes] of assets) {
+        if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) continue;
+        this.assets.set(md5ext, bytes);
+      }
+      for (const target of fullTargets) {
+        this.writeTarget(target);
+      }
+      for (const {targetId, patch} of patches) {
+        const entry = this.ensureTargetEntry(targetId);
+        if (patch.metadata) this.writeMetadata(entry, patch.metadata);
+        if (patch.blocks) this.applyBlocksPatch(entry, patch.blocks);
       }
     }, LOCAL_ORIGIN);
   }
@@ -581,7 +766,51 @@ type DecodedTargetEntry =
 
 function decodeTargetEntry(entry: Y.Map<unknown>): DecodedTargetEntry {
   const metadataRaw = entry.get("metadataJson");
+  const blocksMap = blocksMapFromEntry(entry);
   const blocksRaw = entry.get("blocksJson");
+
+  if (blocksMap && typeof blocksRaw === "string") {
+    return {
+      ok: false,
+      message: "mixed blocks representation (blocks map and blocksJson)",
+    };
+  }
+
+  if (blocksMap) {
+    if (typeof metadataRaw !== "string") {
+      return {ok: false, message: "split target entry is incomplete"};
+    }
+    try {
+      const metadata = JSON.parse(metadataRaw) as unknown;
+      if (!isPlainObject(metadata)) {
+        return {ok: false, message: "split target entry must contain objects"};
+      }
+      const blocks: Record<string, unknown> = {};
+      let invalidBlock = false;
+      blocksMap.forEach((value, blockId) => {
+        if (invalidBlock) return;
+        if (typeof value !== "string") {
+          invalidBlock = true;
+          return;
+        }
+        try {
+          blocks[blockId] = JSON.parse(value);
+        } catch {
+          invalidBlock = true;
+        }
+      });
+      if (invalidBlock) {
+        return {ok: false, message: "blocks map entry is not valid JSON"};
+      }
+      return {
+        ok: true,
+        target: {...metadata, blocks},
+      };
+    } catch {
+      return {ok: false, message: "split target entry is not valid JSON"};
+    }
+  }
+
   if (typeof metadataRaw === "string" || typeof blocksRaw === "string") {
     if (typeof metadataRaw !== "string" || typeof blocksRaw !== "string") {
       return {ok: false, message: "split target entry is incomplete"};
@@ -589,19 +818,12 @@ function decodeTargetEntry(entry: Y.Map<unknown>): DecodedTargetEntry {
     try {
       const metadata = JSON.parse(metadataRaw) as unknown;
       const blocks = JSON.parse(blocksRaw) as unknown;
-      if (
-        typeof metadata !== "object" ||
-        metadata === null ||
-        Array.isArray(metadata) ||
-        typeof blocks !== "object" ||
-        blocks === null ||
-        Array.isArray(blocks)
-      ) {
+      if (!isPlainObject(metadata) || !isPlainObject(blocks)) {
         return {ok: false, message: "split target entry must contain objects"};
       }
       return {
         ok: true,
-        target: {...metadata as Record<string, unknown>, blocks},
+        target: {...metadata, blocks},
       };
     } catch {
       return {ok: false, message: "split target entry is not valid JSON"};
@@ -713,13 +935,16 @@ function materializeAndValidate(
     issues.push(issue("INVALID_DOCUMENT", "project exceeds byte limit"));
   }
 
-  if (issues.length > 0) {
-    return {ok: false, issues};
-  }
-
+  // Always run schema/cycle validation even when MISSING_ASSET issues are
+  // already present. Otherwise tryApplyRemoteUpdate's soft-accept path
+  // (only-MISSING_ASSET) would commit structurally invalid graphs into Y.Doc.
   const schemaResult = validateProject(document);
   if (!schemaResult.ok) {
-    return {ok: false, issues: schemaResult.issues};
+    issues.push(...schemaResult.issues);
+  }
+
+  if (issues.length > 0) {
+    return {ok: false, issues};
   }
 
   return {ok: true, document, assets};

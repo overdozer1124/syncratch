@@ -12,6 +12,7 @@ import {
   LOCAL_ORIGIN,
   ProjectCollaborationDocument,
 } from "@blocksync/collaboration-domain";
+import type {ScratchBlock} from "@blocksync/project-schema";
 import {createWebRtcProvider, type CollabProvider} from "@blocksync/collab-webrtc";
 import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
 
@@ -87,12 +88,28 @@ function assetsFor(document: ProjectDocument): Map<string, Uint8Array> {
   return map;
 }
 
+interface HarnessBlock {
+  id: string;
+  opcode: string;
+  next: string | null;
+  parent: string | null;
+  inputs: Record<string, unknown>;
+  fields: Record<string, unknown>;
+  shadow: boolean;
+  topLevel: boolean;
+  x?: number;
+  y?: number;
+}
+
 interface CollabHarness {
   ready: boolean;
   error: string | null;
   status(): string;
   peers(): string[];
   editTarget(id: string, name: string): boolean;
+  /** Upsert one block id on a target without replacing unrelated blocks. */
+  upsertBlock(targetId: string, block: HarnessBlock): boolean;
+  blockOpcodes(targetId: string): string[];
   targetName(id: string): string | null;
   materializeOk(): boolean;
 }
@@ -137,6 +154,8 @@ function boot(): void {
       status: () => "error",
       peers: () => [],
       editTarget: () => false,
+      upsertBlock: () => false,
+      blockOpcodes: () => [],
       targetName: () => null,
       materializeOk: () => false,
     };
@@ -155,8 +174,33 @@ function boot(): void {
       if (!result.ok) return false;
       const target = result.document.targets.find((t) => t.id === id);
       if (!target) return false;
-      domain.setTarget({...target, name});
+      const {blocks: _blocks, ...metadata} = target;
+      domain.applyTargetPatch(id, {metadata: {...metadata, name}});
       return true;
+    },
+    upsertBlock(targetId, block) {
+      const result = domain.materialize();
+      if (!result.ok) return false;
+      if (!result.document.targets.some(t => t.id === targetId)) return false;
+      domain.applyTargetPatch(targetId, {
+        blocks: {
+          upserts: {[block.id]: block as ScratchBlock},
+          deletes: [],
+        },
+      });
+      return true;
+    },
+    blockOpcodes(targetId) {
+      const result = domain.materialize();
+      if (!result.ok) return [];
+      const target = result.document.targets.find(t => t.id === targetId);
+      if (!target?.blocks) return [];
+      return Object.values(target.blocks).map(block => {
+        if (block && typeof block === "object" && "opcode" in block) {
+          return String((block as ScratchBlock).opcode);
+        }
+        return "";
+      }).filter(Boolean);
     },
     targetName(id) {
       const result = domain.materialize();

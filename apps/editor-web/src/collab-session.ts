@@ -9,8 +9,10 @@
 import * as Y from "yjs";
 import {
   COLLAB_FALLBACK_TITLE,
+  diffBlocks,
   encodeStateVectorBase64,
   LOCAL_ORIGIN,
+  mergeBlocksThreeWay,
   newBootstrapId,
   normalizeProjectTitle,
   ProjectCollaborationDocument,
@@ -21,6 +23,7 @@ import {
   writeBootstrapSealed,
   writeBootstrapSeeding,
   type HostPreflightResult,
+  type TargetCollabPatch,
 } from "@blocksync/collaboration-domain";
 import type {CollabProvider} from "@blocksync/collab-webrtc";
 import {electLeader, isLeader as leaderMatches, type LeadershipState} from "@blocksync/collab-leader";
@@ -275,24 +278,42 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
   const isSeeded = (): boolean => domain.ydoc.getMap("targets").size > 0;
 
-  const currentTargetJson = (id: string): unknown => {
-    const target = domain.getTarget(id);
-    return target ? JSON.stringify(target) : undefined;
-  };
-
   const mergePendingTarget = (
     baseJson: string | undefined,
     pending: ScratchTarget,
     remote: ScratchTarget,
   ): ScratchTarget => {
     const base = parseTargetJson(baseJson ?? null);
-    if (!base) return pending;
-    const baseRecord = base as unknown as Record<string, unknown>;
     const pendingRecord = pending as unknown as Record<string, unknown>;
+    const remoteRecord = remote as unknown as Record<string, unknown>;
     const mergedRecord = structuredClone(remote) as unknown as Record<string, unknown>;
+
+    if (!base) {
+      // No acknowledged baseline: keep remote-only blocks, and only overlay
+      // metadata keys where pending already differs from remote.
+      for (const key of Object.keys(pendingRecord)) {
+        if (key === "id" || key === "blocks") continue;
+        if (JSON.stringify(pendingRecord[key]) === JSON.stringify(remoteRecord[key])) {
+          continue;
+        }
+        if (pendingRecord[key] === undefined) {
+          delete mergedRecord[key];
+        } else {
+          mergedRecord[key] = structuredClone(pendingRecord[key]);
+        }
+      }
+      mergedRecord.blocks = mergeBlocksThreeWay(
+        undefined,
+        pendingRecord.blocks as Record<string, unknown> | undefined,
+        remote.blocks as Record<string, unknown> | undefined,
+      );
+      return mergedRecord as unknown as ScratchTarget;
+    }
+
+    const baseRecord = base as unknown as Record<string, unknown>;
     const keys = new Set([...Object.keys(baseRecord), ...Object.keys(pendingRecord)]);
     for (const key of keys) {
-      if (key === "id") continue;
+      if (key === "id" || key === "blocks") continue;
       if (JSON.stringify(baseRecord[key]) === JSON.stringify(pendingRecord[key])) {
         continue;
       }
@@ -302,6 +323,11 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         mergedRecord[key] = structuredClone(pendingRecord[key]);
       }
     }
+    mergedRecord.blocks = mergeBlocksThreeWay(
+      baseRecord.blocks as Record<string, unknown> | undefined,
+      pendingRecord.blocks as Record<string, unknown> | undefined,
+      remote.blocks as Record<string, unknown> | undefined,
+    );
     return mergedRecord as unknown as ScratchTarget;
   };
 
@@ -314,21 +340,14 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     return isWeakerBlockGraph(next, previous);
   };
 
-  const syncLocalToDoc = (): void => {
+  /** Seed-only: load the local project into an empty shared doc. */
+  const seedLocalIntoDoc = (): void => {
     if (suppressLocal) return;
+    if (isSeeded()) {
+      throw new Error("seedLocalIntoDoc requires an unseeded collaboration document");
+    }
     const {document, assets} = options.materializeLocal();
-    if (!isSeeded()) {
-      domain.loadLocalProject(document, assets);
-      return;
-    }
-    const assetMap = domain.ydoc.getMap<Uint8Array>("assets");
-    const missingAssets = [...assets].filter(([md5ext]) => !assetMap.has(md5ext));
-    const dirtyTargets = document.targets.filter(
-      target => currentTargetJson(target.id) !== JSON.stringify(target),
-    );
-    if (dirtyTargets.length > 0 || missingAssets.length > 0) {
-      domain.putAssetsAndSetTargets(dirtyTargets, missingAssets);
-    }
+    domain.loadLocalProject(document, assets);
   };
 
   const capturePendingLocalChanges = (): void => {
@@ -385,7 +404,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         scheduleAssetRetry();
         return;
       }
-      syncLocalToDoc();
+      seedLocalIntoDoc();
       scheduleRollingSeal();
       return;
     }
@@ -400,7 +419,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       assets.get(md5ext) ?? pendingAssets.get(md5ext);
 
     const deferred = new Map<string, ProjectDocument["targets"][number]>();
-    const readyTargets: ProjectDocument["targets"][number][] = [];
+    const fullTargets: ProjectDocument["targets"][number][] = [];
+    const patches: Array<{targetId: string; patch: TargetCollabPatch}> = [];
     const assetsToPublish = new Map<string, Uint8Array>();
     const assetReady = (md5ext: string): boolean => {
       if (sharedAssets.has(md5ext)) {
@@ -426,7 +446,54 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         if (existing instanceof Uint8Array && existing.byteLength > 0) continue;
         assetsToPublish.set(md5ext, bytes);
       }
-      readyTargets.push(target);
+      const shared = domain.getTarget(targetId);
+      if (!shared) {
+        // New sprite: authoritative full write (assets + complete block map).
+        fullTargets.push(target);
+      } else {
+        // Diff against the last VM-acknowledged snapshot, never live shared
+        // state: otherwise a remote block that reached Y.Doc before apply
+        // would look like a local delete.
+        const baseline = parseTargetJson(lastLocalTargetJson.get(targetId) ?? null);
+        const {blocks: localBlocks, ...localMeta} = target;
+        const {blocks: _sharedBlocks, ...sharedMeta} = shared;
+        const baselineBlocks = (baseline?.blocks ?? {}) as Record<string, unknown>;
+        const blockPatch = diffBlocks(
+          baselineBlocks,
+          (localBlocks ?? {}) as Record<string, unknown>,
+        );
+        const blocksChanged =
+          Object.keys(blockPatch.upserts).length > 0 ||
+          blockPatch.deletes.length > 0;
+
+        // Metadata: 3-way merge against baseline when present; otherwise overlay
+        // only keys that already differ from live shared (never whole-replace).
+        let baselineMetaJson: string | undefined;
+        if (baseline) {
+          const {blocks: _b, ...baselineMeta} = baseline;
+          baselineMetaJson = JSON.stringify({...baselineMeta, blocks: {}});
+        }
+        const mergedMeta = mergePendingTarget(
+          baselineMetaJson,
+          {...localMeta, blocks: {}} as ScratchTarget,
+          {...sharedMeta, blocks: {}} as ScratchTarget,
+        );
+        const {blocks: _mb, ...mergedMetaOnly} = mergedMeta;
+        const metadataToPublish =
+          JSON.stringify(mergedMetaOnly) !== JSON.stringify(sharedMeta)
+            ? mergedMetaOnly
+            : undefined;
+
+        if (metadataToPublish || blocksChanged) {
+          patches.push({
+            targetId,
+            patch: {
+              metadata: metadataToPublish,
+              blocks: blocksChanged ? blockPatch : undefined,
+            },
+          });
+        }
+      }
       lastLocalTargetJson.set(targetId, JSON.stringify(target));
     }
 
@@ -444,8 +511,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       if (shouldPublishAsset(md5ext, bytes)) assetsToPublish.set(md5ext, bytes);
     }
 
-    if (readyTargets.length > 0 || assetsToPublish.size > 0) {
-      domain.putAssetsAndSetTargets(readyTargets, assetsToPublish);
+    if (
+      fullTargets.length > 0 ||
+      patches.length > 0 ||
+      assetsToPublish.size > 0
+    ) {
+      domain.putAssetsAndApplyTargetChanges(
+        fullTargets,
+        patches,
+        assetsToPublish,
+      );
     }
     pendingAssets.clear();
     pendingTargets.clear();
@@ -876,11 +951,17 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           if (applied === false) return;
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
-            // Pending edits still need their pre-edit base for the next rebase.
             if (pendingTargets.has(target.id)) {
               // Publish the rebased snapshot, not the pre-remote snapshot;
               // otherwise its stale metadata could undo the remote change.
               pendingTargets.set(target.id, target);
+              // Baseline for the immediate follow-up push must be the shared
+              // remote we just applied — not empty — so intentional deletes and
+              // metadata diffs still publish after rebase.
+              const shared = domain.getTarget(target.id);
+              if (shared) {
+                lastLocalTargetJson.set(target.id, JSON.stringify(shared));
+              }
             } else {
               lastLocalTargetJson.set(target.id, JSON.stringify(target));
             }
