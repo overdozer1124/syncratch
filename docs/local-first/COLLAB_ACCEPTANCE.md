@@ -28,7 +28,10 @@
 6. **選択維持（B）**
    - 双方が Basketball（B）を選択した状態で、片方が B を編集しても、受信側の選択は B のまま
    - 片方が A を編集しても、もう片方の B 選択は維持される
-7. **ローカル保存**
+7. **ローカル UI（tab / viewport）**
+   - コスチュームタブや Blockly の pan/zoom を動かしたあと、相手のブロック編集を受けても **自分のタブと表示位置が維持**される
+   - スプライトごとに異なる viewport が漏れない（A を default、B を非 default のまま）
+8. **ローカル保存**
    - 共同編集中も双方でローカル保存が成功する
    - 「いっしょに作るのをやめる」後も、各自の作品を SB3 ダウンロードできる
 
@@ -38,10 +41,12 @@
 pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts
 ```
 
-実 Chromium 2-context 試験には、上記の Basketball・別ターゲット収束・**選択維持**・招待 origin 一致が含まれる。
+実 Chromium 2-context 試験には、上記の Basketball・別ターゲット収束・**選択維持**・**local UI（tab/viewport）**・招待 origin 一致が含まれる。
+
+最終受け入れの自動ゲート一覧は `docs/local-first/FINAL_ACCEPTANCE_REPORT.md` を参照する。
 
 ## 既知の限界（受け入れ対象外）
 
 - 同一スプライト上の同時ブロック編集は `blocksJson` 全体の LWW（後勝ち）
-- リモート適用は whole-project `loadProject` のため、スクロール位置やコスチュームタブなど選択以外の UI 状態はリセットされうる
+- regular remote apply では active tab / per-target Blockly viewport を local-only で保全する。`currentCostume` など共有作品状態や、guest-initial / new / open での前作品 UI 復元は対象外
 - 旧形式（単一 `json` target）と新形式（`metadataJson` + `blocksJson`）の混在ライブ部屋は対象外

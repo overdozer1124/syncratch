@@ -3,23 +3,27 @@
 Record the commit, date, browser versions, static origin, signaling deployment,
 and Google Cloud project used for every release candidate.
 
+Latest automated mainline-candidate run is recorded in
+`docs/local-first/FINAL_ACCEPTANCE_REPORT.md` (tip `48b94c4`, 2026-07-22 JST).
+
 ## Automated gates
 
-- [ ] `pnpm --filter @blocksync/editor-web test`
-- [ ] `pnpm --filter @blocksync/editor-web typecheck`
-- [ ] `pnpm --filter @blocksync/editor-web build`
-- [ ] Run `pnpm --filter @blocksync/editor-web verify:static` with the deployment
-      `BLOCKSYNC_BASE_PATH`.
-- [ ] Production `dist` contains `index.html` and does not contain
+- [x] `pnpm --filter @blocksync/editor-web test`（190/190 @ `48b94c4`）
+- [x] `pnpm --filter @blocksync/editor-web typecheck`
+- [x] `pnpm --filter @blocksync/editor-web build`
+- [x] Run `pnpm --filter @blocksync/editor-web verify:static` with the deployment
+      `BLOCKSYNC_BASE_PATH`（`/`）
+- [x] Production `dist` contains `index.html` and does not contain
       `collab-harness.html`.
-- [ ] `pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts`
-- [ ] `pnpm --filter @blocksync/google-drive-sync test`
-- [ ] `pnpm --filter @blocksync/classroom-apps-script test`
-- [ ] `pnpm --filter @blocksync/collaboration-domain test`
-- [ ] `pnpm --filter @blocksync/collab-webrtc test`
-- [ ] `pnpm --filter @blocksync/collab-signaling test`
-- [ ] Frozen School/self-hosted packages still pass the repository build and
-      relevant existing tests.
+- [x] `pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts`（16/16）
+- [x] `pnpm --filter @blocksync/google-drive-sync test`（25/25）
+- [x] `pnpm --filter @blocksync/classroom-apps-script test`（14/14）
+- [x] `pnpm --filter @blocksync/collaboration-domain test`（36/36）
+- [x] `pnpm --filter @blocksync/collab-webrtc test`（35/35）
+- [x] `pnpm --filter @blocksync/collab-signaling test`（17/17）
+- [x] Frozen School/self-hosted packages still pass the repository build and
+      relevant existing tests（`pnpm r1:persist:test` / `pnpm r1:auth:test`）
+- [x] `pnpm gate0:test` / `pnpm gate0:collab`
 
 The browser suite covers local autosave/reload, SB3 round-trip and recovery,
 save failure, offline/static-only reload, two real Chromium peers, logical

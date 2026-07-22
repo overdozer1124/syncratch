@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 06:53:35 JST |
+| 最終更新 | 2026-07-22 08:51:47 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次スライス指示待ち） |
-| 現在のTask | なし（PR #13 merge 済み） |
+| 現在の担当 | ユーザー（次指示待ち） |
+| 現在のTask | なし（PR #15 を `main` へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / PR #13 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 merge 済み） / mainline 受け入れ証跡は `main` 取り込み済み |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `feat/local-first-pivot-impl` @ `152b426` |
+| 作業ブランチ | `main`（受け入れ証跡 merge 後） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。次スライスへ先行しない |
+| 次Task | ユーザー指示待ち。default branch 切替・残 Draft retarget/close・公開デプロイ・Manual Google gates は未実施 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #13 merge 済み。次スライスはユーザー指示まで停止）。
+なし（PR #15 merge 済み）。default branch の `main` 切替・残 Draft PR #5/#7 の retarget/close・公開デプロイはユーザー指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3922,5 +3922,66 @@ mergedAt: 2026-07-21T21:53:33Z
 - 次スライスへ先行しない（ユーザー指示待ち）
 
 進捗: Local-First primary milestone 100% / UI hardening slice 100%（PR #13 merged）
+次の担当: ユーザー
+```
+
+### 2026-07-22 07:00:30 JST — Cursor（mainline 最終受け入れ・PR準備 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー指示: feat/local-first-pivot-impl 全体を本流へ統合するための最終受け入れ・PR準備
+ブランチ: cursor/mainline-final-acceptance-f431
+基準 tip（実装）: 48b94c499a496dbf6c15ecee63c57f6e8e256258
+本流: origin/main を同一 tip で新設（これまで remote に main/master が無く、default は feat/local-first-pivot-impl）
+
+実施（実装コード変更なし）:
+1. RELEASE_CHECKLIST 相当の自動ゲートを tip 上で再実行し FINAL_ACCEPTANCE_REPORT.md に固定
+2. COLLAB_ACCEPTANCE.md を PR #13 後の tab/viewport 保全に合わせて更新
+3. RELEASE_CHECKLIST.md に最新自動結果を反映
+4. main 向け Draft PR を作成（受け入れ証跡の本流取り込み + default branch 切替手順）
+
+自動ゲート（すべて PASS）:
+- gate0:test / gate0:collab
+- editor-web typecheck / test 190 / build / verify:static(/) / Playwright 16/16
+- google-drive-sync 25 / classroom-apps-script 14 / collaboration-domain 36
+- collab-webrtc 35 / collab-signaling 17 / collab-invite 13
+- r1:persist:test / r1:auth:test（frozen School track）
+- production dist: index.html あり / collab-harness.html なし
+- git diff --check
+
+未実施（意図的）:
+- Manual Google OAuth/Drive 実ユーザー gates（CI 資格情報では実行不可）
+- GitHub default branch の main 切替
+- 残 Draft PR #5/#7 の retarget/close
+- 公開デプロイ
+
+停止条件:
+- Codex GO とユーザー指示があるまで Ready化・merge・default branch 切替を行わない
+
+進捗: Local-First primary 100% / mainline 受け入れ準備 100%（証跡提出、レビュー待ち）
+次の担当: Codex
+```
+
+### 2026-07-22 08:51:47 JST — Cursor（PR #15 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #15 → base main（docs-only 受け入れ証跡）
+ブランチ: cursor/mainline-final-acceptance-f431
+事前状態: READY_FOR_CODEX_REVIEW / Gate 0 PASS / MERGEABLE・CLEAN
+Codex: 共有台帳・PR reviews に GO / CHANGES_REQUESTED 未記録。ユーザー明示指示により merge 実行。
+
+実施:
+1. 台帳を MERGED に更新
+2. Draft 解除後、merge commit で main へ取り込み
+
+未実施（意図的・ユーザー追加指示待ち）:
+- GitHub default branch の main 切替（現 default は feat/local-first-pivot-impl）
+- 残 Draft PR #5/#7 の retarget/close
+- Manual Google OAuth/Drive gates
+- 公開デプロイ
+
+進捗: Local-First primary 100% / mainline 受け入れ証跡 main 取り込み 100%
 次の担当: ユーザー
 ```
