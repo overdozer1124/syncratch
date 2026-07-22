@@ -25,6 +25,8 @@
    - 双方とも「このパソコンに保存しました」になる
 5. **別スプライト編集**
    - ホストがスプライト A、ゲストがスプライト B を編集しても、双方の変更が残る（上書きで消えない）
+5b. **同一スプライト・異なる stack**
+   - ホストとゲストが同じスプライトへ別々の新規 stack を同時追加し、両方に 2 stack が残る
 6. **選択維持（B）**
    - 双方が Basketball（B）を選択した状態で、片方が B を編集しても、受信側の選択は B のまま
    - 片方が A を編集しても、もう片方の B 選択は維持される
@@ -41,12 +43,12 @@
 pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts
 ```
 
-実 Chromium 2-context 試験には、上記の Basketball・別ターゲット収束・**選択維持**・**local UI（tab/viewport）**・招待 origin 一致が含まれる。
+実 Chromium 2-context 試験には、上記の Basketball・別ターゲット収束・**選択維持**・**local UI（tab/viewport）**・招待 origin 一致が含まれる。同一スプライト異なる stack は `e2e/collab.spec.ts` の **collaboration-domain harness**（WebRTC 実搬送）で固定し、Scratch GUI / Blockly 表示収束そのものは別試験とする。
 
 最終受け入れの自動ゲート一覧は `docs/local-first/FINAL_ACCEPTANCE_REPORT.md` を参照する。
 
 ## 既知の限界（受け入れ対象外）
 
-- 同一スプライト上の同時ブロック編集は `blocksJson` 全体の LWW（後勝ち）
+- 同一 block id（または同一接続辺）の同時変更は per-block LWW（決定的勝者一方）。文字単位・操作 CRDT の意味的 merge は Phase 1 対象外
 - regular remote apply では active tab / per-target Blockly viewport を local-only で保全する。`currentCostume` など共有作品状態や、guest-initial / new / open での前作品 UI 復元は対象外
-- 旧形式（単一 `json` target）と新形式（`metadataJson` + `blocksJson`）の混在ライブ部屋は対象外
+- 旧形式（単一 `json` / 全体 `blocksJson`）と新形式（`metadataJson` + per-block `blocks` map）の混在ライブ部屋は fail-closed。暗黙の二重 writer にしない

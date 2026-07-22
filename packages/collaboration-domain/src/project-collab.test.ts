@@ -9,6 +9,7 @@ import {
   DEFAULT_PROJECT_COLLAB_LIMITS,
   LOCAL_ORIGIN,
   ProjectCollaborationDocument,
+  diffBlocks,
 } from "./project-collab.js";
 // Existing Gate 0 API must remain exported and intact.
 import {CollaborationDocument} from "./index.js";
@@ -123,7 +124,8 @@ describe("ProjectCollaborationDocument materialization", () => {
     expect(targetsRoot.has("s1")).toBe(true);
     const spriteEntry = targetsRoot.get("s1")!;
     expect(spriteEntry.get("metadataJson")).toEqual(expect.any(String));
-    expect(spriteEntry.get("blocksJson")).toEqual(expect.any(String));
+    expect(spriteEntry.get("blocks")).toBeInstanceOf(Y.Map);
+    expect(spriteEntry.has("blocksJson")).toBe(false);
     expect(spriteEntry.has("json")).toBe(false);
   });
 
@@ -228,7 +230,11 @@ describe("same-target section conflict semantics", () => {
         },
       },
     }));
-    b.setTarget(sprite("s1", {x: 42}));
+    const shared = b.getTarget("s1")!;
+    const {blocks: _ignored, ...sharedMeta} = shared;
+    b.applyTargetPatch("s1", {
+      metadata: {...sharedMeta, x: 42},
+    });
 
     const updateA = a.encodeState();
     const updateB = b.encodeState();
@@ -680,6 +686,294 @@ describe("content-addressed assets", () => {
       const {blocks: _blocks, ...metadata} = sprite("s1", {costumes: []});
       t.set("metadataJson", JSON.stringify(metadata));
     });
+    const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
+    expect(outcome.accepted).toBe(false);
+    expect(receiver.materialize().ok).toBe(true);
+  });
+});
+
+function topBlock(
+  id: string,
+  opcode: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    opcode,
+    next: null,
+    parent: null,
+    inputs: {},
+    fields: {},
+    shadow: false,
+    topLevel: true,
+    x: 10,
+    y: 10,
+    ...overrides,
+  };
+}
+
+describe("block-level Phase 1 convergence", () => {
+  it("merges concurrent new stacks on the same sprite", () => {
+    const source = project([stage(), sprite("s1")]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    a.applyTargetPatch("s1", {
+      blocks: {upserts: {stackA: topBlock("stackA", "event_whenflagclicked")}, deletes: []},
+    });
+    b.applyTargetPatch("s1", {
+      blocks: {
+        upserts: {stackB: topBlock("stackB", "event_whenkeypressed", {x: 200})},
+        deletes: [],
+      },
+    });
+
+    a.applyRemoteUpdate(b.encodeState());
+    b.applyRemoteUpdate(a.encodeState());
+
+    for (const peer of [a, b]) {
+      const result = peer.materialize();
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const blocks = result.document.targets.find(t => t.id === "s1")!.blocks;
+      expect(blocks.stackA).toBeDefined();
+      expect(blocks.stackB).toBeDefined();
+    }
+  });
+
+  it("applies a baseline delete alongside a concurrent unknown remote add", () => {
+    const source = project([
+      stage(),
+      sprite("s1", {
+        blocks: {
+          keep: topBlock("keep", "event_whenflagclicked") as unknown as ScratchTarget["blocks"][string],
+          doomed: topBlock("doomed", "motion_movesteps", {x: 40}) as unknown as ScratchTarget["blocks"][string],
+        },
+      }),
+    ]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    const baseline = {
+      keep: topBlock("keep", "event_whenflagclicked"),
+      doomed: topBlock("doomed", "motion_movesteps", {x: 40}),
+    };
+    a.applyTargetPatch("s1", {
+      blocks: diffBlocks(baseline, {keep: baseline.keep}),
+    });
+    b.applyTargetPatch("s1", {
+      blocks: {
+        upserts: {remoteOnly: topBlock("remoteOnly", "event_whenkeypressed", {x: 120})},
+        deletes: [],
+      },
+    });
+
+    a.applyRemoteUpdate(b.encodeState());
+    b.applyRemoteUpdate(a.encodeState());
+
+    for (const peer of [a, b]) {
+      const result = peer.materialize();
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const blocks = result.document.targets.find(t => t.id === "s1")!.blocks;
+      expect(blocks.keep).toBeDefined();
+      expect(blocks.doomed).toBeUndefined();
+      expect(blocks.remoteOnly).toBeDefined();
+    }
+  });
+
+  it("does not delete an unknown remote block when publishing a stale local snapshot diff", () => {
+    const source = project([
+      stage(),
+      sprite("s1", {
+        blocks: {
+          keep: topBlock("keep", "event_whenflagclicked") as unknown as ScratchTarget["blocks"][string],
+        },
+      }),
+    ]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    // B adds a new stack that A has not observed yet.
+    b.applyTargetPatch("s1", {
+      blocks: {
+        upserts: {remoteOnly: topBlock("remoteOnly", "event_whenkeypressed", {x: 120})},
+        deletes: [],
+      },
+    });
+
+    // Stale A still thinks baseline is only `keep`. Diff against that baseline
+    // must not emit a delete for remoteOnly.
+    const staleLocal = {
+      keep: topBlock("keep", "event_whenflagclicked"),
+      localNew: topBlock("localNew", "control_forever", {x: 40, y: 80}),
+    };
+    const baseline = {keep: topBlock("keep", "event_whenflagclicked")};
+    const patch = diffBlocks(baseline, staleLocal);
+    expect(patch.deletes).toEqual([]);
+    expect(patch.upserts.localNew).toBeDefined();
+
+    a.applyTargetPatch("s1", {blocks: patch});
+    a.applyRemoteUpdate(
+      Y.encodeStateAsUpdate(b.ydoc, Y.encodeStateVector(a.ydoc)),
+    );
+    b.applyRemoteUpdate(
+      Y.encodeStateAsUpdate(a.ydoc, Y.encodeStateVector(b.ydoc)),
+    );
+
+    for (const peer of [a, b]) {
+      const result = peer.materialize();
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      const blocks = result.document.targets.find(t => t.id === "s1")!.blocks;
+      expect(blocks.keep).toBeDefined();
+      expect(blocks.localNew).toBeDefined();
+      expect(blocks.remoteOnly).toBeDefined();
+    }
+  });
+
+  it("converges same-block concurrent edits to one deterministic winner", () => {
+    const source = project([
+      stage(),
+      sprite("s1", {
+        blocks: {
+          shared: topBlock("shared", "event_whenflagclicked") as unknown as ScratchTarget["blocks"][string],
+        },
+      }),
+    ]);
+    const ydocA = new Y.Doc();
+    const ydocB = new Y.Doc();
+    ydocA.clientID = 1;
+    ydocB.clientID = 2;
+    const a = new ProjectCollaborationDocument(ydocA);
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument(ydocB);
+    b.applyRemoteUpdate(a.encodeState());
+
+    a.applyTargetPatch("s1", {
+      blocks: {
+        upserts: {
+          shared: topBlock("shared", "event_whenflagclicked", {
+            fields: {VALUE: ["A", null]},
+          }),
+        },
+        deletes: [],
+      },
+    });
+    b.applyTargetPatch("s1", {
+      blocks: {
+        upserts: {
+          shared: topBlock("shared", "event_whenflagclicked", {
+            fields: {VALUE: ["B", null]},
+          }),
+        },
+        deletes: [],
+      },
+    });
+
+    a.applyRemoteUpdate(b.encodeState());
+    b.applyRemoteUpdate(a.encodeState());
+
+    const ra = a.materialize();
+    const rb = b.materialize();
+    expect(ra.ok && rb.ok).toBe(true);
+    if (!ra.ok || !rb.ok) return;
+    const blockA = ra.document.targets.find(t => t.id === "s1")!.blocks.shared;
+    const blockB = rb.document.targets.find(t => t.id === "s1")!.blocks.shared;
+    expect(blockA).toEqual(blockB);
+    const value = (blockA as unknown as {fields: {VALUE: [string, null]}}).fields.VALUE[0];
+    expect(["A", "B"]).toContain(value);
+  });
+
+  it("reads legacy blocksJson and fail-closes mixed representations", () => {
+    const doc = new ProjectCollaborationDocument();
+    const source = project([stage(), sprite("s1")]);
+    doc.loadLocalProject(source, assetsFor(source));
+
+    const legacy = new Y.Doc();
+    Y.applyUpdate(legacy, doc.encodeState());
+    const targets = legacy.getMap<Y.Map<unknown>>("targets");
+    legacy.transact(() => {
+      const entry = targets.get("s1")!;
+      entry.delete("blocks");
+      entry.set(
+        "blocksJson",
+        JSON.stringify({
+          legacyStack: topBlock("legacyStack", "event_whenflagclicked"),
+        }),
+      );
+    });
+    const legacyDoc = new ProjectCollaborationDocument(legacy);
+    const legacyResult = legacyDoc.materialize();
+    expect(legacyResult.ok).toBe(true);
+    if (legacyResult.ok) {
+      expect(
+        legacyResult.document.targets.find(t => t.id === "s1")!.blocks.legacyStack,
+      ).toBeDefined();
+    }
+
+    const mixed = new Y.Doc();
+    Y.applyUpdate(mixed, doc.encodeState());
+    mixed.transact(() => {
+      const entry = mixed.getMap<Y.Map<unknown>>("targets").get("s1")!;
+      entry.set("blocksJson", JSON.stringify({}));
+    });
+    const mixedDoc = new ProjectCollaborationDocument(mixed);
+    const mixedResult = mixedDoc.materialize();
+    expect(mixedResult.ok).toBe(false);
+    if (!mixedResult.ok) {
+      expect(mixedResult.issues.some(i =>
+        i.message.includes("mixed blocks representation"),
+      )).toBe(true);
+    }
+  });
+
+  it("rejects cyclic remote block graphs without mutating the live doc", () => {
+    const good = new ProjectCollaborationDocument();
+    const source = project([stage(), sprite("s1")]);
+    good.loadLocalProject(source, assetsFor(source));
+    const receiver = new ProjectCollaborationDocument();
+    receiver.applyRemoteUpdate(good.encodeState());
+
+    const evil = new Y.Doc();
+    Y.applyUpdate(evil, good.encodeState());
+    evil.transact(() => {
+      const entry = evil.getMap<Y.Map<unknown>>("targets").get("s1")!;
+      const blocks = entry.get("blocks") as Y.Map<string>;
+      blocks.set(
+        "a",
+        JSON.stringify(topBlock("a", "control_forever", {next: "b", topLevel: true})),
+      );
+      blocks.set(
+        "b",
+        JSON.stringify(
+          topBlock("b", "motion_movesteps", {
+            next: "a",
+            parent: "a",
+            topLevel: false,
+          }),
+        ),
+      );
+    });
+
     const outcome = receiver.tryApplyRemoteUpdate(Y.encodeStateAsUpdate(evil));
     expect(outcome.accepted).toBe(false);
     expect(receiver.materialize().ok).toBe(true);

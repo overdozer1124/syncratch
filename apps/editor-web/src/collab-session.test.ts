@@ -930,6 +930,433 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(nameIn(vmA, "s1")).toBe("EditedByA");
   });
 
+  it("merges concurrent new stacks on the same sprite without dropping either", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-same-sprite-stacks",
+      secret: "same-sprite-stacks-secret-same-sprite",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    const stack = (
+      id: string,
+      opcode: string,
+      x: number,
+    ): NonNullable<ScratchTarget["blocks"]>[string] =>
+      ({
+        id,
+        opcode,
+        next: null,
+        parent: null,
+        inputs: {},
+        fields: {},
+        shadow: false,
+        topLevel: true,
+        x,
+        y: 20,
+      }) as NonNullable<ScratchTarget["blocks"]>[string];
+
+    vmA.replaceTarget(
+      sprite("s1", "S1", {
+        stackA: stack("stackA", "event_whenflagclicked", 20),
+      }),
+    );
+    a.noteLocalChange();
+    vmB.replaceTarget(
+      sprite("s1", "S1", {
+        stackB: stack("stackB", "event_whenkeypressed", 220),
+      }),
+    );
+    b.noteLocalChange();
+    await flush(a, b);
+    await flush(a, b);
+
+    const blocksA = vmA.current().targets.find(t => t.id === "s1")!.blocks;
+    const blocksB = vmB.current().targets.find(t => t.id === "s1")!.blocks;
+    expect(blocksA.stackA).toBeDefined();
+    expect(blocksA.stackB).toBeDefined();
+    expect(blocksB.stackA).toBeDefined();
+    expect(blocksB.stackB).toBeDefined();
+  });
+
+  it("does not delete a remote-only block when local push races ahead of VM apply", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const keep = {
+      id: "keep",
+      opcode: "event_whenflagclicked",
+      next: null,
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 10,
+      y: 10,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const source = project([stage(), sprite("s1", "S1", {keep})]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-stale-baseline-race",
+      secret: "stale-baseline-race-secret-stale-base",
+      debounceMs: 500,
+    };
+    const a = createCollabSession({
+      ...common,
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    vmB.replaceTarget(
+      sprite("s1", "S1", {
+        keep,
+        localNew: {
+          id: "localNew",
+          opcode: "control_forever",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 40,
+          y: 80,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+      }),
+    );
+    b.noteLocalChange();
+
+    vmA.replaceTarget(
+      sprite("s1", "S1", {
+        keep,
+        remoteOnly: {
+          id: "remoteOnly",
+          opcode: "event_whenkeypressed",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 180,
+          y: 10,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+      }),
+    );
+    a.noteLocalChange({force: true});
+    await a.provider.flush();
+    await b.provider.flush();
+
+    // Remote ids are in B's Y.Doc, but VM apply has not run yet.
+    expect(b.domain.getTarget("s1")?.blocks.remoteOnly).toBeDefined();
+    expect(vmB.current().targets.find(t => t.id === "s1")?.blocks.remoteOnly)
+      .toBeUndefined();
+
+    b.noteLocalChange({force: true});
+    await flush(a, b);
+
+    for (const vm of [vmA, vmB]) {
+      const blocks = vm.current().targets.find(t => t.id === "s1")!.blocks;
+      expect(blocks.keep).toBeDefined();
+      expect(blocks.localNew).toBeDefined();
+      expect(blocks.remoteOnly).toBeDefined();
+    }
+  });
+
+  it("keeps forever nest and a concurrent sibling stack on the same sprite", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const flag = {
+      id: "flag",
+      opcode: "event_whenflagclicked",
+      next: "move",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 20,
+      y: 20,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const move = {
+      id: "move",
+      opcode: "motion_movesteps",
+      next: null,
+      parent: "flag",
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const source = project([stage(), sprite("s1", "S1", {flag, move})]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-forever-sibling",
+      secret: "forever-sibling-secret-forever-sibling",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    vmA.replaceTarget(
+      sprite("s1", "S1", {
+        flag: {...flag, next: "forever"},
+        forever: {
+          id: "forever",
+          opcode: "control_forever",
+          next: null,
+          parent: "flag",
+          inputs: {SUBSTACK: [2, "move"]},
+          fields: {},
+          shadow: false,
+          topLevel: false,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+        move: {...move, parent: "forever"},
+      }),
+    );
+    a.noteLocalChange();
+    vmB.replaceTarget(
+      sprite("s1", "S1", {
+        flag,
+        move,
+        sibling: {
+          id: "sibling",
+          opcode: "event_whenkeypressed",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 240,
+          y: 20,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+      }),
+    );
+    b.noteLocalChange();
+    await flush(a, b);
+    await flush(a, b);
+
+    for (const vm of [vmA, vmB]) {
+      const blocks = vm.current().targets.find(t => t.id === "s1")!.blocks;
+      expect(blocks.forever).toBeDefined();
+      expect(blocks.sibling).toBeDefined();
+      expect((blocks.flag as {next: string | null}).next).toBe("forever");
+    }
+  });
+
+  it("keeps a field edit on one block while the peer detaches another stack", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const flag = {
+      id: "flag",
+      opcode: "event_whenflagclicked",
+      next: "move",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 20,
+      y: 20,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const move = {
+      id: "move",
+      opcode: "motion_movesteps",
+      next: null,
+      parent: "flag",
+      inputs: {},
+      fields: {STEPS: ["10", null]},
+      shadow: false,
+      topLevel: false,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const other = {
+      id: "other",
+      opcode: "event_whenkeypressed",
+      next: null,
+      parent: null,
+      inputs: {},
+      fields: {KEY_OPTION: ["space", null]},
+      shadow: false,
+      topLevel: true,
+      x: 200,
+      y: 20,
+    } as NonNullable<ScratchTarget["blocks"]>[string];
+    const source = project([stage(), sprite("s1", "S1", {flag, move, other})]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-detach-field",
+      secret: "detach-field-secret-detach-field-1234",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    // A detaches move from flag.
+    vmA.replaceTarget(
+      sprite("s1", "S1", {
+        flag: {...flag, next: null},
+        move: {...move, parent: null, topLevel: true, x: 20, y: 120},
+        other,
+      }),
+    );
+    a.noteLocalChange();
+    // B edits a field on the unrelated top-level block.
+    vmB.replaceTarget(
+      sprite("s1", "S1", {
+        flag,
+        move,
+        other: {
+          ...other,
+          fields: {KEY_OPTION: ["right arrow", null]},
+        },
+      }),
+    );
+    b.noteLocalChange();
+    await flush(a, b);
+    await flush(a, b);
+
+    for (const vm of [vmA, vmB]) {
+      const blocks = vm.current().targets.find(t => t.id === "s1")!.blocks;
+      expect((blocks.flag as {next: string | null}).next).toBeNull();
+      expect((blocks.move as {parent: string | null; topLevel: boolean}).parent)
+        .toBeNull();
+      expect((blocks.move as {topLevel: boolean}).topLevel).toBe(true);
+      expect(
+        (blocks.other as {fields: {KEY_OPTION: [string, null]}}).fields
+          .KEY_OPTION[0],
+      ).toBe("right arrow");
+    }
+  });
+
+  it("keeps sprite coordinates when the other peer edits blocks on the same sprite", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const common = {
+      roomId: "room-meta-and-blocks",
+      secret: "meta-and-blocks-secret-meta-and-blocks",
+      debounceMs: 0,
+    };
+    const a = createCollabSession({
+      ...common,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      ...common,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    const moved = sprite("s1", "S1");
+    moved.x = 42;
+    vmA.replaceTarget(moved);
+    a.noteLocalChange();
+    vmB.replaceTarget(
+      sprite("s1", "S1", {
+        stackB: {
+          id: "stackB",
+          opcode: "event_whenflagclicked",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 20,
+          y: 20,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+      }),
+    );
+    b.noteLocalChange();
+    await flush(a, b);
+    await flush(a, b);
+
+    for (const vm of [vmA, vmB]) {
+      const target = vm.current().targets.find(t => t.id === "s1")!;
+      expect(target.x).toBe(42);
+      expect(target.blocks.stackB).toBeDefined();
+    }
+  });
+
   it("defers a new sprite until costume bytes exist, then syncs both peers", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);

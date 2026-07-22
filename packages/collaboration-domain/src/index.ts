@@ -155,11 +155,15 @@ export {
   LOCAL_ORIGIN,
   ProjectCollaborationDocument,
   REMOTE_ORIGIN,
+  diffBlocks,
+  mergeBlocksThreeWay,
   type ApplyRemoteResult,
+  type BlockMapPatch,
   type MaterializeFailure,
   type MaterializeResult,
   type MaterializeSuccess,
   type ProjectCollabLimits,
+  type TargetCollabPatch,
 } from "./project-collab.js";
 
 export {
