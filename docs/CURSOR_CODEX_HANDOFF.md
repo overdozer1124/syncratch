@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 22:00:43 JST |
+| 最終更新 | 2026-07-22 22:10:49 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | ユーザー（マージ指示待ち） / Codex（セルフレビュー可） |
-| 現在のTask | Railway 検証ホスト（オンライン smoke PASS） |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（次指示待ち） |
+| 現在のTask | なし（PR #17 を main へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み）+ Railway 検証ホスト実装完了（レビュー待ち） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/railway-collab-host-f431`（base: `main`） |
+| 作業ブランチ | `main`（PR #17 merge 後） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | PR #17 を main へ merge 後、Railway 接続ブランチを main に切替。Phase 2・TURN・default branch 切替は先行しない |
+| 次Task | ユーザー指示待ち。Railway 接続ブランチを main へ切替推奨。Phase 2・TURN・default branch 切替は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-ユーザーが「マージして」と言ったら PR #17 を main へ merge し、Railway ブランチ切替を案内する。Phase 2 は指示があるまで着手しない。
+なし（PR #17 merge 済み）。Railway の deploy branch を `main` に切り替える作業はユーザー側。Phase 2 は指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4586,5 +4586,29 @@ branch: cursor/railway-collab-host-f431
 
 停止: merge は「マージして」待ち。Phase 2 / TURN / default branch 切替はしない
 次: PR #17 merge → Railway branch を main へ
+```
+
+### 2026-07-22 22:10:49 JST — Cursor（PR #17 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #17 → base main
+merge: a9f32d4ac8de07f46fffa98fc982f8830f4786cc
+事前: online smoke PASS / Gate 0 SUCCESS / MERGEABLE
+
+実施:
+- gh pr merge --merge
+- 台帳を MERGED に更新
+
+案内:
+- Railway service syncratch の deploy branch を main へ切替推奨
+  （現行 URL: https://syncratch-production.up.railway.app/）
+
+停止:
+- Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+
+進捗: Local-First primary 100% / Railway 検証ホスト 100%（merged）
+次の担当: ユーザー
 ```
 
