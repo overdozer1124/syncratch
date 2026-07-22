@@ -1,63 +1,80 @@
-# Local-First pivot → mainline 最終受け入れレポート
+# Local-First Stage 5 受け入れレポート
 
 | 項目 | 値 |
 |---|---|
-| 日時 | 2026-07-22 07:00:30 JST |
-| 対象 tip | `48b94c499a496dbf6c15ecee63c57f6e8e256258` |
-| 元ブランチ | `feat/local-first-pivot-impl` |
-| 本流ブランチ | `main`（同一 tip で新設） |
-| 受け入れ PR | https://github.com/overdozer1124/syncratch/pull/15（Draft） |
+| 日時 | 2026-07-22 23:59:11 JST |
+| 対象 tip | `d179efff59827007cd84664a52234f188e88cb1b` |
+| 本流ブランチ | `main` |
+| 作業ブランチ | `cursor/release-gates-stage5-f431`（本レポート更新） |
 | 製品名 | Syncratch（シンクラッチ） |
+| Stage 5 状態 | **IN_PROGRESS** — 自動ゲート PASS / 手動 Google・一部 privacy はユーザー実施待ち |
+| オンライン検証 | `https://syncratch-production.up.railway.app/`（`/healthz` → `ok`） |
+| 手動手順 | `docs/local-first/STAGE5_MANUAL_GATES.md` |
 
 ## 結論
 
-自動ゲートはすべて PASS。Community Local-First primary track（単独編集・SB3・任意 Drive・少人数 WebRTC 共同編集・local UI 保全）を本流候補として受け入れ可能。
+Community Local-First の **自動ゲートは現行 `main` tip で再 PASS**。  
+Stage 5 完了には、実 Google プロジェクトでの Manual Google gates と、
+残る人手 privacy / 障害確認（手順書 §B）が必要。
 
-手動 Google OAuth / Drive 実ユーザー試験は CI 資格情報では実行していない（`RELEASE_CHECKLIST.md` の Manual Google gates）。デプロイ前に実 Google プロジェクトで実施すること。
+CI 資格情報では Google OAuth / Drive 実ユーザー試験を実行していない。
 
-## 自動ゲート結果
+## 自動ゲート結果（tip `d179eff`）
 
 | ゲート | 結果 |
 |---|---|
 | `pnpm gate0:test` | PASS |
 | `pnpm gate0:collab` | PASS（2/2） |
 | `@blocksync/editor-web` typecheck | PASS |
-| `@blocksync/editor-web` test | PASS（190/190） |
+| `@blocksync/editor-web` test | PASS（206/206） |
 | `@blocksync/editor-web` build（production） | PASS |
 | production `dist/index.html` あり / `collab-harness.html` なし | PASS |
 | `BLOCKSYNC_BASE_PATH=/` `verify:static` | PASS |
-| Playwright `e2e/editor.spec.ts` + `collab.spec.ts` | PASS（16/16） |
+| Playwright `e2e/editor.spec.ts` + `collab.spec.ts` | PASS（18/18） |
 | `@blocksync/google-drive-sync` test | PASS（25/25） |
 | `@blocksync/classroom-apps-script` test | PASS（14/14） |
-| `@blocksync/collaboration-domain` test | PASS（36/36） |
+| `@blocksync/collaboration-domain` test | PASS（43/43） |
 | `@blocksync/collab-webrtc` test | PASS（35/35） |
-| `@blocksync/collab-signaling` test | PASS（17/17） |
+| `@blocksync/collab-signaling` test | PASS（18/18） |
 | `@blocksync/collab-invite` test | PASS（13/13） |
+| `@blocksync/collab-host` test | PASS（4/4） |
 | Frozen School: `pnpm r1:persist:test` | PASS |
 | Frozen School: `pnpm r1:auth:test` | PASS |
+| Railway `/healthz` | PASS（`ok`, HTTP 200） |
 | `git diff --check` | PASS |
 
-## 含まれる主要マイルストーン（既に tip 上）
+## tip `d179eff` までに含まれる主要マイルストーン
 
-- PR #10: local-first 共同編集統合（bootstrap/reconnect、block 収束、asset 同期、選択維持、Syncratch 改名、ja 漢字）
+- PR #10: local-first 共同編集統合（bootstrap/reconnect、asset 同期、選択維持、Syncratch 改名、ja 漢字）
 - PR #13: regular remote apply 時の local-only UI（tab / per-target Blockly viewport）保全
+- PR #16: block-level collab Phase 1（per-block `Y.Map`、同一スプライト別 stack 共存）
+- PR #17: Railway `collab-host`（static + same-origin `/signal`、TURN なし）
+- PR #19: editor 読み込み高速化（async GUI、gzip、collab-host gzip）
 - Frozen School/self-hosted track は buildable のまま Community 実行時必須依存にしない
+
+## Stage 5 残作業（ユーザー）
+
+`STAGE5_MANUAL_GATES.md` の記録表を埋める:
+
+1. Manual Google gates A1–A7（実アカウント 2 つ + OAuth + Picker）
+2. Failure / privacy 人手確認 B1–B3（peer 切断の表示、Apps Script 未設定/停止、token 実機検査）
+3. 合格後、本レポートの Stage 5 状態を `COMPLETE` に更新し、
+   `RELEASE_CHECKLIST.md` の該当チェックを入れる
 
 ## 既知の限界（リリース告知に含めない／含めないもの）
 
 受け入れ対象外・非目標（設計どおり）:
 
-- 同一スプライト同時ブロック編集は `blocksJson` LWW
+- 同一 block id / 同一接続辺の同時変更は per-block LWW（決定的勝者一方）。文字単位・操作 CRDT の意味的 merge は Phase 1 対象外
 - AI / 中央バックアップ / 大規模 room / 新規 school directory
 - Drive の厳密分散ロック・atomic CAS 保証なし（best-effort leader）
+- TURN なし（制限の強い NAT / 学校ネットでは peer 接続が失敗し得る。ローカル編集と SB3 は継続）
 - guest-initial / new / open で「前作品の UI」を復元しない（漏えい禁止）
 - `currentCostume` 等の共有作品状態を peer 同期しない
 
-## 本流化手順（ユーザー承認後）
+## 本流化・公開メモ
 
-1. 本レポートを含む PR を `main` へ merge する。
-2. GitHub の default branch を `feat/local-first-pivot-impl` から `main` へ切り替える。
-3. 残存 Draft PR（例: #5, #7）の base を `main` へ付け替えるか、不要なら close する。
-4. 手動 Google gates（`RELEASE_CHECKLIST.md`）を実プロジェクトで実施してから公開デプロイする。
-
-自動で default branch 変更・公開デプロイは行わない。
+1. GitHub default branch を `feat/local-first-pivot-impl` から `main` へ切り替える（ユーザー操作。API は 403）。
+2. 残存 Draft PR は base を `main` へ付けるか、不要なら close する。
+3. Manual Google gates 完了前に「Drive 連携まで検証済み」と公開しない。
+4. 自動で default branch 変更は行わない。
