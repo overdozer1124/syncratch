@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 11:06:30 JST |
+| 最終更新 | 2026-07-22 11:38:15 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（セルフレビュー再走可） |
@@ -60,7 +60,7 @@
 
 ## Cursorが次に行う作業
 
-なし（`READY_FOR_CODEX_REVIEW`）。指摘修正の再提出済み。
+なし（`READY_FOR_CODEX_REVIEW`）。セルフレビュー再走の追加修正を含む再提出済み。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4425,3 +4425,32 @@ runtime provenance（自動 E2E）:
 進捗: Local-First primary 100% / block-level Phase 1 100%（再提出・レビュー待ち）
 次の担当: Codex（またはセルフレビュー再走）
 ```
+
+### 2026-07-22 11:38:15 JST — Cursor（セルフレビュー再走 → 修正 → READY_FOR_CODEX_REVIEW）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+方式: サブエージェント A〜D 再走 + 親統合
+対象 tip（再走時）: b9732f1 / 修正後 tip: 8e32cfc680bb22e83b5537e4e9c794fd8a049897
+PR: https://github.com/overdozer1124/syncratch/pull/16（base=main）
+
+観点結果（再走）:
+- A Domain: GO（prior Closed。P2 note: malformed legacy upgrade 等は任意）
+- B Session: 初回 NO_GO（NEW: apply 後 pending の metadata publish 脱落）→ 修正後 Closed
+- C Coverage: GO（prior P1 gaps Closed。harness 文言 Closed）
+- D Limits/base: GO（main rebase / whitespace / approved design 未変更 Closed）
+
+統合判定:
+- 再走で NEW P1（metadata race after rebase）を検出・修正（8e32cfc）
+- pending 対象は apply 直後に shared remote を lastLocalTargetJson へ戻し、metadata は baseline 欠落時も overlay merge
+- 回帰試験: publishes a local rename that races with remote apply after rebase
+
+ゲート（修正後）:
+- collaboration-domain: 42 PASS
+- editor-web: 196 PASS + typecheck PASS
+- 自動 merge しない
+
+進捗: Local-First primary 100% / block-level Phase 1 100%（再提出・レビュー待ち）
+次の担当: Codex（またはセルフレビュー再走）
+```
+
