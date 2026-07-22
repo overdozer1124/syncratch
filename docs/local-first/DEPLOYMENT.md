@@ -87,13 +87,22 @@ collaboration needs a `wss://` signaling endpoint. The repo ships:
 ### Deploy steps
 
 1. Create a Railway project from this GitHub repository.
-2. Enable **GitHub submodules** so `vendor/scratch-editor` is present at build.
-3. Confirm `railway.toml` picks the root `Dockerfile` (builder `DOCKERFILE`).
-4. Optional Drive verification: set Docker build args / env
+2. Point the service at a branch that contains `Dockerfile` + `railway.toml`
+   (until merged: `cursor/railway-collab-host-f431`). Deploying `main` without
+   those files makes Railpack fail with **No start command detected**.
+3. Enable **GitHub submodules** so `vendor/scratch-editor` is present at build.
+4. In the service **Settings → Build**:
+   - Builder = **Dockerfile** (not Railpack / Railpack automatic)
+   - Dockerfile path = `Dockerfile`
+   - Root directory = `/` (repository root)
+5. Redeploy and confirm the build log says **Using Detected Dockerfile** (or
+   equivalent). If you still see `Railpack` + `No start command detected`, the
+   UI builder override is still Railpack — change it and redeploy.
+6. Optional Drive verification: set Docker build args / env
    `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, `VITE_GOOGLE_APP_ID`, and
    register the Railway HTTPS origin under Google **Authorized JavaScript origins**.
-5. Deploy. Open the generated `https://*.up.railway.app/` URL.
-6. Smoke-check: editor loads, `GET /healthz` returns `ok`, create/join room works
+7. Open the generated `https://*.up.railway.app/` URL.
+8. Smoke-check: editor loads, `GET /healthz` returns `ok`, create/join room works
    between two browsers (or two profiles) on ordinary networks.
 
 Build bakes `VITE_COLLAB_SIGNALING_URL=same-origin` and `BLOCKSYNC_BASE_PATH=/`.
