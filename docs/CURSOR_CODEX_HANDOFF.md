@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 19:42:29 JST |
+| 最終更新 | 2026-07-22 20:10:44 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（セルフレビュー可） |
@@ -4557,5 +4557,14 @@ branch: cursor/railway-collab-host-f431
 原因: Dockerfile ではなく Railpack でビルドされている（branch/main にファイル無し、または UI Builder=Railpack）
 対応: railway.json 追加、DEPLOYMENT.md に Builder=Dockerfile / 必要ブランチを明記
 次: ユーザーが Service Settings で Dockerfile に切替えて再デプロイ
+```
+
+### 2026-07-22 20:10:44 JST — Cursor（Railway vendor/scratch-editor missing 対応）
+
+```text
+ユーザー報告: Dockerfile ビルドは開始したが gate0:build-vendor-vm で
+"vendor/scratch-editor missing"
+対応: scripts/ensure-vendor-scratch-editor.sh を追加し、Dockerfile が欠落時に pin SHA を clone
+次: ユーザーが Redeploy
 ```
 

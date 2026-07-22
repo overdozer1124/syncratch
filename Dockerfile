@@ -1,5 +1,6 @@
 # Syncratch Railway verification image: editor static + /signal WebSocket.
-# Build context = repository root (includes vendor/scratch-editor submodule).
+# Build context = repository root. Submodule contents may be absent in the
+# uploaded archive; scripts/ensure-vendor-scratch-editor.sh clones the pin.
 FROM node:24-bookworm-slim AS build
 
 WORKDIR /app
@@ -17,19 +18,31 @@ COPY packages ./packages
 COPY apps ./apps
 COPY vendor ./vendor
 
+# Public browser OAuth client values (optional). Not server secrets; baked into SPA.
+# check=skip: SecretsUsedInArgOrEnv
+ARG VITE_GOOGLE_CLIENT_ID=
+# check=skip: SecretsUsedInArgOrEnv
+ARG VITE_GOOGLE_API_KEY=
+# check=skip: SecretsUsedInArgOrEnv
+ARG VITE_GOOGLE_APP_ID=
+ARG SCRATCH_EDITOR_SHA=7c172e469eb3c21c1e6326ea6cccea60bc14e3a8
+
+ENV VITE_COLLAB_SIGNALING_URL=same-origin
+ENV BLOCKSYNC_BASE_PATH=/
+# check=skip: SecretsUsedInArgOrEnv
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+# check=skip: SecretsUsedInArgOrEnv
+ENV VITE_GOOGLE_API_KEY=$VITE_GOOGLE_API_KEY
+# check=skip: SecretsUsedInArgOrEnv
+ENV VITE_GOOGLE_APP_ID=$VITE_GOOGLE_APP_ID
+ENV SCRATCH_EDITOR_SHA=$SCRATCH_EDITOR_SHA
+
+RUN chmod +x scripts/ensure-vendor-scratch-editor.sh \
+  && scripts/ensure-vendor-scratch-editor.sh
+
 RUN pnpm install --frozen-lockfile
 RUN pnpm gate0:build-vendor-vm
 RUN pnpm gate0:build-vendor-gui-spike
-
-ARG VITE_GOOGLE_CLIENT_ID=
-ARG VITE_GOOGLE_API_KEY=
-ARG VITE_GOOGLE_APP_ID=
-ENV VITE_COLLAB_SIGNALING_URL=same-origin
-ENV BLOCKSYNC_BASE_PATH=/
-ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
-ENV VITE_GOOGLE_API_KEY=$VITE_GOOGLE_API_KEY
-ENV VITE_GOOGLE_APP_ID=$VITE_GOOGLE_APP_ID
-
 RUN pnpm --filter @blocksync/editor-web build
 
 FROM build AS export

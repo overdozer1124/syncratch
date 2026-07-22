@@ -90,7 +90,9 @@ collaboration needs a `wss://` signaling endpoint. The repo ships:
 2. Point the service at a branch that contains `Dockerfile` + `railway.toml`
    (until merged: `cursor/railway-collab-host-f431`). Deploying `main` without
    those files makes Railpack fail with **No start command detected**.
-3. Enable **GitHub submodules** so `vendor/scratch-editor` is present at build.
+3. Prefer enabling **GitHub submodules**. If the archive still omits
+   `vendor/scratch-editor`, the Dockerfile clones the pinned upstream commit
+   via `scripts/ensure-vendor-scratch-editor.sh` during build.
 4. In the service **Settings → Build**:
    - Builder = **Dockerfile** (not Railpack / Railpack automatic)
    - Dockerfile path = `Dockerfile`
