@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 11:04:24 JST |
+| 最終更新 | 2026-07-22 11:06:30 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（セルフレビュー再走可） |
@@ -4385,13 +4385,15 @@ P2（A）: legacy upgrade の parse失敗/同時upgrade などは任意 hardenin
 次の担当: Cursor
 ```
 
-### 2026-07-22 11:04:24 JST — Cursor（Phase 1 CHANGES_REQUESTED 修正 → READY_FOR_CODEX_REVIEW）
+### 2026-07-22 11:06:30 JST — Cursor（Phase 1 CHANGES_REQUESTED 修正 → READY_FOR_CODEX_REVIEW）
 
 ```text
 状態: READY_FOR_CODEX_REVIEW
 対応: 2026-07-22 11:00:58 JST 統合 CHANGES_REQUESTED / Codex 10:47:54
 ブランチ: cursor/block-level-collab-phase1-f431
 base: origin/main @ c465514f6da0e528d91b757628b8d9ec8f704eda（PR base を main へ変更）
+実装 tip: 2e087b760642067cf05ae99e6c8bc05869624176（feat 85b287c + handoff）
+PR: https://github.com/overdozer1124/syncratch/pull/16
 実装: VM-acked baseline diff / missing-base 3-way merge / seedLocalIntoDoc 隔離
 
 修正:
@@ -4400,10 +4402,26 @@ base: origin/main @ c465514f6da0e528d91b757628b8d9ec8f704eda（PR base を main 
 - P1: 受け入れ試験 — stale race / forever+sibling / detach+field / baseline delete+unknown add。
 - P2: COLLAB_ACCEPTANCE の harness 範囲明記、設計書 trailing whitespace 除去、syncLocalToDoc full-replace 枝削除。
 
-ゲート（再提出前に本エントリ後で追記更新）:
-- 後続 commit に最新 PASS を記録
+ゲート:
+- collaboration-domain vitest: PASS（42）
+- collaboration-domain tsc --noEmit: PASS
+- editor-web vitest: PASS（195）
+- editor-web typecheck: PASS
+- editor-web build: PASS
+- collab-webrtc vitest: PASS（35）
+- Playwright e2e/collab.spec.ts + e2e/editor.spec.ts: PASS（17/17）
+- git diff --check: PASS
+
+runtime provenance（自動 E2E）:
+- worktree: /workspace
+- tip: 2e087b760642067cf05ae99e6c8bc05869624176
+- editor origin: http://127.0.0.1:4173
+- signaling: ws://127.0.0.1:4455
+
+自己レビュー（修正後）:
+- P0/P1/P2 指摘は上記で対応済み。新規 P0/P1 なし。
 
 停止: 自動merge / 公開deploy / Phase 2 着手しない
-進捗: Local-First primary 100% / block-level Phase 1 95%（再提出・レビュー待ち）
+進捗: Local-First primary 100% / block-level Phase 1 100%（再提出・レビュー待ち）
 次の担当: Codex（またはセルフレビュー再走）
 ```
