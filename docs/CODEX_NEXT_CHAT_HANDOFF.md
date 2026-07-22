@@ -2,16 +2,23 @@
 
 この文書は、長大化した旧チャットの推測や圧縮要約に依存せず、次のCodexチャットがGitの一次情報から安全に再開するための起動指示である。
 
+## 最優先規則
+
+ユーザーから `作業完了` または明らかな途中送信の `作業完` を受け取ったら、これは単なる完了報告ではなく、Gitから提出物を発見して現在の担当作業を実行する合言葉である。
+
+最初に `docs/WORK_COMPLETE_PROTOCOL.md` を全文読み、その手順を実行する。ユーザーへ報告のコピー＆ペースト、Taskの再説明、次の指示を要求してはいけない。
+
 ## 最初に必ず行うこと
 
 1. 対象repoが `https://github.com/overdozer1124/syncratch.git` であることを確認する。
 2. `git fetch --prune origin` を実行する。
 3. `git status --short`、`git branch --show-current`、`git rev-parse HEAD`、`git worktree list --porcelain` を取得する。
-4. 会話要約やローカルcheckoutの台帳を正とせず、下記固定SHAの2文書を全文読む。
+4. 会話要約やローカルcheckoutの台帳を正とせず、下記固定SHAの3文書を全文読む。
 
 ```powershell
 git show origin/codex/next-chat-handoff:docs/CODEX_NEXT_CHAT_HANDOFF.md
 git show origin/codex/next-chat-handoff:docs/CURSOR_CODEX_HANDOFF.md
+git show origin/codex/next-chat-handoff:docs/WORK_COMPLETE_PROTOCOL.md
 ```
 
 読む前に `git rev-parse origin/codex/next-chat-handoff` を実行し、ユーザーが旧チャットの最終報告で示した固定SHAと一致することを確認する。
@@ -118,5 +125,5 @@ base: origin/main @ c465514f6da0e528d91b757628b8d9ec8f704eda
 次の一文だけでよい。
 
 ```text
-引き継ぎ開始。origin/codex/next-chat-handoff の docs/CODEX_NEXT_CHAT_HANDOFF.md と docs/CURSOR_CODEX_HANDOFF.md を全文読み、Gitの実状態を確認してから再開してください。
+引き継ぎ開始。origin/codex/next-chat-handoff の docs/WORK_COMPLETE_PROTOCOL.md、docs/CODEX_NEXT_CHAT_HANDOFF.md、docs/CURSOR_CODEX_HANDOFF.md を全文読み、Gitの実状態を確認してください。以後「作業完了」は提出物を自動発見して実装またはレビューを開始する合言葉として扱ってください。
 ```

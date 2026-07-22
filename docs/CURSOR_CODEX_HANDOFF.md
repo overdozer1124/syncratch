@@ -3,11 +3,13 @@
 このファイルを、BlockSync AI 実装とレビューの唯一の引き継ぎ台帳として使用する。
 ユーザーが回答をコピー＆ペーストする必要はない。Cursor と Codex は作業開始時に必ずこのファイルと Git の実状態を読み、作業終了時にこのファイルを更新する。
 
+> **最優先:** ユーザーの `作業完了`（明らかな途中送信 `作業完` を含む）はワークフロートリガーである。Cursor/Codexは `docs/WORK_COMPLETE_PROTOCOL.md` を読み、fetch・提出物発見・実装またはレビューを自動で開始する。ユーザーへ報告の貼り付けやTaskの再説明を要求しない。
+
 > **Primary roadmap pivot (2026-07-19):** Community の主系は `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` の Local-First track。従来の School Server track は実装・証跡を保持し、buildable な状態で凍結する。
 
 ## 運用ルール
 
-1. Cursor/Codex は作業前に、このファイル、`git status --short`、`git rev-parse HEAD` を確認する。
+1. Cursor/Codex は作業前に、`docs/WORK_COMPLETE_PROTOCOL.md`、このファイル、`git status --short`、`git rev-parse HEAD` を確認する。
 2. 実装担当は作業完了時に「現在の状態」を更新し、作業ログへ結果を追記する。
 3. 実装担当が `READY_FOR_CODEX_REVIEW` にした後、ユーザーは Codex に「作業完了」とだけ伝えればよい。
 4. Codex はこのファイルと実際の差分・テストを確認し、`GO` または `NO_GO` を記録する。
@@ -42,7 +44,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 10:17:23 JST |
+| 最終更新 | 2026-07-22 10:39:21 JST |
 | 更新者 | Codex |
 | ワークフロー状態 | `CURSOR_TASK_ASSIGNED` |
 | 現在の担当 | Cursor |
@@ -4015,5 +4017,22 @@ Task:
 - branch、base/head SHA、changed files、全gate、実機provenance、working tree、既知限界を記録する。
 - 自動mergeしない。
 
+進捗: Local-First primary milestone 100% / block-level collaboration Phase 1 0%。
+```
+
+### 2026-07-22 10:39:21 JST — Codex（「作業完了」プロトコル明文化）
+
+```text
+状態: CURSOR_TASK_ASSIGNED（変更なし）
+
+修正理由:
+- 新しいチャットが「作業完了」を通常の完了報告として扱い、Gitから次の実装／レビュー対象を自動発見しなかった。
+
+追加:
+- docs/WORK_COMPLETE_PROTOCOL.md を共通の最優先規則として追加。
+- 「作業完了」「作業完」を受けたCodex/Cursorのfetch、branch探索、状態別処理、禁止応答を明文化。
+- 本台帳と docs/CODEX_NEXT_CHAT_HANDOFF.md の冒頭から必ず参照するよう更新。
+
+現在のTask、base、担当、停止条件に変更なし。
 進捗: Local-First primary milestone 100% / block-level collaboration Phase 1 0%。
 ```
