@@ -6,3 +6,6 @@
 .git
 **/.git
 vendor/scratch-editor/.git
+# Local Vite env points at loopback signaling; Railway image must bake same-origin.
+apps/editor-web/.env
+apps/editor-web/.env.*

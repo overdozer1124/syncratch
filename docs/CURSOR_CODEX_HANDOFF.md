@@ -42,7 +42,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 13:18:48 JST |
+| 最終更新 | 2026-07-22 16:02:38 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
 | 現在の担当 | Codex（セルフレビュー可） |
@@ -4535,5 +4535,18 @@ branch: cursor/railway-collab-host-f431
 
 進捗: Local-First primary 100% / Railway 検証ホスト 実装完了（レビュー待ち）
 次の担当: Codex（またはセルフレビュー）→ ユーザーが Railway へ接続
+```
+
+### 2026-07-22 16:02:38 JST — Cursor（内蔵ブラウザで collab-host 検証）
+
+```text
+状態: READY_FOR_CODEX_REVIEW（追記）
+実施:
+- 内蔵ブラウザ + Playwright で http://127.0.0.1:8080/ を検証
+- 発見: apps/editor-web/.env が VITE_COLLAB_SIGNALING_URL を loopback に固定 → Dockerignore で除外
+- 発見: invite hash は input に入れるだけで auto-join しない → boot で startCollaboration
+- 結果: host/guest 双方「1人といっしょに作っています」、ICE/PC connected、4455 参照なし
+証跡: /opt/cursor/artifacts/screenshots/collab-host-host.png / collab-host-guest.png
+停止: Railway アカウント操作はユーザー側（本環境にログインなし）
 ```
 

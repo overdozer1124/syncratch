@@ -1756,7 +1756,14 @@ async function boot(): Promise<void> {
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   const fragmentInvite = decodeInviteFragment(window.location.hash);
-  if (fragmentInvite) collabInviteInput.value = window.location.href;
+  if (fragmentInvite) {
+    // Opening a shared invite URL should join immediately; the input is also
+    // filled so the guest can copy/rejoin after leave.
+    collabInviteInput.value = window.location.href;
+    renderCollabIdle();
+    await startCollaboration(fragmentInvite, false);
+    return;
+  }
   renderCollabIdle();
 }
 
