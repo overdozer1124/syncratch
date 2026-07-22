@@ -456,7 +456,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         // would look like a local delete.
         const baseline = parseTargetJson(lastLocalTargetJson.get(targetId) ?? null);
         const {blocks: localBlocks, ...localMeta} = target;
-        const {blocks: sharedBlocks, ...sharedMeta} = shared;
+        const {blocks: _sharedBlocks, ...sharedMeta} = shared;
         const baselineBlocks = (baseline?.blocks ?? {}) as Record<string, unknown>;
         const blockPatch = diffBlocks(
           baselineBlocks,
@@ -466,22 +466,23 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           Object.keys(blockPatch.upserts).length > 0 ||
           blockPatch.deletes.length > 0;
 
-        let metadataToPublish: Omit<ScratchTarget, "blocks"> | undefined;
+        // Metadata: 3-way merge against baseline when present; otherwise overlay
+        // only keys that already differ from live shared (never whole-replace).
+        let baselineMetaJson: string | undefined;
         if (baseline) {
           const {blocks: _b, ...baselineMeta} = baseline;
-          const mergedMeta = mergePendingTarget(
-            JSON.stringify({...baselineMeta, blocks: {}}),
-            {...localMeta, blocks: {}} as ScratchTarget,
-            {...sharedMeta, blocks: {}} as ScratchTarget,
-          );
-          const {blocks: _mb, ...mergedMetaOnly} = mergedMeta;
-          if (JSON.stringify(mergedMetaOnly) !== JSON.stringify(sharedMeta)) {
-            metadataToPublish = mergedMetaOnly;
-          }
+          baselineMetaJson = JSON.stringify({...baselineMeta, blocks: {}});
         }
-        // No acknowledged baseline: skip metadata publish (avoid reverting live
-        // remote fields). Block diff uses an empty baseline so unknown remote
-        // ids are never deleted.
+        const mergedMeta = mergePendingTarget(
+          baselineMetaJson,
+          {...localMeta, blocks: {}} as ScratchTarget,
+          {...sharedMeta, blocks: {}} as ScratchTarget,
+        );
+        const {blocks: _mb, ...mergedMetaOnly} = mergedMeta;
+        const metadataToPublish =
+          JSON.stringify(mergedMetaOnly) !== JSON.stringify(sharedMeta)
+            ? mergedMetaOnly
+            : undefined;
 
         if (metadataToPublish || blocksChanged) {
           patches.push({
@@ -950,11 +951,17 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           if (applied === false) return;
           lastLocalTargetJson.clear();
           for (const target of options.materializeLocal().document.targets) {
-            // Pending edits still need their pre-edit base for the next rebase.
             if (pendingTargets.has(target.id)) {
               // Publish the rebased snapshot, not the pre-remote snapshot;
               // otherwise its stale metadata could undo the remote change.
               pendingTargets.set(target.id, target);
+              // Baseline for the immediate follow-up push must be the shared
+              // remote we just applied — not empty — so intentional deletes and
+              // metadata diffs still publish after rebase.
+              const shared = domain.getTarget(target.id);
+              if (shared) {
+                lastLocalTargetJson.set(target.id, JSON.stringify(shared));
+              }
             } else {
               lastLocalTargetJson.set(target.id, JSON.stringify(target));
             }

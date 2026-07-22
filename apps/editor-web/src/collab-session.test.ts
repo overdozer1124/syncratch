@@ -1001,6 +1001,68 @@ describe("two-session convergence over WebRTC transport", () => {
     expect(blocksB.stackB).toBeDefined();
   });
 
+  it("publishes a local rename that races with remote apply after rebase", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "OrigName")]);
+    const vmA = fakeVm(source);
+    const vmB = fakeVm(project([stage()]));
+    const a = createCollabSession({
+      roomId: "room-meta-race",
+      secret: "meta-race-secret-meta-race-12345678",
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vmA.materializeLocal,
+      applyRemoteToLocal: vmA.applyRemoteToLocal,
+    });
+    const b = createCollabSession({
+      roomId: "room-meta-race",
+      secret: "meta-race-secret-meta-race-12345678",
+      debounceMs: 500,
+      participantId: "peer-b",
+      createProvider: create,
+      materializeLocal: vmB.materializeLocal,
+      applyRemoteToLocal: vmB.applyRemoteToLocal,
+    });
+    a.start({host: true});
+    b.start({host: false});
+    await flush(a, b);
+
+    vmB.editTargetName("s1", "RenamedByB");
+    b.noteLocalChange();
+
+    vmA.replaceTarget(
+      sprite("s1", "OrigName", {
+        remoteStack: {
+          id: "remoteStack",
+          opcode: "event_whenflagclicked",
+          next: null,
+          parent: null,
+          inputs: {},
+          fields: {},
+          shadow: false,
+          topLevel: true,
+          x: 20,
+          y: 20,
+        } as NonNullable<ScratchTarget["blocks"]>[string],
+      }),
+    );
+    a.noteLocalChange({force: true});
+    await a.provider.flush();
+    await b.provider.flush();
+
+    // Let B's applyTimer fire (and its follow-up push) before the localTimer.
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await flush(a, b);
+
+    expect(b.domain.getTarget("s1")?.name).toBe("RenamedByB");
+    expect(vmA.current().targets.find(t => t.id === "s1")?.name).toBe("RenamedByB");
+    expect(vmB.current().targets.find(t => t.id === "s1")?.name).toBe("RenamedByB");
+    expect(vmA.current().targets.find(t => t.id === "s1")?.blocks.remoteStack)
+      .toBeDefined();
+  });
+
   it("does not delete a remote-only block when local push races ahead of VM apply", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
