@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 06:53:35 JST |
-| 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次スライス指示待ち） |
-| 現在のTask | なし（PR #13 merge 済み） |
+| 最終更新 | 2026-07-22 09:53:00 JST |
+| 更新者 | Codex |
+| ワークフロー状態 | `CURSOR_TASK_ASSIGNED` |
+| 現在の担当 | Cursor |
+| 現在のTask | 同一スプライトのブロック単位共同編集 Phase 1 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / PR #13 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `feat/local-first-pivot-impl` @ `152b426` |
-| 作業worktree | `/workspace`（cloud agent） |
+| 作業ブランチ | 予定: `cursor/block-level-collab-phase1-f431`（base `48b94c4`） |
+| 作業worktree | Cursorが最新baseから新規作成する。Codexのdirty worktreeは使用禁止 |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。次スライスへ先行しない |
+| 次Task | `blocksJson` 全体LWWを縮小し、同一スプライト上の独立したブロック編集を損失なく収束させる |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #13 merge 済み。次スライスはユーザー指示まで停止）。
+本ファイル末尾の「2026-07-22 09:53:00 JST — Codex（次スライス指示）」に従う。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -3923,4 +3923,298 @@ mergedAt: 2026-07-21T21:53:33Z
 
 進捗: Local-First primary milestone 100% / UI hardening slice 100%（PR #13 merged）
 次の担当: ユーザー
+```
+
+### 2026-07-22 07:24:00 JST — Codex（共同編集リンク作成失敗・診断強化）
+
+```text
+状態: WAITING_USER_RETEST
+ブランチ: codex/collab-link-error-diagnostics
+base: 48b94c499a496dbf6c15ecee63c57f6e8e256258
+
+ユーザー再現:
+- 「いっしょに作るリンクを作れませんでした。インターネットをたしかめてください。」が継続。
+- signaling 127.0.0.1:4455 はlisten・TCP到達済みのため、単純なサーバー停止とは断定しない。
+
+高確度原因候補:
+- リンク作成はネット接続前に deriveSignalingTopic() の Web Crypto SHA-256を使う。
+- 共同編集payloadもAES-GCM Web Crypto必須。
+- http://<LAN-IP> の非secure contextでは crypto.subtle がなく、旧 catch {} が実例外をインターネット障害と誤表示する。
+- httpsページ + ws:// signaling もWebSocket生成時にmixed contentとして同期的に拒否され得る。
+
+変更（未コミット）:
+- readinessへWeb Crypto利用可否とhttps/ws混在検査を追加。
+- secure-context / mixed-contentを子ども向け日本語で明示。
+- create/joinの catch {} を廃止し、consoleとstatus titleへ例外を残す。
+- その他の作成失敗は画面へ COLLAB_CREATE_FAILED を表示して原因を追跡可能にした。
+
+検証:
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test 191/191 PASS
+- @blocksync/editor-web build PASS
+- git diff --check PASS
+
+次:
+1. ユーザーは表示中ページをCtrl+F5し、リンク作成を再試行する。
+2. URLが http://localhost または http://127.0.0.1 以外なら、同一PC試験ではlocalhostへ切り替える。
+3. 再表示された文言または COLLAB_CREATE_FAILED のtitle詳細で実原因を確定する。
+4. 原因確定前に本修正をmergeしない。
+
+進捗: Local-First primary milestone 100% / 本障害対応 94%（診断可能化済み、実ブラウザ再試験待ち）。
+次の担当: ユーザー（再試験結果）
+```
+
+### 2026-07-22 07:47:10 JST — Codex（リンク生成回帰・実行環境不一致を特定）
+
+```text
+状態: ROOT_CAUSE_IDENTIFIED / WAITING_USER_ACCEPTANCE
+
+訂正:
+- 「以前は同じブラウザで動いていた」という回帰情報を優先すべきであり、secure contextを第一原因とした前回推測は誤り。
+
+実ブラウザ比較:
+- http://127.0.0.1:5173/: リンク生成失敗を再現。
+- http://127.0.0.1:4174/: 同一ブラウザ・同一作品初期状態でリンク生成成功。
+- 4174では招待入力へ160文字のURLが設定され、error logなし。
+
+原因:
+- ユーザーが開いていた5173は、修正・build対象worktreeとは別のCursor管理開発サーバー。
+- 5173配信コードの VITE_COLLAB_SIGNALING_URL は ws://127.0.0.1:4444。
+- 4174配信buildは ws://127.0.0.1:4455 で、現在のworktreeの成果物。
+- 5173はCodexが追加した診断コードも配信しておらず、修正対象と実行対象が一致していなかった。
+- よって直接原因はブラウザの突然の非secure化ではなく、PR取り込み後の実行サーバー／環境の取り違え。
+
+ユーザー受け入れ手順:
+1. 両ブラウザで http://127.0.0.1:4174/ を開く。
+2. 旧5173タブは閉じる（IndexedDB originも別になるため混在させない）。
+3. 4174同士でホストリンク生成とゲスト参加を確認する。
+
+検証済み:
+- 4174 host link creation: PASS（invite URL length 160）
+- @blocksync/editor-web typecheck PASS
+- @blocksync/editor-web test 191/191 PASS
+- @blocksync/editor-web build PASS
+
+進捗: Local-First primary milestone 100% / 本障害対応 95%（原因特定・正しいruntimeで生成成功、ユーザー受け入れ待ち）。
+次の担当: ユーザー
+```
+
+### 2026-07-22 08:17:38 JST — Codex（リンク生成受け入れPASS → Cursor再発防止指示）
+
+```text
+状態: ACCEPTED / CURSOR_ACTION_REQUIRED
+
+ユーザー受け入れ:
+- http://127.0.0.1:4174/ でホスト・ゲスト接続成功。
+- リンク生成障害は解消確認済み。
+
+Cursorへの次スライス指示: local collaboration runtimeの一意化
+
+目的:
+- 古い5173 runtime（signaling 4444）と現行4174 runtime（signaling 4455）の混在をなくし、修正対象と実行対象の取り違えを再発させない。
+
+必須作業:
+1. 現在動いているeditor/signalingプロセス、起動元worktree、ポート、envを棚卸しする。
+2. local-first共同編集の正規起動コマンドを1本に統合する。
+   - editor URLとsignaling URLを同じ起動処理で決定する。
+   - signaling起動成功を確認してからeditorを案内する。
+   - 既使用ポートへ黙ってフォールバックしない。競合時は明示エラーで停止する。
+3. 正規URLをdocs/local-first/COLLAB_ACCEPTANCE.mdと起動手順へ記載する。
+4. UIまたは診断情報から、少なくとも次を確認可能にする。
+   - app build/commit識別子
+   - editor origin
+   - signaling host/port（secretや完全topicは表示禁止）
+5. 起動契約のテストを追加する。
+   - 正規envでリンク生成可能
+   - signaling未設定を拒否
+   - stale/wrong port設定を検出または明示表示
+6. Codexの未コミット診断変更をレビューする。
+   - catch {} 廃止と実エラーのconsole/title記録は維持候補。
+   - secure-context / https→ws mixed-contentの事前検査は防御的契約として採用可。
+   - 今回の根本原因をsecure contextと記述しない。
+7. approved design docs/superpowers/specs/2026-07-20-p2p-bootstrap-optional-drive-design.md は変更禁止。
+
+受け入れ条件:
+- 正規コマンド1回でeditorとsignalingが起動する。
+- 表示されたURLを2ブラウザで開き、host link create → guest joinが成功する。
+- 起動中のworktree/commit/portsが報告から一意に分かる。
+- 旧5173を誤って開いた場合に「現在版」と誤認しない。
+- @blocksync/editor-web test/typecheck/build と関連signaling testがPASSする。
+
+停止条件:
+- 実装と検証を別ブランチ・別コミットにまとめ、READY_FOR_CODEX_REVIEWとして停止する。
+- 自動mergeしない。
+- 作業完了時はJSTタイムスタンプと進捗率を台帳・ユーザー報告の両方へ必ず記載する。
+
+進捗: Local-First primary milestone 100% / リンク生成障害 100% / runtime再発防止スライス 0%。
+次の担当: Cursor
+```
+
+### 2026-07-22 08:25:06 JST — Codex（作業完了通知確認・提出なし）
+
+```text
+状態: CURSOR_SUBMISSION_MISSING
+
+確認結果:
+- originをfetchして全worktree・local/remote branchを確認したが、08:17指示以降のruntime再発防止commit/branchは存在しない。
+- 正本台帳にもCursorのREADY_FOR_CODEX_REVIEWエントリ、実装SHA、検証結果がない。
+- C:\cursor\NewScratchEditor 側の台帳はSchool/Directory Task 5設計を指しており、local-first runtimeスライスとは別系統。
+- よって現時点でCodexがレビュー・承認できる提出物はない。
+
+Cursorが必ず読む正本:
+C:\cursor\NewScratchEditor-local-first-pivot\docs\CURSOR_CODEX_HANDOFF.md
+
+Cursorへの指示:
+- 直前の「2026-07-22 08:17:38 JST — Codex（リンク生成受け入れPASS → Cursor再発防止指示）」を実行する。
+- 実装後、branch / implementation SHA / changed files / gates / working treeを本ファイルへ追記する。
+- 状態をREADY_FOR_CODEX_REVIEW、次の担当をCodexとして停止する。
+- 完了報告にはJST timestampと進捗率を含める。
+
+進捗: リンク生成障害 100% / runtime再発防止スライス 0%（未着手または未提出）。
+次の担当: Cursor
+```
+
+### 2026-07-22 08:27:38 JST — Codex（PR #15 mainline最終受け入れレビュー）
+
+```text
+状態: CHANGES_REQUESTED
+判定: NO-GO（P1×1 / P2×1）
+対象: PR #15 https://github.com/overdozer1124/syncratch/pull/15
+head: a9e202b471a55e15f15a0493ff5ffaab306f276b
+base: main @ 48b94c499a496dbf6c15ecee63c57f6e8e256258
+
+確認済み:
+- PRはDraft / MERGEABLE。
+- GitHub Gate 0 push/pull_request 2本ともPASS。
+- 差分はdocs 4ファイルのみ、git diff --check PASS。
+- default branchは現在も feat/local-first-pivot-impl。
+
+P1: 最終受け入れ証跡が、既知のruntime取り違え障害と必須provenanceを欠いたまま「本流候補として受け入れ可能」と結論している
+- RELEASE_CHECKLIST.md 3-4行は各RCについて browser versions / static origin / signaling deployment / Google Cloud project の記録を要求する。
+- FINAL_ACCEPTANCE_REPORT.md にはtip/dateしかなく、実行worktree、起動コマンド、editor origin、signaling host/port、browser versionがない。
+- レポート作成直後、5173（signaling 4444・別runtime）を現行版と誤認してリンク生成不能になり、4174（signaling 4455・正しいbuild）では成功する事象を実確認した。
+- PR #15はこの既知障害より前の証跡で、runtime再発防止指示も未実装。現状のまま「最終受け入れ」としてmainへ入れると、同じ誤起動を検出できない。
+
+必要対応:
+1. 08:17:38 JSTのruntime一意化指示を実装する（正規起動コマンド1本、port競合fail-fast、worktree/tip/origin/signaling診断）。
+2. 正規コマンドでhost link create → guest joinを再実行する。
+3. FINAL_ACCEPTANCE_REPORTへworktree、implementation tip、exact command、editor origin、signaling host/port、browser versions、手動受け入れ日時/結果を記録する。
+4. 旧5173等を開いた場合に現行版と誤認しない契約/確認方法を記録する。
+
+P2: RELEASE_CHECKLISTのfailure/privacy gatesが未完了なのに、未実施説明がGoogle gatesだけ
+- FINAL_ACCEPTANCE_REPORT.md 16行は未実施としてManual Google gatesのみを挙げる。
+- RELEASE_CHECKLIST.md 47行以降のfailure/privacy gatesは未チェックのまま（signaling切断、peer disconnect、leader removal、ログ/保存境界等）。
+- 自動E2Eで既に満たす項目はチェックして実行証跡へ紐付け、未実施項目はmainline受け入れか公開deployのどちらのblockerか明示する。
+
+停止条件:
+- PR #15をReady化・mergeしない。default branchを変更しない。
+- 上記を別commitで修正し、READY_FOR_CODEX_REVIEWとして再提出する。
+
+進捗: Local-First実装100% / PR #15 mainline受け入れレビュー80% / runtime再発防止0%。
+次の担当: Cursor
+```
+
+### 2026-07-22 08:30:44 JST — Codex（PR #15 スコープ訂正・正式承認）
+
+```text
+状態: GO
+判定: 正式承認（P0/P1/P2 findingなし）
+対象: PR #15 https://github.com/overdozer1124/syncratch/pull/15
+head: a9e202b471a55e15f15a0493ff5ffaab306f276b
+base: main @ 48b94c499a496dbf6c15ecee63c57f6e8e256258
+
+訂正:
+- 08:27:38 JSTのCHANGES_REQUESTEDは撤回する。
+- PR #15は、承認済み実装tip 48b94c4をmainlineへ昇格するためのdocs/受け入れ証跡PR。
+- 後から提案したlocal runtime一意化は別スライスであり、PR #15の必須条件ではない。
+- RELEASE_CHECKLISTの未チェック項目は公開release前のmanual gatesであり、mainline docs統合のblockerではない。
+
+最終確認:
+- 差分はdocs 4ファイルのみ（実装コード変更なし）。
+- PR #10 / #13の承認済み範囲とCOLLAB_ACCEPTANCE更新が整合。
+- FINAL_ACCEPTANCE_REPORTは対象tip、未実施Google gates、本流化手順、既知の限界を明示。
+- GitHub Gate 0 push / pull_request 2本ともPASS。
+- PRはOPEN / Draft / MERGEABLE。
+- git diff --check PASS。
+
+次:
+- Cursorは追加修正を行わない。
+- PR #15のReady化・merge、default branch切替はユーザーの明示指示待ち。
+- 自動でdefault branch変更・公開deployを行わない。
+
+進捗: Local-First実装100% / PR #15 mainline受け入れ100%（正式承認、merge待ち）。
+次の担当: ユーザー
+```
+
+### 2026-07-22 09:53:00 JST — Codex（次スライス指示）
+
+```text
+状態: CURSOR_TASK_ASSIGNED
+Task: 同一スプライトのブロック単位共同編集 Phase 1
+
+背景:
+- Local-Firstの初回マイルストーン、素材同期、別スプライト同期、remote apply時のローカルUI状態保持は承認済み。
+- 残る最大の共同編集上の制約は、同一スプライトの全block graphが `blocksJson` 1値のLWWであること。
+- そのため、同じスプライト内の互いに独立した編集であっても、遅れてpublishされた古い全体snapshotが相手の編集を消し得る。
+
+目的:
+- 同一スプライト上で異なるblock id／異なるstackへ行った同時編集を、片方の全体snapshotで失わず収束させる。
+- target metadata、asset、ローカルUI状態、Drive任意化の既存契約を維持する。
+
+開始条件:
+1. Codexのdirty worktree `codex/collab-link-error-diagnostics` を実装baseにしない。
+2. remoteの最新 `feat/local-first-pivot-impl` を取得し、そこから `cursor/block-level-collab-phase1-f431` を作る。
+3. `git status --short`、base SHA、既存の `blocksJson` 契約と受け入れ文書を台帳へ記録する。
+
+必須設計:
+1. 新しい設計書を `docs/superpowers/specs/` に作る。承認済み `2026-07-20-p2p-bootstrap-optional-drive-design.md` は変更しない。
+2. target内のblock graphを、最低でもblock id単位で独立に競合解決できるYjs表現へ移す。
+3. VMの全snapshotをそのまま共有状態へ置換しない。直前に受理したshared baselineとの差分から、追加・変更・削除block idだけを1回のYjs transactionでpublishする。
+4. staleなローカルsnapshotに存在しないという理由だけで、相手が追加した未知blockを削除しない。削除はbaselineに存在したblockがローカル操作で消えた場合だけ発行する。
+5. target metadata更新とblock更新は引き続き別競合領域にする。
+6. materialize後はScratch block graphの参照整合性、parent/next/input、topLevel、cycle、既存size/depth制限を決定的に検証し、不正なremote stateをVMへ適用しない。
+7. 同一block／同一接続辺を双方が同時変更する競合はPhase 1で意味的mergeを約束しない。Yjs上の決定的な勝者、ユーザーに起きる結果、将来の操作CRDT化境界を設計書と受け入れ文書に明記する。
+8. legacy `blocksJson` の読取、fresh roomでの新形式初期化、旧形式と新形式が混在した場合のfail-closedまたは明示的upgrade規則を定義する。暗黙の二重writerにしない。
+
+必須受け入れ試験:
+1. hostとguestが同じスプライトへ別々の新規stackを同時追加し、両方に2stackが残る。
+2. hostが既存stackを `forever` へ接続する間、guestが同じスプライトの別stackへblockを追加し、両編集が収束する。
+3. guestが一方のstackをdetachする間、hostが別blockのfieldを変更し、両編集が収束する。
+4. 一方がsprite座標を変更し、他方がblockを編集しても双方が残る。
+5. 一方がbaseline上のblockを削除し、他方が未知の新規blockを追加しても、新規blockがstale snapshotで消えない。
+6. 同一blockの同時変更は両peerで同じ決定結果になる。
+7. malformed/cyclic/dangling remote graphはVM・IndexedDBへ適用されず、最後の正常作品とローカルUI状態を保持する。
+8. 新規spriteとasset転送、Bスプライト選択、Blockly viewport、コード/コスチュームtabの既存回帰試験が通る。
+9. 可能なら2ブラウザE2Eで「同一スプライト・異なるstackの同時編集」を固定する。単体テストだけでBlockly表示の収束を証明したことにしない。
+
+非目標:
+- 同一blockの文字単位／field単位の共同編集。
+- 競合する接続操作の意図保存を保証する完全な操作CRDT。
+- 大規模room、中央サーバー保存、AI、公開deploy。
+- approved designの書換え。
+
+実装上の注意:
+- connectivity scoreによる「強そうなsnapshot優先」を新しい整合性モデルの代用にしない。
+- remote applyの再publish loop、debounce中のpending drop、bootstrap前publishを再発させない。
+- block/target/asset上限をblock単位表現でも迂回できないことを負例で確認する。
+- runtime provenance（worktree、tip、editor origin、signaling URL）を実機結果に必ず添える。
+
+必須ゲート:
+- `pnpm --filter @blocksync/collaboration-domain test`
+- `pnpm --filter @blocksync/collaboration-domain typecheck`
+- `pnpm --filter @blocksync/editor-web test`
+- `pnpm --filter @blocksync/editor-web typecheck`
+- `pnpm --filter @blocksync/editor-web build`
+- 関連するWebRTC／Local-First受け入れ・2ブラウザE2E
+- `git diff --check`
+
+停止条件:
+- 設計、実装、テスト、実機結果を別branchのreviewable commitsにする。
+- 自己レビューを2周行い、P0/P1 findingがない状態で台帳を `READY_FOR_CODEX_REVIEW` に更新する。
+- branch、implementation SHA、base SHA、変更ファイル、全gate結果、working tree、既知のPhase 1限界を記録する。
+- 自動merge・公開deploy・次Phase着手はしない。
+- 作業完了報告にJSTタイムスタンプと進捗率を含める。
+
+進捗: Local-First primary milestone 100% / block-level collaboration Phase 1 0%。
+次の担当: Cursor
 ```
