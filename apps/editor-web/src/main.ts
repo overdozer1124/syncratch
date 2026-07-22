@@ -135,6 +135,7 @@ import {
   readWorkspaceViewportFromScratch,
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
+import {resolveCollabSignalingUrl} from "./signaling-url.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -758,8 +759,9 @@ function markDirty(): void {
   collabSession?.noteLocalChange();
 }
 
-const signalingUrl =
-  import.meta.env.VITE_COLLAB_SIGNALING_URL?.trim() ?? "";
+const signalingUrl = resolveCollabSignalingUrl(
+  import.meta.env.VITE_COLLAB_SIGNALING_URL,
+);
 
 function randomParticipantId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
@@ -1754,7 +1756,14 @@ async function boot(): Promise<void> {
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   const fragmentInvite = decodeInviteFragment(window.location.hash);
-  if (fragmentInvite) collabInviteInput.value = window.location.href;
+  if (fragmentInvite) {
+    // Opening a shared invite URL should join immediately; the input is also
+    // filled so the guest can copy/rejoin after leave.
+    collabInviteInput.value = window.location.href;
+    renderCollabIdle();
+    await startCollaboration(fragmentInvite, false);
+    return;
+  }
   renderCollabIdle();
 }
 

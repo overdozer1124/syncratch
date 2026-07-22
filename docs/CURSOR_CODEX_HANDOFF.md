@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 12:21:33 JST |
+| 最終更新 | 2026-07-22 22:00:43 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次指示待ち） |
-| 現在のTask | なし（PR #16 を main へ merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | ユーザー（マージ指示待ち） / Codex（セルフレビュー可） |
+| 現在のTask | Railway 検証ホスト（オンライン smoke PASS） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み）+ Railway 検証ホスト実装完了（レビュー待ち） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（PR #16 merge 後） |
+| 作業ブランチ | `cursor/railway-collab-host-f431`（base: `main`） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md` |
+| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。Phase 2・公開deploy・default branch 切替は先行しない |
+| 次Task | PR #17 を main へ merge 後、Railway 接続ブランチを main に切替。Phase 2・TURN・default branch 切替は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #16 merge 済み）。次スライスはユーザー指示まで停止。
+ユーザーが「マージして」と言ったら PR #17 を main へ merge し、Railway ブランチ切替を案内する。Phase 2 は指示があるまで着手しない。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4502,5 +4502,89 @@ head: c8ef034b4018263b3b849d79a554b2942c0920bb
 
 進捗: Local-First primary 100% / block-level collaboration Phase 1 100%（merged）
 次の担当: ユーザー
+```
+
+### 2026-07-22 13:18:48 JST — Cursor（Railway collab-host 実装）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー指示: Railway で検証したいので実装して
+base: origin/main @ bfe2d4a
+branch: cursor/railway-collab-host-f431
+
+目的:
+- オンライン検証用に静的 editor + wss signaling を同一 origin で同居
+- TURN なし（意図的）。GitHub Pages 単体では collab 不可だった穴を埋める
+
+実装:
+- packages/collab-signaling: httpServer + path=/signal で attach 可能に
+- apps/collab-host: STATIC_ROOT 配信 + /signal + /healthz
+- editor-web: VITE_COLLAB_SIGNALING_URL=same-origin を runtime 解決
+- Dockerfile / railway.toml / .dockerignore
+- docs/local-first/DEPLOYMENT.md Railway 節
+
+試験:
+- collab-signaling: 18 PASS
+- collab-host: 3 PASS + typecheck
+- editor-web signaling-url + full unit: 201 PASS + typecheck
+- pnpm deploy --legacy 成果物で healthz / static / ws open smoke PASS
+
+停止:
+- 実際の Railway アカウント操作・本番公開告知はユーザー側
+- TURN / Phase 2 / default branch 切替はしない
+
+進捗: Local-First primary 100% / Railway 検証ホスト 実装完了（レビュー待ち）
+次の担当: Codex（またはセルフレビュー）→ ユーザーが Railway へ接続
+```
+
+### 2026-07-22 16:02:38 JST — Cursor（内蔵ブラウザで collab-host 検証）
+
+```text
+状態: READY_FOR_CODEX_REVIEW（追記）
+実施:
+- 内蔵ブラウザ + Playwright で http://127.0.0.1:8080/ を検証
+- 発見: apps/editor-web/.env が VITE_COLLAB_SIGNALING_URL を loopback に固定 → Dockerignore で除外
+- 発見: invite hash は input に入れるだけで auto-join しない → boot で startCollaboration
+- 結果: host/guest 双方「1人といっしょに作っています」、ICE/PC connected、4455 参照なし
+証跡: /opt/cursor/artifacts/screenshots/collab-host-host.png / collab-host-guest.png
+停止: Railway アカウント操作はユーザー側（本環境にログインなし）
+```
+
+### 2026-07-22 19:42:29 JST — Cursor（Railway Railpack 失敗対応）
+
+```text
+ユーザー報告: Railpack "No start command detected"
+原因: Dockerfile ではなく Railpack でビルドされている（branch/main にファイル無し、または UI Builder=Railpack）
+対応: railway.json 追加、DEPLOYMENT.md に Builder=Dockerfile / 必要ブランチを明記
+次: ユーザーが Service Settings で Dockerfile に切替えて再デプロイ
+```
+
+### 2026-07-22 20:10:44 JST — Cursor（Railway vendor/scratch-editor missing 対応）
+
+```text
+ユーザー報告: Dockerfile ビルドは開始したが gate0:build-vendor-vm で
+"vendor/scratch-editor missing"
+対応: scripts/ensure-vendor-scratch-editor.sh を追加し、Dockerfile が欠落時に pin SHA を clone
+次: ユーザーが Redeploy
+```
+
+### 2026-07-22 22:00:43 JST — Cursor（Railway オンライン受け入れ + 開発継続）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー: オンライン確認成功。日常開発はローカル、URL は検証用。開発継続。
+
+オンライン証跡 (https://syncratch-production.up.railway.app):
+- /healthz → 200 ok
+- editor root 200 / same-origin bundle
+- wss /signal open
+- Playwright 2-peer: host/guest「いっしょに作っています」
+
+追加実装:
+- COLLAB_ACCEPTANCE / DEPLOYMENT に Railway 検証 URL を記録
+- e2e: invite URL 自動参加回帰試験 PASS
+
+停止: merge は「マージして」待ち。Phase 2 / TURN / default branch 切替はしない
+次: PR #17 merge → Railway branch を main へ
 ```
 

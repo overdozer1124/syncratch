@@ -60,6 +60,10 @@ Set `VITE_COLLAB_SIGNALING_URL` to an explicit `wss://` endpoint running
 only offer/answer/ICE messages under a hashed topic; Yjs updates and project
 snapshots travel over encrypted WebRTC data channels.
 
+For same-origin hosts (Railway `collab-host`), set
+`VITE_COLLAB_SIGNALING_URL=same-origin`. The editor resolves that sentinel at
+runtime to `wss://<page-host>/signal` (or `ws:` on `http:`).
+
 The reference service enforces connection, topic, peer, message-size, and idle
 limits. It is not TURN. Restrictive school networks can therefore prevent peer
 connection; the editor must continue local save and SB3 export in that case.
@@ -71,6 +75,58 @@ WebSocket Hibernation API and preserve the protocol documented in
 can change and excess free operations fail rather than becoming an availability
 guarantee:
 <https://developers.cloudflare.com/durable-objects/platform/pricing/>.
+
+## Railway (static + signaling, no TURN)
+
+Use this for online verification when GitHub Pages alone is not enough because
+collaboration needs a `wss://` signaling endpoint. The repo ships:
+
+- `apps/collab-host` — HTTP static files + WebSocket `/signal`
+- `Dockerfile` + `railway.toml` — production image build
+
+### Deploy steps
+
+1. Create a Railway project from this GitHub repository.
+2. Point the service at a branch that contains `Dockerfile` + `railway.toml`
+   (until merged: `cursor/railway-collab-host-f431`). Deploying `main` without
+   those files makes Railpack fail with **No start command detected**.
+3. Prefer enabling **GitHub submodules**. If the archive still omits
+   `vendor/scratch-editor`, the Dockerfile clones the pinned upstream commit
+   via `scripts/ensure-vendor-scratch-editor.sh` during build.
+4. In the service **Settings → Build**:
+   - Builder = **Dockerfile** (not Railpack / Railpack automatic)
+   - Dockerfile path = `Dockerfile`
+   - Root directory = `/` (repository root)
+5. Redeploy and confirm the build log says **Using Detected Dockerfile** (or
+   equivalent). If you still see `Railpack` + `No start command detected`, the
+   UI builder override is still Railpack — change it and redeploy.
+6. Optional Drive verification: set Docker build args / env
+   `VITE_GOOGLE_CLIENT_ID`, `VITE_GOOGLE_API_KEY`, `VITE_GOOGLE_APP_ID`, and
+   register the Railway HTTPS origin under Google **Authorized JavaScript origins**.
+7. Open the generated `https://*.up.railway.app/` URL.
+8. Smoke-check: editor loads, `GET /healthz` returns `ok`, create/join room works
+   between two browsers (or two profiles) on ordinary networks.
+
+Build bakes `VITE_COLLAB_SIGNALING_URL=same-origin` and `BLOCKSYNC_BASE_PATH=/`.
+Runtime listens on `PORT` (Railway injects this) and serves
+`STATIC_ROOT` (default `apps/editor-web/dist`).
+
+### Current verification deployment
+
+| Item | Value |
+| --- | --- |
+| Public editor | `https://syncratch-production.up.railway.app/` |
+| Health | `https://syncratch-production.up.railway.app/healthz` |
+| Signaling | `wss://syncratch-production.up.railway.app/signal` |
+| Railway project | `radiant-cooperation` / service `syncratch` |
+| Deploy branch (until PR merge) | `cursor/railway-collab-host-f431` |
+
+Daily coding stays local. Use the Railway URL for online collab checks only.
+After PR merge into `main`, switch the Railway service branch to `main`.
+
+This path intentionally omits TURN. Peers behind restrictive NAT/firewalls may
+still fail to establish a WebRTC data channel; local edit and SB3 export must
+remain available.
 
 ## Optional classroom adapter
 

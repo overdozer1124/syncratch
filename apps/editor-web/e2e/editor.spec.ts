@@ -362,6 +362,49 @@ async function zoomBlocklyWorkspace(page: Page, deltaY: number): Promise<void> {
 test.describe("real WebRTC collaboration", () => {
   test.describe.configure({mode: "serial"});
 
+test("opening a shared invite URL auto-joins without clicking join", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const contextA = await browser.newContext();
+  const contextB = await browser.newContext();
+  const pageA = await contextA.newPage();
+  const pageB = await contextB.newPage();
+  try {
+    await waitUntilReady(pageA);
+    await openPanel(pageA, "collab-panel");
+    await pageA.getByRole("button", {name: "いっしょに作るリンクを作る"}).click();
+    await expect(pageA.getByTestId("collab-status")).toContainText(
+      "友だちの参加を待っています",
+    );
+    const invite = await pageA.getByLabel("いっしょに作るリンク").inputValue();
+    expect(invite).toContain("#blocksync-collab=");
+
+    // Guest opens the shared URL directly — boot() must start collaboration.
+    await pageB.goto(invite);
+    await pageB.waitForFunction(
+      () =>
+        window.__blocksyncTask3 !== undefined &&
+        (
+          window.__blocksyncTask3.ready === true ||
+          window.__blocksyncTask3.error !== null
+        ),
+    );
+    expect(await pageB.evaluate(() => window.__blocksyncTask3?.error)).toBeNull();
+    await expect(pageA.getByTestId("collab-status")).toContainText(
+      "1人といっしょに作っています",
+      {timeout: 60_000},
+    );
+    await expect(pageB.getByTestId("collab-status")).toContainText(
+      "1人といっしょに作っています",
+      {timeout: 60_000},
+    );
+  } finally {
+    await contextA.close();
+    await contextB.close();
+  }
+});
+
 test("two Chromium contexts keep local editor UI across remote block edits", async ({
   browser,
 }) => {
