@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 12:11:07 JST |
+| 最終更新 | 2026-07-22 12:21:33 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（セルフレビュー再走可） |
-| 現在のTask | 同一スプライトのブロック単位共同編集 Phase 1 |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（次指示待ち） |
+| 現在のTask | なし（PR #16 を main へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 merge 済み） + Phase 1 block-level collab 再提出 |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/block-level-collab-phase1-f431`（base `main` @ `c465514`） |
+| 作業ブランチ | `main`（PR #16 merge 後） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（P2P/Drive approved design は未変更） |
+| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | セルフレビュー再走または Codex 判定。自動merge禁止 |
+| 次Task | ユーザー指示待ち。Phase 2・公開deploy・default branch 切替は先行しない |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（`READY_FOR_CODEX_REVIEW`）。セルフレビュー再走の追加修正を含む再提出済み。
+なし（PR #16 merge 済み）。次スライスはユーザー指示まで停止。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4483,3 +4483,24 @@ PR: https://github.com/overdozer1124/syncratch/pull/16（base=main）
 進捗: Local-First 100% / Phase 1 100%（レビュー待ち）
 次の担当: Codex（またはセルフレビュー再走）
 ```
+
+### 2026-07-22 12:21:33 JST — Cursor（PR #16 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #16 → base main
+head: c8ef034b4018263b3b849d79a554b2942c0920bb
+事前: READY_FOR_CODEX_REVIEW / Gate 0 PASS / MERGEABLE・CLEAN / Draft解除後 merge
+
+実施:
+- gh pr ready + gh pr merge --merge
+- 台帳を MERGED に更新
+
+停止:
+- Phase 2 / 公開 deploy / default branch 切替はユーザー指示まで行わない
+
+進捗: Local-First primary 100% / block-level collaboration Phase 1 100%（merged）
+次の担当: ユーザー
+```
+
