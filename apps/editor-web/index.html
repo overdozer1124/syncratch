@@ -211,6 +211,32 @@
                   ></span>
                 </div>
                 <div
+                  class="ai-clarify"
+                  data-testid="ai-clarify"
+                  hidden
+                  id="ai-clarify"
+                >
+                  <p class="ai-clarify-prompt" id="ai-clarify-prompt"></p>
+                  <div
+                    class="ai-clarify-choices"
+                    data-testid="ai-clarify-choices"
+                    id="ai-clarify-choices"
+                  ></div>
+                  <div class="ai-clarify-other" hidden id="ai-clarify-other">
+                    <label class="invite-field" for="ai-clarify-other-input">
+                      <span>そのほか（じぶんでかく）</span>
+                      <textarea
+                        id="ai-clarify-other-input"
+                        placeholder="したいことを みじかく かいてね"
+                        rows="2"
+                      ></textarea>
+                    </label>
+                    <button id="ai-clarify-other-submit" type="button">
+                      このないようで聞く
+                    </button>
+                  </div>
+                </div>
+                <div
                   aria-live="polite"
                   class="ai-answer"
                   data-testid="ai-answer"

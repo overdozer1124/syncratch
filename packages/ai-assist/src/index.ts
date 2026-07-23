@@ -43,6 +43,7 @@ export {sanitizeAiText, truncateForTokens, type SanitizeResult} from "./sanitize
 export {
   AI_QUESTION_TARGET_ALL,
   buildAiProjectContext,
+  findMotionStyleHints,
   listAiQuestionTargets,
   resolveQuestionTargetName,
   type AiBlockSummary,
@@ -58,10 +59,22 @@ export {
   formatQuestionTargetLabel,
   inferAdviceMode,
   resolveAdviceMode,
+  wantsSmoothMotionAdvice,
   type AiAdviceMode,
   type AiChatMessage,
   type BuildAdvicePromptInput,
 } from "./prompt.js";
+
+export {
+  AI_CLARIFY_OTHER_ID,
+  buildClarifyPrompt,
+  buildOtherClarifyChoice,
+  formatClarifiedIntentLabel,
+  isBounceLikeQuestion,
+  needsIntentClarification,
+  type AiClarifyChoice,
+  type AiClarifyPrompt,
+} from "./clarify.js";
 
 export {
   escapeHtml,

@@ -413,6 +413,35 @@ function findLikelyMotionGaps(scriptsText: string): string[] {
   return gaps;
 }
 
+/** Detect teleport-like large one-shot moves that won't look like a bounce. */
+export function findMotionStyleHints(scriptsText: string): string[] {
+  const hints: string[] = [];
+  const deltas = [...scriptsText.matchAll(/\b(?:dx|dy)=(-?\d+(?:\.\d+)?)/g)].map(
+    match => Number(match[1]),
+  );
+  const large = deltas.filter(value => Number.isFinite(value) && Math.abs(value) >= 15);
+  if (large.length > 0) {
+    hints.push(
+      `大きないっぺん移動あり（${large
+        .map(value => String(value))
+        .join(", ")}）。弾む動きには見えにくく、しゅんかんいどうに近い`,
+    );
+  }
+  if (large.length > 0 && /control_wait/.test(scriptsText)) {
+    hints.push(
+      "大きな移動＋待つ のくみあわせ。カクカク／しゅんかんいどうに見えやすい。数値を大きくするより小さくする方がよい",
+    );
+  }
+  const hasDown = deltas.some(value => value <= -15);
+  const hasUp = deltas.some(value => value >= 15);
+  if (hasDown && hasUp) {
+    hints.push(
+      "した方向とうえ方向の大きな移動が両方ある。なめらかに弾ませるには、小さい数で何度も動かす必要がある",
+    );
+  }
+  return hints;
+}
+
 export function buildAiProjectContext(
   projectJson: ScratchProjectJsonLike | null | undefined,
   titleOrOptions: string | BuildAiProjectContextOptions = "作品",
@@ -505,8 +534,10 @@ export function buildAiProjectContext(
       }
     }
     const gaps = findLikelyMotionGaps(sprite.scriptsText);
-    if (gaps.length > 0 && !sprite.isStage) {
-      lines.push(`  自動チェック: ${gaps.join(" / ")}`);
+    const motionHints = findMotionStyleHints(sprite.scriptsText);
+    const checks = [...gaps, ...motionHints];
+    if (checks.length > 0 && !sprite.isStage) {
+      lines.push(`  自動チェック: ${checks.join(" / ")}`);
     }
     lines.push("  【スクリプト】");
     lines.push(sprite.scriptsText);
