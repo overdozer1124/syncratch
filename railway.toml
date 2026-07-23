@@ -2,7 +2,9 @@
 # IMPORTANT: Service Settings → Build → Builder must be "Dockerfile" (not Railpack).
 # Deploy branch must contain this file (e.g. cursor/railway-collab-host-f431 until merged).
 # Dashboard: enable GitHub submodules so vendor/scratch-editor is present at build.
-# Set optional Docker build args / env for Drive: VITE_GOOGLE_CLIENT_ID, etc.
+# Drive build args: VITE_GOOGLE_CLIENT_ID / API_KEY / APP_ID.
+# Drive refresh-token runtime secrets: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+# (optional GOOGLE_OAUTH_REDIRECT_URI).
 
 [build]
 builder = "DOCKERFILE"
