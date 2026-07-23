@@ -8,43 +8,63 @@ body,
   font-family: system-ui, sans-serif;
 }
 
-/* In-flow toolbar + flex fill: avoids fixed/padding double-offset that
-   collapsed the Scratch editor body to height 0 (black workspace). */
+/* Scratch GUI fills the app; Syncratch chrome overlays the menu-bar row so
+   there is one blue header (Scratch bar provides the painted background). */
 #app {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
 .toolbar {
-  position: relative;
-  z-index: 200000;
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 600;
   box-sizing: border-box;
-  padding: 8px 12px;
-  background: #1565a9;
+  height: 3rem;
+  width: max(100%, 1024px);
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  background: transparent;
   color: white;
+  pointer-events: none;
+}
+
+.toolbar .primary-controls,
+.toolbar .chrome-left,
+.toolbar .feature-panels,
+.toolbar .project-status,
+.toolbar .tool-panel,
+.toolbar button,
+.toolbar input,
+.toolbar summary,
+.toolbar label {
+  pointer-events: auto;
 }
 
 .toolbar input,
 .toolbar button {
-  min-height: 40px;
+  min-height: 2rem;
   border: 1px solid rgb(0 0 0 / 18%);
   border-radius: 8px;
   font: inherit;
 }
 
 .toolbar input {
-  width: min(240px, 28vw);
+  width: min(140px, 16vw);
   padding: 0 8px;
 }
 
 .toolbar button {
-  padding: 0 12px;
+  padding: 0 10px;
   background: white;
   cursor: pointer;
   color: #16324f;
   font-weight: 650;
+  font-size: 0.85rem;
 }
 
 .toolbar button:disabled {
@@ -63,6 +83,15 @@ body,
 }
 
 .primary-controls,
+.chrome-left,
+.feature-panels {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .file-controls,
 .collab-controls,
 .drive-controls {
@@ -72,23 +101,42 @@ body,
   gap: 8px;
 }
 
+.primary-controls {
+  width: 100%;
+}
+
+.chrome-left {
+  flex: 0 0 auto;
+  width: max-content;
+  max-width: none;
+}
+
+/* Lets Scratch Settings/File/Edit show through under the overlay. */
+.chrome-menu-slot {
+  flex: 0 0 16.5rem;
+  width: 16.5rem;
+  height: 1px;
+  pointer-events: none;
+}
+
 .app-brand {
   margin: 0;
-  padding-right: 4px;
+  padding-right: 2px;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 0;
   font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 800;
   letter-spacing: 0.01em;
-  line-height: 1.1;
+  line-height: 1.05;
   color: #fffef6;
+  white-space: nowrap;
 }
 
 .app-brand-kana {
-  font-size: 0.62rem;
+  font-size: 0.55rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   line-height: 1;
@@ -97,11 +145,24 @@ body,
 
 .title-field,
 .invite-field {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 0.88rem;
+  font-size: 0.78rem;
   font-weight: 700;
+}
+
+.title-field > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .invite-field {
@@ -120,9 +181,16 @@ body,
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 0 0 auto;
   justify-content: flex-end;
   text-align: right;
   font-weight: 700;
+  /* Icons keep pointer events; the row itself must not steal panel clicks. */
+  pointer-events: none;
+}
+
+.project-status .status-icon {
+  pointer-events: auto;
 }
 
 .status-icon-row {
@@ -245,28 +313,25 @@ body,
 
 .feature-panels {
   position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  gap: 4px;
 }
 
 .tool-panel {
   position: relative;
   flex: 0 1 auto;
-  border: 1px solid rgb(255 255 255 / 35%);
-  border-radius: 9px;
-  background: rgb(18 71 130 / 22%);
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: 8px;
+  background: rgb(18 71 130 / 28%);
 }
 
 .tool-panel summary {
   box-sizing: border-box;
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: 2rem;
+  padding: 4px 8px;
   cursor: pointer;
   font-weight: 750;
-  line-height: 1.25;
+  font-size: 0.78rem;
+  line-height: 1.2;
   white-space: nowrap;
 }
 
@@ -282,7 +347,7 @@ body,
 .panel-content {
   /* Anchor to the open column so Scratch under other columns stays usable. */
   position: absolute;
-  z-index: 30;
+  z-index: 720;
   top: calc(100% + 6px);
   left: 0;
   right: 0;
@@ -295,6 +360,7 @@ body,
   border-radius: 10px;
   background: #0f5b99;
   box-shadow: 0 10px 26px rgb(0 28 71 / 35%);
+  pointer-events: auto;
 }
 
 .file-panel .panel-content {
@@ -331,39 +397,28 @@ body,
 }
 
 @media (max-width: 720px) {
-  .toolbar {
-    padding: 6px;
-  }
-
   .toolbar input {
-    width: min(200px, 55vw);
-  }
-
-  .project-status {
-    flex-basis: 100%;
-    margin-left: 0;
-    justify-content: flex-start;
-    text-align: left;
+    width: min(110px, 22vw);
   }
 
   .tool-panel summary {
-    padding: 7px 6px;
-    font-size: 0.82rem;
+    padding: 4px 6px;
+    font-size: 0.72rem;
   }
 }
 
 @media (max-width: 480px) {
-  .toolbar {
-    padding: 4px;
-  }
-
   .toolbar input,
   .toolbar button {
-    min-height: 36px;
+    min-height: 1.85rem;
+  }
+
+  .app-brand {
+    font-size: 1rem;
   }
 
   .tool-panel summary {
-    font-size: 0.76rem;
+    font-size: 0.68rem;
   }
 }
 
@@ -403,7 +458,29 @@ body,
   height: 100%;
 }
 
-#scratch-gui button[aria-label="Debug"] {
+/* One Syncratch-blue menu bar: recolor Scratch chrome and drop its logo. */
+#scratch-gui header[role="banner"],
+#scratch-gui [class*="menu-bar_menu-bar_"] {
+  background-color: #1565a9 !important;
+  background-image: none !important;
+  padding-left: var(--syncratch-chrome-left, 0px) !important;
+  box-sizing: border-box;
+}
+
+#scratch-gui [class*="menu_menu_"],
+#scratch-gui [class*="menu-bar_menu-bar-menu"] {
+  background-color: #1565a9 !important;
+  z-index: 700 !important;
+}
+
+#scratch-gui #logo_img,
+#scratch-gui button[aria-label="ホーム"],
+#scratch-gui button[aria-label="Home"] {
+  display: none !important;
+}
+
+#scratch-gui button[aria-label="Debug"],
+#scratch-gui button[aria-label="デバッグ"] {
   display: none !important;
 }
 

@@ -18,7 +18,7 @@ await host.waitForFunction(() => {
 
 await host.evaluate(() => {
   const details = [...document.querySelectorAll("details")].find((d) =>
-    d.textContent.includes("友だちといっしょに作る"),
+    d.textContent.includes("いっしょに作る"),
   );
   if (details) details.open = true;
 });

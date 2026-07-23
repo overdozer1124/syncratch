@@ -70,6 +70,7 @@ import {
   shouldCloseToolPanelsOnKey,
   shouldCloseToolPanelsOnOutsideTarget,
 } from "./tool-panel-dismiss.js";
+import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {shouldLeaveCollaborationOnGoogleDisconnect} from "./google-disconnect-policy.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
@@ -301,6 +302,10 @@ const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
 const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
+const chromeLeft = document.querySelector<HTMLElement>(".chrome-left");
+if (chromeLeft) {
+  installSyncratchChromeLayout({chromeLeft});
+}
 const toolPanels = [
   ...document.querySelectorAll<HTMLDetailsElement>(".tool-panel"),
 ];
