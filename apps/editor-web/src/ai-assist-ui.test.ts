@@ -9,6 +9,7 @@ import {
   buildClarifyGenerationMessages,
   buildFallbackClarifyPrompt,
   friendlyAiError,
+  listAiConversationPages,
   needsIntentClarification,
   parseClarifyResponse,
   pickAiQuestionTargetValue,
@@ -80,6 +81,18 @@ describe("ai-assist-ui", () => {
     expect(
       friendlyAiError("gemini rate limited: RESOURCE_EXHAUSTED"),
     ).toContain("枠");
+  });
+
+  it("pages conversation into user/assistant pairs", () => {
+    const pages = listAiConversationPages([
+      {role: "user", content: "q1"},
+      {role: "assistant", content: "a1"},
+      {role: "user", content: "q2"},
+      {role: "assistant", content: "a2"},
+    ]);
+    expect(pages).toHaveLength(2);
+    expect(pages[0]?.[0]?.content).toBe("q1");
+    expect(pages[1]?.[1]?.content).toBe("a2");
   });
 
   it("offers clarify choices for bounce-like kid questions", () => {

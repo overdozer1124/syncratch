@@ -381,7 +381,28 @@ body,
   left: auto;
   right: 0;
   width: max(100%, min(420px, 94vw));
-  max-height: min(60vh, 420px);
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-panel .panel-help {
+  flex: 0 0 auto;
+}
+
+.ai-panel .ai-controls {
+  flex: 0 0 auto;
+}
+
+.ai-panel .ai-clarify {
+  flex: 0 0 auto;
+}
+
+.ai-panel .ai-answer-pager {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .settings-controls,
@@ -525,8 +546,53 @@ body,
   flex: 1 1 auto;
 }
 
+.ai-answer-pager {
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 12%);
+}
+
+.ai-answer-pager[hidden] {
+  display: none;
+}
+
+.ai-pager-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ai-pager-nav button {
+  flex: 1 1 auto;
+  min-height: 2rem;
+  padding: 4px 8px;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: 8px;
+  background: #fffef6;
+  color: #16324f;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ai-pager-nav button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+#ai-page-status {
+  flex: 0 0 auto;
+  min-width: 3.5rem;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
 .ai-thread {
-  margin: 8px 0 0;
   display: flex;
   flex-direction: column;
   gap: 8px;

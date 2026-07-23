@@ -192,6 +192,7 @@ import {
   formatClarifiedIntentLabel,
   friendlyAiError,
   levelSelectOptions,
+  listAiConversationPages,
   needsIntentClarification,
   parseClarifyResponse,
   pickAiQuestionTargetValue,
@@ -379,6 +380,10 @@ const aiClarifyOtherInput = requiredElement<HTMLTextAreaElement>(
 const aiClarifyOtherSubmit = requiredElement<HTMLButtonElement>(
   "ai-clarify-other-submit",
 );
+const aiAnswerPager = requiredElement<HTMLElement>("ai-answer-pager");
+const aiPagePrevButton = requiredElement<HTMLButtonElement>("ai-page-prev");
+const aiPageNextButton = requiredElement<HTMLButtonElement>("ai-page-next");
+const aiPageStatus = requiredElement<HTMLElement>("ai-page-status");
 const aiThread = requiredElement<HTMLElement>("ai-thread");
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
@@ -2064,6 +2069,8 @@ let aiAskInFlight = false;
 /** In-memory advice thread for this editor session (not persisted). */
 let aiConversation: AiConversationTurn[] = [];
 let aiSessionIntent: AiClarifyChoice | null = null;
+/** Which Q&A pair is visible (0-based). */
+let aiConversationPage = 0;
 
 function fillAiLevelSelect(): void {
   aiLevelSelect.replaceChildren();
@@ -2146,32 +2153,59 @@ function applyAiSettingsToForm(settings: AiAssistSettings): void {
   aiModelOverrideInput.value = settings.modelOverride;
 }
 
-function renderAiConversationThread(): void {
-  aiThread.replaceChildren();
-  for (const turn of aiConversation) {
-    const wrap = document.createElement("div");
-    wrap.className =
-      turn.role === "user"
-        ? "ai-thread-turn ai-thread-turn-user"
-        : "ai-thread-turn ai-thread-turn-assistant";
-    const role = document.createElement("p");
-    role.className = "ai-thread-role";
-    role.textContent = turn.role === "user" ? "きみ" : "AI";
-    wrap.append(role);
-    if (turn.role === "assistant") {
-      const body = document.createElement("div");
-      body.innerHTML = formatAiAnswerHtml(turn.content);
-      wrap.append(body);
-    } else {
-      const body = document.createElement("p");
-      body.className = "ai-answer-text";
-      body.textContent = turn.content;
-      wrap.append(body);
-    }
-    aiThread.append(wrap);
+function appendAiThreadTurn(turn: AiConversationTurn): void {
+  const wrap = document.createElement("div");
+  wrap.className =
+    turn.role === "user"
+      ? "ai-thread-turn ai-thread-turn-user"
+      : "ai-thread-turn ai-thread-turn-assistant";
+  const role = document.createElement("p");
+  role.className = "ai-thread-role";
+  role.textContent = turn.role === "user" ? "きみ" : "AI";
+  wrap.append(role);
+  if (turn.role === "assistant") {
+    const body = document.createElement("div");
+    body.innerHTML = formatAiAnswerHtml(turn.content);
+    wrap.append(body);
+  } else {
+    const body = document.createElement("p");
+    body.className = "ai-answer-text";
+    body.textContent = turn.content;
+    wrap.append(body);
   }
+  aiThread.append(wrap);
+}
+
+function renderAiConversationThread(options?: {jumpToLatest?: boolean}): void {
+  const pages = listAiConversationPages(aiConversation);
+  aiThread.replaceChildren();
   aiAnswer.hidden = true;
   aiAnswer.innerHTML = "";
+
+  if (pages.length === 0) {
+    aiAnswerPager.hidden = true;
+    aiPageStatus.textContent = "0 / 0";
+    aiPagePrevButton.disabled = true;
+    aiPageNextButton.disabled = true;
+    return;
+  }
+
+  if (options?.jumpToLatest) {
+    aiConversationPage = pages.length - 1;
+  }
+  aiConversationPage = Math.max(
+    0,
+    Math.min(aiConversationPage, pages.length - 1),
+  );
+
+  const [userTurn, assistantTurn] = pages[aiConversationPage]!;
+  appendAiThreadTurn(userTurn);
+  appendAiThreadTurn(assistantTurn);
+
+  aiAnswerPager.hidden = false;
+  aiPageStatus.textContent = `${aiConversationPage + 1} / ${pages.length}`;
+  aiPagePrevButton.disabled = aiConversationPage <= 0;
+  aiPageNextButton.disabled = aiConversationPage >= pages.length - 1;
 }
 
 function syncAiAskChrome(): void {
@@ -2186,10 +2220,9 @@ function syncAiAskChrome(): void {
 function clearAiConversation(): void {
   aiConversation = [];
   aiSessionIntent = null;
+  aiConversationPage = 0;
   hideAiClarify();
-  aiThread.replaceChildren();
-  aiAnswer.hidden = true;
-  aiAnswer.innerHTML = "";
+  renderAiConversationThread();
   aiFeedback.textContent = "";
   syncAiAskChrome();
   aiRuntimeStatus.textContent = aiStatusSummary(resolveAiAssistConfig(aiSettings));
@@ -2469,7 +2502,7 @@ async function askAiWithIntent(
       {role: "user", content: userTurnText},
       {role: "assistant", content: answerContent},
     ];
-    renderAiConversationThread();
+    renderAiConversationThread({jumpToLatest: true});
     aiQuestionInput.value = "";
     aiFeedback.textContent = looksTruncatedAiAnswer(answerContent)
       ? "こたえが途中で止まっているみたい。もういちど「つづけてきく」をおしてみてね。"
@@ -2521,6 +2554,19 @@ aiAskButton.addEventListener("click", () => {
 aiClearChatButton.addEventListener("click", () => {
   clearAiConversation();
   aiFeedback.textContent = "あたらしいはなしを はじめます";
+});
+
+aiPagePrevButton.addEventListener("click", () => {
+  if (aiConversationPage <= 0) return;
+  aiConversationPage -= 1;
+  renderAiConversationThread();
+});
+
+aiPageNextButton.addEventListener("click", () => {
+  const pages = listAiConversationPages(aiConversation);
+  if (aiConversationPage >= pages.length - 1) return;
+  aiConversationPage += 1;
+  renderAiConversationThread();
 });
 
 aiClarifyOtherSubmit.addEventListener("click", () => {

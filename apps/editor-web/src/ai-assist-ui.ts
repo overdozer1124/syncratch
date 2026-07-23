@@ -27,6 +27,7 @@ import {
   type AiAssistSettings,
   type AiClarifyChoice,
   type AiClarifyPrompt,
+  type AiConversationTurn,
   type AiProviderId,
   type ScratchProjectJsonLike,
 } from "@blocksync/ai-assist";
@@ -107,6 +108,21 @@ export function aiQuestionTargetHint(selectedValue: string): string {
     return "いまは作品全体について質問します。AI にも「作品全体」と伝わります。";
   }
   return `いまは ${formatQuestionTargetLabel(target)} について質問します。AI にも同じ対象が伝わります。`;
+}
+
+/** Split a flat turn list into visible Q&A pages (user+assistant pairs). */
+export function listAiConversationPages(
+  conversation: AiConversationTurn[],
+): Array<[AiConversationTurn, AiConversationTurn]> {
+  const pages: Array<[AiConversationTurn, AiConversationTurn]> = [];
+  for (let i = 0; i + 1 < conversation.length; i += 2) {
+    const userTurn = conversation[i];
+    const assistantTurn = conversation[i + 1];
+    if (userTurn?.role === "user" && assistantTurn?.role === "assistant") {
+      pages.push([userTurn, assistantTurn]);
+    }
+  }
+  return pages;
 }
 
 export function levelSelectOptions(): Array<{
