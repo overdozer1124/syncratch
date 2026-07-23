@@ -198,6 +198,32 @@ body,
   background: rgb(180 130 20 / 42%);
 }
 
+/* Official Drive mark reads best on a light chip; mute with grayscale. */
+.status-icon--drive {
+  background: rgb(255 255 255 / 94%);
+}
+
+.status-icon-drive-logo {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+  object-fit: contain;
+}
+
+.status-icon--drive.status-icon--muted .status-icon-drive-logo {
+  filter: grayscale(1);
+  opacity: 0.45;
+}
+
+.status-icon--drive.status-icon--busy .status-icon-drive-logo,
+.status-icon--drive.status-icon--warn .status-icon-drive-logo {
+  opacity: 0.92;
+}
+
+.status-icon--drive.status-icon--error {
+  box-shadow: inset 0 0 0 2px #e07060;
+}
+
 .status-sr-only {
   position: absolute;
   width: 1px;
@@ -210,17 +236,11 @@ body,
   border: 0;
 }
 
-.save-help,
 .panel-help,
 .safety-help {
   margin: 5px 0;
   font-size: 0.82rem;
   line-height: 1.35;
-}
-
-.save-help {
-  text-align: right;
-  opacity: 0.92;
 }
 
 .feature-panels {
@@ -323,10 +343,6 @@ body,
     text-align: left;
   }
 
-  .save-help {
-    text-align: left;
-  }
-
   .tool-panel summary {
     padding: 7px 6px;
     font-size: 0.82rem;
@@ -341,10 +357,6 @@ body,
   .toolbar input,
   .toolbar button {
     min-height: 36px;
-  }
-
-  .save-help {
-    display: none;
   }
 
   .tool-panel summary {

@@ -1,6 +1,7 @@
 import {describe, expect, it} from "vitest";
 import type {CollabState} from "./collab-session.js";
 import {
+  GOOGLE_DRIVE_STATUS_ICON_PATH,
   composeStatusIcons,
   formatPeopleBadge,
 } from "./status-icons.js";
@@ -35,6 +36,14 @@ describe("formatPeopleBadge", () => {
     expect(formatPeopleBadge(1)).toBe("1");
     expect(formatPeopleBadge(4)).toBe("4");
     expect(formatPeopleBadge(5)).toBe("×5");
+  });
+});
+
+describe("Google Drive status mark", () => {
+  it("points at the vendored official Drive product logo", () => {
+    expect(GOOGLE_DRIVE_STATUS_ICON_PATH).toBe(
+      "branding/google-drive-2026-color-64dp.png",
+    );
   });
 });
 
