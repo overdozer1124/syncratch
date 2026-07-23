@@ -1,7 +1,6 @@
-import {defineConfig, type Plugin} from "vite";
+import {defineConfig, type Connect, type Plugin} from "vite";
 import {fileURLToPath} from "node:url";
 import {createGzipStaticMiddleware} from "./src/compress-static.js";
-import {aiChatDevProxy} from "./src/ai-chat-dev-proxy.js";
 
 function gzipPublicAssets(): Plugin {
   const publicDir = fileURLToPath(new URL("./public", import.meta.url));
@@ -13,6 +12,38 @@ function gzipPublicAssets(): Plugin {
     },
     configurePreviewServer(server) {
       server.middlewares.use(middleware);
+    },
+  };
+}
+
+/**
+ * Dev-only AI chat proxy. Must not statically import `@blocksync/ai-assist`
+ * (TypeScript workspace package) — Vite config evaluation runs under Node ESM
+ * and cannot resolve its `.js` → `.ts` import specifiers. Load via ssrLoadModule.
+ * Preview/production use collab-host `POST /ai/chat` instead.
+ */
+function aiChatDevProxy(): Plugin {
+  return {
+    name: "blocksync-ai-chat-dev-proxy",
+    configureServer(server) {
+      let middleware: Connect.NextHandleFunction | undefined;
+      server.middlewares.use((req, res, next) => {
+        void (async () => {
+          try {
+            if (!middleware) {
+              const mod = (await server.ssrLoadModule(
+                "/src/ai-chat-dev-proxy.ts",
+              )) as {
+                createAiChatDevMiddleware: () => Connect.NextHandleFunction;
+              };
+              middleware = mod.createAiChatDevMiddleware();
+            }
+            middleware(req, res, next);
+          } catch (error) {
+            next(error instanceof Error ? error : new Error(String(error)));
+          }
+        })();
+      });
     },
   };
 }
