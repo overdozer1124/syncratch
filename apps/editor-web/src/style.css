@@ -509,6 +509,50 @@ body,
   resize: vertical;
 }
 
+.ai-ask-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ai-ask-row button {
+  flex: 1 1 auto;
+}
+
+.ai-thread {
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-thread:empty {
+  display: none;
+}
+
+.ai-thread-turn {
+  padding: 8px 10px;
+  border-radius: 8px;
+  word-break: break-word;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.ai-thread-turn-user {
+  background: rgb(255 255 255 / 14%);
+}
+
+.ai-thread-turn-assistant {
+  background: rgb(0 0 0 / 22%);
+}
+
+.ai-thread-role {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  opacity: 0.9;
+}
+
 .ai-answer {
   margin: 8px 0 0;
   padding: 10px;
@@ -521,7 +565,8 @@ body,
   min-height: 0;
 }
 
-.ai-answer:empty {
+.ai-answer:empty,
+.ai-answer[hidden] {
   display: none;
 }
 

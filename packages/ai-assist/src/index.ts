@@ -57,11 +57,15 @@ export {
 export {
   buildAdviceMessages,
   formatQuestionTargetLabel,
+  hasActiveConversation,
   inferAdviceMode,
+  isFollowUpQuestion,
   resolveAdviceMode,
+  trimConversationHistory,
   wantsSmoothMotionAdvice,
   type AiAdviceMode,
   type AiChatMessage,
+  type AiConversationTurn,
   type BuildAdvicePromptInput,
 } from "./prompt.js";
 

@@ -16,6 +16,12 @@ export interface AiChatMessage {
   content: string;
 }
 
+/** Prior turns in the same advice thread (not including the new question). */
+export interface AiConversationTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface BuildAdvicePromptInput {
   level: AiAssistLevel;
   mode: AiAdviceMode;
@@ -25,6 +31,38 @@ export interface BuildAdvicePromptInput {
   observationNotes?: string;
   /** Choice the learner picked in the clarify step. */
   clarifiedIntent?: AiClarifyChoice | null;
+  /** Earlier user/assistant turns in this thread. */
+  conversationHistory?: AiConversationTurn[] | null;
+}
+
+const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_TURN_CHARS = 1200;
+
+/** True when we already have a thread and should continue it. */
+export function hasActiveConversation(
+  history: AiConversationTurn[] | null | undefined,
+): boolean {
+  return Array.isArray(history) && history.length > 0;
+}
+
+/** Follow-up phrasing common from kids after trying advice. */
+export function isFollowUpQuestion(question: string): boolean {
+  return /うまくいか|だめ|ダメ|かわらない|変わらない|やってみた|ためした|試した|してみた|まだ|それでも|つぎ|次|どうすれば|なおら|直ら|できない|できなかった|へん|おかしい|もど|戻/.test(
+    question,
+  );
+}
+
+export function trimConversationHistory(
+  history: AiConversationTurn[] | null | undefined,
+): AiConversationTurn[] {
+  if (!Array.isArray(history) || history.length === 0) return [];
+  return history.slice(-MAX_HISTORY_TURNS).map(turn => ({
+    role: turn.role,
+    content: truncateForTokens(
+      sanitizeAiText(turn.content).text,
+      MAX_HISTORY_TURN_CHARS,
+    ),
+  }));
 }
 
 const MODE_LABEL: Record<AiAdviceMode, string> = {
@@ -229,12 +267,30 @@ function clarifiedIntentRules(
   ].join("\n");
 }
 
+function conversationRules(hasHistory: boolean): string {
+  if (!hasHistory) {
+    return [
+      "【やりとり】",
+      "- これは新しいはなしのいちばん最初のターンです。",
+    ].join("\n");
+  }
+  return [
+    "【やりとり（つづき）】",
+    "- これまでのユーザーとアシスタントの会話を必ず踏まえること。",
+    "- 最初から説明しなおさないこと。続きとして答えること。",
+    "- 「やってみたけどうまくいかない」などとあったら、前の案が足りなかったとみなし、同じ案のくりかえしは禁止。",
+    "- いまの【作品の要約】は最新版。前のターンよりスクリプトが変わっているかもしれないので、最新を優先すること。",
+    "- 次の一小歩だけ示すこと。",
+  ].join("\n");
+}
+
 function modeInstructions(
   mode: AiAdviceMode,
   level: AiAssistLevel,
   project: AiProjectContext | null | undefined,
   question: string,
   clarifiedIntent?: AiClarifyChoice | null,
+  hasHistory = false,
 ): string {
   const policy = aiLevelPolicy(level);
   const lines = [
@@ -249,6 +305,8 @@ function modeInstructions(
     diagramRules(),
     "",
     answerShape(mode, level),
+    "",
+    conversationRules(hasHistory),
     "",
     clarifiedIntentRules(clarifiedIntent),
     "",
@@ -290,6 +348,87 @@ function modeInstructions(
   return lines.join("\n");
 }
 
+function buildProjectUserParts(params: {
+  question: string;
+  questionHeading: string;
+  targetLabel: string;
+  project?: AiProjectContext | null;
+  clarifiedIntent?: AiClarifyChoice | null;
+  observationNotes?: string;
+  isFollowUp: boolean;
+}): string[] {
+  const userParts: string[] = [
+    `【質問の対象】\n${params.targetLabel}`,
+    `${params.questionHeading}\n${params.question}`,
+  ];
+
+  if (params.clarifiedIntent) {
+    userParts.push(
+      [
+        "【学習者が選んだ意図】",
+        params.clarifiedIntent.label,
+        params.clarifiedIntent.adviceHint,
+      ].join("\n"),
+    );
+  }
+
+  if (params.project?.summaryText) {
+    userParts.push(
+      [
+        params.isFollowUp ? "【いまの作品の要約（最新）】" : "【作品の要約】",
+        "（この内容だけを根拠にして答えてください。ここに無いものを想像で補わないでください。）",
+        params.project.summaryText,
+      ].join("\n"),
+    );
+  } else {
+    userParts.push(
+      "【作品の要約】\n(取得できませんでした。スクリプトが読めないため、一般論ではなく「作品を確認できない」と伝えてください。)",
+    );
+  }
+
+  if (params.observationNotes?.trim()) {
+    const notes = truncateForTokens(
+      sanitizeAiText(params.observationNotes).text,
+      800,
+    );
+    if (notes) {
+      userParts.push(`【観察メモ】\n${notes}`);
+    }
+  }
+
+  const closing = [
+    `質問対象は ${params.targetLabel} です。`,
+    "小学校の子ども向けに、ひらがな多め・みじかい文で答えてください。",
+    "むずかしい漢字や「放物線」「重力」などのむずかしい言葉は使わないでください。",
+    "かならず【ず】…【/ず】の図を1つ以上入れてください。",
+    "文字だけの長い説明は禁止です。",
+    "上記の作品スクリプトを根拠に答えてください。",
+  ];
+  if (
+    wantsSmoothMotionAdvice(params.question) ||
+    params.clarifiedIntent?.id.startsWith("bounce_")
+  ) {
+    closing.push(
+      "学習者は弾む／なめらかな動きを欲しがっています。",
+      "大きな数値への変更は禁止。選んだ意図に合う一小歩だけ示してください。",
+    );
+  }
+  if (params.clarifiedIntent) {
+    closing.push(
+      `選んだ意図「${params.clarifiedIntent.label}」に合わせて答えてください。`,
+    );
+  }
+  if (params.isFollowUp) {
+    closing.push(
+      "これはつづきのしつもんです。これまでのやりとりをふまえて答えてください。",
+      "前と同じアドバイスのくりかえしは禁止です。うまくいかなかったなら別の一小歩を出してください。",
+    );
+  }
+
+  userParts.push(closing.join("\n"));
+  return userParts;
+}
+
 export function buildAdviceMessages(
   input: BuildAdvicePromptInput,
 ): AiChatMessage[] {
@@ -306,71 +445,13 @@ export function buildAdviceMessages(
     throw new Error("question is empty");
   }
 
+  const history = trimConversationHistory(input.conversationHistory);
+  const isFollowUp = history.length > 0;
   const targetLabel = formatQuestionTargetLabel(
     input.project?.questionTargetName,
   );
-  const userParts: string[] = [
-    `【質問の対象】\n${targetLabel}`,
-    `【質問】\n${question}`,
-  ];
 
-  if (input.clarifiedIntent) {
-    userParts.push(
-      [
-        "【学習者が選んだ意図】",
-        input.clarifiedIntent.label,
-        input.clarifiedIntent.adviceHint,
-      ].join("\n"),
-    );
-  }
-
-  if (input.project?.summaryText) {
-    userParts.push(
-      [
-        "【作品の要約】",
-        "（この内容だけを根拠にして答えてください。ここに無いものを想像で補わないでください。）",
-        input.project.summaryText,
-      ].join("\n"),
-    );
-  } else {
-    userParts.push(
-      "【作品の要約】\n(取得できませんでした。スクリプトが読めないため、一般論ではなく「作品を確認できない」と伝えてください。)",
-    );
-  }
-
-  if (input.observationNotes?.trim()) {
-    const notes = truncateForTokens(
-      sanitizeAiText(input.observationNotes).text,
-      800,
-    );
-    if (notes) {
-      userParts.push(`【観察メモ】\n${notes}`);
-    }
-  }
-
-  const closing = [
-    `質問対象は ${targetLabel} です。`,
-    "小学校の子ども向けに、ひらがな多め・みじかい文で答えてください。",
-    "むずかしい漢字や「放物線」「重力」などのむずかしい言葉は使わないでください。",
-    "かならず【ず】…【/ず】の図を1つ以上入れてください。",
-    "文字だけの長い説明は禁止です。",
-    "上記の作品スクリプトを根拠に答えてください。",
-  ];
-  if (wantsSmoothMotionAdvice(question) || input.clarifiedIntent?.id.startsWith("bounce_")) {
-    closing.push(
-      "学習者は弾む／なめらかな動きを欲しがっています。",
-      "大きな数値への変更は禁止。選んだ意図に合う一小歩だけ示してください。",
-    );
-  }
-  if (input.clarifiedIntent) {
-    closing.push(
-      `選んだ意図「${input.clarifiedIntent.label}」に合わせて答えてください。`,
-    );
-  }
-
-  userParts.push(closing.join("\n"));
-
-  return [
+  const messages: AiChatMessage[] = [
     {
       role: "system",
       content: modeInstructions(
@@ -379,11 +460,27 @@ export function buildAdviceMessages(
         input.project,
         question,
         input.clarifiedIntent,
+        isFollowUp,
       ),
     },
-    {
-      role: "user",
-      content: userParts.join("\n\n"),
-    },
   ];
+
+  for (const turn of history) {
+    messages.push({role: turn.role, content: turn.content});
+  }
+
+  messages.push({
+    role: "user",
+    content: buildProjectUserParts({
+      question,
+      questionHeading: isFollowUp ? "【つづきのしつもん】" : "【質問】",
+      targetLabel,
+      project: input.project,
+      clarifiedIntent: input.clarifiedIntent,
+      observationNotes: input.observationNotes,
+      isFollowUp,
+    }).join("\n\n"),
+  });
+
+  return messages;
 }

@@ -162,6 +162,7 @@ import {
   buildAiProjectContext,
   formatAiAnswerHtml,
   formatQuestionTargetLabel,
+  hasActiveConversation,
   loadAiAssistSettings,
   resolveAdviceMode,
   resolveAiAssistConfig,
@@ -171,6 +172,7 @@ import {
   type AiAdviceMode,
   type AiAssistSettings,
   type AiClarifyChoice,
+  type AiConversationTurn,
 } from "@blocksync/ai-assist";
 import {
   aiModeOptionsForLevel,
@@ -357,6 +359,7 @@ const aiQuestionTargetHintEl = requiredElement<HTMLElement>(
 const aiModeSelect = requiredElement<HTMLSelectElement>("ai-mode");
 const aiQuestionInput = requiredElement<HTMLTextAreaElement>("ai-question");
 const aiAskButton = requiredElement<HTMLButtonElement>("ai-ask");
+const aiClearChatButton = requiredElement<HTMLButtonElement>("ai-clear-chat");
 const aiRuntimeStatus = requiredElement<HTMLElement>("ai-runtime-status");
 const aiClarify = requiredElement<HTMLElement>("ai-clarify");
 const aiClarifyPromptEl = requiredElement<HTMLElement>("ai-clarify-prompt");
@@ -368,6 +371,7 @@ const aiClarifyOtherInput = requiredElement<HTMLTextAreaElement>(
 const aiClarifyOtherSubmit = requiredElement<HTMLButtonElement>(
   "ai-clarify-other-submit",
 );
+const aiThread = requiredElement<HTMLElement>("ai-thread");
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
@@ -2049,6 +2053,9 @@ let aiSettings: AiAssistSettings = loadAiAssistSettings(
   typeof localStorage === "undefined" ? null : localStorage,
 );
 let aiAskInFlight = false;
+/** In-memory advice thread for this editor session (not persisted). */
+let aiConversation: AiConversationTurn[] = [];
+let aiSessionIntent: AiClarifyChoice | null = null;
 
 function fillAiLevelSelect(): void {
   aiLevelSelect.replaceChildren();
@@ -2131,17 +2138,73 @@ function applyAiSettingsToForm(settings: AiAssistSettings): void {
   aiModelOverrideInput.value = settings.modelOverride;
 }
 
+function renderAiConversationThread(): void {
+  aiThread.replaceChildren();
+  for (const turn of aiConversation) {
+    const wrap = document.createElement("div");
+    wrap.className =
+      turn.role === "user"
+        ? "ai-thread-turn ai-thread-turn-user"
+        : "ai-thread-turn ai-thread-turn-assistant";
+    const role = document.createElement("p");
+    role.className = "ai-thread-role";
+    role.textContent = turn.role === "user" ? "きみ" : "AI";
+    wrap.append(role);
+    if (turn.role === "assistant") {
+      const body = document.createElement("div");
+      body.innerHTML = formatAiAnswerHtml(turn.content);
+      wrap.append(body);
+    } else {
+      const body = document.createElement("p");
+      body.className = "ai-answer-text";
+      body.textContent = turn.content;
+      wrap.append(body);
+    }
+    aiThread.append(wrap);
+  }
+  aiAnswer.hidden = true;
+  aiAnswer.innerHTML = "";
+}
+
+function syncAiAskChrome(): void {
+  const active = hasActiveConversation(aiConversation);
+  aiClearChatButton.hidden = !active;
+  aiAskButton.textContent = active ? "つづけてきく" : "AI にきく";
+  aiQuestionInput.placeholder = active
+    ? "例: やってみたけど、うまくいかなかった"
+    : "例: このスプライトが動かないのはなぜ？";
+}
+
+function clearAiConversation(): void {
+  aiConversation = [];
+  aiSessionIntent = null;
+  hideAiClarify();
+  aiThread.replaceChildren();
+  aiAnswer.hidden = true;
+  aiAnswer.innerHTML = "";
+  aiFeedback.textContent = "";
+  syncAiAskChrome();
+  aiRuntimeStatus.textContent = aiStatusSummary(resolveAiAssistConfig(aiSettings));
+}
+
 function renderAiUi(settings: AiAssistSettings = aiSettings): void {
   const config = resolveAiAssistConfig(settings);
   const summary = aiStatusSummary(config);
   aiSettingsStatus.textContent = summary;
-  aiRuntimeStatus.textContent = summary;
+  if (!hasActiveConversation(aiConversation) && !aiAskInFlight) {
+    aiRuntimeStatus.textContent = summary;
+  }
   const hidden = aiPanelHidden(settings);
   aiPanel.hidden = hidden;
-  if (hidden) aiPanel.open = false;
+  if (hidden) {
+    aiPanel.open = false;
+    clearAiConversation();
+  }
   fillAiModeSelect(settings);
   fillAiQuestionTargetSelect();
   aiAskButton.disabled = aiAskInFlight || !config.ready;
+  aiClearChatButton.disabled = aiAskInFlight;
+  syncAiAskChrome();
 }
 
 function persistAiSettingsFromForm(): AiAssistSettings {
@@ -2236,7 +2299,6 @@ function showAiClarify(question: string): boolean {
   }
   aiClarifyOther.hidden = true;
   aiClarify.hidden = false;
-  aiAnswer.innerHTML = "";
   aiRuntimeStatus.textContent = "したいことを えらんでね";
   return true;
 }
@@ -2257,13 +2319,19 @@ async function askAiWithIntent(
     return;
   }
 
+  if (clarifiedIntent) {
+    aiSessionIntent = clarifiedIntent;
+  }
+  const intentForPrompt = aiSessionIntent;
+
   fillAiQuestionTargetSelect();
   const questionTargetValue = aiQuestionTargetSelect.value;
   const questionTargetName = resolveQuestionTargetName(questionTargetValue);
   const targetLabel = formatQuestionTargetLabel(questionTargetName);
-  const intentLabel = clarifiedIntent
-    ? formatClarifiedIntentLabel(clarifiedIntent)
+  const intentLabel = intentForPrompt
+    ? formatClarifiedIntentLabel(intentForPrompt)
     : null;
+  const continuing = hasActiveConversation(aiConversation);
 
   let projectContext = null;
   try {
@@ -2288,7 +2356,8 @@ async function askAiWithIntent(
       mode,
       userQuestion: question,
       project: projectContext,
-      clarifiedIntent,
+      clarifiedIntent: intentForPrompt,
+      conversationHistory: aiConversation,
     });
   } catch (error) {
     aiFeedback.textContent = friendlyAiError(
@@ -2299,9 +2368,11 @@ async function askAiWithIntent(
 
   aiAskInFlight = true;
   renderAiUi(aiSettings);
-  aiRuntimeStatus.textContent = intentLabel
-    ? `${targetLabel} / ${intentLabel} についてAIにきいています…`
-    : `${targetLabel} についてAIにきいています…`;
+  aiRuntimeStatus.textContent = continuing
+    ? `${targetLabel} の つづきをきいています…`
+    : intentLabel
+      ? `${targetLabel} / ${intentLabel} についてAIにきいています…`
+      : `${targetLabel} についてAIにきいています…`;
   try {
     const result = await requestAiChat({
       provider: config.provider,
@@ -2311,12 +2382,23 @@ async function askAiWithIntent(
       proxyUrl: AI_CHAT_PROXY_PATH,
       maxTokens: 900,
     });
-    aiAnswer.innerHTML = formatAiAnswerHtml(result.content);
+    const userTurnText = intentLabel && !continuing
+      ? `${question}\n（したいこと: ${intentLabel}）`
+      : question;
+    aiConversation = [
+      ...aiConversation,
+      {role: "user", content: userTurnText},
+      {role: "assistant", content: result.content},
+    ];
+    renderAiConversationThread();
+    aiQuestionInput.value = "";
     aiFeedback.textContent = "";
     const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
-    aiRuntimeStatus.textContent = intentLabel
-      ? `${targetLabel} / ${intentLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`
-      : `${targetLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`;
+    aiRuntimeStatus.textContent = continuing
+      ? `${targetLabel} の つづきに ${config.providerLabel} / ${result.model} が答えました${modeNote}`
+      : intentLabel
+        ? `${targetLabel} / ${intentLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`
+        : `${targetLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`;
   } catch (error) {
     aiFeedback.textContent = friendlyAiError(
       error instanceof Error ? error.message : String(error),
@@ -2341,12 +2423,23 @@ aiAskButton.addEventListener("click", () => {
     aiFeedback.textContent = friendlyAiError("empty question");
     return;
   }
+  // Continuing a thread: skip clarify and keep prior intent/history.
+  if (hasActiveConversation(aiConversation)) {
+    hideAiClarify();
+    void askAiWithIntent(aiSessionIntent);
+    return;
+  }
   if (needsIntentClarification(question)) {
     showAiClarify(question);
     return;
   }
   hideAiClarify();
   void askAiWithIntent(null);
+});
+
+aiClearChatButton.addEventListener("click", () => {
+  clearAiConversation();
+  aiFeedback.textContent = "あたらしいはなしを はじめます";
 });
 
 aiClarifyOtherSubmit.addEventListener("click", () => {

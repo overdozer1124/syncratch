@@ -36,7 +36,9 @@ import {
 import {
   buildAdviceMessages,
   formatQuestionTargetLabel,
+  hasActiveConversation,
   inferAdviceMode,
+  isFollowUpQuestion,
   resolveAdviceMode,
   wantsSmoothMotionAdvice,
 } from "./prompt.js";
@@ -472,6 +474,51 @@ describe("prompt", () => {
     expect(messages[0]?.content).toContain("絶対に");
     expect(messages[1]?.content).toContain("大きな数値への変更は禁止");
     expect(messages[1]?.content).toContain("一小歩");
+  });
+
+  it("keeps prior turns when asking a follow-up", () => {
+    expect(isFollowUpQuestion("やってみたけど、うまくいかなかった")).toBe(true);
+    expect(hasActiveConversation([{role: "user", content: "a"}])).toBe(true);
+
+    const messages = buildAdviceMessages({
+      level: 2,
+      mode: "debug",
+      userQuestion: "やってみたけど、うまくいかなかった",
+      conversationHistory: [
+        {role: "user", content: "ボールを弾ませたい"},
+        {
+          role: "assistant",
+          content: "まずは yを -5 にしてみよう。",
+        },
+      ],
+      project: buildAiProjectContext({
+        targets: [
+          {
+            name: "Sprite1",
+            blocks: {
+              a: {
+                opcode: "motion_changeyby",
+                topLevel: true,
+                parent: null,
+                next: null,
+                inputs: {DY: [1, [4, "-5"]]},
+              },
+            },
+          },
+        ],
+      }),
+    });
+    expect(messages.map(m => m.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(messages[0]?.content).toContain("つづき");
+    expect(messages[1]?.content).toContain("ボールを弾ませたい");
+    expect(messages[2]?.content).toContain("-5");
+    expect(messages[3]?.content).toContain("つづきのしつもん");
+    expect(messages[3]?.content).toContain("同じアドバイスのくりかえしは禁止");
   });
 
   it("builds bounce clarify choices and injects selected intent", () => {
