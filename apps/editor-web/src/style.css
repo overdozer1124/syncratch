@@ -425,6 +425,12 @@ body,
   min-height: auto;
 }
 
+/* Mask API keys without type=password (avoids browser password managers). */
+.secret-text-input {
+  -webkit-text-security: disc;
+  text-security: disc;
+}
+
 .settings-controls select,
 .ai-controls select,
 .ai-controls textarea {
