@@ -21,6 +21,7 @@ import {sanitizeAiText, truncateForTokens} from "./sanitize.js";
 import {
   AI_QUESTION_TARGET_ALL,
   buildAiProjectContext,
+  findMotionStyleHints,
   listAiQuestionTargets,
 } from "./context.js";
 import {
@@ -33,6 +34,7 @@ import {
   formatQuestionTargetLabel,
   inferAdviceMode,
   resolveAdviceMode,
+  wantsSmoothMotionAdvice,
 } from "./prompt.js";
 import {
   createEmptyBlockIRProposal,
@@ -378,6 +380,93 @@ describe("prompt", () => {
     expect(resolveAdviceMode("explain", "キャラクターが動きません")).toBe(
       "explain",
     );
+    expect(wantsSmoothMotionAdvice("ボールを弾ませたい")).toBe(true);
+    expect(inferAdviceMode("ボールを弾ませたいがうまくいかない")).toBe("debug");
+  });
+
+  it("flags large one-shot moves as teleport-like", () => {
+    const hints = findMotionStyleHints(
+      [
+        "control_forever（ずっと）",
+        "motion_changeyby（y座標を〜ずつ変える） [dy=-50]",
+        "control_wait（〜秒待つ）",
+        "motion_changeyby（y座標を〜ずつ変える） [dy=10]",
+      ].join("\n"),
+    );
+    expect(hints.some(hint => hint.includes("しゅんかんいどう"))).toBe(true);
+    expect(hints.some(hint => hint.includes("小さくする"))).toBe(true);
+
+    const ctx = buildAiProjectContext({
+      targets: [
+        {
+          name: "Sprite1",
+          blocks: {
+            hat: {
+              opcode: "event_whenkeypressed",
+              next: "loop",
+              parent: null,
+              topLevel: true,
+            },
+            loop: {
+              opcode: "control_forever",
+              next: null,
+              parent: "hat",
+              inputs: {SUBSTACK: [2, "down"]},
+            },
+            down: {
+              opcode: "motion_changeyby",
+              next: "wait1",
+              parent: "loop",
+              inputs: {DY: [1, [4, "-50"]]},
+            },
+            wait1: {
+              opcode: "control_wait",
+              next: "up",
+              parent: "loop",
+              inputs: {DURATION: [1, [4, "0.1"]]},
+            },
+            up: {
+              opcode: "motion_changeyby",
+              next: null,
+              parent: "loop",
+              inputs: {DY: [1, [4, "10"]]},
+            },
+          },
+        },
+      ],
+    });
+    expect(ctx.summaryText).toContain("しゅんかんいどう");
+  });
+
+  it("forbids larger-number advice for bounce questions", () => {
+    const messages = buildAdviceMessages({
+      level: 2,
+      mode: "hint",
+      userQuestion:
+        "ボールを弾ませたいのに、なめらかじゃなくて瞬間移動みたいに見える",
+      project: buildAiProjectContext(
+        {
+          targets: [
+            {
+              name: "Sprite1",
+              blocks: {
+                a: {
+                  opcode: "motion_changeyby",
+                  topLevel: true,
+                  parent: null,
+                  next: null,
+                  inputs: {DY: [1, [4, "-50"]]},
+                },
+              },
+            },
+          ],
+        },
+        {questionTargetName: "Sprite1"},
+      ),
+    });
+    expect(messages[0]?.content).toContain("もっと大きな数にする");
+    expect(messages[0]?.content).toContain("絶対に");
+    expect(messages[1]?.content).toContain("小さい数で少しずつ");
   });
 
   it("builds advice messages that forbid complete scripts at level 2", () => {
