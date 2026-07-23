@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 13:35:00 JST |
+| 最終更新 | 2026-07-23 13:38:14 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（任意）/ ユーザー（merge 判断） |
-| 現在のTask | ホスト/ゲスト明示 + ゲスト Drive 保存 UI 無効化 |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（Stage 5 残り手動ゲート / Railway 再デプロイ確認） |
+| 現在のTask | なし（PR #22 を main へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/host-guest-drive-ui-f431` |
+| 作業ブランチ | `main` |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | P2P bootstrap（room creator = Drive writer）+ 子ども向けホスト/ゲスト明示 |
+| 設計 | P2P bootstrap（room creator = Drive writer）+ ホスト/ゲスト明示 UI |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 本 PR merge 後、Stage 5 手動ゲート継続可。Phase 2・TURN・default branch 切替は指示まで停止 |
+| 次Task | Stage 5 残り（A5–A7 / B1 / B3）。PR #21 文書は別途。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-ホスト/ゲスト UI PR のレビュー・merge 待ち。Stage 5 文書 PR #21 は別系統。
+なし（PR #22 merge 済み）。Railway が main 追従ならホスト/ゲスト UI が再デプロイされる。Stage 5 手動ゲートはユーザー実施。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4663,6 +4663,26 @@ merge: 12ff325be7f40b56457229bd46b31b26404e7254
 
 停止: Phase 2 / TURN / default branch 切替しない
 次: merge 待ち
+```
+
+### 2026-07-23 13:38:14 JST — Cursor（PR #22 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #22 → base main
+merge: 1b8145ab2b26fca1101a7f2d34f77f305bdca780
+
+実施:
+- gh pr ready + gh pr merge --merge
+- 台帳を MERGED に更新
+
+案内:
+- Railway が main 追従ならホスト/ゲスト表示とゲスト Drive 無効が本番反映
+- Stage 5 残り手動ゲート（A5 が確認しやすくなった）を継続可
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
 ```
 
 
