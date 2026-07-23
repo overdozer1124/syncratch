@@ -36,6 +36,9 @@ describe("detectProviderFromApiKey", () => {
     expect(detectProviderFromApiKey("sk-or-v1-xyz").provider).toBe("openrouter");
     expect(detectProviderFromApiKey("gsk_abc").provider).toBe("groq");
     expect(detectProviderFromApiKey("AIzaSyAbcd").provider).toBe("gemini");
+    expect(detectProviderFromApiKey("AQ.AbCdEfGhIjKlMnOp").provider).toBe(
+      "gemini",
+    );
     expect(detectProviderFromApiKey("sk-proj-abc").provider).toBe("openai");
     expect(detectProviderFromApiKey("sk-abc123").provider).toBe("openai");
     expect(detectProviderFromApiKey("xai-abc").provider).toBe("xai");
@@ -256,5 +259,33 @@ describe("forward helpers", () => {
       expect(result.content).toBe("こんにちは");
       expect(result.usage?.inputTokens).toBe(3);
     }
+  });
+
+  it("sends Gemini auth keys with x-goog-api-key header", async () => {
+    let sawHeader = "";
+    let sawUrl = "";
+    const result = await forwardAiChat({
+      apiKey: "AQ.example-auth-key",
+      request: {
+        provider: "gemini",
+        model: "gemini-2.0-flash-lite",
+        messages: [{role: "user", content: "hi"}],
+      },
+      fetchImpl: async (input, init) => {
+        sawUrl = String(input);
+        const headers = new Headers(init?.headers);
+        sawHeader = headers.get("x-goog-api-key") ?? "";
+        return new Response(
+          JSON.stringify({
+            candidates: [{content: {parts: [{text: "gemini-ok"}]}}],
+          }),
+          {status: 200, headers: {"content-type": "application/json"}},
+        );
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.content).toBe("gemini-ok");
+    expect(sawHeader).toBe("AQ.example-auth-key");
+    expect(sawUrl).not.toContain("?key=");
   });
 });
