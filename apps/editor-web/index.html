@@ -180,6 +180,16 @@
                   作品の説明や、動かないときの助言をもらえます。完成プログラムを勝手に書き換えることはしません。
                 </p>
                 <div class="ai-controls">
+                  <label class="invite-field" for="ai-question-target">
+                    <span>質問するスプライト</span>
+                    <select
+                      data-testid="ai-question-target"
+                      id="ai-question-target"
+                    ></select>
+                  </label>
+                  <p class="panel-help" id="ai-question-target-hint">
+                    どのスプライトのコードについて聞くかを選んでください。
+                  </p>
                   <label class="invite-field" for="ai-mode">
                     <span>ききかた</span>
                     <select id="ai-mode"></select>
@@ -188,7 +198,7 @@
                     <span>しつもん</span>
                     <textarea
                       id="ai-question"
-                      placeholder="例: キャラクターが動かないのはなぜ？"
+                      placeholder="例: このスプライトが動かないのはなぜ？"
                       rows="3"
                     ></textarea>
                   </label>

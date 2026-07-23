@@ -67,7 +67,37 @@ export function resolveAdviceMode(
   return selectedMode;
 }
 
-function modeInstructions(mode: AiAdviceMode, level: AiAssistLevel): string {
+export function formatQuestionTargetLabel(
+  questionTargetName: string | null | undefined,
+): string {
+  if (!questionTargetName) return "作品全体";
+  return `「${questionTargetName}」`;
+}
+
+function questionTargetInstructions(
+  project: AiProjectContext | null | undefined,
+): string {
+  const target = project?.questionTargetName ?? null;
+  if (target) {
+    return [
+      `学習者が選んだ質問対象: ${formatQuestionTargetLabel(target)}`,
+      `- 回答の冒頭で「${formatQuestionTargetLabel(target)} について」と明示すること。`,
+      `- まずその対象のスクリプトを根拠に答えること。`,
+      "- 他のスプライトは、メッセージ連携など必要なときだけ参照すること。",
+    ].join("\n");
+  }
+  return [
+    "学習者が選んだ質問対象: 作品全体",
+    "- 回答の冒頭で「作品全体について」と明示すること。",
+    "- どのスプライトの話かを都度はっきり書くこと。",
+  ].join("\n");
+}
+
+function modeInstructions(
+  mode: AiAdviceMode,
+  level: AiAssistLevel,
+  project: AiProjectContext | null | undefined,
+): string {
   const policy = aiLevelPolicy(level);
   const lines = [
     "あなたは Scratch 互換エディター「Syncratch」の学習コーチです。",
@@ -76,12 +106,15 @@ function modeInstructions(mode: AiAdviceMode, level: AiAssistLevel): string {
     `現在の利用レベル: ${policy.level}（${policy.label}）— ${policy.description}`,
     `依頼モード: ${MODE_LABEL[mode]}`,
     "",
+    "【質問対象の共有】",
+    questionTargetInstructions(project),
+    "",
     "【最重要】作品の実スクリプトを根拠に答えること",
     "- 一般的な Scratch の説明だけで終わらないこと。",
     "- 必ず【作品の要約】に書かれたスプライト名・スクリプトの流れ・自動チェックを参照すること。",
     "- 作品に存在しないブロックやスクリプトを、ある前提で話さないこと。",
     "- 根拠が見つからないときは「この作品のスクリプトからは○○が見つかりません」と明示すること。",
-    "- 「編集中」と付いたスプライトを優先して診断すること。",
+    "- 「★質問対象」と付いたスプライトを最優先し、なければ「編集中」を優先して診断すること。",
   ];
 
   if (!policy.allowCompleteScripts) {
@@ -116,7 +149,7 @@ function modeInstructions(mode: AiAdviceMode, level: AiAssistLevel): string {
   if (mode === "debug") {
     lines.push(
       "回答は次の順で短く書いてください:",
-      "1. いま見ていること（どのスプライトのどのスクリプトか）",
+      "1. いま見ていること（質問対象のどのスクリプトか）",
       "2. 想定される原因（作品根拠つきで1〜3個）",
       "3. 次に試すこと（1つだけ、具体的に）",
       "「動かない」系では、開始イベント不足・動かすブロック不足・接続切れ・非表示・別スプライト編集などを優先して確認してください。",
@@ -146,7 +179,13 @@ export function buildAdviceMessages(
     throw new Error("question is empty");
   }
 
-  const userParts: string[] = [`【質問】\n${question}`];
+  const targetLabel = formatQuestionTargetLabel(
+    input.project?.questionTargetName,
+  );
+  const userParts: string[] = [
+    `【質問の対象】\n${targetLabel}`,
+    `【質問】\n${question}`,
+  ];
 
   if (input.project?.summaryText) {
     userParts.push(
@@ -173,13 +212,16 @@ export function buildAdviceMessages(
   }
 
   userParts.push(
-    "上記の作品スクリプトを根拠に答えてください。一般論だけで終わらないでください。",
+    [
+      `質問対象は ${targetLabel} です。回答の冒頭で対象を明示してください。`,
+      "上記の作品スクリプトを根拠に答えてください。一般論だけで終わらないでください。",
+    ].join("\n"),
   );
 
   return [
     {
       role: "system",
-      content: modeInstructions(input.mode, input.level),
+      content: modeInstructions(input.mode, input.level, input.project),
     },
     {
       role: "user",

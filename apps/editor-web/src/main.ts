@@ -156,9 +156,11 @@ import {
   AI_CHAT_PROXY_PATH,
   buildAdviceMessages,
   buildAiProjectContext,
+  formatQuestionTargetLabel,
   loadAiAssistSettings,
   resolveAdviceMode,
   resolveAiAssistConfig,
+  resolveQuestionTargetName,
   requestAiChat,
   saveAiAssistSettings,
   type AiAdviceMode,
@@ -167,9 +169,12 @@ import {
 import {
   aiModeOptionsForLevel,
   aiPanelHidden,
+  aiQuestionTargetHint,
+  aiQuestionTargetOptions,
   aiStatusSummary,
   friendlyAiError,
   levelSelectOptions,
+  pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
 } from "./ai-assist-ui.js";
@@ -333,6 +338,12 @@ const aiSettingsClearKeyButton =
 const aiSettingsStatus = requiredElement<HTMLElement>("ai-settings-status");
 const aiSettingsFeedback = requiredElement<HTMLElement>("ai-settings-feedback");
 const aiPanel = requiredElement<HTMLDetailsElement>("ai-panel");
+const aiQuestionTargetSelect = requiredElement<HTMLSelectElement>(
+  "ai-question-target",
+);
+const aiQuestionTargetHintEl = requiredElement<HTMLElement>(
+  "ai-question-target-hint",
+);
 const aiModeSelect = requiredElement<HTMLSelectElement>("ai-mode");
 const aiQuestionInput = requiredElement<HTMLTextAreaElement>("ai-question");
 const aiAskButton = requiredElement<HTMLButtonElement>("ai-ask");
@@ -2045,6 +2056,45 @@ function fillAiModeSelect(settings: AiAssistSettings): void {
   }
 }
 
+function readEditingTargetName(): string | null {
+  if (!vm?.editingTarget) return null;
+  const editing = vm.editingTarget;
+  if (typeof editing.getName === "function") {
+    return editing.getName() ?? null;
+  }
+  return editing.sprite?.name ?? null;
+}
+
+function readProjectJsonForAi(): Parameters<typeof buildAiProjectContext>[0] | null {
+  if (!vm) return null;
+  try {
+    return JSON.parse(vm.toJSON()) as Parameters<typeof buildAiProjectContext>[0];
+  } catch {
+    return null;
+  }
+}
+
+function fillAiQuestionTargetSelect(): void {
+  const previous = aiQuestionTargetSelect.value;
+  const projectJson = readProjectJsonForAi();
+  const options = aiQuestionTargetOptions(projectJson);
+  aiQuestionTargetSelect.replaceChildren();
+  for (const option of options) {
+    const el = document.createElement("option");
+    el.value = option.value;
+    el.textContent = option.label;
+    aiQuestionTargetSelect.append(el);
+  }
+  aiQuestionTargetSelect.value = pickAiQuestionTargetValue({
+    previousValue: previous,
+    availableValues: options.map(option => option.value),
+    editingTargetName: readEditingTargetName(),
+  });
+  aiQuestionTargetHintEl.textContent = aiQuestionTargetHint(
+    aiQuestionTargetSelect.value,
+  );
+}
+
 function applyAiSettingsToForm(settings: AiAssistSettings): void {
   aiEnabledInput.checked = settings.enabled;
   aiApiKeyInput.value = settings.apiKey;
@@ -2062,6 +2112,7 @@ function renderAiUi(settings: AiAssistSettings = aiSettings): void {
   aiPanel.hidden = hidden;
   if (hidden) aiPanel.open = false;
   fillAiModeSelect(settings);
+  fillAiQuestionTargetSelect();
   aiAskButton.disabled = aiAskInFlight || !config.ready;
 }
 
@@ -2109,6 +2160,16 @@ aiLevelSelect.addEventListener("change", () => {
   persistAiSettingsFromForm();
 });
 
+aiQuestionTargetSelect.addEventListener("change", () => {
+  aiQuestionTargetHintEl.textContent = aiQuestionTargetHint(
+    aiQuestionTargetSelect.value,
+  );
+});
+
+aiPanel.addEventListener("toggle", () => {
+  if (aiPanel.open) fillAiQuestionTargetSelect();
+});
+
 aiAskButton.addEventListener("click", () => {
   void (async () => {
     const config = resolveAiAssistConfig(aiSettings);
@@ -2124,21 +2185,20 @@ aiAskButton.addEventListener("click", () => {
       return;
     }
 
+    fillAiQuestionTargetSelect();
+    const questionTargetValue = aiQuestionTargetSelect.value;
+    const questionTargetName = resolveQuestionTargetName(questionTargetValue);
+    const targetLabel = formatQuestionTargetLabel(questionTargetName);
+
     let projectContext = null;
     try {
-      if (vm) {
-        const editing = vm.editingTarget;
-        const editingTargetName =
-          typeof editing?.getName === "function"
-            ? editing.getName() ?? null
-            : editing?.sprite?.name ?? null;
-        projectContext = buildAiProjectContext(
-          JSON.parse(vm.toJSON()) as Parameters<typeof buildAiProjectContext>[0],
-          {
-            title: titleInput.value,
-            editingTargetName,
-          },
-        );
+      const projectJson = readProjectJsonForAi();
+      if (projectJson) {
+        projectContext = buildAiProjectContext(projectJson, {
+          title: titleInput.value,
+          editingTargetName: readEditingTargetName(),
+          questionTargetName: questionTargetValue,
+        });
       }
     } catch {
       projectContext = null;
@@ -2163,7 +2223,7 @@ aiAskButton.addEventListener("click", () => {
 
     aiAskInFlight = true;
     renderAiUi(aiSettings);
-    aiRuntimeStatus.textContent = "AI にきいています…";
+    aiRuntimeStatus.textContent = `${targetLabel} についてAIにきいています…`;
     try {
       const result = await requestAiChat({
         provider: config.provider,
@@ -2175,9 +2235,9 @@ aiAskButton.addEventListener("click", () => {
       });
       aiAnswer.textContent = result.content;
       aiFeedback.textContent = "";
+      const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
       aiRuntimeStatus.textContent =
-        `${config.providerLabel} / ${result.model} が答えました` +
-        (mode !== selectedMode ? `（${mode}で診断）` : "");
+        `${targetLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`;
     } catch (error) {
       aiFeedback.textContent = friendlyAiError(
         error instanceof Error ? error.message : String(error),

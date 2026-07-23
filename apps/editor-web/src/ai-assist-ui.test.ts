@@ -1,9 +1,13 @@
 import {describe, expect, it} from "vitest";
 import {
+  AI_QUESTION_TARGET_ALL,
   aiModeOptionsForLevel,
   aiPanelHidden,
+  aiQuestionTargetHint,
+  aiQuestionTargetOptions,
   aiStatusSummary,
   friendlyAiError,
+  pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
 } from "./ai-assist-ui.js";
@@ -72,5 +76,32 @@ describe("ai-assist-ui", () => {
     expect(
       friendlyAiError("gemini rate limited: RESOURCE_EXHAUSTED"),
     ).toContain("枠");
+  });
+
+  it("lists question targets and preserves selection", () => {
+    const options = aiQuestionTargetOptions({
+      targets: [
+        {name: "Stage", isStage: true},
+        {name: "Cat", isStage: false},
+      ],
+    });
+    expect(options[0]?.value).toBe(AI_QUESTION_TARGET_ALL);
+    expect(options.map(o => o.value)).toContain("Cat");
+    expect(
+      pickAiQuestionTargetValue({
+        previousValue: "Cat",
+        availableValues: options.map(o => o.value),
+        editingTargetName: "Stage",
+      }),
+    ).toBe("Cat");
+    expect(
+      pickAiQuestionTargetValue({
+        previousValue: "Gone",
+        availableValues: options.map(o => o.value),
+        editingTargetName: "Cat",
+      }),
+    ).toBe("Cat");
+    expect(aiQuestionTargetHint("Cat")).toContain("「Cat」");
+    expect(aiQuestionTargetHint(AI_QUESTION_TARGET_ALL)).toContain("作品全体");
   });
 });

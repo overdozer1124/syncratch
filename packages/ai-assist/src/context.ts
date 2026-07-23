@@ -20,14 +20,28 @@ export interface AiSpriteContext {
   scriptsText: string;
 }
 
+/** Sentinel: ask about the whole project, not one sprite. */
+export const AI_QUESTION_TARGET_ALL = "__all__";
+
 export interface AiProjectContext {
   title: string;
   spriteCount: number;
   sprites: AiSpriteContext[];
   /** Currently edited sprite name, when known. */
   editingTargetName: string | null;
+  /**
+   * Sprite/stage the learner explicitly asked about.
+   * Null means the whole project (`AI_QUESTION_TARGET_ALL`).
+   */
+  questionTargetName: string | null;
   /** Compact plain-text dump for the prompt. */
   summaryText: string;
+}
+
+export interface AiQuestionTargetOption {
+  value: string;
+  label: string;
+  isStage: boolean;
 }
 
 export interface ScratchBlockLike {
@@ -56,10 +70,46 @@ export interface ScratchProjectJsonLike {
 export interface BuildAiProjectContextOptions {
   title?: string;
   editingTargetName?: string | null;
+  /**
+   * Explicit UI selection. Use `AI_QUESTION_TARGET_ALL` (or omit/null) for
+   * the whole project; otherwise a sprite/stage name.
+   */
+  questionTargetName?: string | null;
   maxSprites?: number;
   maxScriptsPerSprite?: number;
   maxBlocksPerScript?: number;
   maxSummaryChars?: number;
+}
+
+export function listAiQuestionTargets(
+  projectJson: ScratchProjectJsonLike | null | undefined,
+): AiQuestionTargetOption[] {
+  const targets = Array.isArray(projectJson?.targets)
+    ? projectJson.targets
+    : [];
+  const options: AiQuestionTargetOption[] = [
+    {value: AI_QUESTION_TARGET_ALL, label: "作品全体", isStage: false},
+  ];
+  for (const target of targets) {
+    const name =
+      sanitizeAiText(String(target.name ?? "Untitled")).text || "Untitled";
+    const isStage = Boolean(target.isStage);
+    options.push({
+      value: name,
+      label: isStage ? `ステージ「${name}」` : `スプライト「${name}」`,
+      isStage,
+    });
+  }
+  return options;
+}
+
+/** Normalize UI value → focus name (null = whole project). */
+export function resolveQuestionTargetName(
+  selected: string | null | undefined,
+): string | null {
+  const value = (selected ?? "").trim();
+  if (!value || value === AI_QUESTION_TARGET_ALL) return null;
+  return sanitizeAiText(value).text || null;
 }
 
 const DEFAULT_MAX_SPRITES = 8;
@@ -274,7 +324,12 @@ export function buildAiProjectContext(
       ? {title: titleOrOptions}
       : (titleOrOptions ?? {});
   const title = options.title ?? "作品";
-  const editingTargetName = options.editingTargetName ?? null;
+  const editingTargetName = options.editingTargetName
+    ? sanitizeAiText(options.editingTargetName).text || null
+    : null;
+  const questionTargetName = resolveQuestionTargetName(
+    options.questionTargetName,
+  );
   const maxSprites = options.maxSprites ?? DEFAULT_MAX_SPRITES;
   const maxScriptsPerSprite =
     options.maxScriptsPerSprite ?? DEFAULT_MAX_SCRIPTS_PER_SPRITE;
@@ -286,12 +341,14 @@ export function buildAiProjectContext(
     ? projectJson.targets
     : [];
 
-  // Prefer the editing target first so diagnosis focuses there.
+  // Question target first, then editing target, so diagnosis focuses correctly.
   const orderedTargets = [...targets].sort((a, b) => {
-    if (!editingTargetName) return 0;
-    const aMatch = a.name === editingTargetName ? 0 : 1;
-    const bMatch = b.name === editingTargetName ? 0 : 1;
-    return aMatch - bMatch;
+    const rank = (name: string | undefined): number => {
+      if (questionTargetName && name === questionTargetName) return 0;
+      if (editingTargetName && name === editingTargetName) return 1;
+      return 2;
+    };
+    return rank(a.name) - rank(b.name);
   });
 
   const sprites: AiSpriteContext[] = [];
@@ -317,18 +374,25 @@ export function buildAiProjectContext(
     `作品名: ${sanitizeAiText(title).text}`,
     `スプライト数: ${targets.length}`,
   ];
+  if (questionTargetName) {
+    lines.push(`質問の対象: ${questionTargetName}`);
+  } else {
+    lines.push("質問の対象: 作品全体");
+  }
   if (editingTargetName) {
-    lines.push(
-      `いま編集中のスプライト: ${sanitizeAiText(editingTargetName).text}`,
-    );
+    lines.push(`いま編集中のスプライト: ${editingTargetName}`);
   }
 
   for (const sprite of sprites) {
     const kind = sprite.isStage ? "ステージ" : "スプライト";
-    const focus =
-      editingTargetName && sprite.name === editingTargetName
-        ? " ★編集中"
-        : "";
+    const marks: string[] = [];
+    if (questionTargetName && sprite.name === questionTargetName) {
+      marks.push("★質問対象");
+    }
+    if (editingTargetName && sprite.name === editingTargetName) {
+      marks.push("編集中");
+    }
+    const focus = marks.length > 0 ? ` ${marks.join(" / ")}` : "";
     lines.push(
       `- ${kind}「${sprite.name}」${focus} ブロック${sprite.blockCount}個`,
     );
@@ -357,9 +421,8 @@ export function buildAiProjectContext(
     title: sanitizeAiText(title).text,
     spriteCount: targets.length,
     sprites,
-    editingTargetName: editingTargetName
-      ? sanitizeAiText(editingTargetName).text
-      : null,
+    editingTargetName,
+    questionTargetName,
     summaryText: truncateForTokens(lines.join("\n"), maxSummaryChars),
   };
 }
