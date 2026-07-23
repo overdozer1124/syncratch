@@ -442,6 +442,73 @@ body,
   resize: vertical;
 }
 
+.ai-clarify {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 18%);
+}
+
+.ai-clarify[hidden] {
+  display: none;
+}
+
+.ai-clarify-prompt {
+  margin: 0 0 8px;
+  font-weight: 750;
+  font-size: 0.9rem;
+}
+
+.ai-clarify-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-clarify-choices button {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: 8px;
+  background: #fffef6;
+  color: #16324f;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-clarify-choices button:hover,
+.ai-clarify-choices button:focus-visible {
+  outline: 3px solid #ffe082;
+  outline-offset: 1px;
+}
+
+.ai-clarify-other {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-clarify-other[hidden] {
+  display: none;
+}
+
+.ai-clarify-other textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: 8px;
+  border: 1px solid rgb(0 0 0 / 18%);
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}
+
 .ai-answer {
   margin: 8px 0 0;
   padding: 10px;

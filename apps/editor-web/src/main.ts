@@ -170,6 +170,7 @@ import {
   saveAiAssistSettings,
   type AiAdviceMode,
   type AiAssistSettings,
+  type AiClarifyChoice,
 } from "@blocksync/ai-assist";
 import {
   aiModeOptionsForLevel,
@@ -177,8 +178,12 @@ import {
   aiQuestionTargetHint,
   aiQuestionTargetOptions,
   aiStatusSummary,
+  buildClarifyPrompt,
+  buildOtherClarifyChoice,
+  formatClarifiedIntentLabel,
   friendlyAiError,
   levelSelectOptions,
+  needsIntentClarification,
   pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
@@ -353,6 +358,16 @@ const aiModeSelect = requiredElement<HTMLSelectElement>("ai-mode");
 const aiQuestionInput = requiredElement<HTMLTextAreaElement>("ai-question");
 const aiAskButton = requiredElement<HTMLButtonElement>("ai-ask");
 const aiRuntimeStatus = requiredElement<HTMLElement>("ai-runtime-status");
+const aiClarify = requiredElement<HTMLElement>("ai-clarify");
+const aiClarifyPromptEl = requiredElement<HTMLElement>("ai-clarify-prompt");
+const aiClarifyChoices = requiredElement<HTMLElement>("ai-clarify-choices");
+const aiClarifyOther = requiredElement<HTMLElement>("ai-clarify-other");
+const aiClarifyOtherInput = requiredElement<HTMLTextAreaElement>(
+  "ai-clarify-other-input",
+);
+const aiClarifyOtherSubmit = requiredElement<HTMLButtonElement>(
+  "ai-clarify-other-submit",
+);
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
@@ -2183,84 +2198,165 @@ aiPanel.addEventListener("toggle", () => {
   if (aiPanel.open) fillAiQuestionTargetSelect();
 });
 
-aiAskButton.addEventListener("click", () => {
-  void (async () => {
-    const config = resolveAiAssistConfig(aiSettings);
+function hideAiClarify(): void {
+  aiClarify.hidden = true;
+  aiClarifyChoices.replaceChildren();
+  aiClarifyOther.hidden = true;
+  aiClarifyOtherInput.value = "";
+}
+
+function showAiClarify(question: string): boolean {
+  const clarify = buildClarifyPrompt(question);
+  if (!clarify) {
+    hideAiClarify();
+    return false;
+  }
+  aiClarifyPromptEl.textContent = clarify.promptText;
+  aiClarifyChoices.replaceChildren();
+  for (const choice of clarify.choices) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = choice.label;
+    button.dataset.choiceId = choice.id;
+    button.addEventListener("click", () => {
+      hideAiClarify();
+      void askAiWithIntent(choice);
+    });
+    aiClarifyChoices.append(button);
+  }
+  if (clarify.allowOther) {
+    const otherButton = document.createElement("button");
+    otherButton.type = "button";
+    otherButton.textContent = "D: そのほか（じぶんでかく）";
+    otherButton.addEventListener("click", () => {
+      aiClarifyOther.hidden = false;
+      aiClarifyOtherInput.focus();
+    });
+    aiClarifyChoices.append(otherButton);
+  }
+  aiClarifyOther.hidden = true;
+  aiClarify.hidden = false;
+  aiAnswer.innerHTML = "";
+  aiRuntimeStatus.textContent = "したいことを えらんでね";
+  return true;
+}
+
+async function askAiWithIntent(
+  clarifiedIntent: AiClarifyChoice | null,
+): Promise<void> {
+  const config = resolveAiAssistConfig(aiSettings);
+  aiFeedback.textContent = "";
+  if (!config.ready || !config.model) {
+    aiFeedback.textContent =
+      config.notReadyReason ?? "AI の準備ができていません。";
+    return;
+  }
+  const question = aiQuestionInput.value.trim();
+  if (!question) {
+    aiFeedback.textContent = friendlyAiError("empty question");
+    return;
+  }
+
+  fillAiQuestionTargetSelect();
+  const questionTargetValue = aiQuestionTargetSelect.value;
+  const questionTargetName = resolveQuestionTargetName(questionTargetValue);
+  const targetLabel = formatQuestionTargetLabel(questionTargetName);
+  const intentLabel = clarifiedIntent
+    ? formatClarifiedIntentLabel(clarifiedIntent)
+    : null;
+
+  let projectContext = null;
+  try {
+    const projectJson = readProjectJsonForAi();
+    if (projectJson) {
+      projectContext = buildAiProjectContext(projectJson, {
+        title: titleInput.value,
+        editingTargetName: readEditingTargetName(),
+        questionTargetName: questionTargetValue,
+      });
+    }
+  } catch {
+    projectContext = null;
+  }
+
+  const selectedMode = (aiModeSelect.value || "hint") as AiAdviceMode;
+  const mode = resolveAdviceMode(selectedMode, question);
+  let messages;
+  try {
+    messages = buildAdviceMessages({
+      level: aiSettings.level,
+      mode,
+      userQuestion: question,
+      project: projectContext,
+      clarifiedIntent,
+    });
+  } catch (error) {
+    aiFeedback.textContent = friendlyAiError(
+      error instanceof Error ? error.message : String(error),
+    );
+    return;
+  }
+
+  aiAskInFlight = true;
+  renderAiUi(aiSettings);
+  aiRuntimeStatus.textContent = intentLabel
+    ? `${targetLabel} / ${intentLabel} についてAIにきいています…`
+    : `${targetLabel} についてAIにきいています…`;
+  try {
+    const result = await requestAiChat({
+      provider: config.provider,
+      model: config.model,
+      apiKey: aiSettings.apiKey,
+      messages,
+      proxyUrl: AI_CHAT_PROXY_PATH,
+      maxTokens: 900,
+    });
+    aiAnswer.innerHTML = formatAiAnswerHtml(result.content);
     aiFeedback.textContent = "";
-    if (!config.ready || !config.model) {
-      aiFeedback.textContent =
-        config.notReadyReason ?? "AI の準備ができていません。";
-      return;
-    }
-    const question = aiQuestionInput.value.trim();
-    if (!question) {
-      aiFeedback.textContent = friendlyAiError("empty question");
-      return;
-    }
-
-    fillAiQuestionTargetSelect();
-    const questionTargetValue = aiQuestionTargetSelect.value;
-    const questionTargetName = resolveQuestionTargetName(questionTargetValue);
-    const targetLabel = formatQuestionTargetLabel(questionTargetName);
-
-    let projectContext = null;
-    try {
-      const projectJson = readProjectJsonForAi();
-      if (projectJson) {
-        projectContext = buildAiProjectContext(projectJson, {
-          title: titleInput.value,
-          editingTargetName: readEditingTargetName(),
-          questionTargetName: questionTargetValue,
-        });
-      }
-    } catch {
-      projectContext = null;
-    }
-
-    const selectedMode = (aiModeSelect.value || "hint") as AiAdviceMode;
-    const mode = resolveAdviceMode(selectedMode, question);
-    let messages;
-    try {
-      messages = buildAdviceMessages({
-        level: aiSettings.level,
-        mode,
-        userQuestion: question,
-        project: projectContext,
-      });
-    } catch (error) {
-      aiFeedback.textContent = friendlyAiError(
-        error instanceof Error ? error.message : String(error),
-      );
-      return;
-    }
-
-    aiAskInFlight = true;
+    const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
+    aiRuntimeStatus.textContent = intentLabel
+      ? `${targetLabel} / ${intentLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`
+      : `${targetLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`;
+  } catch (error) {
+    aiFeedback.textContent = friendlyAiError(
+      error instanceof Error ? error.message : String(error),
+    );
+    aiRuntimeStatus.textContent = aiStatusSummary(config);
+  } finally {
+    aiAskInFlight = false;
     renderAiUi(aiSettings);
-    aiRuntimeStatus.textContent = `${targetLabel} についてAIにきいています…`;
-    try {
-      const result = await requestAiChat({
-        provider: config.provider,
-        model: config.model,
-        apiKey: aiSettings.apiKey,
-        messages,
-        proxyUrl: AI_CHAT_PROXY_PATH,
-        maxTokens: 900,
-      });
-      aiAnswer.innerHTML = formatAiAnswerHtml(result.content);
-      aiFeedback.textContent = "";
-      const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
-      aiRuntimeStatus.textContent =
-        `${targetLabel} について ${config.providerLabel} / ${result.model} が答えました${modeNote}`;
-    } catch (error) {
-      aiFeedback.textContent = friendlyAiError(
-        error instanceof Error ? error.message : String(error),
-      );
-      aiRuntimeStatus.textContent = aiStatusSummary(config);
-    } finally {
-      aiAskInFlight = false;
-      renderAiUi(aiSettings);
-    }
-  })();
+  }
+}
+
+aiAskButton.addEventListener("click", () => {
+  const config = resolveAiAssistConfig(aiSettings);
+  aiFeedback.textContent = "";
+  if (!config.ready || !config.model) {
+    aiFeedback.textContent =
+      config.notReadyReason ?? "AI の準備ができていません。";
+    return;
+  }
+  const question = aiQuestionInput.value.trim();
+  if (!question) {
+    aiFeedback.textContent = friendlyAiError("empty question");
+    return;
+  }
+  if (needsIntentClarification(question)) {
+    showAiClarify(question);
+    return;
+  }
+  hideAiClarify();
+  void askAiWithIntent(null);
+});
+
+aiClarifyOtherSubmit.addEventListener("click", () => {
+  const other = aiClarifyOtherInput.value.trim();
+  if (!other) {
+    aiFeedback.textContent = "したいことを みじかく かいてね";
+    return;
+  }
+  hideAiClarify();
+  void askAiWithIntent(buildOtherClarifyChoice(other));
 });
 
 boot().catch(error => {

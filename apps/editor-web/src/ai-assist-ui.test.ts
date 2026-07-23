@@ -6,7 +6,9 @@ import {
   aiQuestionTargetHint,
   aiQuestionTargetOptions,
   aiStatusSummary,
+  buildClarifyPrompt,
   friendlyAiError,
+  needsIntentClarification,
   pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
@@ -76,6 +78,13 @@ describe("ai-assist-ui", () => {
     expect(
       friendlyAiError("gemini rate limited: RESOURCE_EXHAUSTED"),
     ).toContain("枠");
+  });
+
+  it("offers clarify choices for bounce-like kid questions", () => {
+    expect(needsIntentClarification("はずませたい")).toBe(true);
+    const clarify = buildClarifyPrompt("はずませたい");
+    expect(clarify?.promptText).toContain("どれが したい");
+    expect(clarify?.choices.length).toBeGreaterThanOrEqual(3);
   });
 
   it("lists question targets and preserves selection", () => {

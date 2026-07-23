@@ -7,10 +7,14 @@ import {
   AI_QUESTION_TARGET_ALL,
   allAiLevelPolicies,
   aiLevelPolicy,
+  buildClarifyPrompt,
+  buildOtherClarifyChoice,
   effectiveAiLevel,
+  formatClarifiedIntentLabel,
   formatQuestionTargetLabel,
   KNOWN_AI_PROVIDERS,
   listAiQuestionTargets,
+  needsIntentClarification,
   providerLabel,
   resolveAiAssistConfig,
   resolveQuestionTargetName,
@@ -18,11 +22,21 @@ import {
   type AiAssistLevel,
   type AiAssistResolvedConfig,
   type AiAssistSettings,
+  type AiClarifyChoice,
+  type AiClarifyPrompt,
   type AiProviderId,
   type ScratchProjectJsonLike,
 } from "@blocksync/ai-assist";
 
-export {AI_QUESTION_TARGET_ALL, formatQuestionTargetLabel};
+export {
+  AI_QUESTION_TARGET_ALL,
+  buildClarifyPrompt,
+  buildOtherClarifyChoice,
+  formatClarifiedIntentLabel,
+  formatQuestionTargetLabel,
+  needsIntentClarification,
+};
+export type {AiClarifyChoice, AiClarifyPrompt};
 
 export function aiPanelHidden(settings: AiAssistSettings): boolean {
   const level = effectiveAiLevel(settings.enabled, settings.level);

@@ -66,6 +66,17 @@ export {
 } from "./prompt.js";
 
 export {
+  AI_CLARIFY_OTHER_ID,
+  buildClarifyPrompt,
+  buildOtherClarifyChoice,
+  formatClarifiedIntentLabel,
+  isBounceLikeQuestion,
+  needsIntentClarification,
+  type AiClarifyChoice,
+  type AiClarifyPrompt,
+} from "./clarify.js";
+
+export {
   escapeHtml,
   formatAiAnswerHtml,
   parseAiAnswerParts,

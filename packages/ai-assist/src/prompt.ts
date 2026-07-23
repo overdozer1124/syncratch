@@ -6,6 +6,7 @@
 
 import {aiLevelPolicy, type AiAssistLevel} from "./levels.js";
 import {sanitizeAiText, truncateForTokens} from "./sanitize.js";
+import type {AiClarifyChoice} from "./clarify.js";
 import type {AiProjectContext} from "./context.js";
 
 export type AiAdviceMode = "explain" | "hint" | "debug";
@@ -22,6 +23,8 @@ export interface BuildAdvicePromptInput {
   project?: AiProjectContext | null;
   /** Optional runtime / error notes already sanitized by caller. */
   observationNotes?: string;
+  /** Choice the learner picked in the clarify step. */
+  clarifiedIntent?: AiClarifyChoice | null;
 }
 
 const MODE_LABEL: Record<AiAdviceMode, string> = {
@@ -204,11 +207,34 @@ function motionIntentRules(question: string): string {
   ].join("\n");
 }
 
+function clarifiedIntentRules(
+  clarified: AiClarifyChoice | null | undefined,
+): string {
+  if (!clarified) {
+    return [
+      "【学習者の意図確認】",
+      "- まだボタン選択がない場合は、質問文から意図を慎重に読むこと。",
+      "- あいまいなら、いちばんやさしいやりかた（くりかえし）から案内すること。",
+    ].join("\n");
+  }
+  return [
+    "【学習者が選んだ意図（最優先）】",
+    `- 選択: ${clarified.label}`,
+    `- 指導メモ: ${clarified.adviceHint}`,
+    "- 回答の最初で、選んだ意図をやさしい言葉でもう一度確認すること。",
+    "- この意図以外の高度なやり方へ勝手に飛ばないこと。",
+    "- bounce_updown のときは、図で「-10を10回 → +10を10回 → ずっと」のワンセットを示すこと。",
+    "- bounce_smooth のときは、大きな数を小さくする一手を最優先すること。",
+    "- bounce_realistic のときは、いきなり完成式を出さず、変数で「はやさ」がかわる話を一小歩だけ。",
+  ].join("\n");
+}
+
 function modeInstructions(
   mode: AiAdviceMode,
   level: AiAssistLevel,
   project: AiProjectContext | null | undefined,
   question: string,
+  clarifiedIntent?: AiClarifyChoice | null,
 ): string {
   const policy = aiLevelPolicy(level);
   const lines = [
@@ -223,6 +249,8 @@ function modeInstructions(
     diagramRules(),
     "",
     answerShape(mode, level),
+    "",
+    clarifiedIntentRules(clarifiedIntent),
     "",
     motionIntentRules(question),
     "",
@@ -286,6 +314,16 @@ export function buildAdviceMessages(
     `【質問】\n${question}`,
   ];
 
+  if (input.clarifiedIntent) {
+    userParts.push(
+      [
+        "【学習者が選んだ意図】",
+        input.clarifiedIntent.label,
+        input.clarifiedIntent.adviceHint,
+      ].join("\n"),
+    );
+  }
+
   if (input.project?.summaryText) {
     userParts.push(
       [
@@ -318,10 +356,15 @@ export function buildAdviceMessages(
     "文字だけの長い説明は禁止です。",
     "上記の作品スクリプトを根拠に答えてください。",
   ];
-  if (wantsSmoothMotionAdvice(question)) {
+  if (wantsSmoothMotionAdvice(question) || input.clarifiedIntent?.id.startsWith("bounce_")) {
     closing.push(
       "学習者は弾む／なめらかな動きを欲しがっています。",
-      "大きな数値への変更は禁止。小さい数で少しずつ動かす案にしてください。",
+      "大きな数値への変更は禁止。選んだ意図に合う一小歩だけ示してください。",
+    );
+  }
+  if (input.clarifiedIntent) {
+    closing.push(
+      `選んだ意図「${input.clarifiedIntent.label}」に合わせて答えてください。`,
     );
   }
 
@@ -335,6 +378,7 @@ export function buildAdviceMessages(
         input.level,
         input.project,
         question,
+        input.clarifiedIntent,
       ),
     },
     {

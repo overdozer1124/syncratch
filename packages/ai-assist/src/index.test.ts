@@ -30,6 +30,10 @@ import {
   parseAiAnswerParts,
 } from "./answer-format.js";
 import {
+  buildClarifyPrompt,
+  needsIntentClarification,
+} from "./clarify.js";
+import {
   buildAdviceMessages,
   formatQuestionTargetLabel,
   inferAdviceMode,
@@ -466,7 +470,30 @@ describe("prompt", () => {
     });
     expect(messages[0]?.content).toContain("もっと大きな数にする");
     expect(messages[0]?.content).toContain("絶対に");
-    expect(messages[1]?.content).toContain("小さい数で少しずつ");
+    expect(messages[1]?.content).toContain("大きな数値への変更は禁止");
+    expect(messages[1]?.content).toContain("一小歩");
+  });
+
+  it("builds bounce clarify choices and injects selected intent", () => {
+    expect(needsIntentClarification("ボールを弾ませたい")).toBe(true);
+    const clarify = buildClarifyPrompt("ボールを弾ませたい");
+    expect(clarify?.family).toBe("bounce");
+    expect(clarify?.choices.some(c => c.id === "bounce_updown")).toBe(true);
+    expect(clarify?.choices.some(c => c.id === "bounce_realistic")).toBe(true);
+
+    const choice = clarify!.choices.find(c => c.id === "bounce_updown")!;
+    const messages = buildAdviceMessages({
+      level: 2,
+      mode: "hint",
+      userQuestion: "うまくうごかない",
+      clarifiedIntent: choice,
+      project: buildAiProjectContext({
+        targets: [{name: "Sprite1", blocks: {}}],
+      }),
+    });
+    expect(messages[0]?.content).toContain("学習者が選んだ意図");
+    expect(messages[0]?.content).toContain("10回");
+    expect(messages[1]?.content).toContain(choice.label);
   });
 
   it("builds advice messages that forbid complete scripts at level 2", () => {
