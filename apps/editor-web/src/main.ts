@@ -41,8 +41,11 @@ import {
 } from "./local-record-recovery.js";
 import {
   collaborationStatusText,
-  composeProjectStatus,
 } from "./project-status.js";
+import {
+  composeProjectStatusView,
+  renderStatusIconRow,
+} from "./status-icons.js";
 import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
@@ -274,6 +277,7 @@ const saveButton = requiredElement<HTMLButtonElement>("save-project");
 const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
+const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
 const connectGoogleButton =
   requiredElement<HTMLButtonElement>("connect-google");
 const openDriveButton = requiredElement<HTMLButtonElement>("open-drive");
@@ -722,7 +726,7 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
 }
 
 function renderProjectStatus(): void {
-  const {primary, details} = composeProjectStatus({
+  const {primary, details, icons} = composeProjectStatusView({
     local: lastLocalSaveState,
     drive: lastDriveStatus,
     driveMessage: lastDriveMessage,
@@ -731,6 +735,8 @@ function renderProjectStatus(): void {
     fatalError: fatalBootError,
     localError: localOperationError,
   });
+  // Visible UI is icon-first; full sentences stay in sr-only nodes for a11y/e2e.
+  renderStatusIconRow(statusIconRow, icons);
   saveStatus.textContent = primary;
   saveStatus.title = fatalBootError ?? "";
   projectStatusDetails.textContent = details ? ` · ${details}` : "";
