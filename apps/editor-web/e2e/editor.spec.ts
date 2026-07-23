@@ -866,6 +866,15 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   // This distinguishes transport/domain convergence from a stale GUI surface.
   await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
+  await expect(pageA.getByTestId("status-icon-role")).toHaveAttribute(
+    "title",
+    /ホスト/,
+  );
+  await expect(pageB.getByTestId("status-icon-role")).toHaveAttribute(
+    "title",
+    /ゲスト/,
+  );
+  await expect(pageA.getByTestId("status-icon-collab")).toContainText("2");
   await openPanel(pageA, "collab-panel");
   await expect(pageA.getByTestId("collab-status")).toContainText("ホスト");
   await openPanel(pageB, "collab-panel");
@@ -946,6 +955,12 @@ test("unified status shows local save as primary with optional secondary details
     "このパソコンに保存しました",
   );
   await expect(page.getByTestId("project-status-details")).toBeHidden();
+  await expect(page.getByTestId("status-icon-local")).toBeVisible();
+  await expect(page.getByTestId("status-icon-local")).toHaveAttribute(
+    "title",
+    "このパソコンに保存しました",
+  );
+  await expect(page.getByTestId("status-icon-drive")).toHaveCount(0);
 });
 
 test("signaling outage leaves local editing and SB3 export available", async ({

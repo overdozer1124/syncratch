@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 13:38:14 JST |
+| 最終更新 | 2026-07-23 14:15:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（Stage 5 残り手動ゲート / Railway 再デプロイ確認） |
-| 現在のTask | なし（PR #22 を main へ merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | ユーザー（merge 判断） |
+| 現在のTask | ツールバー status をアイコン＋tooltip 化 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main` |
+| 作業ブランチ | `cursor/status-icons-compact-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | P2P bootstrap（room creator = Drive writer）+ ホスト/ゲスト明示 UI |
+| 設計 | 子ども向け文字削減：local/Drive/人数/ホスト冠をアイコン表示、hover で全文 |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 残り（A5–A7 / B1 / B3）。PR #21 文書は別途。Phase 2・TURN・default branch 切替は指示まで停止 |
+| 次Task | 本 PR merge 後 Stage 5 手動継続可。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #22 merge 済み）。Railway が main 追従ならホスト/ゲスト UI が再デプロイされる。Stage 5 手動ゲートはユーザー実施。
+status icons PR の merge 待ち。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
@@ -4683,6 +4683,23 @@ merge: 1b8145ab2b26fca1101a7f2d34f77f305bdca780
 
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー
+```
+
+### 2026-07-23 14:15:00 JST — Cursor（status icons compact）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー: ツールバーの長いステータス文言をアイコン化し、hover で説明を出したい
+
+実装 (cursor/status-icons-compact-f431):
+- local / Drive / 人数 / ホスト冠・ゲストをアイコン行に
+- Drive 未接続はグレー、接続系は色付き
+- 人数は badge（5人超は ×N）
+- 全文は title/aria-label + sr-only（既存 e2e 互換）
+- unit 214 PASS / typecheck PASS / e2e 18 PASS
+
+停止: Phase 2 / TURN / default branch 切替しない
+次: merge 待ち
 ```
 
 
