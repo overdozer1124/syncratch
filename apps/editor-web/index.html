@@ -24,6 +24,87 @@
             <input id="project-title" value="新しい作品" />
           </label>
           <button id="new-project" type="button">新しい作品</button>
+          <div class="feature-panels">
+            <details class="tool-panel file-panel" data-testid="file-panel">
+              <summary>作品ファイルを開く・ダウンロード</summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  Scratch の作品ファイルを開いたり、この作品をファイルにして残したりできます。
+                </p>
+                <div class="file-controls">
+                  <button id="open-project" type="button">作品ファイルを開く</button>
+                  <input
+                    aria-label="Scratch の作品ファイル"
+                    id="open-file"
+                    type="file"
+                    accept=".sb3"
+                    hidden
+                  />
+                  <button id="download-project" type="button">作品ファイルをダウンロード</button>
+                  <button id="save-project" type="button">今すぐ保存</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="tool-panel collab-panel" data-testid="collab-panel">
+              <summary>友だちといっしょに作る</summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  「いっしょに作るリンク」を使うと、友だちと同じ作品を作れます。
+                </p>
+                <div class="collab-controls">
+                  <button id="create-room" type="button" disabled>いっしょに作るリンクを作る</button>
+                  <label class="invite-field" for="collab-invite">
+                    <span>いっしょに作るリンク</span>
+                    <input
+                      id="collab-invite"
+                      placeholder="ここにリンクをはる"
+                    />
+                  </label>
+                  <button id="join-room" type="button" disabled>友だちの作品に入る</button>
+                  <button id="copy-invite" type="button" disabled>リンクをコピー</button>
+                  <button id="leave-room" type="button" disabled>いっしょに作るのをやめる</button>
+                  <button id="collab-reconnect" type="button" hidden>もう一度つなぐ</button>
+                  <button id="collab-retry-save" type="button" hidden>もう一度このパソコンに保存</button>
+                  <button id="collab-download-sb3" type="button" hidden>作品ファイルをダウンロード</button>
+                  <button id="collab-diagnostics" type="button" hidden>くわしい情報をコピー</button>
+                  <span
+                    aria-hidden="true"
+                    class="panel-status"
+                    data-testid="collab-status"
+                    id="collab-status"
+                  >ひとりで作っています</span>
+                </div>
+                <p aria-live="polite" class="panel-feedback" id="collab-feedback"></p>
+                <p class="safety-help">
+                  このリンクを知っている人は作品に入れます。知らない人には送らないでね。
+                  リンクを作った人がホスト、入った人がゲストです。ゲストの編集はこのパソコンに保存され、Google ドライブへはホストだけが保存できます。
+                </p>
+              </div>
+            </details>
+
+            <details class="tool-panel drive-panel" data-testid="drive-panel">
+              <summary>Google ドライブにも保存（使う人だけ）</summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  このパソコンの保存にくわえて、Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
+                  いっしょに作るときのゲストは、ドライブに保存できません（リンクを作ったホストだけ）。
+                </p>
+                <div class="drive-controls">
+                  <button id="connect-google" type="button" disabled>Google とつなぐ</button>
+                  <button id="open-drive" type="button" disabled>Google ドライブから作品を開く</button>
+                  <button id="save-drive" type="button" disabled>Google ドライブにも保存</button>
+                  <button id="disconnect-google" type="button" disabled>Google とのつながりを切る</button>
+                  <span
+                    aria-hidden="true"
+                    class="panel-status"
+                    data-testid="drive-status"
+                    id="drive-status"
+                  >このパソコンでは使えません</span>
+                </div>
+              </div>
+            </details>
+          </div>
           <span
             aria-atomic="true"
             aria-live="polite"
@@ -49,88 +130,6 @@
             ></span>
           </span>
           <button id="retry-save" type="button" hidden>もう一度保存</button>
-        </div>
-
-        <div class="feature-panels">
-          <details class="tool-panel file-panel" data-testid="file-panel">
-            <summary>作品ファイルを開く・ダウンロード</summary>
-            <div class="panel-content">
-              <p class="panel-help">
-                Scratch の作品ファイルを開いたり、この作品をファイルにして残したりできます。
-              </p>
-              <div class="file-controls">
-                <button id="open-project" type="button">作品ファイルを開く</button>
-                <input
-                  aria-label="Scratch の作品ファイル"
-                  id="open-file"
-                  type="file"
-                  accept=".sb3"
-                  hidden
-                />
-                <button id="download-project" type="button">作品ファイルをダウンロード</button>
-                <button id="save-project" type="button">今すぐ保存</button>
-              </div>
-            </div>
-          </details>
-
-          <details class="tool-panel collab-panel" data-testid="collab-panel">
-            <summary>友だちといっしょに作る</summary>
-            <div class="panel-content">
-              <p class="panel-help">
-                「いっしょに作るリンク」を使うと、友だちと同じ作品を作れます。
-              </p>
-              <div class="collab-controls">
-                <button id="create-room" type="button" disabled>いっしょに作るリンクを作る</button>
-                <label class="invite-field" for="collab-invite">
-                  <span>いっしょに作るリンク</span>
-                  <input
-                    id="collab-invite"
-                    placeholder="ここにリンクをはる"
-                  />
-                </label>
-                <button id="join-room" type="button" disabled>友だちの作品に入る</button>
-                <button id="copy-invite" type="button" disabled>リンクをコピー</button>
-                <button id="leave-room" type="button" disabled>いっしょに作るのをやめる</button>
-                <button id="collab-reconnect" type="button" hidden>もう一度つなぐ</button>
-                <button id="collab-retry-save" type="button" hidden>もう一度このパソコンに保存</button>
-                <button id="collab-download-sb3" type="button" hidden>作品ファイルをダウンロード</button>
-                <button id="collab-diagnostics" type="button" hidden>くわしい情報をコピー</button>
-                <span
-                  aria-hidden="true"
-                  class="panel-status"
-                  data-testid="collab-status"
-                  id="collab-status"
-                >ひとりで作っています</span>
-              </div>
-              <p aria-live="polite" class="panel-feedback" id="collab-feedback"></p>
-              <p class="safety-help">
-                このリンクを知っている人は作品に入れます。知らない人には送らないでね。
-                リンクを作った人がホスト、入った人がゲストです。ゲストの編集はこのパソコンに保存され、Google ドライブへはホストだけが保存できます。
-              </p>
-            </div>
-          </details>
-
-          <details class="tool-panel drive-panel" data-testid="drive-panel">
-            <summary>Google ドライブにも保存（使う人だけ）</summary>
-            <div class="panel-content">
-              <p class="panel-help">
-                このパソコンの保存にくわえて、Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
-                いっしょに作るときのゲストは、ドライブに保存できません（リンクを作ったホストだけ）。
-              </p>
-              <div class="drive-controls">
-                <button id="connect-google" type="button" disabled>Google とつなぐ</button>
-                <button id="open-drive" type="button" disabled>Google ドライブから作品を開く</button>
-                <button id="save-drive" type="button" disabled>Google ドライブにも保存</button>
-                <button id="disconnect-google" type="button" disabled>Google とのつながりを切る</button>
-                <span
-                  aria-hidden="true"
-                  class="panel-status"
-                  data-testid="drive-status"
-                  id="drive-status"
-                >このパソコンでは使えません</span>
-              </div>
-            </div>
-          </details>
         </div>
       </header>
       <section
