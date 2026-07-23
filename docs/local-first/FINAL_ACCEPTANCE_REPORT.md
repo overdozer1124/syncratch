@@ -64,16 +64,15 @@ peer 切断表示・token 実機検査（B1 / B3）が残る。
 
 ## Stage 5 残作業（ユーザー）
 
-済み: A1–A3（Drive ハッピーパス）、B2（Apps Script 未導入）。
+済み: A1–A4、B2。
 
-残り（`STAGE5_MANUAL_GATES.md`）:
+残り（手順は `STAGE5_MANUAL_GATES.md` のかんたん版）:
 
-1. A4 二人の Google ユーザーで同じ共有 Drive ファイル
-2. A5 logical leader だけが通常の Drive スナップショットを試みる
-3. A6 権限取り消し後もローカル保存と SB3 が続く
-4. A7 同時 Drive 変更で安全に競合停止
-5. B1 peer 切断後に未受信変更を同期済みと言わない
-6. B3 IndexedDB / SB3 / ログ等に token が残っていない実機検査
+1. A5 共同編集中はリンク作成者だけが Drive 保存役
+2. A6 権限削除後もローカル保存と SB3
+3. A7 Drive 外更新後の競合停止
+4. B1 友だち切断後の表示
+5. B3 token が IndexedDB に残っていない
 
 合格後、本レポートを `COMPLETE` にし `RELEASE_CHECKLIST.md` を埋める。
 
