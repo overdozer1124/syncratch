@@ -3,6 +3,43 @@
  * Diagrams are fenced by 【ず】…【/ず】 or ```zu / ```diagram fences.
  */
 
+/** Detect answers cut off mid-diagram or mid-sentence by token limits. */
+export function looksTruncatedAiAnswer(content: string): boolean {
+  const text = content.trim();
+  if (!text) return true;
+  const opens = (text.match(/【ず】/g) ?? []).length;
+  const closes = (text.match(/【\/ず】/g) ?? []).length;
+  if (opens > closes) return true;
+  if (/【ず】[^\n]*\s*$/.test(text)) return true;
+  if (/```(?:zu|diagram|ず)?\s*$/i.test(text)) return true;
+  if (/(?:↓|→|←|↑)\s*$/.test(text)) return true;
+  // Ends with an opener-like phrase and no closing advice step.
+  if (/イメージ\s*$/.test(text) && !/ためそう|してみよう|いっぽ/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
+/** Join a first answer with a continuation reply. */
+export function mergeAiAnswerContinuation(
+  head: string,
+  continuation: string,
+): string {
+  const left = head.trimEnd();
+  const right = continuation.trim();
+  if (!right) return left;
+  if (!left) return right;
+  // If continuation restarts the whole answer, prefer the longer complete one.
+  if (
+    looksTruncatedAiAnswer(left) &&
+    !looksTruncatedAiAnswer(right) &&
+    right.length >= left.length
+  ) {
+    return right;
+  }
+  return `${left}\n${right}`;
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")

@@ -56,6 +56,7 @@ export {
 
 export {
   buildAdviceMessages,
+  buildContinuationUserPrompt,
   formatQuestionTargetLabel,
   hasActiveConversation,
   inferAdviceMode,
@@ -83,6 +84,8 @@ export {
 export {
   escapeHtml,
   formatAiAnswerHtml,
+  looksTruncatedAiAnswer,
+  mergeAiAnswerContinuation,
   parseAiAnswerParts,
 } from "./answer-format.js";
 
@@ -101,6 +104,7 @@ export {
   AI_CHAT_MAX_MESSAGE_CHARS,
   AI_CHAT_DEFAULT_MAX_TOKENS,
   AI_CHAT_HARD_MAX_TOKENS,
+  AI_CHAT_ADVICE_MAX_TOKENS,
   type AiChatProxyRequest,
   type AiChatProxySuccess,
   type AiChatProxyFailure,

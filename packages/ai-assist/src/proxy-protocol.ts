@@ -46,5 +46,9 @@ export type AiChatProxyResponse = AiChatProxySuccess | AiChatProxyFailure;
 
 export const AI_CHAT_MAX_MESSAGES = 12;
 export const AI_CHAT_MAX_MESSAGE_CHARS = 8000;
-export const AI_CHAT_DEFAULT_MAX_TOKENS = 512;
-export const AI_CHAT_HARD_MAX_TOKENS = 1024;
+/** Default completion budget for kid-facing advice with a short diagram. */
+export const AI_CHAT_DEFAULT_MAX_TOKENS = 1024;
+/** Hard cap applied by proxy/client clamps. */
+export const AI_CHAT_HARD_MAX_TOKENS = 2048;
+/** Preferred editor request size (must stay <= HARD). */
+export const AI_CHAT_ADVICE_MAX_TOKENS = 1536;
