@@ -22,6 +22,7 @@
 | Core library | `packages/ai-assist` | detect, levels, settings, sanitize, context, prompt, client, forwarder, IR types |
 | Same-origin proxy | `apps/collab-host` `POST /ai/chat` | CORS-safe forward; Authorization Bearer from client; never stores keys |
 | Editor UI | `apps/editor-web` settings + AI panels | toggle, key, level, ask |
+| Vite dev proxy | `ai-chat-dev-proxy` via `ssrLoadModule` | config must not statically import `@blocksync/ai-assist` (Node ESM) |
 
 ## Data boundaries
 
