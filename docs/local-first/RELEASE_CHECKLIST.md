@@ -44,9 +44,13 @@ recovery, and export.
 These require a real Google test project and are intentionally not run with CI
 credentials. Follow `STAGE5_MANUAL_GATES.md` §A.
 
-- [ ] Solo edit starts without Google login.
-- [ ] OAuth consent shows `drive.file`, not broad Drive scopes.
-- [ ] Picker opens only an explicitly selected SB3.
+Drive deploy evidence (2026-07-23): Railway production bundle includes
+`VITE_GOOGLE_*` and `drive.file`; user confirmed Drive integration works on
+`https://syncratch-production.up.railway.app/`.
+
+- [x] Solo edit starts without Google login.
+- [x] OAuth consent shows `drive.file`, not broad Drive scopes.
+- [x] Picker opens only an explicitly selected SB3.
 - [ ] Two different Google test users can access the same shared Drive file.
 - [ ] Only the visible logical leader attempts the normal Drive snapshot.
 - [ ] Revoking one user's permission stops that user's Drive write without
@@ -81,8 +85,8 @@ Automated support (not a substitute for the consent-screen / real-Drive checks):
 ### Still require human confirmation（`STAGE5_MANUAL_GATES.md` §B）
 
 - [ ] Disconnect a peer: no UI claims its unseen changes are synchronized.
-- [ ] Disable Apps Script (or leave unset): solo, direct invite, existing P2P,
-      Drive, and export remain usable.
+- [x] Disable Apps Script (or leave unset): solo, direct invite, existing P2P,
+      Drive, and export remain usable.（Apps Script 未導入のまま Railway で Drive 連携成功）
 - [ ] Inspect IndexedDB, SB3, Y.Doc, logs, signaling frames, and classroom
       Sheets: no Google access/refresh/Picker token is present.
 

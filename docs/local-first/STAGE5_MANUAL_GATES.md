@@ -143,7 +143,37 @@ Drive 連携後に次を確認する（DevTools / ダウンロードファイル
 
 ---
 
-## C. 結果記録表（コピーして埋める）
+## C. 結果記録表
+
+### C.1 進行中の記録（2026-07-23）
+
+```text
+実施日 (JST): 2026-07-23
+実施者: ユーザー（Drive 連携）+ Cursor（本番 bake-in 確認）
+git tip（文書ブランチ）: cursor/release-gates-stage5-f431
+検証 origin: https://syncratch-production.up.railway.app/
+Google Cloud project: syncratch（APP_ID / project number 863099193805）
+
+本番 bake-in（Cursor, 2026-07-23 10:38 JST）:
+- GET /healthz → ok (HTTP 200)
+- production main-*.js に Client ID / API key / APP_ID=863099193805 / scope drive.file を確認
+
+A1 Solo without login:        PASS — ユーザー: Drive 連携完了報告（単独編集はログイン不要のまま）
+A2 OAuth drive.file only:     PASS — 本番 bundle に drive.file のみ。ユーザー: Drive 連携完了
+A3 Picker explicit select:    PASS — ユーザー: Drive 連携完了（Picker 経由）
+A4 Two users same file:       未実施
+A5 Leader-only Drive write:   未実施
+A6 Revoke keeps local/SB3:    未実施
+A7 Conflict safe stop:        未実施
+
+B1 Peer disconnect honesty:   未実施
+B2 Apps Script disabled OK:   PASS — Apps Script 未導入（未設定で Community 動作 = 合格）
+B3 No persisted tokens:       未実施（実機 DevTools 検査）
+
+総合: Stage 5 手動ゲート 未完了（Drive ハッピーパスまでは完了）
+```
+
+### C.2 空白テンプレート
 
 ```text
 実施日 (JST):
