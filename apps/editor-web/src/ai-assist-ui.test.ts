@@ -6,9 +6,11 @@ import {
   aiQuestionTargetHint,
   aiQuestionTargetOptions,
   aiStatusSummary,
-  buildClarifyPrompt,
+  buildClarifyGenerationMessages,
+  buildFallbackClarifyPrompt,
   friendlyAiError,
   needsIntentClarification,
+  parseClarifyResponse,
   pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
@@ -81,10 +83,18 @@ describe("ai-assist-ui", () => {
   });
 
   it("offers clarify choices for bounce-like kid questions", () => {
-    expect(needsIntentClarification("はずませたい")).toBe(true);
-    const clarify = buildClarifyPrompt("はずませたい");
-    expect(clarify?.promptText).toContain("どれが したい");
-    expect(clarify?.choices.length).toBeGreaterThanOrEqual(3);
+    const question = "ボールがじめんについたらはずむようにしたい";
+    expect(needsIntentClarification(question)).toBe(true);
+    expect(buildClarifyGenerationMessages({question})[1]?.content).toContain(
+      "じめん",
+    );
+    const parsed = parseClarifyResponse(
+      '{"promptText":"どれ？","choices":[{"label":"じめんに ついたら はねたい","adviceHint":"下端で反転"},{"label":"したまで おちたい","adviceHint":"下へくりかえし"},{"label":"ずっと はねたい","adviceHint":"ループ"}]}',
+      question,
+    );
+    expect(parsed?.choices[0]?.label).toContain("じめん");
+    const fallback = buildFallbackClarifyPrompt(question);
+    expect(fallback.choices[0]?.label).toContain("じめん");
   });
 
   it("lists question targets and preserves selection", () => {
