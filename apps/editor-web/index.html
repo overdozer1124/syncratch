@@ -22,7 +22,16 @@
             </p>
             <label class="title-field" for="project-title">
               <span>作品の名前</span>
-              <input id="project-title" value="新しい作品" />
+              <input
+                autocomplete="off"
+                data-1p-ignore="true"
+                data-bwignore="true"
+                data-form-type="other"
+                data-lpignore="true"
+                id="project-title"
+                name="syncratch-project-title"
+                value="新しい作品"
+              />
             </label>
             <button id="new-project" type="button">新しい作品</button>
           </div>
@@ -123,12 +132,23 @@
                   </label>
                   <label class="invite-field" for="ai-api-key">
                     <span>AI の API キー</span>
+                    <!--
+                      Use type=text (masked via CSS), not type=password.
+                      Chrome otherwise treats project-title + this field as a
+                      login form and pops "Save password?" over Scratch dialogs.
+                    -->
                     <input
                       autocomplete="off"
+                      class="secret-text-input"
+                      data-1p-ignore="true"
+                      data-bwignore="true"
+                      data-form-type="other"
+                      data-lpignore="true"
                       id="ai-api-key"
+                      name="syncratch-ai-api-key"
                       placeholder="ここに API キーを入れる"
                       spellcheck="false"
-                      type="password"
+                      type="text"
                     />
                   </label>
                   <label class="invite-field" for="ai-provider">
