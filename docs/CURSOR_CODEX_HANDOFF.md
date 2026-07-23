@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 14:48:00 JST |
+| 最終更新 | 2026-07-23 14:53:19 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | ユーザー（merge 判断） |
-| 現在のTask | ブロックドラッグ張り付き修正（remote apply defer） |
+| ワークフロー状態 | `READY` |
+| 現在の担当 | ユーザー（Stage 5 手動） |
+| 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/block-drag-stuck-f431` |
+| 作業ブランチ | `main`（`1726d3f` = PR #28 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | ドラッグ中は remote loadProject を遅延。上限後は cancelCurrentGesture |
+| 設計 | ドラッグ中は remote loadProject を遅延。上限後は cancelCurrentGesture（#28 MERGED） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 本 PR merge 後 Stage 5 手動継続可。Phase 2・TURN・default branch 切替は指示まで停止 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-ブロックドラッグ張り付き修正 PR の merge 待ち。
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、ドラッグ張り付きの本番確認を推奨。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
