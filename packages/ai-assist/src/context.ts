@@ -133,6 +133,10 @@ const OPCODE_HINTS: Record<string, string> = {
   motion_gotoxy: "x: y: へ行く",
   motion_goto: "〜へ行く",
   motion_glidesecstoxy: "〜秒でx: y: へ行く",
+  motion_changexby: "x座標を〜ずつ変える",
+  motion_changeyby: "y座標を〜ずつ変える",
+  motion_setx: "x座標を〜にする",
+  motion_sety: "y座標を〜にする",
   motion_turnright: "時計回りに回す",
   motion_turnleft: "反時計回りに回す",
   motion_pointindirection: "〜度に向ける",
@@ -195,13 +199,36 @@ function describeBlock(block: ScratchBlockLike): string {
   const stopOption = fieldValue(block.fields, "STOP_OPTION");
   if (stopOption) extras.push(`stop=${stopOption}`);
 
-  for (const inputKey of ["STEPS", "DURATION", "SECS", "TIMES", "X", "Y", "DEGREES", "DIRECTION", "MESSAGE"]) {
+  for (const inputKey of [
+    "STEPS",
+    "DURATION",
+    "SECS",
+    "TIMES",
+    "X",
+    "Y",
+    "DX",
+    "DY",
+    "DEGREES",
+    "DIRECTION",
+    "MESSAGE",
+  ]) {
     const literal = inputLiteral(block.inputs, inputKey);
     if (literal != null) extras.push(`${inputKey.toLowerCase()}=${literal}`);
   }
 
   const base = opcodeLabel(opcode);
   return extras.length > 0 ? `${base} [${extras.join(", ")}]` : base;
+}
+
+/** Scratch nest input: [shadowType, blockId | literalArray | null] */
+function inputBlockId(
+  inputs: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const entry = inputs?.[key];
+  if (!Array.isArray(entry) || entry.length < 2) return null;
+  const value = entry[1];
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function summarizeBlocks(
@@ -247,6 +274,84 @@ function listTopLevelScriptIds(
   });
 }
 
+/**
+ * Walk a linear stack and also enter C-block bodies (SUBSTACK / SUBSTACK2).
+ * Without this, "ずっと" looks empty even when motion blocks are nested inside.
+ */
+function appendScriptStack(
+  blocks: Record<string, ScratchBlockLike | undefined>,
+  startId: string,
+  maxBlocks: number,
+  indent: string,
+  seen: Set<string>,
+  lines: string[],
+): {used: number; truncated: boolean} {
+  let currentId: string | null = startId;
+  let used = 0;
+  let truncated = false;
+
+  while (currentId) {
+    if (used >= maxBlocks) {
+      truncated = true;
+      break;
+    }
+    if (seen.has(currentId)) {
+      lines.push(`${indent}…(ループ参照のため省略)`);
+      break;
+    }
+    seen.add(currentId);
+    const block: ScratchBlockLike | undefined = blocks[currentId];
+    if (!block) break;
+
+    used += 1;
+    lines.push(`${indent}${used}. ${describeBlock(block)}`);
+
+    const nestedBranches: Array<{key: string; label: string}> = [
+      {key: "SUBSTACK", label: "なか"},
+      {key: "SUBSTACK2", label: "でなければ"},
+    ];
+    const isCBlock = nestedBranches.some(
+      branch => inputBlockId(block.inputs, branch.key) != null,
+    );
+    // Explicit empty body: forever/repeat/if with null SUBSTACK.
+    if (
+      !isCBlock &&
+      typeof block.opcode === "string" &&
+      (block.opcode === "control_forever" ||
+        block.opcode === "control_repeat" ||
+        block.opcode === "control_repeat_until" ||
+        block.opcode === "control_if" ||
+        block.opcode === "control_if_else")
+    ) {
+      lines.push(`${indent}  （なかにブロックなし）`);
+    }
+
+    for (const branch of nestedBranches) {
+      const nestedId = inputBlockId(block.inputs, branch.key);
+      if (!nestedId) continue;
+      lines.push(`${indent}  └ ${branch.label}:`);
+      const nested = appendScriptStack(
+        blocks,
+        nestedId,
+        maxBlocks - used,
+        `${indent}    `,
+        seen,
+        lines,
+      );
+      used += nested.used;
+      if (nested.truncated) {
+        truncated = true;
+        break;
+      }
+    }
+    if (truncated) break;
+
+    currentId = typeof block.next === "string" ? block.next : null;
+  }
+
+  return {used, truncated};
+}
+
 function formatScriptStack(
   blocks: Record<string, ScratchBlockLike | undefined>,
   startId: string,
@@ -254,22 +359,15 @@ function formatScriptStack(
 ): string {
   const lines: string[] = [];
   const seen = new Set<string>();
-  let currentId: string | null = startId;
-  let depth = 0;
-
-  while (currentId && depth < maxBlocks) {
-    if (seen.has(currentId)) {
-      lines.push("  …(ループ参照のため省略)");
-      break;
-    }
-    seen.add(currentId);
-    const block: ScratchBlockLike | undefined = blocks[currentId];
-    if (!block) break;
-    lines.push(`  ${depth + 1}. ${describeBlock(block)}`);
-    currentId = typeof block.next === "string" ? block.next : null;
-    depth += 1;
-  }
-  if (currentId) lines.push("  …(以降省略)");
+  const result = appendScriptStack(
+    blocks,
+    startId,
+    maxBlocks,
+    "  ",
+    seen,
+    lines,
+  );
+  if (result.truncated) lines.push("  …(以降省略)");
   return lines.join("\n");
 }
 
