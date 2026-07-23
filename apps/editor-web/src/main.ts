@@ -120,6 +120,10 @@ import {
   type CollabSession,
   type CollabState,
 } from "./collab-session.js";
+import {
+  cancelScratchBlockGesture,
+  isScratchBlockInteractionActive,
+} from "./block-interaction.js";
 import {summarizePreflightIssues} from "@blocksync/collaboration-domain";
 import {
   activateTabAction,
@@ -951,6 +955,8 @@ async function applyCollaborativeProject(
       // Remote applies use full loadProject. Scratch regenerates runtime target
       // ids and forces editingTarget to the first sprite — remap selection via
       // stable ProjectDocument identity instead of the old runtime id.
+      // If a Blockly gesture somehow remained open, cancel it before clear().
+      cancelScratchBlockGesture(scratchWorkspace());
       await loadProjectPreservingEditingTarget(
         vm,
         documentToProjectJson(recordToLoad.document),
@@ -972,6 +978,9 @@ async function applyCollaborativeProject(
                 rememberViewportForSelection,
                 preferRememberedViewport: () => suppressViewportMemoryCapture,
                 applyViewport: viewport => {
+                  if (isScratchBlockInteractionActive(scratchWorkspace())) {
+                    return;
+                  }
                   applyWorkspaceViewport(viewport);
                 },
                 beginRestoreEpoch: bumpUiRestoreEpoch,
@@ -1051,6 +1060,11 @@ async function startCollaboration(
         driveAutosave.noteChange();
       }
       return true;
+    },
+    isBlockInteractionActive: () =>
+      isScratchBlockInteractionActive(scratchWorkspace()),
+    cancelBlockInteraction: () => {
+      cancelScratchBlockGesture(scratchWorkspace());
     },
     rollbackGuestInitialLocal: () => rollbackGuestInitialLocal(generation),
     projectTitle: () => titleInput.value,
@@ -1894,6 +1908,17 @@ disconnectGoogleButton.addEventListener("click", () => {
   driveIntegration.disconnect();
   closePanelFor(disconnectGoogleButton);
 });
+function releaseStuckBlockGesture(): void {
+  cancelScratchBlockGesture(scratchWorkspace());
+}
+
+// Belt-and-suspenders for orphaned Blockly document listeners (stuck drag).
+window.addEventListener("blur", releaseStuckBlockGesture);
+window.addEventListener("pagehide", releaseStuckBlockGesture);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") releaseStuckBlockGesture();
+});
+
 createRoomButton.addEventListener("click", () => void createRoom());
 joinRoomButton.addEventListener("click", () => void joinRoom());
 copyInviteButton.addEventListener("click", () => {
