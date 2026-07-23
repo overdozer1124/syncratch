@@ -87,6 +87,7 @@ export {
 export {
   parseAiChatProxyBody,
   extractBearerToken,
+  extractUpstreamErrorMessage,
   forwardAiChat,
   type ForwardAiChatOptions,
 } from "./forward.js";
