@@ -236,17 +236,11 @@ body,
   border: 0;
 }
 
-.save-help,
 .panel-help,
 .safety-help {
   margin: 5px 0;
   font-size: 0.82rem;
   line-height: 1.35;
-}
-
-.save-help {
-  text-align: right;
-  opacity: 0.92;
 }
 
 .feature-panels {
@@ -349,10 +343,6 @@ body,
     text-align: left;
   }
 
-  .save-help {
-    text-align: left;
-  }
-
   .tool-panel summary {
     padding: 7px 6px;
     font-size: 0.82rem;
@@ -367,10 +357,6 @@ body,
   .toolbar input,
   .toolbar button {
     min-height: 36px;
-  }
-
-  .save-help {
-    display: none;
   }
 
   .tool-panel summary {
