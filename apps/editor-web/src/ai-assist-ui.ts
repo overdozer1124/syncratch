@@ -4,18 +4,25 @@
  */
 
 import {
+  AI_QUESTION_TARGET_ALL,
   allAiLevelPolicies,
   aiLevelPolicy,
   effectiveAiLevel,
+  formatQuestionTargetLabel,
   KNOWN_AI_PROVIDERS,
+  listAiQuestionTargets,
   providerLabel,
   resolveAiAssistConfig,
+  resolveQuestionTargetName,
   type AiAdviceMode,
   type AiAssistLevel,
   type AiAssistResolvedConfig,
   type AiAssistSettings,
   type AiProviderId,
+  type ScratchProjectJsonLike,
 } from "@blocksync/ai-assist";
+
+export {AI_QUESTION_TARGET_ALL, formatQuestionTargetLabel};
 
 export function aiPanelHidden(settings: AiAssistSettings): boolean {
   const level = effectiveAiLevel(settings.enabled, settings.level);
@@ -42,6 +49,44 @@ export function aiModeOptionsForLevel(
     options.push({value: "debug", label: "デバッグの助言"});
   }
   return options;
+}
+
+export function aiQuestionTargetOptions(
+  projectJson: ScratchProjectJsonLike | null | undefined,
+): Array<{value: string; label: string}> {
+  return listAiQuestionTargets(projectJson).map(option => ({
+    value: option.value,
+    label: option.label,
+  }));
+}
+
+/**
+ * Prefer keeping the current selection; otherwise the editing sprite;
+ * otherwise whole project.
+ */
+export function pickAiQuestionTargetValue(params: {
+  previousValue: string;
+  availableValues: string[];
+  editingTargetName: string | null;
+}): string {
+  const {previousValue, availableValues, editingTargetName} = params;
+  if (previousValue && availableValues.includes(previousValue)) {
+    return previousValue;
+  }
+  if (editingTargetName && availableValues.includes(editingTargetName)) {
+    return editingTargetName;
+  }
+  return availableValues.includes(AI_QUESTION_TARGET_ALL)
+    ? AI_QUESTION_TARGET_ALL
+    : (availableValues[0] ?? AI_QUESTION_TARGET_ALL);
+}
+
+export function aiQuestionTargetHint(selectedValue: string): string {
+  const target = resolveQuestionTargetName(selectedValue);
+  if (!target) {
+    return "いまは作品全体について質問します。AI にも「作品全体」と伝わります。";
+  }
+  return `いまは ${formatQuestionTargetLabel(target)} について質問します。AI にも同じ対象が伝わります。`;
 }
 
 export function levelSelectOptions(): Array<{

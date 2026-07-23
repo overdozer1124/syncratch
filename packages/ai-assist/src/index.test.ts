@@ -18,9 +18,14 @@ import {
   saveAiAssistSettings,
 } from "./settings.js";
 import {sanitizeAiText, truncateForTokens} from "./sanitize.js";
-import {buildAiProjectContext} from "./context.js";
+import {
+  AI_QUESTION_TARGET_ALL,
+  buildAiProjectContext,
+  listAiQuestionTargets,
+} from "./context.js";
 import {
   buildAdviceMessages,
+  formatQuestionTargetLabel,
   inferAdviceMode,
   resolveAdviceMode,
 } from "./prompt.js";
@@ -246,11 +251,51 @@ describe("sanitize and context", () => {
       {title: "動かない猫", editingTargetName: "Cat"},
     );
     expect(ctx.editingTargetName).toBe("Cat");
+    expect(ctx.questionTargetName).toBeNull();
     expect(ctx.sprites[0]?.name).toBe("Cat");
-    expect(ctx.summaryText).toContain("★編集中");
+    expect(ctx.summaryText).toContain("編集中");
     expect(ctx.summaryText).toContain("motion_movesteps");
     expect(ctx.summaryText).toContain("開始イベント");
     expect(ctx.summaryText).toContain("スクリプト1:");
+  });
+
+  it("marks the explicit question target ahead of editing", () => {
+    const project = {
+      targets: [
+        {name: "Stage", isStage: true, blocks: {}},
+        {
+          name: "Dog",
+          isStage: false,
+          blocks: {
+            d1: {opcode: "looks_say", topLevel: true, parent: null, next: null},
+          },
+        },
+        {
+          name: "Cat",
+          isStage: false,
+          blocks: {
+            c1: {
+              opcode: "motion_movesteps",
+              topLevel: true,
+              parent: null,
+              next: null,
+            },
+          },
+        },
+      ],
+    };
+    const targets = listAiQuestionTargets(project);
+    expect(targets[0]?.value).toBe(AI_QUESTION_TARGET_ALL);
+    expect(targets.some(t => t.value === "Cat")).toBe(true);
+
+    const ctx = buildAiProjectContext(project, {
+      editingTargetName: "Cat",
+      questionTargetName: "Dog",
+    });
+    expect(ctx.questionTargetName).toBe("Dog");
+    expect(ctx.sprites[0]?.name).toBe("Dog");
+    expect(ctx.summaryText).toContain("質問の対象: Dog");
+    expect(ctx.summaryText).toContain("★質問対象");
   });
 });
 
@@ -270,26 +315,32 @@ describe("prompt", () => {
       level: 2,
       mode: "debug",
       userQuestion: "スプライトが動きません",
-      project: buildAiProjectContext({
-        targets: [
-          {
-            name: "Cat",
-            blocks: {
-              a: {
-                opcode: "motion_movesteps",
-                topLevel: true,
-                parent: null,
-                next: null,
+      project: buildAiProjectContext(
+        {
+          targets: [
+            {
+              name: "Cat",
+              blocks: {
+                a: {
+                  opcode: "motion_movesteps",
+                  topLevel: true,
+                  parent: null,
+                  next: null,
+                },
               },
             },
-          },
-        ],
-      }),
+          ],
+        },
+        {questionTargetName: "Cat"},
+      ),
     });
     expect(messages[0]?.role).toBe("system");
     expect(messages[0]?.content).toContain("完成したスクリプト");
     expect(messages[0]?.content).toContain("実スクリプトを根拠");
+    expect(messages[0]?.content).toContain("学習者が選んだ質問対象");
     expect(messages[1]?.content).toContain("スプライトが動きません");
+    expect(messages[1]?.content).toContain("【質問の対象】");
+    expect(messages[1]?.content).toContain(formatQuestionTargetLabel("Cat"));
     expect(messages[1]?.content).toContain("この内容だけを根拠");
     expect(messages[1]?.content).toContain("motion_movesteps");
   });

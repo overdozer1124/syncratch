@@ -41,16 +41,21 @@ export {
 export {sanitizeAiText, truncateForTokens, type SanitizeResult} from "./sanitize.js";
 
 export {
+  AI_QUESTION_TARGET_ALL,
   buildAiProjectContext,
+  listAiQuestionTargets,
+  resolveQuestionTargetName,
   type AiBlockSummary,
   type AiSpriteContext,
   type AiProjectContext,
+  type AiQuestionTargetOption,
   type ScratchProjectJsonLike,
   type BuildAiProjectContextOptions,
 } from "./context.js";
 
 export {
   buildAdviceMessages,
+  formatQuestionTargetLabel,
   inferAdviceMode,
   resolveAdviceMode,
   type AiAdviceMode,
