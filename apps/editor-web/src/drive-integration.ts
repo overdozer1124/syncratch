@@ -70,6 +70,8 @@ export interface EditorDriveDependencies {
 export interface EditorDriveIntegration {
   getStatus(): EditorDriveStatus;
   isConnected(): boolean;
+  /** Current Google access token for profile / Drive calls; null when signed out. */
+  getAccessToken(): string | null;
   connect(): Promise<boolean>;
   tryRestoreSession(): Promise<boolean>;
   disconnect(): void;
@@ -191,6 +193,9 @@ export function createEditorDriveIntegration(
     },
     isConnected() {
       return dependencies.auth.getAccessToken() !== null;
+    },
+    getAccessToken() {
+      return dependencies.auth.getAccessToken();
     },
     async tryRestoreSession() {
       if (!dependencies.configured) return false;

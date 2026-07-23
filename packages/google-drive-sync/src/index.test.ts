@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {
+  DRIVE_AUTH_SCOPES,
   DRIVE_FILE_SCOPE,
   DriveAuthenticationError,
   DriveConflictError,
@@ -85,10 +86,12 @@ describe("Google authorization", () => {
     });
 
     await expect(auth.connect()).resolves.toBe("memory-token");
-    expect(configuredScope).toBe(DRIVE_FILE_SCOPE);
+    expect(configuredScope).toBe(DRIVE_AUTH_SCOPES);
     expect(DRIVE_FILE_SCOPE).toBe(
       "https://www.googleapis.com/auth/drive.file",
     );
+    expect(DRIVE_AUTH_SCOPES).toContain(DRIVE_FILE_SCOPE);
+    expect(DRIVE_AUTH_SCOPES).toContain("userinfo.profile");
     expect(auth.getAccessToken()).toBe("memory-token");
     expect(preference.setEnabled).toHaveBeenCalledWith(true);
   });

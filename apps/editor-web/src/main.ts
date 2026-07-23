@@ -21,6 +21,7 @@ import {
   createGoogleAuthorization,
   createGooglePicker,
   createHostBackedGoogleAuthorization,
+  fetchGoogleUserProfile,
   loadGoogleScripts,
   probeHostDriveOAuthAvailable,
   type GoogleAuthorization,
@@ -483,6 +484,9 @@ let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
 let lastDriveMessage: string | undefined;
 let driveOverwriteConfirmationRequired = false;
+/** Google profile picture for the collab avatar chip; cleared on disconnect. */
+let googleAvatarUrl: string | undefined;
+let googleAvatarFetchGeneration = 0;
 let lastCollabState: CollabState | null = null;
 let lastCollabIdleMessage = "ひとりで作っています";
 let fatalBootError: string | undefined;
@@ -843,6 +847,21 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
   });
 }
 
+async function syncGoogleAvatarProfile(): Promise<void> {
+  const token = driveIntegration.getAccessToken();
+  if (!token) {
+    googleAvatarFetchGeneration += 1;
+    googleAvatarUrl = undefined;
+    renderProjectStatus();
+    return;
+  }
+  const generation = ++googleAvatarFetchGeneration;
+  const profile = await fetchGoogleUserProfile(token);
+  if (generation !== googleAvatarFetchGeneration) return;
+  googleAvatarUrl = profile?.picture;
+  renderProjectStatus();
+}
+
 function renderProjectStatus(): void {
   const {primary, details, icons} = composeProjectStatusView({
     local: lastLocalSaveState,
@@ -852,6 +871,7 @@ function renderProjectStatus(): void {
     collabIdleMessage: lastCollabIdleMessage,
     fatalError: fatalBootError,
     localError: localOperationError,
+    googleAvatarUrl,
   });
   // Visible UI is icon-first; full sentences stay in sr-only nodes for a11y/e2e.
   renderStatusIconRow(statusIconRow, icons);
@@ -1830,6 +1850,14 @@ function renderDriveStatus(
   } else {
     renderProjectStatus();
   }
+  const connected = !["not-configured", "disconnected"].includes(status);
+  if (connected && !googleAvatarUrl) {
+    void syncGoogleAvatarProfile();
+  } else if (!connected && googleAvatarUrl) {
+    googleAvatarFetchGeneration += 1;
+    googleAvatarUrl = undefined;
+    renderProjectStatus();
+  }
 }
 
 async function persistDriveFileId(
@@ -1956,6 +1984,7 @@ async function boot(): Promise<void> {
   consumeDriveOAuthReturnFlag();
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
+  await syncGoogleAvatarProfile();
   const fragmentInvite = decodeInviteFragment(window.location.hash);
   if (fragmentInvite) {
     // Opening a shared invite URL should join immediately; the input is also
@@ -2019,6 +2048,7 @@ saveButton.addEventListener("click", () => {
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
 connectGoogleButton.addEventListener("click", () => {
   void driveIntegration.connect().finally(() => {
+    void syncGoogleAvatarProfile();
     closePanelFor(connectGoogleButton);
   });
 });
@@ -2046,6 +2076,9 @@ disconnectGoogleButton.addEventListener("click", () => {
     leaveRoom();
   }
   driveIntegration.disconnect();
+  googleAvatarFetchGeneration += 1;
+  googleAvatarUrl = undefined;
+  renderProjectStatus();
   closePanelFor(disconnectGoogleButton);
 });
 function releaseStuckBlockGesture(): void {
