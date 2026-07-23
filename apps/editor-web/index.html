@@ -33,7 +33,9 @@
                 value="新しい作品"
               />
             </label>
-            <button id="new-project" type="button">新しい作品</button>
+            <button class="toolbar-action" id="new-project" type="button">
+              あたらしく作る
+            </button>
           </div>
           <!-- Transparent gap so Scratch 設定/ファイル/編集 sit on the blue bar. -->
           <div class="chrome-menu-slot" aria-hidden="true"></div>
@@ -119,7 +121,7 @@
             </details>
 
             <details class="tool-panel settings-panel" data-testid="settings-panel">
-              <summary>設定</summary>
+              <summary>AI 設定</summary>
               <div class="panel-content">
                 <p class="panel-help">
                   AI のコーディング助言は、はじめはオフです。使うときだけオンにして、API キーを入れてください。
@@ -320,7 +322,12 @@
               hidden
             ></span>
           </span>
-          <button id="retry-save" type="button" hidden>もう一度保存</button>
+          <button
+            class="toolbar-action toolbar-action--quiet"
+            id="retry-save"
+            type="button"
+            hidden
+          >もう一度保存</button>
         </div>
       </div>
       <section
