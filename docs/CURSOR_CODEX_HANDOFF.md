@@ -4782,3 +4782,28 @@ merge: b4e535ae0376b04dc255f49a9566468cccee0b1c
 ```
 
 
+### 2026-07-24 00:17:21 JST — Cursor（PR #59 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #59 → base main
+merge: 8c7f4251e5558a05a042db224b70013342a5ab43
+
+実施:
+- gh pr ready + gh pr merge --merge --delete-branch
+- Gate 0 PASS 後にマージ
+- 台帳を MERGED に更新
+
+含まれる変更:
+- prepare-assets で Scratch looks-secondary 紫クロームを Syncratch 青へリマップ
+- Looks ブロック colourSecondary は紫のまま維持
+- style.css / verify-static-build の補助
+
+案内:
+- Railway が main 追従ならメニュー・モーダル等のクロームが青で本番反映
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+
