@@ -1,9 +1,14 @@
 import {describe, expect, it} from "vitest";
 import {
   applyChromeLeftWidth,
+  applyMenuSlotWidth,
+  DEFAULT_MENU_SLOT_PX,
   measureChromeLeftWidth,
-  syncSyncratchChromeLeft,
+  measureScratchPrimaryMenuWidth,
+  MENU_SLOT_GAP_PX,
+  syncSyncratchChromeLayout,
   SYNCRATCH_CHROME_LEFT_VAR,
+  SYNCRATCH_MENU_SLOT_VAR,
 } from "./unified-chrome.js";
 
 function fakeRoot(): HTMLElement {
@@ -23,29 +28,102 @@ function fakeRoot(): HTMLElement {
   } as unknown as HTMLElement;
 }
 
+function fakeEl(left: number, right: number): HTMLElement {
+  return {
+    getBoundingClientRect: () => ({left, right, width: right - left}),
+  } as unknown as HTMLElement;
+}
+
 describe("unified chrome layout", () => {
-  it("publishes the left chrome width as a CSS variable", () => {
+  it("publishes the left chrome and menu-slot widths as CSS variables", () => {
     const root = fakeRoot();
     const chromeLeft = {
       getBoundingClientRect: () => ({width: 420.4}),
     } as unknown as HTMLElement;
     expect(measureChromeLeftWidth(chromeLeft)).toBe(421);
-    expect(syncSyncratchChromeLeft({root, chromeLeft})).toBe(421);
+
+    const settings = fakeEl(100, 200);
+    const file = fakeEl(200, 350);
+    const edit = fakeEl(350, 500);
+    const byLabel = (label: string) => {
+      if (label === "設定メニュー" || label === "Settings menu") return settings;
+      if (label === "ファイルメニュー" || label === "File menu") return file;
+      if (label === "編集メニュー" || label === "Edit menu") return edit;
+      return null;
+    };
+    const banner = {
+      querySelector(selector: string) {
+        const match = /\[aria-label="([^"]+)"\]/.exec(selector);
+        return match ? byLabel(match[1]!) : null;
+      },
+    } as unknown as HTMLElement;
+    const guiHost = {
+      querySelector(selector: string) {
+        if (selector.startsWith("header") || selector.includes("menu-bar_menu-bar_")) {
+          return banner;
+        }
+        return null;
+      },
+    } as unknown as HTMLElement;
+
+    const result = syncSyncratchChromeLayout({
+      root,
+      chromeLeft,
+      guiHost,
+    });
+    expect(result.chromeLeft).toBe(421);
+    expect(result.menuSlot).toBe(500 - 100 + MENU_SLOT_GAP_PX);
     expect(root.style.getPropertyValue(SYNCRATCH_CHROME_LEFT_VAR)).toBe(
       "421px",
     );
+    expect(root.style.getPropertyValue(SYNCRATCH_MENU_SLOT_VAR)).toBe(
+      `${500 - 100 + MENU_SLOT_GAP_PX}px`,
+    );
   });
 
-  it("clears the offset when chrome is missing", () => {
+  it("falls back when Scratch menus are missing", () => {
     const root = fakeRoot();
     applyChromeLeftWidth(root, 100);
-    syncSyncratchChromeLeft({root, chromeLeft: null});
+    applyMenuSlotWidth(root, 50);
+    const result = syncSyncratchChromeLayout({
+      root,
+      chromeLeft: null,
+      guiHost: null,
+    });
+    expect(result.chromeLeft).toBe(0);
+    expect(result.menuSlot).toBe(DEFAULT_MENU_SLOT_PX);
     expect(root.style.getPropertyValue(SYNCRATCH_CHROME_LEFT_VAR)).toBe("0px");
+    expect(root.style.getPropertyValue(SYNCRATCH_MENU_SLOT_VAR)).toBe(
+      `${DEFAULT_MENU_SLOT_PX}px`,
+    );
   });
 
   it("clamps negative widths to zero", () => {
     const root = fakeRoot();
     applyChromeLeftWidth(root, -12);
+    applyMenuSlotWidth(root, -4);
     expect(root.style.getPropertyValue(SYNCRATCH_CHROME_LEFT_VAR)).toBe("0px");
+    expect(root.style.getPropertyValue(SYNCRATCH_MENU_SLOT_VAR)).toBe("0px");
+  });
+
+  it("uses the default slot when only a file-group exists", () => {
+    const fileGroup = fakeEl(0, 200);
+    const banner = {
+      querySelector(selector: string) {
+        if (selector.includes("file-group")) return fileGroup;
+        return null;
+      },
+    } as unknown as HTMLElement;
+    const guiHost = {
+      querySelector(selector: string) {
+        if (selector.includes("banner") || selector.includes("menu-bar")) {
+          return banner;
+        }
+        return null;
+      },
+    } as unknown as HTMLElement;
+    expect(measureScratchPrimaryMenuWidth(guiHost)).toBe(
+      DEFAULT_MENU_SLOT_PX,
+    );
   });
 });
