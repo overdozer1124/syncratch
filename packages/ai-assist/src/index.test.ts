@@ -264,6 +264,71 @@ describe("sanitize and context", () => {
     expect(ctx.summaryText).toContain("スクリプト1:");
   });
 
+  it("reads blocks nested inside forever SUBSTACK", () => {
+    const ctx = buildAiProjectContext(
+      {
+        targets: [
+          {
+            name: "Sprite1",
+            isStage: false,
+            blocks: {
+              hat: {
+                opcode: "event_whenkeypressed",
+                next: "loop",
+                parent: null,
+                topLevel: true,
+                fields: {KEY_OPTION: ["space", null]},
+              },
+              loop: {
+                opcode: "control_forever",
+                next: null,
+                parent: "hat",
+                inputs: {SUBSTACK: [2, "body"]},
+              },
+              body: {
+                opcode: "motion_changeyby",
+                next: null,
+                parent: "loop",
+                inputs: {DY: [1, [4, "-10"]]},
+              },
+            },
+          },
+        ],
+      },
+      {questionTargetName: "Sprite1"},
+    );
+    expect(ctx.summaryText).toContain("control_forever");
+    expect(ctx.summaryText).toContain("なか");
+    expect(ctx.summaryText).toContain("motion_changeyby");
+    expect(ctx.summaryText).toContain("dy=-10");
+    expect(ctx.summaryText).not.toContain("なかにブロックなし");
+  });
+
+  it("marks empty forever bodies explicitly", () => {
+    const ctx = buildAiProjectContext({
+      targets: [
+        {
+          name: "Sprite1",
+          blocks: {
+            hat: {
+              opcode: "event_whenkeypressed",
+              next: "loop",
+              parent: null,
+              topLevel: true,
+            },
+            loop: {
+              opcode: "control_forever",
+              next: null,
+              parent: "hat",
+              inputs: {SUBSTACK: [2, null]},
+            },
+          },
+        },
+      ],
+    });
+    expect(ctx.summaryText).toContain("なかにブロックなし");
+  });
+
   it("marks the explicit question target ahead of editing", () => {
     const project = {
       targets: [
