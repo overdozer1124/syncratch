@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 14:28:00 JST |
+| 最終更新 | 2026-07-23 14:36:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | ユーザー（merge 判断） |
-| 現在のTask | Drive status に公式 Google Drive ロゴを使用 |
+| ワークフロー状態 | `MERGED` |
+| 現在の担当 | ユーザー（Stage 5 残り手動ゲート / Railway 再デプロイ確認） |
+| 現在のTask | なし（PR #26 を main へ merge 済み） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/drive-official-icon-f431` |
+| 作業ブランチ | `main` |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | gstatic Drive 2026 logo を vendoring。未接続は grayscale |
+| 設計 | 公式 Drive ロゴ status + save-help 削除済み |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 本 PR merge 後 Stage 5 手動継続可。Phase 2・TURN・default branch 切替は指示まで停止 |
+| 次Task | Stage 5 残り（A5–A7 / B1 / B3）。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-公式 Drive ロゴ PR の merge 待ち。
+なし（PR #26 merge 済み）。Railway が main 追従なら公式 Drive ロゴとヘルプ削除が再デプロイされる。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
