@@ -19,7 +19,11 @@ import {
 } from "./settings.js";
 import {sanitizeAiText, truncateForTokens} from "./sanitize.js";
 import {buildAiProjectContext} from "./context.js";
-import {buildAdviceMessages} from "./prompt.js";
+import {
+  buildAdviceMessages,
+  inferAdviceMode,
+  resolveAdviceMode,
+} from "./prompt.js";
 import {
   createEmptyBlockIRProposal,
   requiresExplicitApproval,
@@ -181,21 +185,113 @@ describe("sanitize and context", () => {
     expect(ctx.summaryText).toContain("Cat");
     expect(ctx.summaryText).not.toContain("costume");
   });
+
+  it("includes script stacks and prefers the editing target", () => {
+    const ctx = buildAiProjectContext(
+      {
+        targets: [
+          {
+            name: "Stage",
+            isStage: true,
+            blocks: {
+              s1: {
+                opcode: "event_whenflagclicked",
+                next: null,
+                parent: null,
+                topLevel: true,
+              },
+            },
+          },
+          {
+            name: "Dog",
+            isStage: false,
+            x: 10,
+            y: 20,
+            direction: 90,
+            visible: true,
+            blocks: {
+              d1: {
+                opcode: "event_whenflagclicked",
+                next: "d2",
+                parent: null,
+                topLevel: true,
+              },
+              d2: {
+                opcode: "looks_say",
+                next: null,
+                parent: "d1",
+                inputs: {MESSAGE: [1, [10, "わん"]]},
+              },
+            },
+          },
+          {
+            name: "Cat",
+            isStage: false,
+            x: 0,
+            y: 0,
+            direction: 90,
+            visible: true,
+            blocks: {
+              c1: {
+                opcode: "motion_movesteps",
+                next: null,
+                parent: null,
+                topLevel: true,
+                inputs: {STEPS: [1, [4, "10"]]},
+              },
+            },
+          },
+        ],
+      },
+      {title: "動かない猫", editingTargetName: "Cat"},
+    );
+    expect(ctx.editingTargetName).toBe("Cat");
+    expect(ctx.sprites[0]?.name).toBe("Cat");
+    expect(ctx.summaryText).toContain("★編集中");
+    expect(ctx.summaryText).toContain("motion_movesteps");
+    expect(ctx.summaryText).toContain("開始イベント");
+    expect(ctx.summaryText).toContain("スクリプト1:");
+  });
 });
 
 describe("prompt", () => {
+  it("infers debug mode for movement failures", () => {
+    expect(inferAdviceMode("キャラクターが動きません")).toBe("debug");
+    expect(inferAdviceMode("エラーが出ます")).toBe("debug");
+    expect(inferAdviceMode("どうやって動かすの？")).toBe("explain");
+    expect(resolveAdviceMode("hint", "キャラクターが動きません")).toBe("debug");
+    expect(resolveAdviceMode("explain", "キャラクターが動きません")).toBe(
+      "explain",
+    );
+  });
+
   it("builds advice messages that forbid complete scripts at level 2", () => {
     const messages = buildAdviceMessages({
       level: 2,
-      mode: "hint",
+      mode: "debug",
       userQuestion: "スプライトが動きません",
       project: buildAiProjectContext({
-        targets: [{name: "Cat", blocks: {a: {opcode: "motion_movesteps"}}}],
+        targets: [
+          {
+            name: "Cat",
+            blocks: {
+              a: {
+                opcode: "motion_movesteps",
+                topLevel: true,
+                parent: null,
+                next: null,
+              },
+            },
+          },
+        ],
       }),
     });
     expect(messages[0]?.role).toBe("system");
     expect(messages[0]?.content).toContain("完成したスクリプト");
+    expect(messages[0]?.content).toContain("実スクリプトを根拠");
     expect(messages[1]?.content).toContain("スプライトが動きません");
+    expect(messages[1]?.content).toContain("この内容だけを根拠");
+    expect(messages[1]?.content).toContain("motion_movesteps");
   });
 
   it("rejects empty questions and level 0", () => {

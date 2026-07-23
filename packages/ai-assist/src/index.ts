@@ -46,10 +46,13 @@ export {
   type AiSpriteContext,
   type AiProjectContext,
   type ScratchProjectJsonLike,
+  type BuildAiProjectContextOptions,
 } from "./context.js";
 
 export {
   buildAdviceMessages,
+  inferAdviceMode,
+  resolveAdviceMode,
   type AiAdviceMode,
   type AiChatMessage,
   type BuildAdvicePromptInput,

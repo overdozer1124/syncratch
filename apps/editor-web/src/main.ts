@@ -157,6 +157,7 @@ import {
   buildAdviceMessages,
   buildAiProjectContext,
   loadAiAssistSettings,
+  resolveAdviceMode,
   resolveAiAssistConfig,
   requestAiChat,
   saveAiAssistSettings,
@@ -2126,16 +2127,25 @@ aiAskButton.addEventListener("click", () => {
     let projectContext = null;
     try {
       if (vm) {
+        const editing = vm.editingTarget;
+        const editingTargetName =
+          typeof editing?.getName === "function"
+            ? editing.getName() ?? null
+            : editing?.sprite?.name ?? null;
         projectContext = buildAiProjectContext(
           JSON.parse(vm.toJSON()) as Parameters<typeof buildAiProjectContext>[0],
-          titleInput.value,
+          {
+            title: titleInput.value,
+            editingTargetName,
+          },
         );
       }
     } catch {
       projectContext = null;
     }
 
-    const mode = (aiModeSelect.value || "hint") as AiAdviceMode;
+    const selectedMode = (aiModeSelect.value || "hint") as AiAdviceMode;
+    const mode = resolveAdviceMode(selectedMode, question);
     let messages;
     try {
       messages = buildAdviceMessages({
@@ -2161,12 +2171,13 @@ aiAskButton.addEventListener("click", () => {
         apiKey: aiSettings.apiKey,
         messages,
         proxyUrl: AI_CHAT_PROXY_PATH,
-        maxTokens: 512,
+        maxTokens: 768,
       });
       aiAnswer.textContent = result.content;
       aiFeedback.textContent = "";
       aiRuntimeStatus.textContent =
-        `${config.providerLabel} / ${result.model} が答えました`;
+        `${config.providerLabel} / ${result.model} が答えました` +
+        (mode !== selectedMode ? `（${mode}で診断）` : "");
     } catch (error) {
       aiFeedback.textContent = friendlyAiError(
         error instanceof Error ? error.message : String(error),
