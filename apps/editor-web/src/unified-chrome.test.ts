@@ -1,3 +1,6 @@
+import {readFileSync} from "node:fs";
+import {dirname, join} from "node:path";
+import {fileURLToPath} from "node:url";
 import {describe, expect, it} from "vitest";
 import {
   applyChromeLeftWidth,
@@ -10,6 +13,11 @@ import {
   SYNCRATCH_CHROME_LEFT_VAR,
   SYNCRATCH_MENU_SLOT_VAR,
 } from "./unified-chrome.js";
+
+const styleCss = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "style.css"),
+  "utf8",
+);
 
 function fakeRoot(): HTMLElement {
   const props = new Map<string, string>();
@@ -124,6 +132,23 @@ describe("unified chrome layout", () => {
     } as unknown as HTMLElement;
     expect(measureScratchPrimaryMenuWidth(guiHost)).toBe(
       DEFAULT_MENU_SLOT_PX,
+    );
+  });
+
+  it("lets Scratch menus receive clicks through the Syncratch menu slot", () => {
+    // Regression: .primary-controls used to be pointer-events:auto and stole
+    // hits from Scratch 設定/ファイル/編集 in the transparent gap.
+    expect(styleCss).toMatch(
+      /\.toolbar\s+\.primary-controls\s*\{[^}]*pointer-events:\s*none/s,
+    );
+    expect(styleCss).toMatch(
+      /\.chrome-menu-slot\s*\{[^}]*pointer-events:\s*none/s,
+    );
+    expect(styleCss).toMatch(
+      /\.toolbar\s+\.chrome-left[\s\S]*?pointer-events:\s*auto/,
+    );
+    expect(styleCss).toMatch(
+      /\.toolbar\s+\.feature-panels[\s\S]*?pointer-events:\s*auto/,
     );
   });
 });

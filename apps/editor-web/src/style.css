@@ -52,7 +52,11 @@ body,
   pointer-events: none;
 }
 
-.toolbar .primary-controls,
+/*
+ * Keep .primary-controls itself pointer-events:none so the transparent
+ * chrome-menu-slot gap lets Scratch 設定/ファイル/編集 receive clicks.
+ * Only the interactive clusters re-enable hit testing.
+ */
 .toolbar .chrome-left,
 .toolbar .feature-panels,
 .toolbar .project-status,
@@ -62,6 +66,10 @@ body,
 .toolbar summary,
 .toolbar label {
   pointer-events: auto;
+}
+
+.toolbar .primary-controls {
+  pointer-events: none;
 }
 
 /* Default controls inside open panels stay solid/readable. */
@@ -136,11 +144,12 @@ body,
 }
 
 /* Lets Scratch Settings/File/Edit show through under the overlay.
-   Width is measured at runtime (--syncratch-menu-slot). */
+   Width is measured at runtime (--syncratch-menu-slot).
+   Must stay pointer-events:none; parent .primary-controls is also none. */
 .chrome-menu-slot {
   flex: 0 0 var(--syncratch-menu-slot, 22.5rem);
   width: var(--syncratch-menu-slot, 22.5rem);
-  height: 1px;
+  align-self: stretch;
   pointer-events: none;
 }
 
