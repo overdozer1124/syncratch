@@ -37,6 +37,15 @@ const guiBundle = await readFile(
 if (!guiBundle.includes("__BLOCKSYNC_GUI_PUBLIC_PATH__")) {
   throw new Error("GUI bundle was not rewritten for subpath asset loading");
 }
+if (!guiBundle.includes("#1565a9")) {
+  throw new Error("GUI bundle was not remapped to Syncratch chrome blue");
+}
+if (guiBundle.includes("hsla(260, 60%, 60%, 1)")) {
+  throw new Error("GUI bundle still contains Scratch purple chrome hsla tokens");
+}
+if (!guiBundle.includes('colourSecondary:"#855CD6"')) {
+  throw new Error("Looks block colourSecondary must remain purple");
+}
 
 const assetFiles = await readdir(join(dist, "assets"));
 const mainScript = assetFiles.find(file => /^main-.*\.js$/.test(file));
