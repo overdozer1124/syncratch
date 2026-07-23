@@ -264,11 +264,27 @@
                   </div>
                 </div>
                 <div
-                  aria-live="polite"
-                  class="ai-thread"
-                  data-testid="ai-thread"
-                  id="ai-thread"
-                ></div>
+                  class="ai-answer-pager"
+                  data-testid="ai-answer-pager"
+                  hidden
+                  id="ai-answer-pager"
+                >
+                  <div class="ai-pager-nav">
+                    <button id="ai-page-prev" type="button">まえのこたえ</button>
+                    <span
+                      aria-live="polite"
+                      data-testid="ai-page-status"
+                      id="ai-page-status"
+                    >1 / 1</span>
+                    <button id="ai-page-next" type="button">つぎのこたえ</button>
+                  </div>
+                  <div
+                    aria-live="polite"
+                    class="ai-thread"
+                    data-testid="ai-thread"
+                    id="ai-thread"
+                  ></div>
+                </div>
                 <div
                   aria-live="polite"
                   class="ai-answer"
