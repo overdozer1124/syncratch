@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 07:04:30 JST |
+| 最終更新 | 2026-07-24 08:29:49 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`0ab3af8` = PR #65 merge） |
+| 作業ブランチ | `main`（`2240397` = PR #67 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | 共同編集 online＋王冠／Google アバター（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にクローム青アイコン・AIフローティングダイアログを確認 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に共同編集 online／Google アバター表示を確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、タブ／削除確認／ペイント等のアイコン青と、AIにきくの前面ドラッグ表示の確認を推奨。
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、共同編集の online＋王冠と Google アバター表示の確認を推奨。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
@@ -4851,6 +4851,25 @@ merge: 8e5fc2534f87bbad9c589ea657099ae4f8b45855 (#64), 0ab3af8714e8576fbe53c36ad
 案内:
 - Railway が main 追従なら本番に #64/#65 が反映される
 - 残 open Draft（#58/#21/#7/#5）は対象外（衝突・別スコープ）
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+### 2026-07-24 08:29:49 JST — Cursor（PR #67 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージしましたか？マージは今後必須にしてください」
+対象: PR #67 → base main
+merge: 224039766fc2a481798c6c346b92994f75d60c82
+
+実施:
+- 未マージだったため gh pr ready + gh pr merge --merge --delete-branch
+- 運用: 以降の実装完了 PR は Gate 0 PASS 後に必ず main へマージする
+
+含まれる変更:
+- 共同編集ステータスを online ピル（ホストは王冠）+ Google プロフィールアバターへ
+- OAuth に userinfo.profile を追加
 
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー
