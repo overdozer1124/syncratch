@@ -27,6 +27,8 @@ import {
 import {
   escapeHtml,
   formatAiAnswerHtml,
+  looksTruncatedAiAnswer,
+  mergeAiAnswerContinuation,
   parseAiAnswerParts,
 } from "./answer-format.js";
 import {
@@ -35,6 +37,7 @@ import {
 } from "./clarify.js";
 import {
   buildAdviceMessages,
+  buildContinuationUserPrompt,
   formatQuestionTargetLabel,
   hasActiveConversation,
   inferAdviceMode,
@@ -42,6 +45,7 @@ import {
   resolveAdviceMode,
   wantsSmoothMotionAdvice,
 } from "./prompt.js";
+import {AI_CHAT_ADVICE_MAX_TOKENS, AI_CHAT_HARD_MAX_TOKENS} from "./proxy-protocol.js";
 import {
   createEmptyBlockIRProposal,
   requiresExplicitApproval,
@@ -603,6 +607,28 @@ describe("prompt", () => {
     expect(html).not.toContain("<script>");
     expect(escapeHtml("<b>")).toBe("&lt;b&gt;");
     expect(parseAiAnswerParts("```zu\na\n```")).toHaveLength(1);
+  });
+
+  it("detects truncated answers and merges continuations", () => {
+    expect(AI_CHAT_ADVICE_MAX_TOKENS).toBeLessThanOrEqual(AI_CHAT_HARD_MAX_TOKENS);
+    const cut = [
+      "「Sprite1」の はなしだよ。",
+      "【ず】うごきの イメージ",
+    ].join("\n");
+    expect(looksTruncatedAiAnswer(cut)).toBe(true);
+    const complete = [
+      "【ず】うごきの イメージ",
+      "  ↑",
+      " ●",
+      "  ↓",
+      "【/ず】",
+      "まずは はやさの 変数を 1つ つくってみよう。",
+    ].join("\n");
+    expect(looksTruncatedAiAnswer(complete)).toBe(false);
+    const merged = mergeAiAnswerContinuation(cut, complete);
+    expect(merged).toContain("【/ず】");
+    expect(merged).toContain("変数");
+    expect(buildContinuationUserPrompt()).toContain("途中で止まっています");
   });
 
   it("rejects empty questions and level 0", () => {

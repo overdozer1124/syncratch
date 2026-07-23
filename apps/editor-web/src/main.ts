@@ -157,13 +157,17 @@ import {
 } from "./scratch-workspace.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
+  AI_CHAT_ADVICE_MAX_TOKENS,
   AI_CHAT_PROXY_PATH,
   buildAdviceMessages,
   buildAiProjectContext,
+  buildContinuationUserPrompt,
   formatAiAnswerHtml,
   formatQuestionTargetLabel,
   hasActiveConversation,
   loadAiAssistSettings,
+  looksTruncatedAiAnswer,
+  mergeAiAnswerContinuation,
   resolveAdviceMode,
   resolveAiAssistConfig,
   resolveQuestionTargetName,
@@ -172,6 +176,7 @@ import {
   type AiAdviceMode,
   type AiAssistSettings,
   type AiClarifyChoice,
+  type AiChatMessage,
   type AiConversationTurn,
 } from "@blocksync/ai-assist";
 import {
@@ -2380,19 +2385,46 @@ async function askAiWithIntent(
       apiKey: aiSettings.apiKey,
       messages,
       proxyUrl: AI_CHAT_PROXY_PATH,
-      maxTokens: 900,
+      maxTokens: AI_CHAT_ADVICE_MAX_TOKENS,
     });
+    let answerContent = result.content;
+    if (looksTruncatedAiAnswer(answerContent)) {
+      aiRuntimeStatus.textContent = "こたえが途中だったので、続きをとりにいっています…";
+      const continuationMessages: AiChatMessage[] = [
+        ...messages,
+        {role: "assistant", content: answerContent},
+        {role: "user", content: buildContinuationUserPrompt()},
+      ];
+      try {
+        const continuation = await requestAiChat({
+          provider: config.provider,
+          model: config.model,
+          apiKey: aiSettings.apiKey,
+          messages: continuationMessages,
+          proxyUrl: AI_CHAT_PROXY_PATH,
+          maxTokens: AI_CHAT_ADVICE_MAX_TOKENS,
+        });
+        answerContent = mergeAiAnswerContinuation(
+          answerContent,
+          continuation.content,
+        );
+      } catch {
+        // Keep the partial answer if continuation fails.
+      }
+    }
     const userTurnText = intentLabel && !continuing
       ? `${question}\n（したいこと: ${intentLabel}）`
       : question;
     aiConversation = [
       ...aiConversation,
       {role: "user", content: userTurnText},
-      {role: "assistant", content: result.content},
+      {role: "assistant", content: answerContent},
     ];
     renderAiConversationThread();
     aiQuestionInput.value = "";
-    aiFeedback.textContent = "";
+    aiFeedback.textContent = looksTruncatedAiAnswer(answerContent)
+      ? "こたえが途中で止まっているみたい。もういちど「つづけてきく」をおしてみてね。"
+      : "";
     const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
     aiRuntimeStatus.textContent = continuing
       ? `${targetLabel} の つづきに ${config.providerLabel} / ${result.model} が答えました${modeNote}`
