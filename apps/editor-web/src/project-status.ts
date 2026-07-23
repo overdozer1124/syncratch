@@ -1,6 +1,7 @@
 import type {LocalSaveState} from "./save-coordinator.js";
 import type {EditorDriveStatus} from "./drive-integration.js";
 import type {CollabState} from "./collab-session.js";
+import {appendCollabRoomRole} from "./collab-role-ui.js";
 
 export interface ProjectStatusInput {
   local: LocalSaveState;
@@ -44,13 +45,16 @@ export function collaborationStatusText(state: CollabState): string {
     return "友だちとのつながりが切れました";
   }
   if (state.status === "connecting") {
-    return "友だちとつないでいます…";
+    return appendCollabRoomRole("友だちとつないでいます…", state);
   }
   if (state.signalingError) {
-    return "つながりに失敗しました。もう一度つないでください";
+    return appendCollabRoomRole(
+      "つながりに失敗しました。もう一度つないでください",
+      state,
+    );
   }
   if (state.status === "connected" && !state.joinedTopic) {
-    return "友だちとつないでいます…";
+    return appendCollabRoomRole("友だちとつないでいます…", state);
   }
   // Guest joined an empty signaling room — host is not present yet.
   if (
@@ -61,7 +65,10 @@ export function collaborationStatusText(state: CollabState): string {
     (state.bootstrapPhase === "receiving-project" ||
       state.bootstrapPhase === "stalled-project")
   ) {
-    return "友だちの部屋が見つかりません。ホスト側の画面を開いたまま、もう一度つないでください";
+    return appendCollabRoomRole(
+      "友だちの部屋が見つかりません。ホスト側の画面を開いたまま、もう一度つないでください",
+      state,
+    );
   }
   const phaseText = bootstrapText[state.bootstrapPhase];
   if (phaseText) {
@@ -69,15 +76,16 @@ export function collaborationStatusText(state: CollabState): string {
       state.bootstrapPhase === "receiving-project" && state.expectedAssets > 0
         ? `（素材 ${state.verifiedAssets}/${state.expectedAssets}）`
         : "";
-    return `${phaseText}${assetProgress}`;
+    return appendCollabRoomRole(`${phaseText}${assetProgress}`, state);
   }
   const connected =
     state.peerCount === 0
       ? "友だちの参加を待っています"
       : `${state.peerCount}人といっしょに作っています`;
-  return state.conflict
+  const withConflict = state.conflict
     ? `${connected} · Google ドライブへの保存を止めています`
     : connected;
+  return appendCollabRoomRole(withConflict, state);
 }
 
 function collabDetail(

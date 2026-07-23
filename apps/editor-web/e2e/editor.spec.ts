@@ -867,8 +867,15 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
   await openPanel(pageA, "collab-panel");
-  await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
+  await expect(pageA.getByTestId("collab-status")).toContainText("ホスト");
+  await openPanel(pageB, "collab-panel");
+  await expect(pageB.getByTestId("collab-status")).toContainText("ゲスト");
   await expect(pageB.getByTestId("collab-status")).not.toContainText("リーダー");
+  await expect(pageB.getByTestId("drive-status")).toContainText(
+    "ゲストのあいだは Google ドライブに保存できません",
+  );
+  await expect(pageB.locator("#save-drive")).toBeDisabled();
+  await pageA.getByRole("button", {name: "いっしょに作るのをやめる"}).click();
   await pageB.evaluate(() =>
     window.__blocksyncTask3!.createTestBlock("handoff-block"));
   await expect(pageB.getByTestId("save-status")).toHaveText(

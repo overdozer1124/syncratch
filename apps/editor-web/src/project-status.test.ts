@@ -44,8 +44,28 @@ describe("composeProjectStatus", () => {
 
     expect(status.primary).toBe("このパソコンに保存しました");
     expect(status.details).toBe(
-      "Google ドライブにも保存しました · 2人といっしょに作っています",
+      "Google ドライブにも保存しました · 2人といっしょに作っています · あなたはホスト（リンクを作った人）",
     );
+  });
+
+  it("labels a guest so Drive ownership is not ambiguous", () => {
+    const status = composeProjectStatus({
+      local: "clean",
+      drive: "not-configured",
+      collab: collabState({
+        status: "connected",
+        peerCount: 1,
+        bootstrapPhase: "ready",
+        role: "follower",
+        createdThisRoom: false,
+        conflict: false,
+        expectedAssets: 0,
+        verifiedAssets: 0,
+      }),
+    });
+
+    expect(status.details).toContain("1人といっしょに作っています");
+    expect(status.details).toContain("あなたはゲスト");
   });
 
   it("surfaces bootstrap and disconnected collab phases in details", () => {
@@ -80,7 +100,9 @@ describe("composeProjectStatus", () => {
     });
 
     expect(receiving.details).toContain("作品を受け取り中…（素材 1/3）");
+    expect(receiving.details).toContain("あなたはゲスト");
     expect(disconnected.details).toContain("友だちとのつながりが切れました");
+    expect(disconnected.details).not.toContain("あなたはゲスト");
     expect(disconnected.details).toContain(
       "Google ドライブ：つながっていません",
     );
@@ -148,5 +170,6 @@ describe("composeProjectStatus", () => {
     });
 
     expect(status.details).toContain("友だちの部屋が見つかりません");
+    expect(status.details).toContain("あなたはゲスト");
   });
 });
