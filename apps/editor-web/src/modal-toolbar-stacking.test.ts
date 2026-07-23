@@ -12,6 +12,7 @@ describe("Scratch modal vs Syncratch toolbar stacking", () => {
   it("keeps toolbar above Scratch menu-bar but below Scratch modals", () => {
     expect(styleCss).toMatch(/--syncratch-toolbar-z:\s*600/);
     expect(styleCss).toMatch(/--syncratch-modal-z:\s*800/);
+    expect(styleCss).toMatch(/--syncratch-ai-modal-z:\s*850/);
     expect(styleCss).toContain('z-index: var(--syncratch-toolbar-z)');
     expect(styleCss).toContain(
       "z-index: var(--syncratch-modal-z) !important",
