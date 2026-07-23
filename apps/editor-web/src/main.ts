@@ -83,6 +83,10 @@ import {
   loadScratchGui,
   setGuiLoadingVisible,
 } from "./load-scratch-gui.js";
+import {
+  setGuiSplashProgress,
+  setGuiSplashVisible,
+} from "./gui-splash.js";
 import {loadRecordSafely} from "./load-record.js";
 import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
@@ -388,6 +392,7 @@ const aiThread = requiredElement<HTMLElement>("ai-thread");
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
+const guiSplash = document.querySelector<HTMLElement>("#gui-splash");
 const chromeLeft = document.querySelector<HTMLElement>(".chrome-left");
 if (chromeLeft) {
   installSyncratchChromeLayout({chromeLeft, guiHost});
@@ -1594,8 +1599,17 @@ function applyWorkspaceViewport(viewport: {
 
 async function getVm(): Promise<ScratchVm> {
   setGuiLoadingVisible(guiHost, true);
+  setGuiSplashVisible(guiSplash, true);
+  setGuiSplashProgress(guiSplash, {
+    ratio: 0.14,
+    label: "エディターを準備しています…",
+  });
   saveStatus.textContent = "エディターを読み込み中…";
   await loadScratchGui();
+  setGuiSplashProgress(guiSplash, {
+    ratio: 0.62,
+    label: "Scratch エディターを読み込んでいます…",
+  });
   return new Promise(resolve => {
     // Full editor (not embedded/player-only) so students can edit blocks.
     // EditorState requires a params object — undefined crashes boot.
@@ -1643,13 +1657,22 @@ async function getVm(): Promise<ScratchVm> {
         // ignore store subscription failures
       }
     });
+    setGuiSplashProgress(guiSplash, {
+      ratio: 0.86,
+      label: "作品スペースを組み立てています…",
+    });
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({
       canEditTitle: false,
       canSave: false,
       onVmInit: vmInstance => {
+        setGuiSplashProgress(guiSplash, {
+          ratio: 1,
+          label: "もうすぐ始まります…",
+        });
         setGuiLoadingVisible(guiHost, false);
+        setGuiSplashVisible(guiSplash, false);
         resolve(vmInstance);
       },
     });
@@ -2585,6 +2608,11 @@ boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
   fatalBootError =
     "エディターを始められませんでした。ページを読み直してください。";
+  setGuiSplashVisible(guiSplash, true);
+  setGuiSplashProgress(guiSplash, {
+    ratio: 1,
+    label: "エディターを始められませんでした。ページを読み直してください。",
+  });
   driveReady = false;
   renderDriveStatus(driveIntegration.getStatus());
 });

@@ -52,3 +52,6 @@ export function setGuiLoadingVisible(
   host.classList.toggle("gui-loading", visible);
   host.setAttribute("aria-busy", visible ? "true" : "false");
 }
+
+export {setGuiSplashProgress, setGuiSplashVisible} from "./gui-splash.js";
+export type {GuiSplashProgress} from "./gui-splash.js";

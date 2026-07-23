@@ -336,6 +336,44 @@
         data-testid="scratch-gui"
         id="scratch-gui"
       ></section>
+      <div
+        class="gui-splash"
+        data-testid="gui-splash"
+        id="gui-splash"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div class="gui-splash-mark">
+          <img
+            class="gui-splash-logo"
+            src="%BASE_URL%branding/syncratch-logo-splash.webp"
+            alt="Syncratch（シンクラッチ）"
+            width="900"
+            height="600"
+            decoding="async"
+            fetchpriority="high"
+          />
+        </div>
+        <div
+          class="gui-splash-progress"
+          role="progressbar"
+          aria-label="読み込みの進み具合"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="12"
+          data-splash-progress
+        >
+          <div
+            class="gui-splash-progress-bar"
+            data-splash-progress-bar
+            style="--progress: 12%"
+          ></div>
+        </div>
+        <p class="gui-splash-status" data-splash-status>
+          エディターを準備しています…
+        </p>
+      </div>
     </main>
     <script>
       // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
