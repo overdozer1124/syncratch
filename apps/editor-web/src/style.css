@@ -18,6 +18,13 @@ body,
 }
 
 .toolbar {
+  --toolbar-ink: #fffef6;
+  --toolbar-ink-muted: rgb(255 254 246 / 88%);
+  --toolbar-hover: rgb(0 0 0 / 18%);
+  --toolbar-active: rgb(0 0 0 / 28%);
+  --toolbar-field-bg: rgb(255 255 255 / 14%);
+  --toolbar-field-border: rgb(255 255 255 / 35%);
+  --toolbar-gap: 4px;
   position: absolute;
   top: 0;
   left: 0;
@@ -25,11 +32,11 @@ body,
   box-sizing: border-box;
   height: 3rem;
   width: max(100%, 1024px);
-  padding: 0 10px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   background: transparent;
-  color: white;
+  color: var(--toolbar-ink);
   pointer-events: none;
 }
 
@@ -45,20 +52,18 @@ body,
   pointer-events: auto;
 }
 
-.toolbar input,
-.toolbar button {
+/* Default controls inside open panels stay solid/readable. */
+.toolbar .panel-content input,
+.toolbar .panel-content button,
+.toolbar .panel-content select,
+.toolbar .panel-content textarea {
   min-height: 2rem;
   border: 1px solid rgb(0 0 0 / 18%);
   border-radius: 8px;
   font: inherit;
 }
 
-.toolbar input {
-  width: min(140px, 16vw);
-  padding: 0 8px;
-}
-
-.toolbar button {
+.toolbar .panel-content button {
   padding: 0 10px;
   background: white;
   cursor: pointer;
@@ -67,7 +72,7 @@ body,
   font-size: 0.85rem;
 }
 
-.toolbar button:disabled {
+.toolbar .panel-content button:disabled {
   cursor: not-allowed;
   color: #5a7390;
   background: #d9e3ef;
@@ -88,7 +93,7 @@ body,
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--toolbar-gap);
   min-width: 0;
 }
 
@@ -109,6 +114,7 @@ body,
   flex: 0 0 auto;
   width: max-content;
   max-width: none;
+  gap: 8px;
 }
 
 /* Lets Scratch Settings/File/Edit show through under the overlay.
@@ -122,24 +128,26 @@ body,
 
 .feature-panels {
   position: relative;
-  gap: 4px;
+  gap: 2px;
   flex: 0 0 auto;
-  margin-left: 4px;
+  margin-left: 2px;
+  padding-left: 8px;
+  border-left: 1px solid rgb(255 255 255 / 28%);
 }
 
 .app-brand {
   margin: 0;
-  padding-right: 2px;
+  padding-right: 4px;
   display: inline-flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 0;
   font-family: "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
-  font-size: 1.15rem;
+  font-size: 1.12rem;
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1.05;
-  color: #fffef6;
+  color: var(--toolbar-ink);
   white-space: nowrap;
 }
 
@@ -171,6 +179,56 @@ body,
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Title field: glass chip on the blue bar (not a heavy white pill). */
+.title-field input {
+  width: min(148px, 16vw);
+  min-height: 1.85rem;
+  padding: 0 10px;
+  border: 1px solid var(--toolbar-field-border);
+  border-radius: 999px;
+  background: var(--toolbar-field-bg);
+  color: var(--toolbar-ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.title-field input::placeholder {
+  color: var(--toolbar-ink-muted);
+}
+
+/* Primary toolbar actions match Scratch menu-item language. */
+.toolbar-action {
+  box-sizing: border-box;
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--toolbar-ink);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolbar-action:hover,
+.toolbar-action:focus-visible {
+  background: var(--toolbar-hover);
+}
+
+.toolbar-action:active {
+  background: var(--toolbar-active);
+}
+
+.toolbar-action--quiet {
+  font-size: 0.76rem;
+  font-weight: 650;
+  opacity: 0.95;
 }
 
 .invite-field {
@@ -319,32 +377,59 @@ body,
   line-height: 1.35;
 }
 
+/* Feature menus: same visual language as Scratch 設定/ファイル/編集. */
 .tool-panel {
   position: relative;
   flex: 0 1 auto;
-  border: 1px solid rgb(255 255 255 / 45%);
-  border-radius: 8px;
-  background: rgb(18 71 130 / 28%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .tool-panel summary {
   box-sizing: border-box;
-  min-height: 2rem;
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
+  list-style: none;
   cursor: pointer;
-  font-weight: 750;
-  font-size: 0.78rem;
+  color: var(--toolbar-ink);
+  font-weight: 700;
+  font-size: 0.82rem;
   line-height: 1.2;
   white-space: nowrap;
+  user-select: none;
 }
 
-.tool-panel[open] {
-  background: rgb(18 71 130 / 42%);
+.tool-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-panel summary::after {
+  content: "";
+  width: 0.35rem;
+  height: 0.35rem;
+  margin-top: -0.12rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  opacity: 0.85;
+  transform: rotate(45deg);
+}
+
+.tool-panel summary:hover,
+.tool-panel summary:focus-visible {
+  background: var(--toolbar-hover);
 }
 
 .tool-panel[open] summary {
-  border-radius: 8px;
-  background: rgb(18 71 130 / 35%);
+  background: var(--toolbar-active);
+}
+
+.tool-panel[open] summary::after {
+  margin-top: 0.12rem;
+  transform: rotate(-135deg);
 }
 
 .panel-content {
@@ -707,19 +792,21 @@ body,
 }
 
 @media (max-width: 720px) {
-  .toolbar input {
+  .title-field input {
     width: min(110px, 22vw);
   }
 
+  .toolbar-action,
   .tool-panel summary {
-    padding: 4px 6px;
-    font-size: 0.72rem;
+    padding: 0 0.55rem;
+    font-size: 0.74rem;
   }
 }
 
 @media (max-width: 480px) {
-  .toolbar input,
-  .toolbar button {
+  .title-field input,
+  .toolbar-action,
+  .tool-panel summary {
     min-height: 1.85rem;
   }
 
@@ -727,8 +814,9 @@ body,
     font-size: 1rem;
   }
 
+  .toolbar-action,
   .tool-panel summary {
-    font-size: 0.68rem;
+    font-size: 0.7rem;
   }
 }
 
