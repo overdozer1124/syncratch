@@ -184,6 +184,62 @@ describe("evaluateCollabReadiness", () => {
   });
 });
 
+describe("remote apply while block interaction is active", () => {
+  it("defers applyRemoteToLocal until the Blockly drag ends", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Host")]));
+    const guestVm = fakeVm(project([stage()]));
+    let dragging = true;
+    const applySpy = vi.fn(async (
+      document: ProjectDocument,
+      assets: Map<string, Uint8Array>,
+      context: ApplyRemoteContext,
+    ) => {
+      guestVm.applyRemoteToLocal(document, assets, context);
+    });
+    const host = createCollabSession({
+      roomId: "room-drag-defer",
+      secret: "drag-defer-secret-drag-defer-secret-xx",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      roomId: "room-drag-defer",
+      secret: "drag-defer-secret-drag-defer-secret-xx",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: applySpy,
+      isBlockInteractionActive: () => dragging,
+    });
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    applySpy.mockClear();
+
+    hostVm.materializeLocal = () => {
+      const document = project([stage(), sprite("s1", "AfterDrag")]);
+      return {document, assets: assetsFor(document)};
+    };
+    // Force a host publish of the renamed sprite while the guest is "dragging".
+    host.noteLocalChange({force: true});
+    await flush(host);
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(applySpy).not.toHaveBeenCalled();
+
+    dragging = false;
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await flush(guest);
+    expect(applySpy).toHaveBeenCalled();
+  });
+});
+
 describe("guest bootstrap terminal-state guards", () => {
   it("ignores every update after invalid-project without changing state, counters, or staging", async () => {
     const mesh = createMemoryMesh();
