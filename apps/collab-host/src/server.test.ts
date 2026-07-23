@@ -43,6 +43,63 @@ describe("startCollabHost", () => {
     a.close();
     b.close();
   });
+
+  it("proxies /ai/chat without touching signaling", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-ai-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+    });
+
+    const unauthorized = await fetch(new URL("/ai/chat", handle.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({
+        provider: "openai",
+        model: "gpt-4o-mini",
+        messages: [{role: "user", content: "hi"}],
+      }),
+    });
+    expect(unauthorized.status).toBe(401);
+
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("api.openai.com")) {
+        return new Response(
+          JSON.stringify({
+            choices: [{message: {content: "proxy-ok"}}],
+          }),
+          {status: 200, headers: {"content-type": "application/json"}},
+        );
+      }
+      return previousFetch(input, init);
+    }) as typeof fetch;
+
+    try {
+      const ok = await fetch(new URL("/ai/chat", handle.url), {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer sk-test-key",
+        },
+        body: JSON.stringify({
+          provider: "openai",
+          model: "gpt-4o-mini",
+          messages: [{role: "user", content: "hi"}],
+        }),
+      });
+      expect(ok.status).toBe(200);
+      const body = (await ok.json()) as {ok: boolean; content?: string};
+      expect(body.ok).toBe(true);
+      expect(body.content).toBe("proxy-ok");
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+  });
 });
 
 function open(url: string): Promise<WebSocket> {

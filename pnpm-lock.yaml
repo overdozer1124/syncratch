@@ -25,6 +25,9 @@ importers:
 
   apps/collab-host:
     dependencies:
+      '@blocksync/ai-assist':
+        specifier: workspace:*
+        version: link:../../packages/ai-assist
       '@blocksync/collab-signaling':
         specifier: workspace:*
         version: link:../../packages/collab-signaling
@@ -47,6 +50,9 @@ importers:
 
   apps/editor-web:
     dependencies:
+      '@blocksync/ai-assist':
+        specifier: workspace:*
+        version: link:../../packages/ai-assist
       '@blocksync/collab-invite':
         specifier: workspace:*
         version: link:../../packages/collab-invite
@@ -309,6 +315,15 @@ importers:
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
+  packages/ai-assist:
+    devDependencies:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3

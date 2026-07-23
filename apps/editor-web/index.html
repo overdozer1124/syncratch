@@ -108,6 +108,100 @@
                 </div>
               </div>
             </details>
+
+            <details class="tool-panel settings-panel" data-testid="settings-panel">
+              <summary>設定</summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  AI のコーディング助言は、はじめはオフです。使うときだけオンにして、API キーを入れてください。
+                  キーはこのパソコンにだけ保存され、作品ファイルやいっしょに作る通信には入りません。
+                </p>
+                <div class="settings-controls">
+                  <label class="settings-toggle" for="ai-enabled">
+                    <input id="ai-enabled" type="checkbox" />
+                    <span>AI の助言を使う</span>
+                  </label>
+                  <label class="invite-field" for="ai-api-key">
+                    <span>AI の API キー</span>
+                    <input
+                      autocomplete="off"
+                      id="ai-api-key"
+                      placeholder="ここに API キーを入れる"
+                      spellcheck="false"
+                      type="password"
+                    />
+                  </label>
+                  <label class="invite-field" for="ai-level">
+                    <span>AI の使い方レベル</span>
+                    <select id="ai-level"></select>
+                  </label>
+                  <label class="invite-field" for="ai-model-override">
+                    <span>モデル指定（空欄なら安いモデルを自動選択）</span>
+                    <input
+                      autocomplete="off"
+                      id="ai-model-override"
+                      placeholder="空欄でOK"
+                      spellcheck="false"
+                      type="text"
+                    />
+                  </label>
+                  <button id="ai-settings-save" type="button">AI 設定を保存</button>
+                  <button id="ai-settings-clear-key" type="button">API キーを消す</button>
+                  <span
+                    aria-live="polite"
+                    class="panel-status"
+                    data-testid="ai-settings-status"
+                    id="ai-settings-status"
+                  >AI はオフ</span>
+                </div>
+                <p class="safety-help">
+                  API キーの形から、どの AI かを自動で判別します。試作ではトークン消費の少ないモデルを優先します。
+                </p>
+                <p aria-live="polite" class="panel-feedback" id="ai-settings-feedback"></p>
+              </div>
+            </details>
+
+            <details
+              class="tool-panel ai-panel"
+              data-testid="ai-panel"
+              hidden
+              id="ai-panel"
+            >
+              <summary>AI にきく</summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  作品の説明や、動かないときの助言をもらえます。完成プログラムを勝手に書き換えることはしません。
+                </p>
+                <div class="ai-controls">
+                  <label class="invite-field" for="ai-mode">
+                    <span>ききかた</span>
+                    <select id="ai-mode"></select>
+                  </label>
+                  <label class="invite-field" for="ai-question">
+                    <span>しつもん</span>
+                    <textarea
+                      id="ai-question"
+                      placeholder="例: キャラクターが動かないのはなぜ？"
+                      rows="3"
+                    ></textarea>
+                  </label>
+                  <button id="ai-ask" type="button">AI にきく</button>
+                  <span
+                    aria-live="polite"
+                    class="panel-status"
+                    data-testid="ai-runtime-status"
+                    id="ai-runtime-status"
+                  ></span>
+                </div>
+                <pre
+                  aria-live="polite"
+                  class="ai-answer"
+                  data-testid="ai-answer"
+                  id="ai-answer"
+                ></pre>
+                <p aria-live="polite" class="panel-feedback" id="ai-feedback"></p>
+              </div>
+            </details>
           </div>
           <span
             aria-atomic="true"
