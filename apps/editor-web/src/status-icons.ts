@@ -6,6 +6,14 @@ import {
   type ProjectStatusInput,
 } from "./project-status.js";
 import type {LocalSaveState} from "./save-coordinator.js";
+import {staticAssetUrl} from "./static-url.js";
+
+/**
+ * Official Google Drive product mark (2026 color), vendored from gstatic for
+ * offline/CSP-safe toolbar recognition. Used only to indicate Drive status.
+ */
+export const GOOGLE_DRIVE_STATUS_ICON_PATH =
+  "branding/google-drive-2026-color-64dp.png";
 
 export type StatusIconTone = "ok" | "warn" | "error" | "muted" | "busy" | "active";
 
@@ -154,7 +162,7 @@ function svgEl(
   return node;
 }
 
-function iconGlyph(kind: StatusIconKind): SVGElement {
+function iconGlyph(kind: Exclude<StatusIconKind, "drive">): SVGElement {
   const common = {
     viewBox: "0 0 24 24",
     fill: "none",
@@ -173,11 +181,6 @@ function iconGlyph(kind: StatusIconKind): SVGElement {
         }),
         svgEl("path", {d: "M14 7v5h5"}),
         svgEl("path", {d: "M8 17h4"}),
-      ]);
-    case "drive":
-      return svgEl("svg", common, [
-        svgEl("path", {d: "M12 3 3.5 18h17L12 3z"}),
-        svgEl("path", {d: "M7.2 18 12 9.5 16.8 18"}),
       ]);
     case "people":
       return svgEl("svg", common, [
@@ -201,6 +204,17 @@ function iconGlyph(kind: StatusIconKind): SVGElement {
   }
 }
 
+function driveLogoImage(): HTMLImageElement {
+  const image = document.createElement("img");
+  image.className = "status-icon-drive-logo";
+  image.src = staticAssetUrl(GOOGLE_DRIVE_STATUS_ICON_PATH);
+  image.alt = "";
+  image.decoding = "async";
+  image.draggable = false;
+  image.setAttribute("aria-hidden", "true");
+  return image;
+}
+
 export function renderStatusIconRow(
   root: HTMLElement,
   icons: StatusIconChip[],
@@ -215,7 +229,9 @@ export function renderStatusIconRow(
     item.setAttribute("aria-label", chip.label);
     item.title = chip.label;
     item.tabIndex = 0;
-    item.append(iconGlyph(chip.kind));
+    item.append(
+      chip.kind === "drive" ? driveLogoImage() : iconGlyph(chip.kind),
+    );
     if (chip.badge) {
       const badge = document.createElement("span");
       badge.className = "status-icon-badge";
