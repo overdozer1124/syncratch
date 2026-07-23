@@ -34,6 +34,13 @@ const MODE_LABEL: Record<AiAdviceMode, string> = {
  * Infer advice mode from the learner question.
  * "動かない" / error / fix requests prefer debug over generic hints.
  */
+/** True when the learner wants bounce / smooth motion, not a teleport. */
+export function wantsSmoothMotionAdvice(question: string): boolean {
+  return /弾|はね|跳ね|とぶ|とんで|なめらか|スムーズ|スムース|カクカク|ガクガク|しゅんかん|瞬間|したまで|もど|自然な/.test(
+    question,
+  );
+}
+
 export function inferAdviceMode(question: string): AiAdviceMode {
   const q = question.trim();
   if (!q) return "hint";
@@ -41,7 +48,8 @@ export function inferAdviceMode(question: string): AiAdviceMode {
   if (
     /動かない|動きません|動かなく|動かず|うごかない|うごきません|うごかなく|うごかず|動かなくて|うごかなくて|エラー|バグ|なおして|直して|うまくいか/.test(
       q,
-    )
+    ) ||
+    wantsSmoothMotionAdvice(q)
   ) {
     return "debug";
   }
@@ -176,15 +184,37 @@ function answerShape(mode: AiAdviceMode, level: AiAssistLevel): string {
   ].join("\n");
 }
 
+function motionIntentRules(question: string): string {
+  if (wantsSmoothMotionAdvice(question)) {
+    return [
+      "【うごきの意図（いちばん大切）】",
+      "- 学習者はボールを「弾ませたい／なめらかに動かしたい」。しゅんかんいどうにはしたくない。",
+      "- 大きな数（例: -50 や -100）を1回で変えると、弾むのではなく一瞬でとんだように見える。",
+      "- 絶対に「もっと大きな数にする」アドバイスをしないこと。それは悪化する。",
+      "- 自動チェックに「しゅんかんいどう」「大きないっぺん移動」とあったら、それを原因として先に認めること。",
+      "- 次の一手は「数値を小さくする」（例: -50 を -5 や -3 にする）を最優先すること。",
+      "- したまで行って戻したいときは、図で「小さい↓を何度も → 小さい↑を何度も」を示すこと。",
+      "- 「まつ」を増やす・大きくするだけの案は避けること。まずは移動量を小さくする。",
+    ].join("\n");
+  }
+  return [
+    "【うごきの意図】",
+    "- 質問が弾む／なめらか系なら、大きな1回移動ではなく小さい数のくりかえしを勧めること。",
+    "- 「数値を大きくする」は、しゅんかんいどうを悪化させやすいので安易に勧めないこと。",
+  ].join("\n");
+}
+
 function modeInstructions(
   mode: AiAdviceMode,
   level: AiAssistLevel,
   project: AiProjectContext | null | undefined,
+  question: string,
 ): string {
   const policy = aiLevelPolicy(level);
   const lines = [
     "あなたは Scratch 互換エディター「Syncratch」の、小学校むけ学習コーチです。",
     "完成プログラムを代わりに書くのではなく、子どもが自分で直せるように導いてください。",
+    "学習者の質問の意図をよく読み、表面的な数値いじりでごまかさないこと。",
     `現在の利用レベル: ${policy.level}（${policy.label}）— ${policy.description}`,
     `依頼モード: ${MODE_LABEL[mode]}`,
     "",
@@ -193,6 +223,8 @@ function modeInstructions(
     diagramRules(),
     "",
     answerShape(mode, level),
+    "",
+    motionIntentRules(question),
     "",
     "【質問対象の共有】",
     questionTargetInstructions(project),
@@ -278,21 +310,32 @@ export function buildAdviceMessages(
     }
   }
 
-  userParts.push(
-    [
-      `質問対象は ${targetLabel} です。`,
-      "小学校の子ども向けに、ひらがな多め・みじかい文で答えてください。",
-      "むずかしい漢字や「放物線」「重力」などのむずかしい言葉は使わないでください。",
-      "かならず【ず】…【/ず】の図を1つ以上入れてください。",
-      "文字だけの長い説明は禁止です。",
-      "上記の作品スクリプトを根拠に答えてください。",
-    ].join("\n"),
-  );
+  const closing = [
+    `質問対象は ${targetLabel} です。`,
+    "小学校の子ども向けに、ひらがな多め・みじかい文で答えてください。",
+    "むずかしい漢字や「放物線」「重力」などのむずかしい言葉は使わないでください。",
+    "かならず【ず】…【/ず】の図を1つ以上入れてください。",
+    "文字だけの長い説明は禁止です。",
+    "上記の作品スクリプトを根拠に答えてください。",
+  ];
+  if (wantsSmoothMotionAdvice(question)) {
+    closing.push(
+      "学習者は弾む／なめらかな動きを欲しがっています。",
+      "大きな数値への変更は禁止。小さい数で少しずつ動かす案にしてください。",
+    );
+  }
+
+  userParts.push(closing.join("\n"));
 
   return [
     {
       role: "system",
-      content: modeInstructions(input.mode, input.level, input.project),
+      content: modeInstructions(
+        input.mode,
+        input.level,
+        input.project,
+        question,
+      ),
     },
     {
       role: "user",
