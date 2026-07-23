@@ -72,11 +72,14 @@ export {
 
 export {
   AI_CLARIFY_OTHER_ID,
+  buildClarifyGenerationMessages,
   buildClarifyPrompt,
+  buildFallbackClarifyPrompt,
   buildOtherClarifyChoice,
   formatClarifiedIntentLabel,
   isBounceLikeQuestion,
   needsIntentClarification,
+  parseClarifyResponse,
   type AiClarifyChoice,
   type AiClarifyPrompt,
 } from "./clarify.js";

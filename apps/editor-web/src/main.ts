@@ -176,6 +176,7 @@ import {
   type AiAdviceMode,
   type AiAssistSettings,
   type AiClarifyChoice,
+  type AiClarifyPrompt,
   type AiChatMessage,
   type AiConversationTurn,
 } from "@blocksync/ai-assist";
@@ -185,12 +186,14 @@ import {
   aiQuestionTargetHint,
   aiQuestionTargetOptions,
   aiStatusSummary,
-  buildClarifyPrompt,
+  buildClarifyGenerationMessages,
+  buildFallbackClarifyPrompt,
   buildOtherClarifyChoice,
   formatClarifiedIntentLabel,
   friendlyAiError,
   levelSelectOptions,
   needsIntentClarification,
+  parseClarifyResponse,
   pickAiQuestionTargetValue,
   providerSelectOptions,
   readSettingsFromForm,
@@ -2273,12 +2276,7 @@ function hideAiClarify(): void {
   aiClarifyOtherInput.value = "";
 }
 
-function showAiClarify(question: string): boolean {
-  const clarify = buildClarifyPrompt(question);
-  if (!clarify) {
-    hideAiClarify();
-    return false;
-  }
+function renderAiClarifyPrompt(clarify: AiClarifyPrompt): void {
   aiClarifyPromptEl.textContent = clarify.promptText;
   aiClarifyChoices.replaceChildren();
   for (const choice of clarify.choices) {
@@ -2305,7 +2303,58 @@ function showAiClarify(question: string): boolean {
   aiClarifyOther.hidden = true;
   aiClarify.hidden = false;
   aiRuntimeStatus.textContent = "したいことを えらんでね";
-  return true;
+}
+
+async function showAiClarify(question: string): Promise<void> {
+  const config = resolveAiAssistConfig(aiSettings);
+  if (!config.ready || !config.model) {
+    aiFeedback.textContent =
+      config.notReadyReason ?? "AI の準備ができていません。";
+    return;
+  }
+
+  fillAiQuestionTargetSelect();
+  let projectSummary: string | null = null;
+  try {
+    const projectJson = readProjectJsonForAi();
+    if (projectJson) {
+      projectSummary = buildAiProjectContext(projectJson, {
+        title: titleInput.value,
+        editingTargetName: readEditingTargetName(),
+        questionTargetName: aiQuestionTargetSelect.value,
+      }).summaryText;
+    }
+  } catch {
+    projectSummary = null;
+  }
+
+  aiAskInFlight = true;
+  renderAiUi(aiSettings);
+  hideAiClarify();
+  aiRuntimeStatus.textContent = "したいことの 選択肢を 考えています…";
+  try {
+    const result = await requestAiChat({
+      provider: config.provider,
+      model: config.model,
+      apiKey: aiSettings.apiKey,
+      messages: buildClarifyGenerationMessages({
+        question,
+        projectSummary,
+      }),
+      proxyUrl: AI_CHAT_PROXY_PATH,
+      maxTokens: 512,
+      temperature: 0.4,
+    });
+    const parsed = parseClarifyResponse(result.content, question);
+    renderAiClarifyPrompt(parsed ?? buildFallbackClarifyPrompt(question));
+  } catch {
+    renderAiClarifyPrompt(buildFallbackClarifyPrompt(question));
+    aiFeedback.textContent =
+      "選択肢をつくるのがうまくいかなかったので、かわりの選択肢を出しました。";
+  } finally {
+    aiAskInFlight = false;
+    renderAiUi(aiSettings);
+  }
 }
 
 async function askAiWithIntent(
@@ -2462,7 +2511,7 @@ aiAskButton.addEventListener("click", () => {
     return;
   }
   if (needsIntentClarification(question)) {
-    showAiClarify(question);
+    void showAiClarify(question);
     return;
   }
   hideAiClarify();

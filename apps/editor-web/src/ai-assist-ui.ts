@@ -7,7 +7,9 @@ import {
   AI_QUESTION_TARGET_ALL,
   allAiLevelPolicies,
   aiLevelPolicy,
+  buildClarifyGenerationMessages,
   buildClarifyPrompt,
+  buildFallbackClarifyPrompt,
   buildOtherClarifyChoice,
   effectiveAiLevel,
   formatClarifiedIntentLabel,
@@ -15,6 +17,7 @@ import {
   KNOWN_AI_PROVIDERS,
   listAiQuestionTargets,
   needsIntentClarification,
+  parseClarifyResponse,
   providerLabel,
   resolveAiAssistConfig,
   resolveQuestionTargetName,
@@ -30,11 +33,14 @@ import {
 
 export {
   AI_QUESTION_TARGET_ALL,
+  buildClarifyGenerationMessages,
   buildClarifyPrompt,
+  buildFallbackClarifyPrompt,
   buildOtherClarifyChoice,
   formatClarifiedIntentLabel,
   formatQuestionTargetLabel,
   needsIntentClarification,
+  parseClarifyResponse,
 };
 export type {AiClarifyChoice, AiClarifyPrompt};
 

@@ -32,8 +32,11 @@ import {
   parseAiAnswerParts,
 } from "./answer-format.js";
 import {
+  buildClarifyGenerationMessages,
   buildClarifyPrompt,
+  buildFallbackClarifyPrompt,
   needsIntentClarification,
+  parseClarifyResponse,
 } from "./clarify.js";
 import {
   buildAdviceMessages,
@@ -545,6 +548,48 @@ describe("prompt", () => {
     expect(messages[0]?.content).toContain("学習者が選んだ意図");
     expect(messages[0]?.content).toContain("10回");
     expect(messages[1]?.content).toContain(choice.label);
+  });
+
+  it("parses dynamic clarify choices from the model JSON", () => {
+    const question =
+      "ボールがじめんについたらはずむようにしたいです。一番下まで行ってから上に上がるようにしたいです";
+    const gen = buildClarifyGenerationMessages({
+      question,
+      projectSummary: "Sprite1 に motion_changeyby がある",
+    });
+    expect(gen[0]?.content).toContain("定型ではなく");
+    expect(gen[1]?.content).toContain("じめん");
+
+    const parsed = parseClarifyResponse(
+      JSON.stringify({
+        promptText: "どれが いちばん ちかい？",
+        choices: [
+          {
+            id: "ground_bounce",
+            label: "じめんに ついたら うえに もどしたい",
+            adviceHint: "yが下端に来たら向きを反転する一小歩",
+          },
+          {
+            id: "once_down_up",
+            label: "したまで おちてから うえに あげたい",
+            adviceHint: "下方向のくりかえしのあと上方向のくりかえし",
+          },
+          {
+            id: "loop_bounce",
+            label: "おちて はねる を ずっと くりかえしたい",
+            adviceHint: "ずっとで下→上をくりかえす",
+          },
+        ],
+      }),
+      question,
+    );
+    expect(parsed?.family).toBe("dynamic");
+    expect(parsed?.choices[0]?.label).toContain("じめん");
+    expect(parsed?.choices[0]?.label.startsWith("A:")).toBe(true);
+
+    const fallback = buildFallbackClarifyPrompt(question);
+    expect(fallback.family).toBe("fallback");
+    expect(fallback.choices[0]?.label).toContain("じめん");
   });
 
   it("builds advice messages that forbid complete scripts at level 2", () => {
