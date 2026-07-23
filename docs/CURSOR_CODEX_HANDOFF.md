@@ -4736,4 +4736,24 @@ merge: f4b88d61264f9585e1d68e10d2ff1aabf64a22cb
 次: merge 待ち
 ```
 
+### 2026-07-23 14:36:42 JST — Cursor（PR #26 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #26 → base main
+merge: b4e535ae0376b04dc255f49a9566468cccee0b1c
+
+実施:
+- gh pr ready + gh pr merge --merge
+- 台帳を MERGED に更新
+
+含まれる変更:
+- 公式 Drive ロゴ status
+- 「このパソコンに自動で保存します…」削除
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+
 
