@@ -391,6 +391,28 @@ body,
   gap: 8px;
 }
 
+/*
+ * .invite-field is shared with the horizontal collab invite row
+ * (flex: 1 1 320px → preferred width). Inside a column panel that
+ * basis becomes height, so each field balloons to ~320px tall.
+ */
+.settings-controls .invite-field,
+.ai-controls .invite-field {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.settings-controls .invite-field input,
+.ai-controls .invite-field input {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-toggle {
   display: flex;
   align-items: center;
