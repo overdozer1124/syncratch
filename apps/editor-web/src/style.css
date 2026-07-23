@@ -908,20 +908,149 @@ body,
   background: #e8eef5;
 }
 
-#scratch-gui.gui-loading::before {
-  content: "エディターを読み込み中…";
+/*
+ * Brand splash while Scratch GUI boots. White matches the logo canvas.
+ * Effects: soft bounce + breath on the mark, rainbow determinate bar with
+ * a light shimmer so the wait feels alive without noisy sparkles.
+ */
+.gui-splash {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-content: center;
+  z-index: 900;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.1rem;
+  padding: 1.5rem;
+  background: #ffffff;
   color: #16324f;
-  font-size: 1.05rem;
+}
+
+.gui-splash[hidden] {
+  display: none !important;
+}
+
+.gui-splash-mark {
+  display: grid;
+  place-items: center;
+  animation: gui-splash-bounce 2.4s ease-in-out infinite;
+}
+
+.gui-splash-logo {
+  display: block;
+  width: min(34rem, 86vw);
+  height: auto;
+  max-height: min(40vh, 22rem);
+  object-fit: contain;
+  animation: gui-splash-breath 2.8s ease-in-out infinite;
+  transform-origin: center center;
+  user-select: none;
+  pointer-events: none;
+}
+
+.gui-splash-progress {
+  width: min(18rem, 72vw);
+  height: 0.55rem;
+  border-radius: 999px;
+  background: #e8eef5;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgb(21 101 169 / 12%);
+}
+
+.gui-splash-progress-bar {
+  position: relative;
+  height: 100%;
+  width: var(--progress, 12%);
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #00aeef 0%,
+    #7ed957 38%,
+    #ffc107 68%,
+    #ff7043 100%
+  );
+  background-size: 200% 100%;
+  transition: width 0.45s ease;
+  animation: gui-splash-bar-shimmer 1.8s linear infinite;
+}
+
+.gui-splash-progress-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 45%) 48%,
+    transparent 76%
+  );
+  background-size: 180% 100%;
+  animation: gui-splash-bar-shine 1.6s ease-in-out infinite;
+}
+
+.gui-splash-status {
+  margin: 0;
+  font-size: 0.95rem;
   font-weight: 650;
   letter-spacing: 0.01em;
-  background:
-    radial-gradient(circle at 20% 20%, rgb(255 255 255 / 50%) 0, transparent 40%),
-    linear-gradient(160deg, #d7e6f5, #eef3f8 55%, #dfeaf5);
-  z-index: 1;
+  color: #3d5a73;
+  text-align: center;
+}
+
+@keyframes gui-splash-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.45rem);
+  }
+}
+
+@keyframes gui-splash-breath {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gui-splash-bar-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes gui-splash-bar-shine {
+  0% {
+    background-position: 120% 0;
+  }
+  100% {
+    background-position: -40% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gui-splash-mark,
+  .gui-splash-logo,
+  .gui-splash-progress-bar,
+  .gui-splash-progress-bar::after {
+    animation: none;
+  }
+
+  .gui-splash-logo {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 #scratch-gui > div {

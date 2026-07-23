@@ -9,3 +9,9 @@ https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo
 Vendored so the toolbar status chip stays recognizable offline and without
 depending on a live gstatic fetch. Used only to indicate Google Drive
 connection/sync status in the editor chrome.
+
+## `syncratch-logo-splash.webp`
+
+Syncratch wordmark + mark used on the editor boot splash (white canvas).
+Shown while the Scratch GUI bundle loads; paired with a soft bounce/breath
+animation and a rainbow progress bar in `apps/editor-web`.
