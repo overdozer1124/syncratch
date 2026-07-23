@@ -7,6 +7,14 @@ import {
 export const DRIVE_FILE_SCOPE =
   "https://www.googleapis.com/auth/drive.file";
 
+/** Profile picture / display name for the collab status avatar. */
+export const GOOGLE_PROFILE_SCOPE =
+  "https://www.googleapis.com/auth/userinfo.profile";
+
+/** Scopes requested at Google sign-in (Drive file access + profile avatar). */
+export const DRIVE_AUTH_SCOPES =
+  `${DRIVE_FILE_SCOPE} ${GOOGLE_PROFILE_SCOPE}`;
+
 /** Non-secret preference only — never store access/refresh tokens here. */
 export const DRIVE_AUTH_PREFERENCE_KEY = "blocksync.driveAuthorized";
 
@@ -162,7 +170,7 @@ export function createGoogleAuthorization(
         return new Promise<string>((resolve, reject) => {
           const client = google.accounts.oauth2.initTokenClient({
             client_id: options.clientId,
-            scope: DRIVE_FILE_SCOPE,
+            scope: DRIVE_AUTH_SCOPES,
             callback(response) {
               if (generation !== connectGeneration) {
                 reject(new DriveAuthenticationError(

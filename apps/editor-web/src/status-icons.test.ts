@@ -48,10 +48,11 @@ describe("Google Drive status mark", () => {
 });
 
 describe("composeStatusIcons", () => {
-  it("builds local, muted Drive, waiting collab, and host crown", () => {
+  it("builds online+crown and Google avatar for the host", () => {
     const icons = composeStatusIcons({
       local: "clean",
       drive: "disconnected",
+      googleAvatarUrl: "https://lh3.googleusercontent.com/a/host",
       collab: collab({
         status: "connected",
         peerCount: 0,
@@ -66,15 +67,21 @@ describe("composeStatusIcons", () => {
       "local",
       "drive",
       "collab",
-      "role",
+      "avatar",
     ]);
     expect(icons.find(icon => icon.id === "drive")?.tone).toBe("muted");
-    expect(icons.find(icon => icon.id === "collab")?.badge).toBe("1");
-    expect(icons.find(icon => icon.id === "role")?.kind).toBe("crown");
-    expect(icons.find(icon => icon.id === "role")?.label).toContain("ホスト");
+    const online = icons.find(icon => icon.id === "collab");
+    expect(online?.kind).toBe("online");
+    expect(online?.showCrown).toBe(true);
+    expect(online?.label).toContain("ホスト");
+    const avatar = icons.find(icon => icon.id === "avatar");
+    expect(avatar?.kind).toBe("avatar");
+    expect(avatar?.imageUrl).toBe("https://lh3.googleusercontent.com/a/host");
+    expect(avatar?.hostRing).toBe(true);
+    expect(avatar?.badge).toBe("1");
   });
 
-  it("shows guest role and people ×N when many peers join", () => {
+  it("shows guest online without crown and people ×N when many peers join", () => {
     const icons = composeStatusIcons({
       local: "clean",
       drive: "synced",
@@ -89,11 +96,13 @@ describe("composeStatusIcons", () => {
     });
 
     expect(icons.find(icon => icon.id === "drive")?.tone).toBe("active");
-    expect(icons.find(icon => icon.id === "collab")?.badge).toBe("×6");
-    expect(icons.find(icon => icon.id === "role")?.kind).toBe("guest");
+    expect(icons.find(icon => icon.id === "collab")?.showCrown).toBe(false);
+    expect(icons.find(icon => icon.id === "avatar")?.badge).toBe("×6");
+    expect(icons.find(icon => icon.id === "avatar")?.hostRing).toBe(false);
+    expect(icons.find(icon => icon.id === "avatar")?.imageUrl).toBeUndefined();
   });
 
-  it("hides Drive when not configured and omits role when solo", () => {
+  it("hides Drive when not configured and omits collab when solo", () => {
     const icons = composeStatusIcons({
       local: "saving",
       drive: "not-configured",

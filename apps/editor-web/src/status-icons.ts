@@ -17,16 +17,22 @@ export const GOOGLE_DRIVE_STATUS_ICON_PATH =
 
 export type StatusIconTone = "ok" | "warn" | "error" | "muted" | "busy" | "active";
 
-export type StatusIconKind = "local" | "drive" | "people" | "crown" | "guest";
+export type StatusIconKind = "local" | "drive" | "online" | "avatar";
 
 export interface StatusIconChip {
-  id: "local" | "drive" | "collab" | "role";
+  id: "local" | "drive" | "collab" | "avatar";
   kind: StatusIconKind;
   /** Full explanation for tooltip / aria-label. */
   label: string;
   tone: StatusIconTone;
   /** Optional count badge, e.g. "2" or "×5". */
   badge?: string;
+  /** Crown mark on the online pill when this peer is the room host. */
+  showCrown?: boolean;
+  /** Google profile picture for the avatar chip. */
+  imageUrl?: string;
+  /** Red host ring around the avatar (Scratch-style). */
+  hostRing?: boolean;
 }
 
 const localStatusText: Record<LocalSaveState, string> = {
@@ -69,7 +75,7 @@ function driveTone(status: EditorDriveStatus): StatusIconTone {
   }
 }
 
-/** Cap visible headcount; beyond this show ×N on one person mark. */
+/** Cap visible headcount; beyond this show ×N on one avatar. */
 export const STATUS_PEOPLE_ICON_CAP = 4;
 
 export function formatPeopleBadge(participantCount: number): string {
@@ -118,28 +124,45 @@ export function composeStatusIcons(input: ProjectStatusInput): StatusIconChip[] 
       input.collab.status === "connected" &&
       input.collab.bootstrapPhase === "ready" &&
       input.collab.peerCount === 0;
-    icons.push({
-      id: "collab",
-      kind: "people",
-      label: collabLabel,
-      tone: input.collab.status === "disconnected" || input.collab.signalingError
+    const role = collabRoomRole(input.collab);
+    const isHost = role === "host";
+    const tone: StatusIconTone =
+      input.collab.status === "disconnected" || input.collab.signalingError
         ? "error"
         : input.collab.status === "connecting" ||
             input.collab.bootstrapPhase !== "ready"
           ? "busy"
           : waiting
             ? "warn"
-            : "active",
-      badge: formatPeopleBadge(participantCount),
+            : "active";
+
+    icons.push({
+      id: "collab",
+      kind: "online",
+      label: isHost
+        ? `${collabLabel} · ${collabRoomRoleLabel("host")}`
+        : collabLabel,
+      tone,
+      showCrown: Boolean(isHost && input.collab.status !== "disconnected"),
     });
 
-    const role = collabRoomRole(input.collab);
-    if (role && input.collab.status !== "disconnected") {
+    if (input.collab.status !== "disconnected") {
       icons.push({
-        id: "role",
-        kind: role === "host" ? "crown" : "guest",
-        label: collabRoomRoleLabel(role),
-        tone: role === "host" ? "active" : "ok",
+        id: "avatar",
+        kind: "avatar",
+        label: input.googleAvatarUrl
+          ? isHost
+            ? `Google アカウント（ホスト）· ${collabLabel}`
+            : `Google アカウント · ${collabLabel}`
+          : isHost
+            ? collabRoomRoleLabel("host")
+            : role
+              ? collabRoomRoleLabel(role)
+              : collabLabel,
+        tone: isHost ? "active" : "ok",
+        badge: formatPeopleBadge(participantCount),
+        imageUrl: input.googleAvatarUrl,
+        hostRing: Boolean(isHost),
       });
     }
   }
@@ -162,46 +185,66 @@ function svgEl(
   return node;
 }
 
-function iconGlyph(kind: Exclude<StatusIconKind, "drive">): SVGElement {
-  const common = {
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    "stroke-width": "2",
-    "stroke-linecap": "round",
-    "stroke-linejoin": "round",
-    "aria-hidden": "true",
-    focusable: "false",
-  };
-  switch (kind) {
-    case "local":
-      return svgEl("svg", common, [
-        svgEl("path", {
-          d: "M4 7h12l4 4v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z",
-        }),
-        svgEl("path", {d: "M14 7v5h5"}),
-        svgEl("path", {d: "M8 17h4"}),
-      ]);
-    case "people":
-      return svgEl("svg", common, [
-        svgEl("circle", {cx: "12", cy: "8", r: "3.2"}),
-        svgEl("path", {d: "M5.5 19c1.4-3.2 3.6-4.5 6.5-4.5s5.1 1.3 6.5 4.5"}),
-      ]);
-    case "crown":
-      return svgEl("svg", common, [
-        svgEl("path", {
-          d: "M4 16 6.5 8l3.5 4L12 6l2 6 3.5-4L20 16H4z",
-        }),
-        svgEl("path", {d: "M5 18h14"}),
-      ]);
-    case "guest":
-      return svgEl("svg", common, [
-        svgEl("circle", {cx: "10", cy: "9", r: "3"}),
-        svgEl("path", {d: "M4.5 18c1.2-2.8 3-4 5.5-4"}),
-        svgEl("path", {d: "M15 11h5"}),
-        svgEl("path", {d: "M17.5 8.5 20 11l-2.5 2.5"}),
-      ]);
-  }
+function crownGlyph(): SVGElement {
+  return svgEl(
+    "svg",
+    {
+      class: "status-online-crown",
+      viewBox: "0 0 24 24",
+      fill: "currentColor",
+      stroke: "none",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    [
+      svgEl("path", {
+        d: "M4 16 6.5 8l3.5 4L12 6l2 6 3.5-4L20 16H4zm1 2h14v2H5z",
+      }),
+    ],
+  );
+}
+
+function personGlyph(): SVGElement {
+  return svgEl(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    [
+      svgEl("circle", {cx: "12", cy: "8", r: "3.2"}),
+      svgEl("path", {d: "M5.5 19c1.4-3.2 3.6-4.5 6.5-4.5s5.1 1.3 6.5 4.5"}),
+    ],
+  );
+}
+
+function localGlyph(): SVGElement {
+  return svgEl(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": "true",
+      focusable: "false",
+    },
+    [
+      svgEl("path", {
+        d: "M4 7h12l4 4v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z",
+      }),
+      svgEl("path", {d: "M14 7v5h5"}),
+      svgEl("path", {d: "M8 17h4"}),
+    ],
+  );
 }
 
 function driveLogoImage(): HTMLImageElement {
@@ -215,6 +258,31 @@ function driveLogoImage(): HTMLImageElement {
   return image;
 }
 
+function avatarImage(url: string): HTMLImageElement {
+  const image = document.createElement("img");
+  image.className = "status-icon-avatar-img";
+  image.src = url;
+  image.alt = "";
+  image.referrerPolicy = "no-referrer";
+  image.decoding = "async";
+  image.draggable = false;
+  image.setAttribute("aria-hidden", "true");
+  return image;
+}
+
+function renderOnlineChip(chip: StatusIconChip): HTMLElement {
+  const label = document.createElement("span");
+  label.className = "status-online-label";
+  if (chip.showCrown) {
+    label.append(crownGlyph());
+  }
+  const text = document.createElement("span");
+  text.className = "status-online-text";
+  text.textContent = "online";
+  label.append(text);
+  return label;
+}
+
 export function renderStatusIconRow(
   root: HTMLElement,
   icons: StatusIconChip[],
@@ -222,16 +290,26 @@ export function renderStatusIconRow(
   root.replaceChildren();
   for (const chip of icons) {
     const item = document.createElement("span");
-    item.className = `status-icon status-icon--${chip.kind} status-icon--${chip.tone}`;
+    const hostClass = chip.hostRing ? " status-icon--host" : "";
+    item.className =
+      `status-icon status-icon--${chip.kind} status-icon--${chip.tone}${hostClass}`;
     item.dataset.statusId = chip.id;
     item.dataset.testid = `status-icon-${chip.id}`;
     item.setAttribute("role", "img");
     item.setAttribute("aria-label", chip.label);
     item.title = chip.label;
     item.tabIndex = 0;
-    item.append(
-      chip.kind === "drive" ? driveLogoImage() : iconGlyph(chip.kind),
-    );
+
+    if (chip.kind === "drive") {
+      item.append(driveLogoImage());
+    } else if (chip.kind === "online") {
+      item.append(renderOnlineChip(chip));
+    } else if (chip.kind === "avatar") {
+      item.append(chip.imageUrl ? avatarImage(chip.imageUrl) : personGlyph());
+    } else {
+      item.append(localGlyph());
+    }
+
     if (chip.badge) {
       const badge = document.createElement("span");
       badge.className = "status-icon-badge";

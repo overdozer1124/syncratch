@@ -866,15 +866,16 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   // This distinguishes transport/domain convergence from a stale GUI surface.
   await expect(pageA.locator('[data-id="sprite-collab-block"]')).toHaveCount(1);
 
-  await expect(pageA.getByTestId("status-icon-role")).toHaveAttribute(
+  await expect(pageA.getByTestId("status-icon-collab")).toContainText("online");
+  await expect(pageA.getByTestId("status-icon-collab")).toHaveAttribute(
     "title",
     /ホスト/,
   );
-  await expect(pageB.getByTestId("status-icon-role")).toHaveAttribute(
+  await expect(pageB.getByTestId("status-icon-avatar")).toHaveAttribute(
     "title",
     /ゲスト/,
   );
-  await expect(pageA.getByTestId("status-icon-collab")).toContainText("2");
+  await expect(pageA.getByTestId("status-icon-avatar")).toContainText("2");
   await openPanel(pageA, "collab-panel");
   await expect(pageA.getByTestId("collab-status")).toContainText("ホスト");
   await openPanel(pageB, "collab-panel");

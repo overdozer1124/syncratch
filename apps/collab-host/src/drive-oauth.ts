@@ -6,7 +6,7 @@
 import {createHash, randomBytes} from "node:crypto";
 import type {IncomingMessage, ServerResponse} from "node:http";
 import {
-  DRIVE_FILE_SCOPE,
+  DRIVE_AUTH_SCOPES,
   DRIVE_OAUTH_CALLBACK_PATH,
   DRIVE_OAUTH_LOGOUT_PATH,
   DRIVE_OAUTH_RETURN_FLAG,
@@ -292,7 +292,7 @@ export function createDriveOAuthHandler(options: {
       authorize.searchParams.set("client_id", config.clientId);
       authorize.searchParams.set("redirect_uri", redirectUriFor(config, req));
       authorize.searchParams.set("response_type", "code");
-      authorize.searchParams.set("scope", DRIVE_FILE_SCOPE);
+      authorize.searchParams.set("scope", DRIVE_AUTH_SCOPES);
       authorize.searchParams.set("access_type", "offline");
       authorize.searchParams.set("prompt", "consent");
       authorize.searchParams.set("include_granted_scopes", "true");

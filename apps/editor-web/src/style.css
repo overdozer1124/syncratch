@@ -345,9 +345,68 @@ body,
   background: rgb(255 255 255 / 10%);
 }
 
-.status-icon--crown.status-icon--active {
-  color: #ffe8a3;
-  background: rgb(180 130 20 / 42%);
+/* Collab presence: Scratch-style "online" pill + profile avatar. */
+.status-icon--online {
+  width: auto;
+  min-width: 1.7rem;
+  padding: 0 0.5rem;
+  gap: 0.2rem;
+  background: rgb(255 255 255 / 92%);
+  color: #123f7a;
+}
+
+.status-icon--online.status-icon--busy,
+.status-icon--online.status-icon--warn {
+  background: rgb(255 244 214 / 95%);
+  color: #7a5510;
+}
+
+.status-icon--online.status-icon--error {
+  background: rgb(255 226 224 / 95%);
+  color: #8a2a22;
+}
+
+.status-online-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  line-height: 1;
+}
+
+.status-online-text {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+}
+
+.status-online-crown {
+  width: 0.85rem;
+  height: 0.85rem;
+  display: block;
+  color: #c9a227;
+  flex: 0 0 auto;
+}
+
+.status-icon--avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  overflow: visible;
+  background: rgb(255 255 255 / 94%);
+  color: #16324f;
+}
+
+.status-icon--avatar.status-icon--host {
+  box-shadow: 0 0 0 2px #e24b4a;
+}
+
+.status-icon-avatar-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: 999px;
 }
 
 /* Official Drive mark reads best on a light chip; mute with grayscale. */

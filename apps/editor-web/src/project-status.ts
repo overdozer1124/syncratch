@@ -11,6 +11,8 @@ export interface ProjectStatusInput {
   collabIdleMessage?: string;
   fatalError?: string;
   localError?: string;
+  /** Google account profile picture URL when Drive is connected. */
+  googleAvatarUrl?: string;
 }
 
 const localStatusText: Record<LocalSaveState, string> = {

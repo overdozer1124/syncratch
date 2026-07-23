@@ -1,6 +1,8 @@
 export {
   DRIVE_AUTH_PREFERENCE_KEY,
+  DRIVE_AUTH_SCOPES,
   DRIVE_FILE_SCOPE,
+  GOOGLE_PROFILE_SCOPE,
   createGoogleAuthorization,
   createLocalDriveAuthPreferenceStore,
   loadGoogleScripts,
@@ -12,6 +14,10 @@ export {
   type GoogleScriptLoaderOptions,
   type TokenResponse,
 } from "./auth.js";
+export {
+  fetchGoogleUserProfile,
+  type GoogleUserProfile,
+} from "./user-profile.js";
 export {
   consumeDriveOAuthReturnFlag,
   createHostBackedGoogleAuthorization,
