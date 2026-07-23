@@ -447,14 +447,56 @@ body,
   padding: 10px;
   border-radius: 8px;
   background: rgb(0 0 0 / 22%);
-  white-space: pre-wrap;
   word-break: break-word;
   font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.45;
   min-height: 0;
 }
 
 .ai-answer:empty {
   display: none;
+}
+
+.ai-answer-text {
+  margin: 0 0 10px;
+  white-space: normal;
+}
+
+.ai-answer-text:last-child {
+  margin-bottom: 0;
+}
+
+.ai-diagram {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 10%);
+}
+
+.ai-diagram:last-child {
+  margin-bottom: 0;
+}
+
+.ai-diagram-title {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  opacity: 0.95;
+}
+
+.ai-diagram-body {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  font-family: "IBM Plex Mono", "Source Han Mono", "Noto Sans Mono CJK JP",
+    "Consolas", monospace;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  white-space: pre;
+  color: #fffef6;
 }
 
 .panel-status {

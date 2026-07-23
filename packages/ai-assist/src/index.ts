@@ -64,6 +64,12 @@ export {
 } from "./prompt.js";
 
 export {
+  escapeHtml,
+  formatAiAnswerHtml,
+  parseAiAnswerParts,
+} from "./answer-format.js";
+
+export {
   BLOCK_IR_VERSION,
   createEmptyBlockIRProposal,
   requiresExplicitApproval,
