@@ -24,6 +24,11 @@ import {
   listAiQuestionTargets,
 } from "./context.js";
 import {
+  escapeHtml,
+  formatAiAnswerHtml,
+  parseAiAnswerParts,
+} from "./answer-format.js";
+import {
   buildAdviceMessages,
   formatQuestionTargetLabel,
   inferAdviceMode,
@@ -338,11 +343,38 @@ describe("prompt", () => {
     expect(messages[0]?.content).toContain("完成したスクリプト");
     expect(messages[0]?.content).toContain("実スクリプトを根拠");
     expect(messages[0]?.content).toContain("学習者が選んだ質問対象");
+    expect(messages[0]?.content).toContain("小学校の子ども");
+    expect(messages[0]?.content).toContain("【ず】");
+    expect(messages[0]?.content).toContain("むずかしい漢字");
     expect(messages[1]?.content).toContain("スプライトが動きません");
     expect(messages[1]?.content).toContain("【質問の対象】");
     expect(messages[1]?.content).toContain(formatQuestionTargetLabel("Cat"));
     expect(messages[1]?.content).toContain("この内容だけを根拠");
+    expect(messages[1]?.content).toContain("ひらがな多め");
     expect(messages[1]?.content).toContain("motion_movesteps");
+  });
+
+  it("formats diagram blocks into safe HTML", () => {
+    const html = formatAiAnswerHtml(
+      [
+        "「Cat」の はなしだよ。",
+        "",
+        "【ず】いまの つながり",
+        "キーがおされたとき",
+        "   ↓",
+        "ばしょへいく",
+        "【/ず】",
+        "",
+        "つぎは これだけ ためそう。",
+      ].join("\n"),
+    );
+    expect(html).toContain('class="ai-diagram"');
+    expect(html).toContain("いまの つながり");
+    expect(html).toContain("ばしょへいく");
+    expect(html).toContain("はなしだよ");
+    expect(html).not.toContain("<script>");
+    expect(escapeHtml("<b>")).toBe("&lt;b&gt;");
+    expect(parseAiAnswerParts("```zu\na\n```")).toHaveLength(1);
   });
 
   it("rejects empty questions and level 0", () => {

@@ -156,6 +156,7 @@ import {
   AI_CHAT_PROXY_PATH,
   buildAdviceMessages,
   buildAiProjectContext,
+  formatAiAnswerHtml,
   formatQuestionTargetLabel,
   loadAiAssistSettings,
   resolveAdviceMode,
@@ -2231,9 +2232,9 @@ aiAskButton.addEventListener("click", () => {
         apiKey: aiSettings.apiKey,
         messages,
         proxyUrl: AI_CHAT_PROXY_PATH,
-        maxTokens: 768,
+        maxTokens: 900,
       });
-      aiAnswer.textContent = result.content;
+      aiAnswer.innerHTML = formatAiAnswerHtml(result.content);
       aiFeedback.textContent = "";
       const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
       aiRuntimeStatus.textContent =
