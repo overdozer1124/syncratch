@@ -53,6 +53,9 @@ const PREFIX_RULES: readonly PrefixRule[] = [
   {prefix: "sk-ant-", provider: "anthropic", label: "Anthropic (Claude)"},
   {prefix: "sk-or-", provider: "openrouter", label: "OpenRouter"},
   {prefix: "gsk_", provider: "groq", label: "Groq"},
+  // Google AI Studio auth keys (2026 default) start with AQ.
+  {prefix: "AQ.", provider: "gemini", label: "Google Gemini", ignoreCase: true},
+  // Legacy Google standard API keys.
   {prefix: "AIza", provider: "gemini", label: "Google Gemini", ignoreCase: true},
   {prefix: "xai-", provider: "xai", label: "xAI", ignoreCase: true},
   {prefix: "sk-proj-", provider: "openai", label: "OpenAI"},
@@ -120,6 +123,8 @@ export function normalizeApiKey(raw: string): string {
     key = key.slice(1, -1).trim();
   }
   key = key.replace(/^Bearer\s+/i, "").trim();
+  // Copied from curl / docs: ?key=... or key=...
+  key = key.replace(/^(?:[?&])?key=/i, "").trim();
   // Remove zero-width / BOM characters that survive copy-paste.
   key = key.replace(/[\u200B-\u200D\uFEFF]/g, "");
   // Collapse accidental internal whitespace/newlines from multi-line pastes.
@@ -271,7 +276,7 @@ export function supportedKeyExamples(): string {
   return [
     "OpenAI: sk-… / sk-proj-…",
     "Claude: sk-ant-…",
-    "Gemini: AIza…",
+    "Gemini: AQ.…（新）/ AIza…（旧）",
     "Groq: gsk_…",
     "OpenRouter: sk-or-…",
   ].join(" / ");

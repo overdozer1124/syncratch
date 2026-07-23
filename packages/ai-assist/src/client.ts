@@ -205,8 +205,7 @@ export async function chatDirect(
     const base = providerEndpoint("gemini");
     if (!base) throw new Error("missing gemini endpoint");
     const url =
-      `${base}/models/${encodeURIComponent(request.model)}:generateContent` +
-      `?key=${encodeURIComponent(request.apiKey)}`;
+      `${base}/models/${encodeURIComponent(request.model)}:generateContent`;
     const system = request.messages
       .filter(m => m.role === "system")
       .map(m => m.content)
@@ -219,7 +218,10 @@ export async function chatDirect(
       }));
     const response = await fetchImpl(url, {
       method: "POST",
-      headers: {"content-type": "application/json"},
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": request.apiKey,
+      },
       body: JSON.stringify({
         systemInstruction: system
           ? {parts: [{text: system}]}

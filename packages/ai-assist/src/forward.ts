@@ -217,9 +217,11 @@ export async function forwardAiChat(
     if (provider === "gemini") {
       const base = providerEndpoint("gemini");
       if (!base) return failure("INTERNAL", "missing endpoint");
+      // Prefer x-goog-api-key header (required/reliable for AI Studio auth keys
+      // that start with AQ.). Keep ?key= only as a compatibility fallback path
+      // by not embedding the secret in the URL when using the header.
       const url =
-        `${base}/models/${encodeURIComponent(request.model)}:generateContent` +
-        `?key=${encodeURIComponent(apiKey)}`;
+        `${base}/models/${encodeURIComponent(request.model)}:generateContent`;
       const system = request.messages
         .filter(m => m.role === "system")
         .map(m => m.content)
@@ -232,7 +234,10 @@ export async function forwardAiChat(
         }));
       const response = await fetchImpl(url, {
         method: "POST",
-        headers: {"content-type": "application/json"},
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
         body: JSON.stringify({
           systemInstruction: system
             ? {parts: [{text: system}]}
