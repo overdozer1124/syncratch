@@ -131,6 +131,10 @@
                       type="password"
                     />
                   </label>
+                  <label class="invite-field" for="ai-provider">
+                    <span>AI の種類（わからないときだけ手動）</span>
+                    <select id="ai-provider"></select>
+                  </label>
                   <label class="invite-field" for="ai-level">
                     <span>AI の使い方レベル</span>
                     <select id="ai-level"></select>
@@ -155,7 +159,8 @@
                   >AI はオフ</span>
                 </div>
                 <p class="safety-help">
-                  API キーの形から、どの AI かを自動で判別します。試作ではトークン消費の少ないモデルを優先します。
+                  ふつうは API キーの形から自動で判別します（例: sk-… / sk-ant-… / AIza… / gsk_…）。
+                  判別できないときは「AI の種類」を選んでください。試作ではトークン消費の少ないモデルを優先します。
                 </p>
                 <p aria-live="polite" class="panel-feedback" id="ai-settings-feedback"></p>
               </div>

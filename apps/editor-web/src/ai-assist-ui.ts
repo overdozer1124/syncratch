@@ -7,11 +7,14 @@ import {
   allAiLevelPolicies,
   aiLevelPolicy,
   effectiveAiLevel,
+  KNOWN_AI_PROVIDERS,
+  providerLabel,
   resolveAiAssistConfig,
   type AiAdviceMode,
   type AiAssistLevel,
   type AiAssistResolvedConfig,
   type AiAssistSettings,
+  type AiProviderId,
 } from "@blocksync/ai-assist";
 
 export function aiPanelHidden(settings: AiAssistSettings): boolean {
@@ -51,17 +54,32 @@ export function levelSelectOptions(): Array<{
   }));
 }
 
+export function providerSelectOptions(): Array<{
+  value: "" | Exclude<AiProviderId, "unknown">;
+  label: string;
+}> {
+  return [
+    {value: "", label: "自動判別（キーの形から）"},
+    ...KNOWN_AI_PROVIDERS.map(id => ({
+      value: id,
+      label: providerLabel(id),
+    })),
+  ];
+}
+
 export function readSettingsFromForm(input: {
   enabled: boolean;
   apiKey: string;
   level: string | number;
   modelOverride: string;
+  providerOverride?: string;
 }): AiAssistSettings {
   return resolveAiAssistConfig({
     enabled: input.enabled,
     apiKey: input.apiKey,
     level: Number(input.level) as AiAssistLevel,
     modelOverride: input.modelOverride,
+    providerOverride: (input.providerOverride ?? "") as AiAssistSettings["providerOverride"],
   }).settings;
 }
 
@@ -74,7 +92,7 @@ export function friendlyAiError(message?: string): string {
     return "いま混み合っています。少し待ってからもう一度ためしてください。";
   }
   if (/判別|unsupported provider|unknown/i.test(message)) {
-    return "API キーから AI を判別できませんでした。";
+    return "AI を判別できませんでした。設定の「AI の種類」で手動選択してください。";
   }
   if (/empty|question/i.test(message)) {
     return "質問を書いてから送ってください。";

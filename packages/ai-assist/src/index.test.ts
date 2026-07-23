@@ -41,6 +41,16 @@ describe("detectProviderFromApiKey", () => {
     expect(detectProviderFromApiKey("xai-abc").provider).toBe("xai");
   });
 
+  it("normalizes quoted Bearer and whitespace pastes", () => {
+    const quoted = detectProviderFromApiKey('"sk-proj-abc123"');
+    expect(quoted.provider).toBe("openai");
+    expect(quoted.normalizedKey).toBe("sk-proj-abc123");
+    expect(detectProviderFromApiKey("Bearer sk-ant-xyz").provider).toBe(
+      "anthropic",
+    );
+    expect(detectProviderFromApiKey("AIza\nSyAbcd").provider).toBe("gemini");
+  });
+
   it("returns unknown for empty or unrecognized keys", () => {
     expect(detectProviderFromApiKey("").provider).toBe("unknown");
     expect(detectProviderFromApiKey("not-a-key").provider).toBe("unknown");
@@ -52,6 +62,9 @@ describe("detectProviderFromApiKey", () => {
     const resolved = resolveProviderAndModel("sk-ant-test");
     expect(resolved.detect.provider).toBe("anthropic");
     expect(resolved.model?.model).toContain("haiku");
+    const forced = resolveProviderAndModel("opaque-key", "gemini");
+    expect(forced.provider).toBe("gemini");
+    expect(forced.model?.model).toContain("flash");
   });
 });
 
@@ -103,6 +116,20 @@ describe("settings", () => {
     expect(on.provider).toBe("openai");
     expect(on.model).toBe("gpt-4o-mini");
     expect(maskApiKey("sk-abcdefghijklmnop")).toContain("…");
+  });
+
+  it("allows manual provider override when key shape is unknown", () => {
+    const forced = resolveAiAssistConfig(
+      normalizeAiAssistSettings({
+        enabled: true,
+        apiKey: "opaque-custom-secret-key",
+        level: 2,
+        providerOverride: "openai",
+      }),
+    );
+    expect(forced.ready).toBe(true);
+    expect(forced.provider).toBe("openai");
+    expect(forced.providerForced).toBe(true);
   });
 });
 

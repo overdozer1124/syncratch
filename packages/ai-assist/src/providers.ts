@@ -13,12 +13,24 @@ export type AiProviderId =
   | "xai"
   | "unknown";
 
+export const KNOWN_AI_PROVIDERS: ReadonlyArray<Exclude<AiProviderId, "unknown">> = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "groq",
+  "openrouter",
+  "deepseek",
+  "xai",
+];
+
 export interface ProviderDetectResult {
   provider: AiProviderId;
   /** Human-readable label for UI. */
   label: string;
   /** True when the key shape is recognized with high confidence. */
   confident: boolean;
+  /** Key after quote / Bearer / whitespace normalization. */
+  normalizedKey: string;
 }
 
 export interface ProviderModelChoice {
@@ -33,16 +45,29 @@ interface PrefixRule {
   prefix: string;
   provider: AiProviderId;
   label: string;
+  /** Match prefix case-insensitively when true. */
+  ignoreCase?: boolean;
 }
 
 const PREFIX_RULES: readonly PrefixRule[] = [
   {prefix: "sk-ant-", provider: "anthropic", label: "Anthropic (Claude)"},
   {prefix: "sk-or-", provider: "openrouter", label: "OpenRouter"},
   {prefix: "gsk_", provider: "groq", label: "Groq"},
-  {prefix: "AIza", provider: "gemini", label: "Google Gemini"},
-  {prefix: "xai-", provider: "xai", label: "xAI"},
+  {prefix: "AIza", provider: "gemini", label: "Google Gemini", ignoreCase: true},
+  {prefix: "xai-", provider: "xai", label: "xAI", ignoreCase: true},
   {prefix: "sk-proj-", provider: "openai", label: "OpenAI"},
+  {prefix: "sk-svcacct-", provider: "openai", label: "OpenAI"},
 ];
+
+const PROVIDER_LABELS: Record<Exclude<AiProviderId, "unknown">, string> = {
+  anthropic: "Anthropic (Claude)",
+  openai: "OpenAI",
+  gemini: "Google Gemini",
+  groq: "Groq",
+  openrouter: "OpenRouter",
+  deepseek: "DeepSeek",
+  xai: "xAI",
+};
 
 /** Cheap defaults: prefer small/fast models suitable for advice text. */
 const CHEAP_MODELS: Record<Exclude<AiProviderId, "unknown">, ProviderModelChoice> = {
@@ -84,20 +109,64 @@ const CHEAP_MODELS: Record<Exclude<AiProviderId, "unknown">, ProviderModelChoice
 };
 
 /**
+ * Normalize pasted keys: trim, strip wrapping quotes, drop accidental Bearer.
+ */
+export function normalizeApiKey(raw: string): string {
+  let key = raw.trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+  key = key.replace(/^Bearer\s+/i, "").trim();
+  // Remove zero-width / BOM characters that survive copy-paste.
+  key = key.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  // Collapse accidental internal whitespace/newlines from multi-line pastes.
+  if (/\s/.test(key)) {
+    key = key.replace(/\s+/g, "");
+  }
+  return key;
+}
+
+export function providerLabel(provider: AiProviderId): string {
+  if (provider === "unknown") return "不明（キー形式を確認してください）";
+  return PROVIDER_LABELS[provider];
+}
+
+export function parseAiProviderId(value: unknown): AiProviderId | null {
+  if (typeof value !== "string" || !value) return null;
+  if (value === "unknown") return "unknown";
+  if ((KNOWN_AI_PROVIDERS as readonly string[]).includes(value)) {
+    return value as AiProviderId;
+  }
+  return null;
+}
+
+/**
  * Infer provider from a raw API key. Does not network-validate the key.
  */
 export function detectProviderFromApiKey(apiKey: string): ProviderDetectResult {
-  const key = apiKey.trim();
+  const key = normalizeApiKey(apiKey);
   if (!key) {
-    return {provider: "unknown", label: "未設定", confident: false};
+    return {
+      provider: "unknown",
+      label: "未設定",
+      confident: false,
+      normalizedKey: "",
+    };
   }
 
   for (const rule of PREFIX_RULES) {
-    if (key.startsWith(rule.prefix)) {
+    const matches = rule.ignoreCase
+      ? key.toLowerCase().startsWith(rule.prefix.toLowerCase())
+      : key.startsWith(rule.prefix);
+    if (matches) {
       return {
         provider: rule.provider,
         label: rule.label,
         confident: true,
+        normalizedKey: key,
       };
     }
   }
@@ -108,6 +177,7 @@ export function detectProviderFromApiKey(apiKey: string): ProviderDetectResult {
       provider: "deepseek",
       label: "DeepSeek",
       confident: false,
+      normalizedKey: key,
     };
   }
 
@@ -116,13 +186,25 @@ export function detectProviderFromApiKey(apiKey: string): ProviderDetectResult {
       provider: "openai",
       label: "OpenAI",
       confident: true,
+      normalizedKey: key,
+    };
+  }
+
+  // Long Google-style keys without AIza are uncommon; still hint Gemini weakly.
+  if (/^[A-Za-z0-9_-]{35,45}$/.test(key) && key.includes("AIza")) {
+    return {
+      provider: "gemini",
+      label: "Google Gemini",
+      confident: false,
+      normalizedKey: key,
     };
   }
 
   return {
     provider: "unknown",
-    label: "不明（キー形式を確認してください）",
+    label: "不明（キー形式を確認するか、AI を手動選択してください）",
     confident: false,
+    normalizedKey: key,
   };
 }
 
@@ -134,14 +216,23 @@ export function preferCheapModel(
   return CHEAP_MODELS[provider];
 }
 
-export function resolveProviderAndModel(apiKey: string): {
+export function resolveProviderAndModel(
+  apiKey: string,
+  providerOverride: AiProviderId | "" = "",
+): {
   detect: ProviderDetectResult;
+  provider: AiProviderId;
   model: ProviderModelChoice | null;
 } {
   const detect = detectProviderFromApiKey(apiKey);
+  const provider =
+    providerOverride && providerOverride !== "unknown"
+      ? providerOverride
+      : detect.provider;
   return {
     detect,
-    model: preferCheapModel(detect.provider),
+    provider,
+    model: preferCheapModel(provider),
   };
 }
 
@@ -174,4 +265,14 @@ export function isOpenAiCompatible(provider: AiProviderId): boolean {
     provider === "deepseek" ||
     provider === "xai"
   );
+}
+
+export function supportedKeyExamples(): string {
+  return [
+    "OpenAI: sk-… / sk-proj-…",
+    "Claude: sk-ant-…",
+    "Gemini: AIza…",
+    "Groq: gsk_…",
+    "OpenRouter: sk-or-…",
+  ].join(" / ");
 }
