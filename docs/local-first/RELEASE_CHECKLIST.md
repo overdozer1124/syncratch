@@ -51,8 +51,10 @@ Drive deploy evidence (2026-07-23): Railway production bundle includes
 - [x] Solo edit starts without Google login.
 - [x] OAuth consent shows `drive.file`, not broad Drive scopes.
 - [x] Picker opens only an explicitly selected SB3.
-- [ ] Two different Google test users can access the same shared Drive file.
-- [ ] Only the visible logical leader attempts the normal Drive snapshot.
+- [x] Two different Google test users can access the same shared Drive file.
+- [ ] Only the room creator (invite host) attempts the normal Drive snapshot
+      while collaborating（ゲストは Drive 上書き役にならない。手順は
+      `STAGE5_MANUAL_GATES.md` A5 かんたん版）。
 - [ ] Revoking one user's permission stops that user's Drive write without
       stopping local save or SB3 export.
 - [ ] A concurrent Drive change causes safe conflict stop; it does not silently

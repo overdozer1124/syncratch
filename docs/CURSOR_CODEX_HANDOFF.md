@@ -49,13 +49,13 @@
 | 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 merge 済み） |
-| Stage 5 | 自動 PASS / Drive ハッピーパス PASS（A1–A3, B2）/ A4–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5–A7・B1・B3 残り（手順をかんたん版に改訂） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | `cursor/release-gates-stage5-f431`（PR #21） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md` §9 Stage 5 + `docs/local-first/STAGE5_MANUAL_GATES.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 残り手動ゲート結果を受けて Stage 5 を COMPLETE 更新。Phase 2・TURN・default branch 切替は指示まで停止 |
+| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 

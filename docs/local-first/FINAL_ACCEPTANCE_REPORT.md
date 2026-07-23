@@ -7,7 +7,7 @@
 | 本流ブランチ | `main` |
 | 作業ブランチ | `cursor/release-gates-stage5-f431`（本レポート更新） |
 | 製品名 | Syncratch（シンクラッチ） |
-| Stage 5 状態 | **IN_PROGRESS** — 自動ゲート PASS / Drive ハッピーパス PASS / A4–A7・B1・B3 残り |
+| Stage 5 状態 | **IN_PROGRESS** — 自動 PASS / A1–A4・B2 PASS / A5–A7・B1・B3 残り |
 | オンライン検証 | `https://syncratch-production.up.railway.app/`（`/healthz` → `ok`） |
 | Google Cloud | project `syncratch` / APP_ID `863099193805`（Picker） |
 | 手動手順 | `docs/local-first/STAGE5_MANUAL_GATES.md` |
