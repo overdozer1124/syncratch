@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 00:17:21 JST |
+| 最終更新 | 2026-07-24 06:18:07 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`8c7f425` = PR #59 merge） |
+| 作業ブランチ | `main`（`3635fd4` = PR #62 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | 読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にクローム青を確認 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にクローム青・モーダル重なり・読込みスプラッシュを確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、Scratch クロームが青・見た目ブロックが紫のままであることの確認を推奨。
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、クローム青・ライブラリ／モーダル時のツールバー非干渉・ロゴスプラッシュ読込み表示の確認を推奨。
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
@@ -4807,3 +4807,27 @@ merge: 8c7f4251e5558a05a042db224b70013342a5ab43
 次の担当: ユーザー
 ```
 
+### 2026-07-24 06:18:07 JST — Cursor（PR #61 / #62 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「全てマージして」
+対象: PR #61 / #62 → base main
+merge: 3f3da4437f7a2eefebed23017c3d2d45d563aa09 (#61), 3635fd4e5cfb00ddbe3d693078a047584b9dba45 (#62)
+
+実施:
+- #61: gh pr ready + gh pr merge --merge --delete-branch
+- #62: main 取り込み後に gh pr ready + gh pr merge --merge --delete-branch
+- 台帳を MERGED に更新
+
+含まれる変更:
+- #61: Scratch ライブラリ／フルスクリーンモーダルが Syncratch toolbar の下に潜らないよう z-index と body:has で調整
+- #62: GUI boot 時の白背景ロゴスプラッシュ＋モーション＋虹色プログレスバー
+
+案内:
+- Railway が main 追従なら本番に #61/#62 が反映される
+- 残 open Draft（#58/#21/#7/#5）は対象外（衝突・別スコープ）
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
