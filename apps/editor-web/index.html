@@ -202,7 +202,14 @@
                       rows="3"
                     ></textarea>
                   </label>
-                  <button id="ai-ask" type="button">AI にきく</button>
+                  <div class="ai-ask-row">
+                    <button id="ai-ask" type="button">AI にきく</button>
+                    <button
+                      hidden
+                      id="ai-clear-chat"
+                      type="button"
+                    >あたらしいはなし</button>
+                  </div>
                   <span
                     aria-live="polite"
                     class="panel-status"
@@ -238,8 +245,15 @@
                 </div>
                 <div
                   aria-live="polite"
+                  class="ai-thread"
+                  data-testid="ai-thread"
+                  id="ai-thread"
+                ></div>
+                <div
+                  aria-live="polite"
                   class="ai-answer"
                   data-testid="ai-answer"
+                  hidden
                   id="ai-answer"
                 ></div>
                 <p aria-live="polite" class="panel-feedback" id="ai-feedback"></p>
