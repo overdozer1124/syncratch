@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 21:51:27 JST |
+| 最終更新 | 2026-07-23 23:50:38 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
-| 現在の担当 | ユーザー（Railway Drive OAuth 設定 / Stage 5 手動） |
+| 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`57acb1f` = PR #44 merge） |
+| 作業ブランチ | `main`（`641702e` = PR #55 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | Drive refresh-token OAuth on collab-host（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Railway に `GOOGLE_CLIENT_SECRET` 等を設定して再デプロイ。Stage 5 手動継続（A5–A7, B1, B3） |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にヘッダー統一を確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Drive refresh-token 有効化後、再読込で Google 再認証が不要かを確認。
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、統一ヘッダーの見た目確認を推奨。
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
