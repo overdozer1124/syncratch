@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Browser-only Google Drive .sb3 synchronization.",
+  "description": "Google Drive .sb3 sync helpers (browser access token + optional host refresh-token OAuth paths).",
   "exports": {
     ".": "./src/index.ts"
   },

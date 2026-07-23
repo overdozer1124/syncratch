@@ -16,10 +16,14 @@ import {
   sha256Hex,
 } from "@blocksync/sb3-tools/browser";
 import {
+  consumeDriveOAuthReturnFlag,
   createDriveRestAdapter,
   createGoogleAuthorization,
   createGooglePicker,
+  createHostBackedGoogleAuthorization,
   loadGoogleScripts,
+  probeHostDriveOAuthAvailable,
+  type GoogleAuthorization,
   type GoogleIdentityGlobal,
   type PickerBuildOptions,
 } from "@blocksync/google-drive-sync";
@@ -1772,17 +1776,24 @@ async function persistDriveFileId(
   });
 }
 
-function setupDriveIntegration(): EditorDriveIntegration {
+async function setupDriveIntegration(): Promise<EditorDriveIntegration> {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
   const apiKey = import.meta.env.VITE_GOOGLE_API_KEY?.trim() ?? "";
   const appId = import.meta.env.VITE_GOOGLE_APP_ID?.trim() ?? "";
   const configured = Boolean(clientId && apiKey && appId);
   const scripts = loadGoogleScripts();
-  const auth = createGoogleAuthorization({
-    clientId,
-    loadScripts: scripts,
-    getGoogle: googleGlobal,
-  });
+  // Prefer collab-host authorization-code + refresh-token sessions when the
+  // same-origin OAuth endpoints are configured; otherwise keep GIS token client.
+  const hostOAuthAvailable = configured
+    ? await probeHostDriveOAuthAvailable()
+    : false;
+  const auth: GoogleAuthorization = hostOAuthAvailable
+    ? createHostBackedGoogleAuthorization()
+    : createGoogleAuthorization({
+        clientId,
+        loadScripts: scripts,
+        getGoogle: googleGlobal,
+      });
   const picker = createGooglePicker({
     apiKey,
     appId,
@@ -1869,6 +1880,7 @@ async function boot(): Promise<void> {
   }
   diagnostic.ready = true;
   driveReady = true;
+  consumeDriveOAuthReturnFlag();
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   const fragmentInvite = decodeInviteFragment(window.location.hash);
@@ -1883,7 +1895,7 @@ async function boot(): Promise<void> {
   renderCollabIdle();
 }
 
-driveIntegration = setupDriveIntegration();
+driveIntegration = await setupDriveIntegration();
 driveAutosave = createDriveAutosave({
   delayMs: 2_000,
   isEligible: () => {

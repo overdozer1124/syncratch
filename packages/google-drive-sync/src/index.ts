@@ -13,6 +13,22 @@ export {
   type TokenResponse,
 } from "./auth.js";
 export {
+  consumeDriveOAuthReturnFlag,
+  createHostBackedGoogleAuthorization,
+  probeHostDriveOAuthAvailable,
+  type HostBackedGoogleAuthorizationOptions,
+  type HostOAuthSessionResponse,
+  type HostOAuthStatusResponse,
+} from "./host-oauth-auth.js";
+export {
+  DRIVE_OAUTH_CALLBACK_PATH,
+  DRIVE_OAUTH_LOGOUT_PATH,
+  DRIVE_OAUTH_RETURN_FLAG,
+  DRIVE_OAUTH_SESSION_PATH,
+  DRIVE_OAUTH_START_PATH,
+  DRIVE_OAUTH_STATUS_PATH,
+} from "./oauth-paths.js";
+export {
   createDriveRestAdapter,
   type CreateDriveFileInput,
   type DriveFileMetadata,

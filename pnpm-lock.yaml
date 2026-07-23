@@ -31,6 +31,9 @@ importers:
       '@blocksync/collab-signaling':
         specifier: workspace:*
         version: link:../../packages/collab-signaling
+      '@blocksync/google-drive-sync':
+        specifier: workspace:*
+        version: link:../../packages/google-drive-sync
       tsx:
         specifier: ^4.20.3
         version: 4.23.1
