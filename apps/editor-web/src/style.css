@@ -6,6 +6,8 @@
   --syncratch-menu-z: 700;
   --syncratch-panel-z: 720;
   --syncratch-modal-z: 800;
+  /* AI ask floats above Scratch libraries; Drive picker stays higher. */
+  --syncratch-ai-modal-z: 850;
 }
 
 html,
@@ -66,14 +68,19 @@ body,
 .toolbar .panel-content input,
 .toolbar .panel-content button,
 .toolbar .panel-content select,
-.toolbar .panel-content textarea {
+.toolbar .panel-content textarea,
+.ai-floating-panel input,
+.ai-floating-panel button,
+.ai-floating-panel select,
+.ai-floating-panel textarea {
   min-height: 2rem;
   border: 1px solid rgb(0 0 0 / 18%);
   border-radius: 8px;
   font: inherit;
 }
 
-.toolbar .panel-content button {
+.toolbar .panel-content button,
+.ai-floating-panel button {
   padding: 0 10px;
   background: white;
   cursor: pointer;
@@ -82,7 +89,8 @@ body,
   font-size: 0.85rem;
 }
 
-.toolbar .panel-content button:disabled {
+.toolbar .panel-content button:disabled,
+.ai-floating-panel button:disabled {
   cursor: not-allowed;
   color: #5a7390;
   background: #d9e3ef;
@@ -471,8 +479,7 @@ body,
   right: 0;
 }
 
-.settings-panel .panel-content,
-.ai-panel .panel-content {
+.settings-panel .panel-content {
   left: auto;
   right: 0;
   width: max(100%, min(420px, 94vw));
@@ -482,75 +489,144 @@ body,
   gap: 8px;
 }
 
-.ai-panel .panel-content {
-  width: max(100%, min(500px, 96vw));
+/*
+ * AI ask: modeless floating dialog portaled to document.body so it stacks
+ * above Scratch libraries and stays usable while editing underneath.
+ */
+.ai-floating-panel {
+  position: fixed;
+  z-index: var(--syncratch-ai-modal-z);
+  top: 4.5rem;
+  right: 12px;
+  left: auto;
+  width: min(500px, 96vw);
   max-height: min(88vh, 760px);
+  box-sizing: border-box;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid rgb(255 255 255 / 55%);
+  border-radius: 10px;
+  background: #0f5b99;
+  color: #fffef6;
+  box-shadow: 0 14px 36px rgb(0 28 71 / 42%);
+  pointer-events: auto;
 }
 
-.ai-panel .panel-help,
-.ai-panel .ai-controls,
-.ai-panel .panel-feedback,
-.ai-panel .ai-answer {
+.ai-floating-panel.is-open {
+  display: flex;
+}
+
+.ai-floating-panel[hidden] {
+  display: none !important;
+}
+
+.ai-floating-panel.is-dragging {
+  user-select: none;
+  cursor: grabbing;
+}
+
+.ai-panel-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin: -2px -2px 2px;
+  padding: 4px 2px 6px;
+  border-bottom: 1px solid rgb(255 255 255 / 22%);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.ai-floating-panel.is-dragging .ai-panel-chrome {
+  cursor: grabbing;
+}
+
+.ai-panel-title {
+  font-size: 0.95rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.ai-panel-close {
+  flex: 0 0 auto;
+  min-height: 1.85rem !important;
+  padding: 0 10px !important;
+  font-size: 0.78rem !important;
+}
+
+.ai-floating-panel .panel-help,
+.ai-floating-panel .ai-controls,
+.ai-floating-panel .panel-feedback,
+.ai-floating-panel .ai-answer {
   flex: 0 0 auto;
 }
 
-.ai-panel .ai-clarify {
+.ai-floating-panel .ai-clarify {
   flex: 0 0 auto;
   max-height: min(28vh, 220px);
   overflow: auto;
 }
 
-.ai-panel .ai-answer-pager {
+.ai-floating-panel .ai-answer-pager {
   flex: 1 1 auto;
   min-height: min(46vh, 360px);
   overflow: hidden;
 }
 
 /* After the first reply, prioritize the answer area. */
-.ai-panel.ai-panel--answering > .panel-content > .panel-help {
+.ai-floating-panel.ai-panel--answering > .panel-help {
   display: none;
 }
 
-.ai-panel.ai-panel--answering .ai-controls {
+.ai-floating-panel.ai-panel--answering .ai-controls {
   gap: 4px;
 }
 
-.ai-panel.ai-panel--answering #ai-question-target-hint {
+.ai-floating-panel.ai-panel--answering #ai-question-target-hint {
   display: none;
 }
 
-.ai-panel.ai-panel--answering .ai-controls textarea {
+.ai-floating-panel.ai-panel--answering .ai-controls textarea {
   min-height: 44px;
 }
 
-.ai-panel.ai-panel--answering .ai-answer-pager {
+.ai-floating-panel.ai-panel--answering .ai-answer-pager {
   flex: 1 1 auto;
   min-height: min(56vh, 440px);
 }
 
 /* Put the answer above follow-up inputs once a reply exists. */
-.ai-panel.ai-panel--answering .panel-content > .panel-help {
+.ai-floating-panel.ai-panel--answering > .panel-help {
   order: 0;
 }
 
-.ai-panel.ai-panel--answering .panel-content > .ai-answer-pager {
+.ai-floating-panel.ai-panel--answering > .ai-answer-pager {
   order: 1;
 }
 
-.ai-panel.ai-panel--answering .panel-content > .ai-answer {
+.ai-floating-panel.ai-panel--answering > .ai-answer {
   order: 1;
 }
 
-.ai-panel.ai-panel--answering .panel-content > .ai-clarify {
+.ai-floating-panel.ai-panel--answering > .ai-clarify {
   order: 2;
 }
 
-.ai-panel.ai-panel--answering .panel-content > .ai-controls {
+.ai-floating-panel.ai-panel--answering > .ai-controls {
   order: 3;
 }
 
-.ai-panel.ai-panel--answering .panel-content > .panel-feedback {
+.ai-floating-panel.ai-panel--answering > .panel-feedback {
   order: 4;
+}
+
+.ai-floating-panel.ai-panel--answering > .ai-panel-chrome {
+  order: -1;
 }
 
 .settings-controls,
@@ -752,7 +828,7 @@ body,
   overflow: auto;
 }
 
-.ai-panel.ai-panel--answering .ai-thread {
+.ai-floating-panel.ai-panel--answering .ai-thread {
   min-height: min(48vh, 380px);
 }
 

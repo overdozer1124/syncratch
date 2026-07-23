@@ -197,7 +197,25 @@
               id="ai-panel"
             >
               <summary>AI にきく</summary>
-              <div class="panel-content">
+              <div
+                class="panel-content ai-floating-panel"
+                data-testid="ai-floating-panel"
+                hidden
+                id="ai-panel-content"
+              >
+                <div
+                  class="ai-panel-chrome"
+                  data-testid="ai-panel-drag-handle"
+                  id="ai-panel-drag-handle"
+                >
+                  <span class="ai-panel-title" id="ai-panel-title">AI にきく</span>
+                  <button
+                    aria-label="とじる"
+                    class="ai-panel-close"
+                    id="ai-panel-close"
+                    type="button"
+                  >とじる</button>
+                </div>
                 <p class="panel-help">
                   作品の説明や、動かないときの助言をもらえます。完成プログラムを勝手に書き換えることはしません。
                 </p>

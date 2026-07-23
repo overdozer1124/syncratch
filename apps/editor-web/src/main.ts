@@ -74,6 +74,7 @@ import {
   shouldCloseToolPanelsOnKey,
   shouldCloseToolPanelsOnOutsideTarget,
 } from "./tool-panel-dismiss.js";
+import {installAiFloatingPanel} from "./ai-floating-panel.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {shouldLeaveCollaborationOnGoogleDisconnect} from "./google-disconnect-policy.js";
 import {downloadFilename} from "./download-filename.js";
@@ -363,6 +364,9 @@ const aiSettingsClearKeyButton =
 const aiSettingsStatus = requiredElement<HTMLElement>("ai-settings-status");
 const aiSettingsFeedback = requiredElement<HTMLElement>("ai-settings-feedback");
 const aiPanel = requiredElement<HTMLDetailsElement>("ai-panel");
+const aiPanelContent = requiredElement<HTMLElement>("ai-panel-content");
+const aiPanelDragHandle = requiredElement<HTMLElement>("ai-panel-drag-handle");
+const aiPanelCloseButton = requiredElement<HTMLButtonElement>("ai-panel-close");
 const aiQuestionTargetSelect = requiredElement<HTMLSelectElement>(
   "ai-question-target",
 );
@@ -400,19 +404,33 @@ if (chromeLeft) {
 const toolPanels = [
   ...document.querySelectorAll<HTMLDetailsElement>(".tool-panel"),
 ];
+/** Dropdown menus dismiss on outside click; AI stays open as a floating dialog. */
+const dismissibleToolPanels = toolPanels.filter(panel => panel !== aiPanel);
+
+installAiFloatingPanel({
+  panel: aiPanel,
+  content: aiPanelContent,
+  handle: aiPanelDragHandle,
+  closeButton: aiPanelCloseButton,
+});
 
 for (const panel of toolPanels) {
   panel.addEventListener("toggle", () => {
     if (!panel.open) return;
     for (const other of toolPanels) {
-      if (other !== panel) other.open = false;
+      // Keep the AI ask dialog open while using other toolbar menus.
+      if (other !== panel && other !== aiPanel) other.open = false;
     }
   });
 }
 
 document.addEventListener("pointerdown", event => {
-  if (!shouldCloseToolPanelsOnOutsideTarget(event.target, toolPanels)) return;
-  closeOpenToolPanels(toolPanels);
+  if (
+    !shouldCloseToolPanelsOnOutsideTarget(event.target, dismissibleToolPanels)
+  ) {
+    return;
+  }
+  closeOpenToolPanels(dismissibleToolPanels);
 });
 
 document.addEventListener("keydown", event => {
@@ -2240,6 +2258,7 @@ function syncAiAskChrome(): void {
     : "例: このスプライトが動かないのはなぜ？";
   aiQuestionInput.rows = active ? 2 : 3;
   aiPanel.classList.toggle("ai-panel--answering", active);
+  aiPanelContent.classList.toggle("ai-panel--answering", active);
 }
 
 function clearAiConversation(): void {
