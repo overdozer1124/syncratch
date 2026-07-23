@@ -111,12 +111,20 @@ body,
   max-width: none;
 }
 
-/* Lets Scratch Settings/File/Edit show through under the overlay. */
+/* Lets Scratch Settings/File/Edit show through under the overlay.
+   Width is measured at runtime (--syncratch-menu-slot). */
 .chrome-menu-slot {
-  flex: 0 0 16.5rem;
-  width: 16.5rem;
+  flex: 0 0 var(--syncratch-menu-slot, 22.5rem);
+  width: var(--syncratch-menu-slot, 22.5rem);
   height: 1px;
   pointer-events: none;
+}
+
+.feature-panels {
+  position: relative;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: 4px;
 }
 
 .app-brand {
@@ -309,11 +317,6 @@ body,
   margin: 5px 0;
   font-size: 0.82rem;
   line-height: 1.35;
-}
-
-.feature-panels {
-  position: relative;
-  gap: 4px;
 }
 
 .tool-panel {
@@ -522,8 +525,17 @@ body,
 #scratch-gui [class*="menu-bar_menu-bar_"] {
   background-color: #1565a9 !important;
   background-image: none !important;
-  padding-left: var(--syncratch-chrome-left, 0px) !important;
   box-sizing: border-box;
+}
+
+/*
+ * Push Scratch 設定/ファイル/編集 to the right of Syncratch brand/title/new.
+ * Prefer margin on the first file-group — padding on the banner is unreliable
+ * against Scratch CSS-module rules.
+ */
+#scratch-gui header[role="banner"] [class*="menu-bar_main-menu_"] > [class*="menu-bar_file-group_"]:first-child,
+#scratch-gui [class*="menu-bar_menu-bar_"] [class*="menu-bar_main-menu_"] > [class*="menu-bar_file-group_"]:first-child {
+  margin-left: var(--syncratch-chrome-left, 0px) !important;
 }
 
 #scratch-gui [class*="menu_menu_"],
@@ -539,7 +551,10 @@ body,
 }
 
 #scratch-gui button[aria-label="Debug"],
-#scratch-gui button[aria-label="デバッグ"] {
+#scratch-gui button[aria-label="デバッグ"],
+#scratch-gui .tutorials-button,
+#scratch-gui button[aria-label="Tutorials"],
+#scratch-gui button[aria-label="チュートリアル"] {
   display: none !important;
 }
 

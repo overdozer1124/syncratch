@@ -341,7 +341,7 @@ const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 const chromeLeft = document.querySelector<HTMLElement>(".chrome-left");
 if (chromeLeft) {
-  installSyncratchChromeLayout({chromeLeft});
+  installSyncratchChromeLayout({chromeLeft, guiHost});
 }
 const toolPanels = [
   ...document.querySelectorAll<HTMLDetailsElement>(".tool-panel"),
