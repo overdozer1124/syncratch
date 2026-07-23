@@ -2215,6 +2215,8 @@ function syncAiAskChrome(): void {
   aiQuestionInput.placeholder = active
     ? "例: やってみたけど、うまくいかなかった"
     : "例: このスプライトが動かないのはなぜ？";
+  aiQuestionInput.rows = active ? 2 : 3;
+  aiPanel.classList.toggle("ai-panel--answering", active);
 }
 
 function clearAiConversation(): void {
