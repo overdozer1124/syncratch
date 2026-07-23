@@ -4676,4 +4676,22 @@ merge: 12ff325be7f40b56457229bd46b31b26404e7254
 次の担当: ユーザー（手動ゲート）→ 結果後 Cursor が COMPLETE 更新
 ```
 
+### 2026-07-23 10:40:00 JST — Cursor（Drive 本番連携確認）
+
+```text
+状態: IN_PROGRESS
+ユーザー: Railway 再デプロイ完了 + Drive 連携完了
+
+Cursor 確認:
+- https://syncratch-production.up.railway.app/healthz → ok
+- production JS に Client ID / API key / APP_ID=863099193805 / drive.file
+
+記録更新（PR #21）:
+- A1–A3 / B2 を PASS
+- 残り A4–A7 / B1 / B3
+- Stage 5 はまだ COMPLETE にしない
+
+次の担当: ユーザー（残り手動ゲート）
+```
+
 
