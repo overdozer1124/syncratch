@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-22 23:26:49 JST |
+| 最終更新 | 2026-07-23 13:35:00 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `MERGED` |
-| 現在の担当 | ユーザー（次指示待ち） |
-| 現在のTask | なし（PR #19 を main へ merge 済み） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（任意）/ ユーザー（merge 判断） |
+| 現在のTask | ホスト/ゲスト明示 + ゲスト Drive 保存 UI 無効化 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（PR #19 merge 後） |
+| 作業ブランチ | `cursor/host-guest-drive-ui-f431` |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | `docs/superpowers/specs/2026-07-22-block-level-collab-phase1-design.md`（本 Task は deploy 検証導線。Phase 2 設計ではない） |
+| 設計 | P2P bootstrap（room creator = Drive writer）+ 子ども向けホスト/ゲスト明示 |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー指示待ち。GitHub default branch の main 切替推奨。Phase 2・TURN は先行しない |
+| 次Task | 本 PR merge 後、Stage 5 手動ゲート継続可。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-なし（PR #19 merge 済み）。default branch 切替はユーザー側。Phase 2 は指示まで停止。
+ホスト/ゲスト UI PR のレビュー・merge 待ち。Stage 5 文書 PR #21 は別系統。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
