@@ -47,6 +47,21 @@ if (!guiBundle.includes('colourSecondary:"#855CD6"')) {
   throw new Error("Looks block colourSecondary must remain purple");
 }
 
+// Chrome icons are base64 data URIs — plain hex search misses them unless decoded.
+{
+  const purpleInSvg = /#(?:855[Cc][Dd]6|714[Ee][Bb]6|6736[Bb]5|6035[Bb]4)\b/;
+  for (const match of guiBundle.matchAll(
+    /data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/g,
+  )) {
+    const svg = Buffer.from(match[1], "base64").toString("utf8");
+    if (purpleInSvg.test(svg)) {
+      throw new Error(
+        "GUI bundle still contains Scratch purple chrome fills in base64 SVG icons",
+      );
+    }
+  }
+}
+
 const assetFiles = await readdir(join(dist, "assets"));
 const mainScript = assetFiles.find(file => /^main-.*\.js$/.test(file));
 if (!mainScript) throw new Error("Production JavaScript bundle is missing");

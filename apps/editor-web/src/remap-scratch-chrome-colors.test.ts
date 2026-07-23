@@ -3,6 +3,7 @@ import {
   SYNCRATCH_CHROME_BLUE,
   SYNCRATCH_CHROME_BLUE_DARK,
   SYNCRATCH_CHROME_BLUE_HSLA,
+  remapPurpleHexInSvg,
   remapScratchChromePurpleToBlue,
 } from "../scripts/remap-scratch-chrome-colors.mjs";
 
@@ -45,5 +46,33 @@ describe("remapScratchChromePurpleToBlue", () => {
     const out = remapScratchChromePurpleToBlue(input);
     expect(out).toContain('colourSecondary:"#855CD6"');
     expect(out).toContain(`.menu{background:${SYNCRATCH_CHROME_BLUE}}`);
+  });
+
+  it("recolors purple fills inside base64-inlined SVG icons", () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#855CD6"/><path stroke="#6736B5"/><circle fill="#855CD633"/></svg>';
+    const b64 = Buffer.from(svg, "utf8").toString("base64");
+    const input = `const icon="data:image/svg+xml;base64,${b64}";`;
+    const out = remapScratchChromePurpleToBlue(input);
+
+    const match = out.match(/data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)/);
+    expect(match).toBeTruthy();
+    const decoded = Buffer.from(match![1], "base64").toString("utf8");
+    expect(decoded).toContain(`fill="${SYNCRATCH_CHROME_BLUE}"`);
+    expect(decoded).toContain(`stroke="${SYNCRATCH_CHROME_BLUE_DARK}"`);
+    expect(decoded).toContain(`fill="${SYNCRATCH_CHROME_BLUE}33"`);
+    expect(decoded).not.toMatch(/#855[Cc][Dd]6/);
+    expect(decoded).not.toMatch(/#6736[Bb]5/);
+  });
+});
+
+describe("remapPurpleHexInSvg", () => {
+  it("maps chrome purple variants without touching Looks primary", () => {
+    const svg =
+      '<g fill="#855cd6" stroke="#714EB6"/><path fill="#9966FF"/>';
+    const out = remapPurpleHexInSvg(svg);
+    expect(out).toContain(`fill="${SYNCRATCH_CHROME_BLUE}"`);
+    expect(out).toContain(`stroke="${SYNCRATCH_CHROME_BLUE_DARK}"`);
+    expect(out).toContain('fill="#9966FF"');
   });
 });
