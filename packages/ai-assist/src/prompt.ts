@@ -36,7 +36,9 @@ export interface BuildAdvicePromptInput {
 }
 
 const MAX_HISTORY_TURNS = 6;
-const MAX_HISTORY_TURN_CHARS = 1200;
+/** Keep user questions shorter; keep assistant tips fuller for anti-repeat. */
+const MAX_HISTORY_USER_CHARS = 800;
+const MAX_HISTORY_ASSISTANT_CHARS = 1800;
 
 /** True when we already have a thread and should continue it. */
 export function hasActiveConversation(
@@ -60,9 +62,26 @@ export function trimConversationHistory(
     role: turn.role,
     content: truncateForTokens(
       sanitizeAiText(turn.content).text,
-      MAX_HISTORY_TURN_CHARS,
+      turn.role === "assistant"
+        ? MAX_HISTORY_ASSISTANT_CHARS
+        : MAX_HISTORY_USER_CHARS,
     ),
   }));
+}
+
+/** Latest assistant reply text, for follow-up anti-repeat prompts. */
+export function lastAssistantReply(
+  history: AiConversationTurn[] | null | undefined,
+): string | null {
+  if (!Array.isArray(history)) return null;
+  for (let i = history.length - 1; i >= 0; i -= 1) {
+    const turn = history[i];
+    if (turn?.role === "assistant") {
+      const text = truncateForTokens(sanitizeAiText(turn.content).text, 700);
+      return text || null;
+    }
+  }
+  return null;
 }
 
 const MODE_LABEL: Record<AiAdviceMode, string> = {
@@ -197,13 +216,29 @@ function diagramRules(): string {
   ].join("\n");
 }
 
-function answerShape(mode: AiAdviceMode, level: AiAssistLevel): string {
+function answerShape(
+  mode: AiAdviceMode,
+  level: AiAssistLevel,
+  hasHistory = false,
+): string {
   const completeness = [
     "【長さと完結】",
     "- 全体はみじかく（目安 120〜220文字＋短い図）。",
     "- 途中で文章や図を切らないこと。必ず最後の一手まで書ききること。",
     "- 最後は「〜してみよう。」で終えること。",
   ].join("\n");
+
+  if (hasHistory) {
+    return [
+      "【答え方（つづき）】",
+      "最初のターンの説明をやりなおさないこと。つぎのじゅんばんで書くこと:",
+      "1. まえの案と どこが ちがうか（1文だけ）",
+      "2. 【ず】…【/ず】を 1つ（まえと おなじ図は禁止）",
+      "3. あたらしい 一小歩（1つだけ。まえと同じ数値・同じ手順は禁止）",
+      "- 「だれの はなし？」「いま みえていること」の長いやり直しはしないこと。",
+      completeness,
+    ].join("\n");
+  }
 
   if (mode === "debug") {
     return [
@@ -270,12 +305,22 @@ function motionIntentRules(question: string): string {
 
 function clarifiedIntentRules(
   clarified: AiClarifyChoice | null | undefined,
+  hasHistory = false,
 ): string {
   if (!clarified) {
     return [
       "【学習者の意図確認】",
       "- まだボタン選択がない場合は、質問文から意図を慎重に読むこと。",
       "- あいまいなら、いちばんやさしいやりかた（くりかえし）から案内すること。",
+    ].join("\n");
+  }
+  if (hasHistory) {
+    return [
+      "【学習者が選んだ意図（すでに共有済み）】",
+      `- 選択: ${clarified.label}`,
+      "- 意図の方向は変えず、前のターンと同じ一小歩・同じ図・同じ数値のくりかえしは禁止。",
+      "- 指導メモの具体レシピを、また最初から説明しなおさないこと。",
+      "- 前のこたえの次に進む一小歩だけ出すこと。",
     ].join("\n");
   }
   return [
@@ -299,9 +344,10 @@ function conversationRules(hasHistory: boolean): string {
   }
   return [
     "【やりとり（つづき）】",
-    "- これまでのユーザーとアシスタントの会話を必ず踏まえること。",
+    "- これまでのユーザーとアシスタントの会話を必ず踏まえること。自分の前の回答も踏まえること。",
     "- 最初から説明しなおさないこと。続きとして答えること。",
     "- 「やってみたけどうまくいかない」などとあったら、前の案が足りなかったとみなし、同じ案のくりかえしは禁止。",
+    "- 前の回答に出た数値・ブロック・図を、そのままもう一度出さないこと。次の段階へ進むこと。",
     "- いまの【作品の要約】は最新版。前のターンよりスクリプトが変わっているかもしれないので、最新を優先すること。",
     "- 次の一小歩だけ示すこと。",
   ].join("\n");
@@ -327,11 +373,11 @@ function modeInstructions(
     "",
     diagramRules(),
     "",
-    answerShape(mode, level),
+    answerShape(mode, level, hasHistory),
     "",
     conversationRules(hasHistory),
     "",
-    clarifiedIntentRules(clarifiedIntent),
+    clarifiedIntentRules(clarifiedIntent, hasHistory),
     "",
     motionIntentRules(question),
     "",
@@ -379,6 +425,7 @@ function buildProjectUserParts(params: {
   clarifiedIntent?: AiClarifyChoice | null;
   observationNotes?: string;
   isFollowUp: boolean;
+  previousAssistantReply?: string | null;
 }): string[] {
   const userParts: string[] = [
     `【質問の対象】\n${params.targetLabel}`,
@@ -386,11 +433,31 @@ function buildProjectUserParts(params: {
   ];
 
   if (params.clarifiedIntent) {
+    if (params.isFollowUp) {
+      userParts.push(
+        [
+          "【学習者の意図（続き・レシピ再掲なし）】",
+          params.clarifiedIntent.label,
+          "前と同じ一手のくりかえしは禁止。次の段階だけ。",
+        ].join("\n"),
+      );
+    } else {
+      userParts.push(
+        [
+          "【学習者が選んだ意図】",
+          params.clarifiedIntent.label,
+          params.clarifiedIntent.adviceHint,
+        ].join("\n"),
+      );
+    }
+  }
+
+  if (params.isFollowUp && params.previousAssistantReply) {
     userParts.push(
       [
-        "【学習者が選んだ意図】",
-        params.clarifiedIntent.label,
-        params.clarifiedIntent.adviceHint,
+        "【まえのこたえ（くりかえし禁止）】",
+        "下は直前のアシスタント回答です。同じ内容・同じ図・同じ数値を出さないでください。",
+        params.previousAssistantReply,
       ].join("\n"),
     );
   }
@@ -437,15 +504,16 @@ function buildProjectUserParts(params: {
       "大きな数値への変更は禁止。選んだ意図に合う一小歩だけ示してください。",
     );
   }
-  if (params.clarifiedIntent) {
+  if (params.clarifiedIntent && !params.isFollowUp) {
     closing.push(
       `選んだ意図「${params.clarifiedIntent.label}」に合わせて答えてください。`,
     );
   }
   if (params.isFollowUp) {
     closing.push(
-      "これはつづきのしつもんです。これまでのやりとりをふまえて答えてください。",
+      "これはつづきのしつもんです。これまでのやりとりと【まえのこたえ】をふまえて答えてください。",
       "前と同じアドバイスのくりかえしは禁止です。うまくいかなかったなら別の一小歩を出してください。",
+      "「まえの案とのちがい」を1文で書いてから、あたらしい一手だけ示してください。",
     );
   }
 
@@ -471,6 +539,7 @@ export function buildAdviceMessages(
 
   const history = trimConversationHistory(input.conversationHistory);
   const isFollowUp = history.length > 0;
+  const previousAssistantReply = lastAssistantReply(history);
   const targetLabel = formatQuestionTargetLabel(
     input.project?.questionTargetName,
   );
@@ -503,6 +572,7 @@ export function buildAdviceMessages(
       clarifiedIntent: input.clarifiedIntent,
       observationNotes: input.observationNotes,
       isFollowUp,
+      previousAssistantReply,
     }).join("\n\n"),
   });
 

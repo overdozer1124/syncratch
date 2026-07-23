@@ -61,6 +61,7 @@ export {
   hasActiveConversation,
   inferAdviceMode,
   isFollowUpQuestion,
+  lastAssistantReply,
   resolveAdviceMode,
   trimConversationHistory,
   wantsSmoothMotionAdvice,

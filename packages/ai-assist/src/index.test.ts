@@ -522,10 +522,45 @@ describe("prompt", () => {
       "user",
     ]);
     expect(messages[0]?.content).toContain("つづき");
+    expect(messages[0]?.content).toContain("まえの案と どこが ちがうか");
+    expect(messages[0]?.content).toContain("前の回答に出た数値・ブロック・図を、そのままもう一度出さないこと");
     expect(messages[1]?.content).toContain("ボールを弾ませたい");
     expect(messages[2]?.content).toContain("-5");
     expect(messages[3]?.content).toContain("つづきのしつもん");
+    expect(messages[3]?.content).toContain("まえのこたえ");
+    expect(messages[3]?.content).toContain("まずは yを -5 にしてみよう。");
     expect(messages[3]?.content).toContain("同じアドバイスのくりかえしは禁止");
+  });
+
+  it("does not re-inject the first-turn intent recipe on follow-up", () => {
+    const clarify = buildClarifyPrompt("ボールを弾ませたい");
+    const choice = clarify!.choices.find(c => c.id === "bounce_updown")!;
+    const messages = buildAdviceMessages({
+      level: 2,
+      mode: "hint",
+      userQuestion: "やってみたけど、うまくいかなかった",
+      clarifiedIntent: choice,
+      conversationHistory: [
+        {
+          role: "user",
+          content: `ボールを弾ませたい\n（したいこと: ${choice.label}）`,
+        },
+        {
+          role: "assistant",
+          content:
+            "【ず】した→うえ\n-10を10回 → +10を10回\n【/ず】\nまず -10 のくりかえしを入れてみよう。",
+        },
+      ],
+      project: buildAiProjectContext({
+        targets: [{name: "Sprite1", blocks: {}}],
+      }),
+    });
+    expect(messages[0]?.content).toContain("すでに共有済み");
+    expect(messages[0]?.content).not.toContain("指導メモ:");
+    expect(messages[0]?.content).not.toContain("-10を10回 → +10を10回 → ずっと");
+    expect(messages[3]?.content).toContain("レシピ再掲なし");
+    expect(messages[3]?.content).toContain(choice.label);
+    expect(messages[3]?.content).not.toContain(choice.adviceHint);
   });
 
   it("builds bounce clarify choices and injects selected intent", () => {
