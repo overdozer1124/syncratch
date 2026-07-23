@@ -1,9 +1,11 @@
 /**
  * Same-origin collab host for Railway verification:
  * - GET /*  → apps/editor-web/dist static files
+ * - POST /ai/chat → optional AI advice proxy (API key from client Authorization)
  * - WS /signal → @blocksync/collab-signaling
  *
  * No TURN. Project bytes never transit this process (WebRTC data channels only).
+ * AI proxy never stores API keys and never touches Yjs / signaling traffic.
  */
 import {createServer} from "node:http";
 import {dirname, resolve} from "node:path";
@@ -12,6 +14,7 @@ import {
   DEFAULT_SIGNALING_PATH,
   startSignalingServer,
 } from "@blocksync/collab-signaling";
+import {handleAiChatProxy} from "./ai-proxy.js";
 import {createStaticRequestHandler} from "./static.js";
 
 export interface StartCollabHostOptions {
@@ -48,10 +51,17 @@ export async function startCollabHost(
 
   const handleStatic = createStaticRequestHandler(staticRoot);
   const httpServer = createServer((req, res) => {
-    if (!handleStatic(req, res)) {
+    void (async () => {
+      if (await handleAiChatProxy(req, res)) return;
+      if (handleStatic(req, res)) return;
       res.writeHead(405, {"content-type": "text/plain; charset=utf-8"});
       res.end("method not allowed");
-    }
+    })().catch(() => {
+      if (!res.headersSent) {
+        res.writeHead(500, {"content-type": "text/plain; charset=utf-8"});
+      }
+      res.end("internal error");
+    });
   });
 
   await new Promise<void>((resolveListen, reject) => {

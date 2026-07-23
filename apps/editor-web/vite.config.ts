@@ -1,6 +1,7 @@
 import {defineConfig, type Plugin} from "vite";
 import {fileURLToPath} from "node:url";
 import {createGzipStaticMiddleware} from "./src/compress-static.js";
+import {aiChatDevProxy} from "./src/ai-chat-dev-proxy.js";
 
 function gzipPublicAssets(): Plugin {
   const publicDir = fileURLToPath(new URL("./public", import.meta.url));
@@ -27,7 +28,7 @@ export default defineConfig(({mode}) => {
   }
   return {
     base: process.env.BLOCKSYNC_BASE_PATH?.trim() || "/",
-    plugins: [gzipPublicAssets()],
+    plugins: [gzipPublicAssets(), aiChatDevProxy()],
     server: {
       host: "127.0.0.1",
       port: 4173,

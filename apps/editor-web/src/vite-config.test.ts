@@ -48,4 +48,17 @@ describe("editor Vite entries", () => {
       else process.env.BLOCKSYNC_BASE_PATH = previous;
     }
   });
+
+  it("registers the AI chat dev proxy plugin", () => {
+    const resolved = resolvedFor("production");
+    expect(resolved).not.toBeInstanceOf(Promise);
+    if (resolved instanceof Promise) return;
+    const names = (resolved.plugins ?? [])
+      .flat()
+      .filter((plugin): plugin is {name: string} =>
+        Boolean(plugin && typeof plugin === "object" && "name" in plugin),
+      )
+      .map(plugin => plugin.name);
+    expect(names).toContain("blocksync-ai-chat-dev-proxy");
+  });
 });

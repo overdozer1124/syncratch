@@ -42,25 +42,49 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 15:01:12 JST |
+| 最終更新 | 2026-07-23 16:32:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
-| 現在の担当 | ユーザー（Stage 5 手動） |
-| 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
+| 現在の担当 | ユーザー |
+| 現在のTask | AI 助言支援プロトタイプ（共同編集と並行） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`2767084` = PR #30 merge） |
+| 作業ブランチ | `cursor/ai-coding-assist-1111` |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | ドラッグ中は remote loadProject を遅延。上限後は cancelCurrentGesture（#28）。機能3ボタンは「新しい作品」右（#30 MERGED） |
+| 設計 | AI 助言は `packages/ai-assist` + ツールバー設定。共同編集パス非侵入。設計: `docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Phase 2・TURN・default branch 切替は指示まで停止 |
-| Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。AI IR→Mutation 適用は後続 |
+| Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、ツールバー配置とドラッグ張り付きの本番確認を推奨。
+AI 助言プロトタイプのレビュー対応。Stage 5 手動ゲート支援（指示時）。
+
+## 作業ログ追記（2026-07-23 AI advice assist prototype）
+
+```text
+最終更新: 2026-07-23 16:32:00 JST
+更新者: Cursor
+状態: READY（PR 作成）
+対象: AI コーディング助言支援（仕様書第6部の試作）
+作業ブランチ: cursor/ai-coding-assist-1111
+対応内容:
+- packages/ai-assist: プロバイダ自動判別、安いモデル既定、level 0–6、localStorage 設定（default OFF）、
+  PII sanitize、作品 opcode 要約コンテキスト、助言プロンプト、BlockIR 型、/ai/chat forwarder
+- apps/collab-host: POST /ai/chat（キー非保存、signaling 非干渉）
+- apps/editor-web: 設定パネル + AI にきくパネル、Vite 開発プロキシ
+- docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md
+テスト:
+- @blocksync/ai-assist: 14 PASS
+- @blocksync/collab-host: 6 PASS
+- @blocksync/editor-web: 225 PASS + typecheck PASS
+未実装（意図的）:
+- IR→Mutation 適用 / プレビュー / AI Undo
+- 自律デバッグループ
+- 学校ポリシー継承・サーバー予算
+```
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 

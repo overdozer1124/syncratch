@@ -151,6 +151,25 @@ import {
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
+import {
+  AI_CHAT_PROXY_PATH,
+  buildAdviceMessages,
+  buildAiProjectContext,
+  loadAiAssistSettings,
+  resolveAiAssistConfig,
+  requestAiChat,
+  saveAiAssistSettings,
+  type AiAdviceMode,
+  type AiAssistSettings,
+} from "@blocksync/ai-assist";
+import {
+  aiModeOptionsForLevel,
+  aiPanelHidden,
+  aiStatusSummary,
+  friendlyAiError,
+  levelSelectOptions,
+  readSettingsFromForm,
+} from "./ai-assist-ui.js";
 
 type ProjectDocument = LocalProjectRecord["document"];
 
@@ -300,6 +319,22 @@ const collabDiagnosticsButton = requiredElement<HTMLButtonElement>("collab-diagn
 const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
 const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
+const aiEnabledInput = requiredElement<HTMLInputElement>("ai-enabled");
+const aiApiKeyInput = requiredElement<HTMLInputElement>("ai-api-key");
+const aiLevelSelect = requiredElement<HTMLSelectElement>("ai-level");
+const aiModelOverrideInput = requiredElement<HTMLInputElement>("ai-model-override");
+const aiSettingsSaveButton = requiredElement<HTMLButtonElement>("ai-settings-save");
+const aiSettingsClearKeyButton =
+  requiredElement<HTMLButtonElement>("ai-settings-clear-key");
+const aiSettingsStatus = requiredElement<HTMLElement>("ai-settings-status");
+const aiSettingsFeedback = requiredElement<HTMLElement>("ai-settings-feedback");
+const aiPanel = requiredElement<HTMLDetailsElement>("ai-panel");
+const aiModeSelect = requiredElement<HTMLSelectElement>("ai-mode");
+const aiQuestionInput = requiredElement<HTMLTextAreaElement>("ai-question");
+const aiAskButton = requiredElement<HTMLButtonElement>("ai-ask");
+const aiRuntimeStatus = requiredElement<HTMLElement>("ai-runtime-status");
+const aiAnswer = requiredElement<HTMLElement>("ai-answer");
+const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 const toolPanels = [
   ...document.querySelectorAll<HTMLDetailsElement>(".tool-panel"),
@@ -1956,6 +1991,169 @@ collabDiagnosticsButton.addEventListener("click", () => {
   void navigator.clipboard.writeText(text).then(() => {
     collabFeedback.textContent = "くわしい情報をコピーしました。";
   });
+});
+
+/* -------------------------------------------------------------------------- */
+/* AI advice assist — isolated from collab / Drive / local save paths.         */
+/* Settings live in localStorage only (never Y.Doc / .sb3 / signaling).        */
+/* -------------------------------------------------------------------------- */
+
+let aiSettings: AiAssistSettings = loadAiAssistSettings(
+  typeof localStorage === "undefined" ? null : localStorage,
+);
+let aiAskInFlight = false;
+
+function fillAiLevelSelect(): void {
+  aiLevelSelect.replaceChildren();
+  for (const option of levelSelectOptions()) {
+    const el = document.createElement("option");
+    el.value = String(option.value);
+    el.textContent = option.label;
+    aiLevelSelect.append(el);
+  }
+}
+
+function fillAiModeSelect(settings: AiAssistSettings): void {
+  const previous = aiModeSelect.value as AiAdviceMode;
+  aiModeSelect.replaceChildren();
+  for (const option of aiModeOptionsForLevel(settings.level)) {
+    const el = document.createElement("option");
+    el.value = option.value;
+    el.textContent = option.label;
+    aiModeSelect.append(el);
+  }
+  if ([...aiModeSelect.options].some(opt => opt.value === previous)) {
+    aiModeSelect.value = previous;
+  }
+}
+
+function applyAiSettingsToForm(settings: AiAssistSettings): void {
+  aiEnabledInput.checked = settings.enabled;
+  aiApiKeyInput.value = settings.apiKey;
+  aiLevelSelect.value = String(settings.level);
+  aiModelOverrideInput.value = settings.modelOverride;
+}
+
+function renderAiUi(settings: AiAssistSettings = aiSettings): void {
+  const config = resolveAiAssistConfig(settings);
+  const summary = aiStatusSummary(config);
+  aiSettingsStatus.textContent = summary;
+  aiRuntimeStatus.textContent = summary;
+  const hidden = aiPanelHidden(settings);
+  aiPanel.hidden = hidden;
+  if (hidden) aiPanel.open = false;
+  fillAiModeSelect(settings);
+  aiAskButton.disabled = aiAskInFlight || !config.ready;
+}
+
+function persistAiSettingsFromForm(): AiAssistSettings {
+  const next = readSettingsFromForm({
+    enabled: aiEnabledInput.checked,
+    apiKey: aiApiKeyInput.value,
+    level: aiLevelSelect.value,
+    modelOverride: aiModelOverrideInput.value,
+  });
+  aiSettings = saveAiAssistSettings(
+    typeof localStorage === "undefined" ? null : localStorage,
+    next,
+  );
+  applyAiSettingsToForm(aiSettings);
+  renderAiUi(aiSettings);
+  const config = resolveAiAssistConfig(aiSettings);
+  aiSettingsFeedback.textContent = config.ready
+    ? `保存しました（${config.providerLabel} / ${config.model}）`
+    : `保存しました。${config.notReadyReason ?? ""}`;
+  return aiSettings;
+}
+
+fillAiLevelSelect();
+applyAiSettingsToForm(aiSettings);
+renderAiUi(aiSettings);
+
+aiSettingsSaveButton.addEventListener("click", () => {
+  persistAiSettingsFromForm();
+});
+aiSettingsClearKeyButton.addEventListener("click", () => {
+  aiApiKeyInput.value = "";
+  persistAiSettingsFromForm();
+  aiSettingsFeedback.textContent = "API キーを消しました。";
+});
+aiEnabledInput.addEventListener("change", () => {
+  persistAiSettingsFromForm();
+});
+aiLevelSelect.addEventListener("change", () => {
+  persistAiSettingsFromForm();
+});
+
+aiAskButton.addEventListener("click", () => {
+  void (async () => {
+    const config = resolveAiAssistConfig(aiSettings);
+    aiFeedback.textContent = "";
+    if (!config.ready || !config.model) {
+      aiFeedback.textContent =
+        config.notReadyReason ?? "AI の準備ができていません。";
+      return;
+    }
+    const question = aiQuestionInput.value.trim();
+    if (!question) {
+      aiFeedback.textContent = friendlyAiError("empty question");
+      return;
+    }
+
+    let projectContext = null;
+    try {
+      if (vm) {
+        projectContext = buildAiProjectContext(
+          JSON.parse(vm.toJSON()) as Parameters<typeof buildAiProjectContext>[0],
+          titleInput.value,
+        );
+      }
+    } catch {
+      projectContext = null;
+    }
+
+    const mode = (aiModeSelect.value || "hint") as AiAdviceMode;
+    let messages;
+    try {
+      messages = buildAdviceMessages({
+        level: aiSettings.level,
+        mode,
+        userQuestion: question,
+        project: projectContext,
+      });
+    } catch (error) {
+      aiFeedback.textContent = friendlyAiError(
+        error instanceof Error ? error.message : String(error),
+      );
+      return;
+    }
+
+    aiAskInFlight = true;
+    renderAiUi(aiSettings);
+    aiRuntimeStatus.textContent = "AI にきいています…";
+    try {
+      const result = await requestAiChat({
+        provider: config.provider,
+        model: config.model,
+        apiKey: aiSettings.apiKey,
+        messages,
+        proxyUrl: AI_CHAT_PROXY_PATH,
+        maxTokens: 512,
+      });
+      aiAnswer.textContent = result.content;
+      aiFeedback.textContent = "";
+      aiRuntimeStatus.textContent =
+        `${config.providerLabel} / ${result.model} が答えました`;
+    } catch (error) {
+      aiFeedback.textContent = friendlyAiError(
+        error instanceof Error ? error.message : String(error),
+      );
+      aiRuntimeStatus.textContent = aiStatusSummary(config);
+    } finally {
+      aiAskInFlight = false;
+      renderAiUi(aiSettings);
+    }
+  })();
 });
 
 boot().catch(error => {

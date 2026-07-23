@@ -14,6 +14,7 @@
     "verify:static": "node scripts/verify-static-build.mjs"
   },
   "dependencies": {
+    "@blocksync/ai-assist": "workspace:*",
     "@blocksync/collab-invite": "workspace:*",
     "@blocksync/collab-leader": "workspace:*",
     "@blocksync/collab-webrtc": "workspace:*",
