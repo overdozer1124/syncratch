@@ -1,3 +1,13 @@
+:root {
+  --syncratch-chrome: #1565a9;
+  --syncratch-chrome-dark: #0f4d7a;
+  /* Stacking: Scratch menu-bar 491 < toolbar < menus/panels < Scratch modals < Drive picker */
+  --syncratch-toolbar-z: 600;
+  --syncratch-menu-z: 700;
+  --syncratch-panel-z: 720;
+  --syncratch-modal-z: 800;
+}
+
 html,
 body,
 #app {
@@ -28,7 +38,7 @@ body,
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 600;
+  z-index: var(--syncratch-toolbar-z);
   box-sizing: border-box;
   height: 3rem;
   width: max(100%, 1024px);
@@ -435,7 +445,7 @@ body,
 .panel-content {
   /* Anchor to the open column so Scratch under other columns stays usable. */
   position: absolute;
-  z-index: 720;
+  z-index: var(--syncratch-panel-z);
   top: calc(100% + 6px);
   left: 0;
   right: 0;
@@ -926,10 +936,6 @@ body,
  * upstream GUI. prepare-assets remaps the bundle; these rules cover residual
  * menu-bar painting and keep the unified Syncratch header blue.
  */
-#scratch-gui {
-  --syncratch-chrome: #1565a9;
-  --syncratch-chrome-dark: #0f4d7a;
-}
 
 /* One Syncratch-blue menu bar: recolor Scratch chrome and drop its logo. */
 #scratch-gui header[role="banner"],
@@ -952,12 +958,30 @@ body,
 #scratch-gui [class*="menu_menu_"],
 #scratch-gui [class*="menu-bar_menu-bar-menu"] {
   background-color: var(--syncratch-chrome) !important;
-  z-index: 700 !important;
+  z-index: var(--syncratch-menu-z) !important;
 }
 
-/* Modal / library headers that still resolve looks-secondary at runtime. */
-#scratch-gui [class*="modal_header_"],
-#scratch-gui [class*="library_library-header_"] {
+/*
+ * Scratch ReactModal portals to document.body with z-index 510. Syncratch
+ * toolbar sits at 600, so unraised modals paint under brand/menus — library
+ * titles ("スプライトを選ぶ" / "拡張機能を選ぶ") collide with the overlay.
+ */
+[class*="modal_modal-overlay_"],
+[class*="browser-modal_modal-overlay_"],
+[class*="webgl-modal_modal-overlay_"],
+[class*="telemetry-modal_modal-overlay_"] {
+  z-index: var(--syncratch-modal-z) !important;
+}
+
+/* Full-screen libraries own the top chrome; hide Syncratch toolbar while open. */
+body:has([class*="modal_full-screen_"]) .toolbar {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Modal / library headers (portaled outside #scratch-gui). */
+[class*="modal_header_"],
+[class*="library_library-header_"] {
   background-color: var(--syncratch-chrome) !important;
 }
 
