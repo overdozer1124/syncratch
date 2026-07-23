@@ -59,6 +59,10 @@ import {
   shouldLatchDriveOverwriteConfirmation,
 } from "./drive-conflict-status.js";
 import {
+  GUEST_DRIVE_SAVE_BLOCKED_STATUS,
+  driveControlFlags,
+} from "./collab-role-ui.js";
+import {
   closeOpenToolPanels,
   shouldCloseToolPanelsOnKey,
   shouldCloseToolPanelsOnOutsideTarget,
@@ -793,6 +797,18 @@ function renderBootstrapActions(state: CollabState | null): void {
   guiHost.classList.toggle("collab-bootstrap-locked", bootstrapping);
 }
 
+/** Prevents renderDriveStatus → renderCollabIdle → renderDriveStatus loops. */
+let syncingDriveControlsFromCollab = false;
+
+function refreshDriveControlsForCollab(): void {
+  syncingDriveControlsFromCollab = true;
+  try {
+    renderDriveStatus(lastDriveStatus, lastDriveMessage);
+  } finally {
+    syncingDriveControlsFromCollab = false;
+  }
+}
+
 function renderCollabIdle(message = "ひとりで作っています"): void {
   lastCollabState = null;
   lastCollabIdleMessage = message;
@@ -804,6 +820,8 @@ function renderCollabIdle(message = "ひとりで作っています"): void {
   leaveRoomButton.disabled = collabSession === null;
   renderBootstrapActions(null);
   renderProjectStatus();
+  // Leaving a guest room must re-enable Drive controls.
+  refreshDriveControlsForCollab();
 }
 
 function renderCollabState(state: CollabState): void {
@@ -819,6 +837,7 @@ function renderCollabState(state: CollabState): void {
   leaveRoomButton.disabled = false;
   renderBootstrapActions(state);
   renderProjectStatus();
+  refreshDriveControlsForCollab();
 }
 
 async function rollbackGuestInitialLocal(generation: number): Promise<void> {
@@ -1629,26 +1648,36 @@ function renderDriveStatus(
   const friendlyMessage = friendlyDriveMessage(detailMessage);
   lastDriveStatus = status;
   lastDriveMessage = friendlyMessage;
-  driveStatus.textContent = friendlyMessage
-    ? `${drivePanelStatusText[status]}：${friendlyMessage}`
-    : drivePanelStatusText[status];
-  driveStatus.title = friendlyMessage ?? "";
-  const configured = status !== "not-configured";
-  const connected = !["not-configured", "disconnected", "syncing"]
-    .includes(status);
-  connectGoogleButton.disabled = !driveReady ||
-    !configured || status === "connected" || status === "synced" ||
-    status === "syncing";
-  openDriveButton.disabled = !driveReady || !connected;
-  // Keep Save enabled during conflict so the user can explicitly retry after
-  // re-baselining; automatic background writes remain gated elsewhere.
-  saveDriveButton.disabled = !driveReady || !connected;
-  disconnectGoogleButton.disabled =
-    !driveReady || !configured || status === "disconnected";
+  const collabGuest = Boolean(
+    collabSession && !collabSession.createdThisRoom(),
+  );
+  const controls = driveControlFlags({
+    driveReady,
+    status,
+    collabGuest,
+  });
+  if (controls.guestDriveBlocked) {
+    driveStatus.textContent = GUEST_DRIVE_SAVE_BLOCKED_STATUS;
+    driveStatus.title = GUEST_DRIVE_SAVE_BLOCKED_STATUS;
+  } else {
+    driveStatus.textContent = friendlyMessage
+      ? `${drivePanelStatusText[status]}：${friendlyMessage}`
+      : drivePanelStatusText[status];
+    driveStatus.title = friendlyMessage ?? "";
+  }
+  connectGoogleButton.disabled = controls.connectDisabled;
+  openDriveButton.disabled = controls.openDisabled;
+  // Host: keep Save enabled during conflict for explicit retry after re-baseline.
+  // Guest: always disabled — only the invite creator may write Drive.
+  saveDriveButton.disabled = controls.saveDisabled;
+  disconnectGoogleButton.disabled = controls.disconnectDisabled;
   if (conflictAction === "report") collabSession?.reportDriveConflict();
   if (conflictAction === "clear") collabSession?.clearDriveConflict();
-  if (!collabSession) renderCollabIdle();
-  else renderProjectStatus();
+  if (!collabSession && !syncingDriveControlsFromCollab) {
+    renderCollabIdle(lastCollabIdleMessage);
+  } else {
+    renderProjectStatus();
+  }
 }
 
 async function persistDriveFileId(
