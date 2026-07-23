@@ -42,17 +42,17 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 15:01:12 JST |
+| 最終更新 | 2026-07-23 16:32:43 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`2767084` = PR #30 merge） |
+| 作業ブランチ | `main`（`0138566` = PR #32 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | ドラッグ中は remote loadProject を遅延。上限後は cancelCurrentGesture（#28）。機能3ボタンは「新しい作品」右（#30 MERGED） |
+| 設計 | 単一青ヘッダー（#32）。ドラッグ張り付き defer（#28）。機能パネルはメニューバー行（#30/#32） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
 | 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Phase 2・TURN・default branch 切替は指示まで停止 |
 | Community初回対象外 | AI / 中央バックアップ / 大規模room / 新規school-directory |
@@ -60,7 +60,7 @@
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、ツールバー配置とドラッグ張り付きの本番確認を推奨。
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、統合ヘッダーとドラッグ張り付きの本番確認を推奨。
 
 ## Workspace Migration Fixtures 再提出サマリー（第2ラウンド）
 
