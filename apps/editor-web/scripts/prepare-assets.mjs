@@ -1,6 +1,7 @@
 import {cp, mkdir, readFile, rm, writeFile} from "node:fs/promises";
 import {join, dirname} from "node:path";
 import {fileURLToPath} from "node:url";
+import {remapScratchChromePurpleToBlue} from "./remap-scratch-chrome-colors.mjs";
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(appRoot, "../..");
@@ -48,6 +49,9 @@ guiBundle = guiBundle.replaceAll(
   '"/chunks/mediapipe/',
   '(window.__BLOCKSYNC_GUI_PUBLIC_PATH__||"/")+"chunks/mediapipe/',
 );
+// Scratch chrome accent is looks-secondary purple; Syncratch uses blue.
+// Looks block colourSecondary (#855CD6) is preserved inside the remapper.
+guiBundle = remapScratchChromePurpleToBlue(guiBundle);
 await writeFile(join(generated, "gui/scratch-gui-standalone.js"), guiBundle);
 
 await cp(fixtureSource, join(generated, "fixtures"), {recursive: true});

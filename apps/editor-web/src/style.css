@@ -921,10 +921,20 @@ body,
   height: 100%;
 }
 
+/*
+ * Scratch chrome accent (menus, modals, focus) is looks-secondary purple in
+ * upstream GUI. prepare-assets remaps the bundle; these rules cover residual
+ * menu-bar painting and keep the unified Syncratch header blue.
+ */
+#scratch-gui {
+  --syncratch-chrome: #1565a9;
+  --syncratch-chrome-dark: #0f4d7a;
+}
+
 /* One Syncratch-blue menu bar: recolor Scratch chrome and drop its logo. */
 #scratch-gui header[role="banner"],
 #scratch-gui [class*="menu-bar_menu-bar_"] {
-  background-color: #1565a9 !important;
+  background-color: var(--syncratch-chrome) !important;
   background-image: none !important;
   box-sizing: border-box;
 }
@@ -941,8 +951,14 @@ body,
 
 #scratch-gui [class*="menu_menu_"],
 #scratch-gui [class*="menu-bar_menu-bar-menu"] {
-  background-color: #1565a9 !important;
+  background-color: var(--syncratch-chrome) !important;
   z-index: 700 !important;
+}
+
+/* Modal / library headers that still resolve looks-secondary at runtime. */
+#scratch-gui [class*="modal_header_"],
+#scratch-gui [class*="library_library-header_"] {
+  background-color: var(--syncratch-chrome) !important;
 }
 
 #scratch-gui #logo_img,
