@@ -32,6 +32,11 @@ import {
   isWeakerBlockGraph,
   parseTargetJson,
 } from "./block-connectivity.js";
+import {
+  REMOTE_APPLY_DRAG_MAX_WAIT_MS,
+  REMOTE_APPLY_DRAG_RETRY_MS,
+  decideRemoteApplyDuringInteraction,
+} from "./block-interaction.js";
 
 export interface CollabReadinessInput {
   signalingUrl: string;
@@ -107,6 +112,14 @@ export interface CollabSessionOptions {
     assets: Map<string, Uint8Array>,
     context: ApplyRemoteContext,
   ) => void | boolean | Promise<void | boolean>;
+  /**
+   * True while the user is mid Blockly block/workspace drag. Remote apply
+   * must wait so `vm.loadProject` does not clear the workspace under an open
+   * gesture (cursor stuck until reload).
+   */
+  isBlockInteractionActive?: () => boolean;
+  /** Best-effort cancel of the open Blockly gesture before a forced apply. */
+  cancelBlockInteraction?: () => void;
   /**
    * Restore the pre-guest-initial local project when bootstrap cannot reach
    * ready after a tentative guest-initial apply (awaiting / invalid / leave).
@@ -907,6 +920,18 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     emitState();
   };
 
+  let dragApplyWaitStartedAt: number | null = null;
+
+  const scheduleApplyToLocal = (
+    delayMs: number = Math.max(debounceMs, 100),
+  ): void => {
+    if (applyTimer) clearTimeout(applyTimer);
+    applyTimer = setTimeout(() => {
+      applyTimer = null;
+      runApplyToLocal();
+    }, delayMs);
+  };
+
   const runApplyToLocal = (): void => {
     applyPending = applyPending
       .then(async () => {
@@ -914,6 +939,27 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           scheduleGuestEvaluate();
           return;
         }
+        const interacting = Boolean(options.isBlockInteractionActive?.());
+        if (interacting) {
+          if (dragApplyWaitStartedAt === null) {
+            dragApplyWaitStartedAt = Date.now();
+          }
+          const waitedMs = Date.now() - dragApplyWaitStartedAt;
+          const decision = decideRemoteApplyDuringInteraction({
+            interacting: true,
+            waitedMs,
+            retryMs: REMOTE_APPLY_DRAG_RETRY_MS,
+            maxWaitMs: REMOTE_APPLY_DRAG_MAX_WAIT_MS,
+          });
+          if (decision.action === "defer") {
+            scheduleApplyToLocal(decision.delayMs);
+            return;
+          }
+          if (decision.action === "cancel-then-apply") {
+            options.cancelBlockInteraction?.();
+          }
+        }
+        dragApplyWaitStartedAt = null;
         const result = domain.materialize();
         if (!result.ok) {
           // Incomplete asset arrivals are expected while Y.Docs converge; keep
@@ -981,14 +1027,6 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         }
       })
       .catch(() => undefined);
-  };
-
-  const scheduleApplyToLocal = (): void => {
-    if (applyTimer) clearTimeout(applyTimer);
-    applyTimer = setTimeout(() => {
-      applyTimer = null;
-      runApplyToLocal();
-    }, Math.max(debounceMs, 100));
   };
 
   domain.onRemoteChange(() => {

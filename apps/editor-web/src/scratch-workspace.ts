@@ -5,6 +5,10 @@ export interface ScratchWorkspaceLike {
   scrollY?: number;
   scale?: number;
   resize?: () => void;
+  /** Blockly: true during block or workspace drag / keyboard move. */
+  isDragging?: () => boolean;
+  /** Blockly: force-end the open gesture (pointer listeners). */
+  cancelCurrentGesture?: () => void;
   getToolbox?: () => {
     getSelectedItem?: () => {getId?: () => string} | null;
     getToolboxItemById?: (id: string) => unknown;
