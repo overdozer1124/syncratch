@@ -2,10 +2,12 @@
  * Same-origin collab host for Railway verification:
  * - GET /*  → apps/editor-web/dist static files
  * - POST /ai/chat → optional AI advice proxy (API key from client Authorization)
+ * - /oauth/google/* → Drive authorization-code + refresh-token sessions
  * - WS /signal → @blocksync/collab-signaling
  *
  * No TURN. Project bytes never transit this process (WebRTC data channels only).
  * AI proxy never stores API keys and never touches Yjs / signaling traffic.
+ * Drive refresh tokens stay server-side (HttpOnly session cookie).
  */
 import {createServer} from "node:http";
 import {dirname, resolve} from "node:path";
@@ -15,6 +17,10 @@ import {
   startSignalingServer,
 } from "@blocksync/collab-signaling";
 import {handleAiChatProxy} from "./ai-proxy.js";
+import {
+  createDriveOAuthHandler,
+  readDriveOAuthConfigFromEnv,
+} from "./drive-oauth.js";
 import {createStaticRequestHandler} from "./static.js";
 
 export interface StartCollabHostOptions {
@@ -50,8 +56,12 @@ export async function startCollabHost(
     DEFAULT_SIGNALING_PATH;
 
   const handleStatic = createStaticRequestHandler(staticRoot);
+  const handleDriveOAuth = createDriveOAuthHandler({
+    config: readDriveOAuthConfigFromEnv(),
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
+      if (await handleDriveOAuth(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
       if (handleStatic(req, res)) return;
       res.writeHead(405, {"content-type": "text/plain; charset=utf-8"});

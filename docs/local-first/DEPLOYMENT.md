@@ -50,8 +50,31 @@ reference:
 <https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid>.
 
 The editor requests only `https://www.googleapis.com/auth/drive.file`. Do not
-replace it with broad Drive or read-only Drive scopes. Tokens stay in memory and
-must not be written to IndexedDB, SB3, Yjs, logs, or Apps Script properties.
+replace it with broad Drive or read-only Drive scopes. Browser access tokens stay
+in memory and must not be written to IndexedDB, SB3, Yjs, logs, or Apps Script
+properties.
+
+### Refresh-token OAuth (Railway / collab-host)
+
+On same-origin `collab-host`, Drive can use the authorization-code flow with a
+**server-held refresh token** so page reloads do not require a Google popup every
+time:
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | Same OAuth client ID as `VITE_GOOGLE_CLIENT_ID` |
+| `GOOGLE_CLIENT_SECRET` | OAuth client secret (**never** bake into the SPA) |
+| `GOOGLE_OAUTH_REDIRECT_URI` | Optional override; default `https://<host>/oauth/google/callback` |
+| `DRIVE_OAUTH_COOKIE_SECURE` | `true` on HTTPS (default when `NODE_ENV=production`) |
+
+Also register **Authorized redirect URIs** in Google Cloud Console, e.g.
+`https://syncratch-production.up.railway.app/oauth/google/callback`.
+
+Flow: `/oauth/google/start` → Google consent → `/oauth/google/callback` stores the
+refresh token server-side and sets HttpOnly cookie `syncratch_drive_session`.
+The editor calls `/oauth/google/session` to obtain short-lived access tokens.
+If these host env vars are missing, the editor falls back to the GIS token client
+(memory-only; re-auth on each reload).
 
 ## Signaling
 

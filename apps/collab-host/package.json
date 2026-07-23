@@ -12,6 +12,7 @@
   "dependencies": {
     "@blocksync/ai-assist": "workspace:*",
     "@blocksync/collab-signaling": "workspace:*",
+    "@blocksync/google-drive-sync": "workspace:*",
     "tsx": "^4.20.3",
     "ws": "^8.18.2"
   },

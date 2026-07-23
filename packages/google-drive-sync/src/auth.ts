@@ -117,6 +117,11 @@ export interface GoogleAuthorization {
   disconnect(): void;
   getAccessToken(): string | null;
   canRestoreSession(): boolean;
+  /**
+   * Optional: refresh / reload an access token without a full reconnect UI.
+   * Host-backed OAuth implements this via the HttpOnly session cookie.
+   */
+  ensureAccessToken?(): Promise<string | null>;
 }
 
 export interface GoogleAuthorizationOptions {
@@ -140,6 +145,7 @@ export function createGoogleAuthorization(
       return preference.isEnabled() && accessToken === null;
     },
     async connect() {
+      if (accessToken) return accessToken;
       if (connectPromise) return connectPromise;
       if (!options.clientId) {
         throw new DriveConfigurationError("Google client ID is not configured");
@@ -204,6 +210,15 @@ export function createGoogleAuthorization(
     },
     getAccessToken() {
       return accessToken;
+    },
+    async ensureAccessToken() {
+      if (accessToken) return accessToken;
+      if (!preference.isEnabled()) return null;
+      try {
+        return await this.connect();
+      } catch {
+        return null;
+      }
     },
   };
 }

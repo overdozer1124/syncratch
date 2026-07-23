@@ -194,6 +194,12 @@ export function createEditorDriveIntegration(
     },
     async tryRestoreSession() {
       if (!dependencies.configured) return false;
+      // Host-backed OAuth: probe the HttpOnly cookie session without redirecting.
+      if (dependencies.auth.ensureAccessToken) {
+        const token = await dependencies.auth.ensureAccessToken();
+        if (!token) return false;
+        return this.connect();
+      }
       if (!dependencies.auth.canRestoreSession()) return false;
       return this.connect();
     },
