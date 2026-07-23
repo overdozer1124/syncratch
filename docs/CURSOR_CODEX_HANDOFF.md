@@ -4702,4 +4702,23 @@ merge: 1b8145ab2b26fca1101a7f2d34f77f305bdca780
 次: merge 待ち
 ```
 
+### 2026-07-23 14:21:03 JST — Cursor（PR #24 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「マージして」
+対象: PR #24 → base main
+merge: f4b88d61264f9585e1d68e10d2ff1aabf64a22cb
+
+実施:
+- gh pr ready + gh pr merge --merge
+- 台帳を MERGED に更新
+
+案内:
+- Railway が main 追従ならツールバー status icons が本番反映
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+
 
