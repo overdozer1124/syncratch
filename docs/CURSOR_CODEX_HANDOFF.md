@@ -4649,4 +4649,20 @@ merge: 12ff325be7f40b56457229bd46b31b26404e7254
 次の担当: ユーザー
 ```
 
+### 2026-07-23 13:35:00 JST — Cursor（ホスト/ゲスト Drive UI）
+
+```text
+状態: READY_FOR_CODEX_REVIEW
+ユーザー指摘: ホスト/ゲスト区別が必要。ゲストで Drive 保存ボタンが有効なのは問題。
+
+実装 (cursor/host-guest-drive-ui-f431):
+- collab status に「あなたはホスト/ゲスト」を表示（leader 表示はしない）
+- ゲスト中は Drive のつなぐ/開く/保存を disabled + 説明文
+- panel help を更新
+- unit 210 PASS / typecheck PASS / e2e editor+collab 18 PASS
+
+停止: Phase 2 / TURN / default branch 切替しない
+次: merge 待ち
+```
+
 
