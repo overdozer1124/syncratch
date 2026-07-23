@@ -13,20 +13,24 @@
   </head>
   <body>
     <main id="app">
-      <header class="toolbar">
+      <div class="toolbar" role="group" aria-label="作品の操作">
         <div class="primary-controls">
-          <p class="app-brand" aria-label="シンクラッチ">
-            Syncratch
-            <span class="app-brand-kana">シンクラッチ</span>
-          </p>
-          <label class="title-field" for="project-title">
-            <span>作品の名前</span>
-            <input id="project-title" value="新しい作品" />
-          </label>
-          <button id="new-project" type="button">新しい作品</button>
+          <div class="chrome-left" data-testid="chrome-left">
+            <p class="app-brand" aria-label="シンクラッチ">
+              Syncratch
+              <span class="app-brand-kana">シンクラッチ</span>
+            </p>
+            <label class="title-field" for="project-title">
+              <span>作品の名前</span>
+              <input id="project-title" value="新しい作品" />
+            </label>
+            <button id="new-project" type="button">新しい作品</button>
+          </div>
+          <!-- Transparent gap so Scratch 設定/ファイル/編集 sit on the blue bar. -->
+          <div class="chrome-menu-slot" aria-hidden="true"></div>
           <div class="feature-panels">
             <details class="tool-panel file-panel" data-testid="file-panel">
-              <summary>作品ファイルを開く・ダウンロード</summary>
+              <summary>作品ファイル</summary>
               <div class="panel-content">
                 <p class="panel-help">
                   Scratch の作品ファイルを開いたり、この作品をファイルにして残したりできます。
@@ -47,7 +51,7 @@
             </details>
 
             <details class="tool-panel collab-panel" data-testid="collab-panel">
-              <summary>友だちといっしょに作る</summary>
+              <summary>いっしょに作る</summary>
               <div class="panel-content">
                 <p class="panel-help">
                   「いっしょに作るリンク」を使うと、友だちと同じ作品を作れます。
@@ -84,7 +88,7 @@
             </details>
 
             <details class="tool-panel drive-panel" data-testid="drive-panel">
-              <summary>Google ドライブにも保存（使う人だけ）</summary>
+              <summary>Google ドライブ</summary>
               <div class="panel-content">
                 <p class="panel-help">
                   このパソコンの保存にくわえて、Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
@@ -225,7 +229,7 @@
           </span>
           <button id="retry-save" type="button" hidden>もう一度保存</button>
         </div>
-      </header>
+      </div>
       <section
         aria-busy="true"
         class="gui-loading"

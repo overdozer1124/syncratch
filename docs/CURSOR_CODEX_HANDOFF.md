@@ -42,17 +42,17 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-23 16:32:00 JST |
+| 最終更新 | 2026-07-23 18:20:00 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー |
 | 現在のTask | AI 助言支援プロトタイプ（共同編集と並行） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/ai-coding-assist-1111` |
+| 作業ブランチ | `cursor/ai-coding-assist-1111`（main 取り込み済み、マージ予定） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | AI 助言は `packages/ai-assist` + ツールバー設定。共同編集パス非侵入。設計: `docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md` |
+| 設計 | AI 助言は `packages/ai-assist` + ツールバー設定（共同編集パス非侵入）。単一青ヘッダー（#32）。設計: `docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
 | 次Task | Stage 5 手動継続（A5–A7, B1, B3）。AI IR→Mutation 適用は後続 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
@@ -60,14 +60,14 @@
 
 ## Cursorが次に行う作業
 
-AI 助言プロトタイプのレビュー対応。Stage 5 手動ゲート支援（指示時）。
+AI 助言プロトタイプのマージ完了後、Railway 再デプロイと設定パネル表示確認。Stage 5 手動ゲート支援（指示時）。
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
 ```text
-最終更新: 2026-07-23 16:32:00 JST
+最終更新: 2026-07-23 18:20:00 JST
 更新者: Cursor
-状態: READY（PR 作成）
+状態: READY（main 衝突解消後にマージ）
 対象: AI コーディング助言支援（仕様書第6部の試作）
 作業ブランチ: cursor/ai-coding-assist-1111
 対応内容:
@@ -76,6 +76,7 @@ AI 助言プロトタイプのレビュー対応。Stage 5 手動ゲート支援
 - apps/collab-host: POST /ai/chat（キー非保存、signaling 非干渉）
 - apps/editor-web: 設定パネル + AI にきくパネル、Vite 開発プロキシ
 - docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md
+- main（#32 単一青ヘッダー）を取り込み、handoff 衝突のみ解消
 テスト:
 - @blocksync/ai-assist: 14 PASS
 - @blocksync/collab-host: 6 PASS
