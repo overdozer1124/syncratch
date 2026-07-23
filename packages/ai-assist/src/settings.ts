@@ -10,7 +10,11 @@ import {
 } from "./levels.js";
 import {
   detectProviderFromApiKey,
+  normalizeApiKey,
+  parseAiProviderId,
   preferCheapModel,
+  providerLabel,
+  supportedKeyExamples,
   type AiProviderId,
 } from "./providers.js";
 
@@ -27,6 +31,11 @@ export interface AiAssistSettings {
    * Optional explicit model override. Empty → cheap default for detected provider.
    */
   modelOverride: string;
+  /**
+   * Optional provider override when auto-detect fails or user wants to force one.
+   * Empty → use auto-detect from the API key.
+   */
+  providerOverride: "" | Exclude<AiProviderId, "unknown">;
 }
 
 export const DEFAULT_AI_SETTINGS: AiAssistSettings = {
@@ -34,6 +43,7 @@ export const DEFAULT_AI_SETTINGS: AiAssistSettings = {
   apiKey: "",
   level: DEFAULT_AI_LEVEL,
   modelOverride: "",
+  providerOverride: "",
 };
 
 export interface AiAssistResolvedConfig {
@@ -41,6 +51,8 @@ export interface AiAssistResolvedConfig {
   provider: AiProviderId;
   providerLabel: string;
   providerConfident: boolean;
+  /** True when provider came from providerOverride rather than key shape. */
+  providerForced: boolean;
   model: string | null;
   modelReason: string | null;
   ready: boolean;
@@ -50,17 +62,28 @@ export interface AiAssistResolvedConfig {
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+function normalizeProviderOverride(
+  value: unknown,
+): "" | Exclude<AiProviderId, "unknown"> {
+  if (value === "" || value == null) return "";
+  const parsed = parseAiProviderId(value);
+  if (!parsed || parsed === "unknown") return "";
+  return parsed;
+}
+
 export function normalizeAiAssistSettings(
   input: Partial<AiAssistSettings> | null | undefined,
 ): AiAssistSettings {
   return {
     enabled: Boolean(input?.enabled),
-    apiKey: typeof input?.apiKey === "string" ? input.apiKey.trim() : "",
+    apiKey:
+      typeof input?.apiKey === "string" ? normalizeApiKey(input.apiKey) : "",
     level: clampAiLevel(input?.level ?? DEFAULT_AI_LEVEL),
     modelOverride:
       typeof input?.modelOverride === "string"
         ? input.modelOverride.trim()
         : "",
+    providerOverride: normalizeProviderOverride(input?.providerOverride),
   };
 }
 
@@ -80,7 +103,7 @@ export function loadAiAssistSettings(
 
 export function saveAiAssistSettings(
   storage: StorageLike | null | undefined,
-  settings: AiAssistSettings,
+  settings: Partial<AiAssistSettings>,
 ): AiAssistSettings {
   const normalized = normalizeAiAssistSettings(settings);
   if (!storage) return normalized;
@@ -104,11 +127,13 @@ export function clearAiAssistSettings(
 }
 
 export function resolveAiAssistConfig(
-  settingsInput: AiAssistSettings,
+  settingsInput: Partial<AiAssistSettings>,
 ): AiAssistResolvedConfig {
   const settings = normalizeAiAssistSettings(settingsInput);
   const detect = detectProviderFromApiKey(settings.apiKey);
-  const cheap = preferCheapModel(detect.provider);
+  const providerForced = Boolean(settings.providerOverride);
+  const provider = settings.providerOverride || detect.provider;
+  const cheap = preferCheapModel(provider);
   const model =
     settings.modelOverride ||
     cheap?.model ||
@@ -116,13 +141,17 @@ export function resolveAiAssistConfig(
   const modelReason = settings.modelOverride
     ? "手動で指定したモデル"
     : (cheap?.reason ?? null);
+  const label = providerForced
+    ? `${providerLabel(provider)}（手動）`
+    : detect.label;
 
   if (!settings.enabled) {
     return {
       settings,
-      provider: detect.provider,
-      providerLabel: detect.label,
-      providerConfident: detect.confident,
+      provider,
+      providerLabel: label,
+      providerConfident: detect.confident || providerForced,
+      providerForced,
       model,
       modelReason,
       ready: false,
@@ -132,33 +161,37 @@ export function resolveAiAssistConfig(
   if (!settings.apiKey) {
     return {
       settings,
-      provider: detect.provider,
-      providerLabel: detect.label,
-      providerConfident: detect.confident,
+      provider,
+      providerLabel: label,
+      providerConfident: detect.confident || providerForced,
+      providerForced,
       model,
       modelReason,
       ready: false,
       notReadyReason: "API キーを設定してください。",
     };
   }
-  if (detect.provider === "unknown" || !model) {
+  if (provider === "unknown" || !model) {
     return {
       settings,
-      provider: detect.provider,
-      providerLabel: detect.label,
-      providerConfident: detect.confident,
+      provider,
+      providerLabel: label,
+      providerConfident: false,
+      providerForced,
       model,
       modelReason,
       ready: false,
-      notReadyReason: "API キーから AI を判別できませんでした。",
+      notReadyReason:
+        `API キーから AI を判別できませんでした。設定の「AI の種類」で手動選択するか、対応キー（${supportedKeyExamples()}）を入れてください。`,
     };
   }
   if (settings.level === 0) {
     return {
       settings,
-      provider: detect.provider,
-      providerLabel: detect.label,
-      providerConfident: detect.confident,
+      provider,
+      providerLabel: label,
+      providerConfident: detect.confident || providerForced,
+      providerForced,
       model,
       modelReason,
       ready: false,
@@ -168,9 +201,10 @@ export function resolveAiAssistConfig(
 
   return {
     settings,
-    provider: detect.provider,
-    providerLabel: detect.label,
-    providerConfident: detect.confident,
+    provider,
+    providerLabel: label,
+    providerConfident: detect.confident || providerForced,
+    providerForced,
     model,
     modelReason,
     ready: true,
@@ -180,7 +214,7 @@ export function resolveAiAssistConfig(
 
 /** Mask a key for display: keep prefix + last 4 chars. */
 export function maskApiKey(apiKey: string): string {
-  const key = apiKey.trim();
+  const key = normalizeApiKey(apiKey);
   if (!key) return "";
   if (key.length <= 8) return "••••";
   return `${key.slice(0, 6)}…${key.slice(-4)}`;

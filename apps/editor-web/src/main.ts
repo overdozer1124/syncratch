@@ -169,6 +169,7 @@ import {
   aiStatusSummary,
   friendlyAiError,
   levelSelectOptions,
+  providerSelectOptions,
   readSettingsFromForm,
 } from "./ai-assist-ui.js";
 
@@ -322,6 +323,7 @@ const collabStatus = requiredElement<HTMLElement>("collab-status");
 const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
 const aiEnabledInput = requiredElement<HTMLInputElement>("ai-enabled");
 const aiApiKeyInput = requiredElement<HTMLInputElement>("ai-api-key");
+const aiProviderSelect = requiredElement<HTMLSelectElement>("ai-provider");
 const aiLevelSelect = requiredElement<HTMLSelectElement>("ai-level");
 const aiModelOverrideInput = requiredElement<HTMLInputElement>("ai-model-override");
 const aiSettingsSaveButton = requiredElement<HTMLButtonElement>("ai-settings-save");
@@ -2018,6 +2020,16 @@ function fillAiLevelSelect(): void {
   }
 }
 
+function fillAiProviderSelect(): void {
+  aiProviderSelect.replaceChildren();
+  for (const option of providerSelectOptions()) {
+    const el = document.createElement("option");
+    el.value = option.value;
+    el.textContent = option.label;
+    aiProviderSelect.append(el);
+  }
+}
+
 function fillAiModeSelect(settings: AiAssistSettings): void {
   const previous = aiModeSelect.value as AiAdviceMode;
   aiModeSelect.replaceChildren();
@@ -2035,6 +2047,7 @@ function fillAiModeSelect(settings: AiAssistSettings): void {
 function applyAiSettingsToForm(settings: AiAssistSettings): void {
   aiEnabledInput.checked = settings.enabled;
   aiApiKeyInput.value = settings.apiKey;
+  aiProviderSelect.value = settings.providerOverride;
   aiLevelSelect.value = String(settings.level);
   aiModelOverrideInput.value = settings.modelOverride;
 }
@@ -2057,6 +2070,7 @@ function persistAiSettingsFromForm(): AiAssistSettings {
     apiKey: aiApiKeyInput.value,
     level: aiLevelSelect.value,
     modelOverride: aiModelOverrideInput.value,
+    providerOverride: aiProviderSelect.value,
   });
   aiSettings = saveAiAssistSettings(
     typeof localStorage === "undefined" ? null : localStorage,
@@ -2071,6 +2085,7 @@ function persistAiSettingsFromForm(): AiAssistSettings {
   return aiSettings;
 }
 
+fillAiProviderSelect();
 fillAiLevelSelect();
 applyAiSettingsToForm(aiSettings);
 renderAiUi(aiSettings);
@@ -2084,6 +2099,9 @@ aiSettingsClearKeyButton.addEventListener("click", () => {
   aiSettingsFeedback.textContent = "API キーを消しました。";
 });
 aiEnabledInput.addEventListener("change", () => {
+  persistAiSettingsFromForm();
+});
+aiProviderSelect.addEventListener("change", () => {
   persistAiSettingsFromForm();
 });
 aiLevelSelect.addEventListener("change", () => {
