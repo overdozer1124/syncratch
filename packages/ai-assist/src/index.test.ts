@@ -67,7 +67,7 @@ describe("detectProviderFromApiKey", () => {
     expect(resolved.model?.model).toContain("haiku");
     const forced = resolveProviderAndModel("opaque-key", "gemini");
     expect(forced.provider).toBe("gemini");
-    expect(forced.model?.model).toContain("flash");
+    expect(forced.model?.model).toBe("gemini-3.1-flash-lite");
   });
 });
 
@@ -268,7 +268,7 @@ describe("forward helpers", () => {
       apiKey: "AQ.example-auth-key",
       request: {
         provider: "gemini",
-        model: "gemini-2.0-flash-lite",
+        model: "gemini-3.1-flash-lite",
         messages: [{role: "user", content: "hi"}],
       },
       fetchImpl: async (input, init) => {
@@ -287,5 +287,32 @@ describe("forward helpers", () => {
     if (result.ok) expect(result.content).toBe("gemini-ok");
     expect(sawHeader).toBe("AQ.example-auth-key");
     expect(sawUrl).not.toContain("?key=");
+  });
+
+  it("surfaces discontinued Gemini model errors clearly", async () => {
+    const result = await forwardAiChat({
+      apiKey: "AQ.example-auth-key",
+      request: {
+        provider: "gemini",
+        model: "gemini-2.0-flash-lite",
+        messages: [{role: "user", content: "hi"}],
+      },
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 429,
+              message: "Resource exhausted. Please try again later.",
+              status: "RESOURCE_EXHAUSTED",
+            },
+          }),
+          {status: 429, headers: {"content-type": "application/json"}},
+        ),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("RATE_LIMITED");
+      expect(result.message).toContain("RESOURCE_EXHAUSTED");
+    }
   });
 });

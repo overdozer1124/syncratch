@@ -85,11 +85,20 @@ export function readSettingsFromForm(input: {
 
 export function friendlyAiError(message?: string): string {
   if (!message) return "AI でエラーが起きました。もう一度ためしてください。";
-  if (/API key|Unauthorized|401/i.test(message)) {
-    return "API キーが正しくないようです。設定を確認してください。";
+  if (/API key|Unauthorized|401|403/i.test(message)) {
+    return "API キーが正しくないか、使う権限がありません。設定を確認してください。";
+  }
+  if (/model unavailable|not found|no longer available|deprecated|shutdown|404/i.test(message)) {
+    return "このモデルは使えません。設定の「モデル指定」を空にするか、別のモデル名にしてください。";
+  }
+  if (/overloaded|UNAVAILABLE|503/i.test(message)) {
+    return "AI 側が混み合っています。少し待ってからもう一度ためしてください。";
+  }
+  if (/RESOURCE_EXHAUSTED|quota/i.test(message)) {
+    return "利用回数や枠をこえたようです。しばらく待つか、Google AI Studio の利用状況を確認してください。";
   }
   if (/rate limit|429/i.test(message)) {
-    return "いま混み合っています。少し待ってからもう一度ためしてください。";
+    return "いま混み合っているか、回数制限です。少し待ってからもう一度ためしてください。";
   }
   if (/判別|unsupported provider|unknown/i.test(message)) {
     return "AI を判別できませんでした。設定の「AI の種類」で手動選択してください。";

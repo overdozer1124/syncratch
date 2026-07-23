@@ -66,5 +66,11 @@ describe("ai-assist-ui", () => {
     expect(friendlyAiError("401 Unauthorized")).toContain("API キー");
     expect(friendlyAiError("rate limit 429")).toContain("混み合って");
     expect(friendlyAiError("判別できません")).toContain("手動選択");
+    expect(
+      friendlyAiError("gemini model unavailable: no longer available"),
+    ).toContain("モデル");
+    expect(
+      friendlyAiError("gemini rate limited: RESOURCE_EXHAUSTED"),
+    ).toContain("枠");
   });
 });

@@ -131,6 +131,66 @@ function failure(
   return {ok: false, code, message, status};
 }
 
+/** Pull a short upstream error message without leaking secrets. */
+export function extractUpstreamErrorMessage(body: unknown): string {
+  if (!body || typeof body !== "object") return "";
+  const err = (body as {error?: unknown}).error;
+  if (typeof err === "string") return err.slice(0, 240);
+  if (err && typeof err === "object") {
+    const message = (err as {message?: unknown}).message;
+    const status = (err as {status?: unknown}).status;
+    const parts = [
+      typeof status === "string" ? status : "",
+      typeof message === "string" ? message : "",
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(": ").slice(0, 240);
+  }
+  const message = (body as {message?: unknown}).message;
+  return typeof message === "string" ? message.slice(0, 240) : "";
+}
+
+function classifyHttpFailure(
+  provider: string,
+  status: number,
+  body: unknown,
+): AiChatProxyResponse {
+  const detail = extractUpstreamErrorMessage(body);
+  const detailSuffix = detail ? `: ${detail}` : "";
+  if (status === 401 || status === 403) {
+    return failure(
+      "UNAUTHORIZED",
+      `${provider} API key rejected${detailSuffix}`,
+      status,
+    );
+  }
+  if (status === 404 || /not found|not supported|no longer available|deprecated|shutdown/i.test(detail)) {
+    return failure(
+      "PROVIDER_ERROR",
+      `${provider} model unavailable${detailSuffix}`,
+      status,
+    );
+  }
+  if (status === 429 || /RESOURCE_EXHAUSTED|quota|rate limit/i.test(detail)) {
+    return failure(
+      "RATE_LIMITED",
+      `${provider} rate limited${detailSuffix}`,
+      status === 429 ? 429 : status,
+    );
+  }
+  if (status === 503 || /overloaded|UNAVAILABLE/i.test(detail)) {
+    return failure(
+      "PROVIDER_ERROR",
+      `${provider} overloaded${detailSuffix}`,
+      status,
+    );
+  }
+  return failure(
+    "PROVIDER_ERROR",
+    `${provider} ${status}${detailSuffix}`,
+    status,
+  );
+}
+
 export async function forwardAiChat(
   options: ForwardAiChatOptions,
 ): Promise<AiChatProxyResponse> {
@@ -175,18 +235,8 @@ export async function forwardAiChat(
         signal: options.signal,
       });
       const body = await readJson(response);
-      if (response.status === 401 || response.status === 403) {
-        return failure("UNAUTHORIZED", "API key rejected", response.status);
-      }
-      if (response.status === 429) {
-        return failure("RATE_LIMITED", "provider rate limited", 429);
-      }
       if (!response.ok) {
-        return failure(
-          "PROVIDER_ERROR",
-          `anthropic ${response.status}`,
-          response.status,
-        );
+        return classifyHttpFailure("anthropic", response.status, body);
       }
       const blocks = (body as {content?: Array<{type?: string; text?: string}>})
         ?.content;
@@ -251,18 +301,8 @@ export async function forwardAiChat(
         signal: options.signal,
       });
       const body = await readJson(response);
-      if (response.status === 401 || response.status === 403) {
-        return failure("UNAUTHORIZED", "API key rejected", response.status);
-      }
-      if (response.status === 429) {
-        return failure("RATE_LIMITED", "provider rate limited", 429);
-      }
       if (!response.ok) {
-        return failure(
-          "PROVIDER_ERROR",
-          `gemini ${response.status}`,
-          response.status,
-        );
+        return classifyHttpFailure("gemini", response.status, body);
       }
       const parts = (
         body as {
@@ -318,18 +358,8 @@ export async function forwardAiChat(
       signal: options.signal,
     });
     const body = await readJson(response);
-    if (response.status === 401 || response.status === 403) {
-      return failure("UNAUTHORIZED", "API key rejected", response.status);
-    }
-    if (response.status === 429) {
-      return failure("RATE_LIMITED", "provider rate limited", 429);
-    }
     if (!response.ok) {
-      return failure(
-        "PROVIDER_ERROR",
-        `${provider} ${response.status}`,
-        response.status,
-      );
+      return classifyHttpFailure(provider, response.status, body);
     }
     const content = (
       body as {choices?: Array<{message?: {content?: string}}>}

@@ -86,8 +86,8 @@ const CHEAP_MODELS: Record<Exclude<AiProviderId, "unknown">, ProviderModelChoice
   },
   gemini: {
     provider: "gemini",
-    model: "gemini-2.0-flash-lite",
-    reason: "Flash-Lite は短文助言向けに費用が低い",
+    model: "gemini-3.1-flash-lite",
+    reason: "3.1 Flash-Lite は現行の安価・低レイテンシ向け（2.0 Flash-Lite は終了済み）",
   },
   groq: {
     provider: "groq",
@@ -96,7 +96,7 @@ const CHEAP_MODELS: Record<Exclude<AiProviderId, "unknown">, ProviderModelChoice
   },
   openrouter: {
     provider: "openrouter",
-    model: "google/gemini-2.0-flash-lite-001",
+    model: "google/gemini-2.5-flash-lite",
     reason: "OpenRouter 経由の安価な Flash-Lite",
   },
   deepseek: {
