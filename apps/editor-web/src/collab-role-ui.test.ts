@@ -36,17 +36,25 @@ describe("collab room role UI", () => {
     ).toBe("友だちとのつながりが切れました");
   });
 
-  it("disables Drive connect/open/save for collaboration guests", () => {
-    const guest = driveControlFlags({
+  it("blocks Drive open/save for guests but allows Google connect for presence", () => {
+    const guestSynced = driveControlFlags({
       driveReady: true,
       status: "synced",
       collabGuest: true,
     });
-    expect(guest.guestDriveBlocked).toBe(true);
-    expect(guest.connectDisabled).toBe(true);
-    expect(guest.openDisabled).toBe(true);
-    expect(guest.saveDisabled).toBe(true);
+    expect(guestSynced.guestDriveBlocked).toBe(true);
+    expect(guestSynced.connectDisabled).toBe(true);
+    expect(guestSynced.openDisabled).toBe(true);
+    expect(guestSynced.saveDisabled).toBe(true);
     expect(GUEST_DRIVE_SAVE_BLOCKED_STATUS).toContain("ゲスト");
+
+    const guestDisconnected = driveControlFlags({
+      driveReady: true,
+      status: "disconnected",
+      collabGuest: true,
+    });
+    expect(guestDisconnected.connectDisabled).toBe(false);
+    expect(guestDisconnected.saveDisabled).toBe(true);
 
     const host = driveControlFlags({
       driveReady: true,

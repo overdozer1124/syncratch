@@ -10,6 +10,7 @@ function collabState(partial: Partial<CollabState> & Pick<CollabState, "status" 
     signalingPeerCount: 0,
     joinedTopic: true,
     signalingError: null,
+    participants: [],
     ...partial,
   };
 }

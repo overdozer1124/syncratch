@@ -19,6 +19,12 @@ export type StatusIconTone = "ok" | "warn" | "error" | "muted" | "busy" | "activ
 
 export type StatusIconKind = "local" | "drive" | "online" | "avatar";
 
+export interface StatusAvatarFace {
+  label: string;
+  imageUrl?: string;
+  hostRing?: boolean;
+}
+
 export interface StatusIconChip {
   id: "local" | "drive" | "collab" | "avatar";
   kind: StatusIconKind;
@@ -29,10 +35,12 @@ export interface StatusIconChip {
   badge?: string;
   /** Crown mark on the online pill when this peer is the room host. */
   showCrown?: boolean;
-  /** Google profile picture for the avatar chip. */
+  /** Google profile picture for a single avatar chip. */
   imageUrl?: string;
   /** Red host ring around the avatar (Scratch-style). */
   hostRing?: boolean;
+  /** Stacked faces for the connected roster preview (max ~3). */
+  faces?: StatusAvatarFace[];
 }
 
 const localStatusText: Record<LocalSaveState, string> = {
@@ -140,29 +148,46 @@ export function composeStatusIcons(input: ProjectStatusInput): StatusIconChip[] 
       id: "collab",
       kind: "online",
       label: isHost
-        ? `${collabLabel} · ${collabRoomRoleLabel("host")}`
-        : collabLabel,
+        ? `${collabLabel} · ${collabRoomRoleLabel("host")} · クリックで一覧`
+        : `${collabLabel} · クリックで一覧`,
       tone,
       showCrown: Boolean(isHost && input.collab.status !== "disconnected"),
     });
 
     if (input.collab.status !== "disconnected") {
+      const roster = input.collab.participants ?? [];
+      const faces: StatusAvatarFace[] = (roster.length > 0
+        ? roster
+        : [
+            {
+              participantId: "self",
+              displayName: isHost
+                ? collabRoomRoleLabel("host")
+                : role
+                  ? collabRoomRoleLabel(role)
+                  : "じぶん",
+              avatarUrl: input.googleAvatarUrl,
+              isSelf: true,
+              isRoomHost: Boolean(isHost),
+            },
+          ]
+      )
+        .slice(0, 3)
+        .map(person => ({
+          label: person.displayName,
+          imageUrl: person.avatarUrl,
+          hostRing: person.isRoomHost,
+        }));
+
       icons.push({
         id: "avatar",
         kind: "avatar",
-        label: input.googleAvatarUrl
-          ? isHost
-            ? `Google アカウント（ホスト）· ${collabLabel}`
-            : `Google アカウント · ${collabLabel}`
-          : isHost
-            ? collabRoomRoleLabel("host")
-            : role
-              ? collabRoomRoleLabel(role)
-              : collabLabel,
+        label: `つながっている人 ${participantCount}人 · クリックで一覧`,
         tone: isHost ? "active" : "ok",
         badge: formatPeopleBadge(participantCount),
-        imageUrl: input.googleAvatarUrl,
-        hostRing: Boolean(isHost),
+        imageUrl: faces[0]?.imageUrl ?? input.googleAvatarUrl,
+        hostRing: Boolean(faces[0]?.hostRing),
+        faces,
       });
     }
   }
@@ -305,7 +330,33 @@ export function renderStatusIconRow(
     } else if (chip.kind === "online") {
       item.append(renderOnlineChip(chip));
     } else if (chip.kind === "avatar") {
-      item.append(chip.imageUrl ? avatarImage(chip.imageUrl) : personGlyph());
+      const faces = chip.faces && chip.faces.length > 0
+        ? chip.faces
+        : [
+            {
+              label: chip.label,
+              imageUrl: chip.imageUrl,
+              hostRing: chip.hostRing,
+            },
+          ];
+      if (faces.length === 1) {
+        const face = faces[0]!;
+        item.append(face.imageUrl ? avatarImage(face.imageUrl) : personGlyph());
+      } else {
+        item.classList.add("status-icon--avatar-stack");
+        const stack = document.createElement("span");
+        stack.className = "status-avatar-stack";
+        stack.setAttribute("aria-hidden", "true");
+        for (const face of faces) {
+          const faceEl = document.createElement("span");
+          faceEl.className = "status-avatar-stack-face";
+          if (face.hostRing) faceEl.classList.add("status-avatar-stack-face--host");
+          if (face.imageUrl) faceEl.append(avatarImage(face.imageUrl));
+          else faceEl.append(personGlyph());
+          stack.append(faceEl);
+        }
+        item.append(stack);
+      }
     } else {
       item.append(localGlyph());
     }

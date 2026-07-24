@@ -28,6 +28,7 @@ import {
 import type {CollabProvider} from "@blocksync/collab-webrtc";
 import {electLeader, isLeader as leaderMatches, type LeadershipState} from "@blocksync/collab-leader";
 import type {ProjectDocument, ScratchTarget} from "@blocksync/project-schema";
+import {buildCollabParticipants} from "./collab-presence.js";
 import {
   isWeakerBlockGraph,
   parseTargetJson,
@@ -64,6 +65,14 @@ export type BootstrapPhase =
   | "invalid-project"
   | "local-save-failed";
 
+export interface CollabParticipantView {
+  participantId: string;
+  displayName: string;
+  avatarUrl?: string;
+  isSelf: boolean;
+  isRoomHost: boolean;
+}
+
 export interface CollabState {
   status: string;
   peerCount: number;
@@ -79,6 +88,8 @@ export interface CollabState {
   signalingPeerCount: number;
   joinedTopic: boolean;
   signalingError: string | null;
+  /** Connected roster for toolbar presence UI (self + open DC peers). */
+  participants: CollabParticipantView[];
 }
 
 export interface LocalMaterialization {
@@ -163,6 +174,11 @@ export interface NoteLocalChangeOptions {
   force?: boolean;
 }
 
+export interface CollabLocalProfile {
+  displayName?: string;
+  avatarUrl?: string;
+}
+
 export interface CollabSession {
   start(options: {host: boolean}): HostPreflightResult | {ok: true};
   leave(): void;
@@ -170,6 +186,8 @@ export interface CollabSession {
   reportDriveConflict(): void;
   clearDriveConflict(): void;
   canPersistToDrive(options?: {explicit?: boolean}): {ok: boolean; reason?: string};
+  /** Advertise Google profile (or fallback name) over awareness. */
+  setLocalProfile(profile: CollabLocalProfile): void;
   leadershipEpoch(): string;
   isLeader(): boolean;
   createdThisRoom(): boolean;
@@ -215,6 +233,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
 
   let bootstrapPhase: BootstrapPhase = "idle";
   let createdThisRoom = false;
+  let localProfile: CollabLocalProfile = {};
   let guestReady = false;
   let verifiedAssets = 0;
   let expectedAssets = 0;
@@ -549,23 +568,49 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     return leaderMatches(leadership, options.participantId) ? "leader" : "follower";
   };
 
-  const emitState = (): void => {
-    options.onState?.({
-      status: provider.getStatus(),
-      peerCount: provider.getPeers().length,
-      role: role(),
-      epoch: leadership?.epoch ?? null,
-      conflict,
-      bootstrapPhase,
-      createdThisRoom,
-      verifiedAssets,
-      expectedAssets,
-      receivedBytes,
-      issueCodes: [...issueCodes],
-      signalingPeerCount: provider.getSignalingPeers().length,
-      joinedTopic: provider.hasJoinedTopic(),
-      signalingError: provider.getSignalingError(),
+  const advertisePresence = (): void => {
+    provider.setPresence({
+      eligible: selfEligible,
+      roomHost: createdThisRoom,
+      ...(localProfile.displayName
+        ? {displayName: localProfile.displayName}
+        : {}),
+      ...(localProfile.avatarUrl ? {avatarUrl: localProfile.avatarUrl} : {}),
     });
+  };
+
+  const currentParticipants = (): CollabParticipantView[] => {
+    if (!active) return [];
+    return buildCollabParticipants({
+      selfId: options.participantId,
+      selfCreatedRoom: createdThisRoom,
+      selfDisplayName: localProfile.displayName,
+      selfAvatarUrl: localProfile.avatarUrl,
+      peers: provider.getPeers(),
+      awareness: provider.getAwareness(),
+    });
+  };
+
+  const snapshotState = (): CollabState => ({
+    status: provider.getStatus(),
+    peerCount: provider.getPeers().length,
+    role: role(),
+    epoch: leadership?.epoch ?? null,
+    conflict,
+    bootstrapPhase,
+    createdThisRoom,
+    verifiedAssets,
+    expectedAssets,
+    receivedBytes,
+    issueCodes: [...issueCodes],
+    signalingPeerCount: provider.getSignalingPeers().length,
+    joinedTopic: provider.hasJoinedTopic(),
+    signalingError: provider.getSignalingError(),
+    participants: currentParticipants(),
+  });
+
+  const emitState = (): void => {
+    options.onState?.(snapshotState());
   };
 
   const markProgress = (_kind: string): void => {
@@ -1140,7 +1185,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     start({host}) {
       maySeed = host;
       createdThisRoom = host;
-      provider.setPresence({eligible: selfEligible});
+      advertisePresence();
       if (host) {
         const sealed = performInitialHostSeal();
         if (!sealed.ok) {
@@ -1288,26 +1333,21 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     createdThisRoom() {
       return createdThisRoom;
     },
+    setLocalProfile(profile) {
+      localProfile = {
+        displayName: profile.displayName?.trim() || undefined,
+        avatarUrl: profile.avatarUrl?.trim() || undefined,
+      };
+      if (active) {
+        advertisePresence();
+        emitState();
+      }
+    },
     getBootstrapPhase() {
       return bootstrapPhase;
     },
     getState() {
-      return {
-        status: provider.getStatus(),
-        peerCount: provider.getPeers().length,
-        role: role(),
-        epoch: leadership?.epoch ?? null,
-        conflict,
-        bootstrapPhase,
-        createdThisRoom,
-        verifiedAssets,
-        expectedAssets,
-        receivedBytes,
-        issueCodes: [...issueCodes],
-        signalingPeerCount: provider.getSignalingPeers().length,
-        joinedTopic: provider.hasJoinedTopic(),
-        signalingError: provider.getSignalingError(),
-      };
+      return snapshotState();
     },
     async flush() {
       if (localTimer) {

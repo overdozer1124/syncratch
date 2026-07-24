@@ -104,6 +104,7 @@
                 <p class="panel-help">
                   このパソコンの保存にくわえて、Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
                   いっしょに作るときのゲストは、ドライブに保存できません（リンクを作ったホストだけ）。
+                  Google とつなぐと、つながっている人の一覧にアイコンと名前が出ます。
                 </p>
                 <div class="drive-controls">
                   <button id="connect-google" type="button" disabled>Google とつなぐ</button>
@@ -328,6 +329,13 @@
               data-testid="status-icon-row"
               id="status-icon-row"
             ></span>
+            <div
+              aria-hidden="true"
+              class="collab-presence-popover"
+              data-testid="collab-presence-popover"
+              hidden
+              id="collab-presence-popover"
+            ></div>
             <span
               class="status-sr-only"
               data-testid="save-status"
