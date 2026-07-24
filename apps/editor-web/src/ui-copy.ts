@@ -96,6 +96,13 @@ export function friendlyCollaborationMessage(
   );
 }
 
+/** Shown after creating an invite link and copying it to the clipboard. */
+export const INVITE_LINK_COPIED_TOAST =
+  "いっしょに作るリンクがコピーされました。友だちに教えてね。";
+
+export const INVITE_LINK_COPY_FAILED_TOAST =
+  "コピーできませんでした。リンクを選んでコピーしてください。";
+
 export const drivePanelStatusText: Record<
   | "not-configured"
   | "disconnected"
