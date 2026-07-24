@@ -51,12 +51,12 @@ export function driveControlFlags(input: {
 
   return {
     guestDriveBlocked,
+    // Guests may connect Google for avatar/name presence; Drive open/save stay blocked.
     connectDisabled: !input.driveReady ||
       !configured ||
       input.status === "connected" ||
       input.status === "synced" ||
-      input.status === "syncing" ||
-      guestDriveBlocked,
+      input.status === "syncing",
     // Opening another Drive file mid-guest session would fork confusingly.
     openDisabled: !input.driveReady || !connected || guestDriveBlocked,
     saveDisabled: !input.driveReady || !connected || guestDriveBlocked,

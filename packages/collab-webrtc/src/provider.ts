@@ -3,8 +3,8 @@
  *
  * Responsibilities:
  *   - Yjs sync protocol (state-vector exchange + incremental updates).
- *   - Awareness/presence limited to random participant ids (no names, emails,
- *     tokens, roster, or Drive permissions).
+ *   - Awareness/presence: random participant ids plus optional room-local
+ *     displayName/avatarUrl (no emails, tokens, or Drive permissions).
  *   - Payload encryption with the room secret (see `wire.ts`).
  *   - Connection state, peer membership, clean disconnect.
  *

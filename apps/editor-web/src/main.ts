@@ -52,6 +52,12 @@ import {
   renderStatusIconRow,
 } from "./status-icons.js";
 import {
+  isCollabPresenceToggleTarget,
+  renderCollabPresencePopover,
+  setCollabPresencePopoverOpen,
+  toggleCollabPresencePopover,
+} from "./collab-presence-ui.js";
+import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
@@ -336,6 +342,9 @@ const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
+const collabPresencePopover = requiredElement<HTMLElement>(
+  "collab-presence-popover",
+);
 const connectGoogleButton =
   requiredElement<HTMLButtonElement>("connect-google");
 const openDriveButton = requiredElement<HTMLButtonElement>("open-drive");
@@ -432,11 +441,36 @@ document.addEventListener("pointerdown", event => {
     return;
   }
   closeOpenToolPanels(dismissibleToolPanels);
+  if (
+    collabPresencePopover.classList.contains("is-open") &&
+    event.target instanceof Node &&
+    !collabPresencePopover.contains(event.target) &&
+    !statusIconRow.contains(event.target)
+  ) {
+    setCollabPresencePopoverOpen(collabPresencePopover, false);
+  }
 });
 
 document.addEventListener("keydown", event => {
   if (!shouldCloseToolPanelsOnKey(event.key)) return;
   closeOpenToolPanels(toolPanels);
+  setCollabPresencePopoverOpen(collabPresencePopover, false);
+});
+
+statusIconRow.addEventListener("click", event => {
+  if (!isCollabPresenceToggleTarget(event.target)) return;
+  if (!lastCollabState || lastCollabState.status === "disconnected") return;
+  syncCollabPresencePopover();
+  toggleCollabPresencePopover(collabPresencePopover);
+});
+
+statusIconRow.addEventListener("keydown", event => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (!isCollabPresenceToggleTarget(event.target)) return;
+  event.preventDefault();
+  if (!lastCollabState || lastCollabState.status === "disconnected") return;
+  syncCollabPresencePopover();
+  toggleCollabPresencePopover(collabPresencePopover);
 });
 
 function closePanelFor(element: HTMLElement): void {
@@ -486,6 +520,7 @@ let lastDriveMessage: string | undefined;
 let driveOverwriteConfirmationRequired = false;
 /** Google profile picture for the collab avatar chip; cleared on disconnect. */
 let googleAvatarUrl: string | undefined;
+let googleDisplayName: string | undefined;
 let googleAvatarFetchGeneration = 0;
 let lastCollabState: CollabState | null = null;
 let lastCollabIdleMessage = "ひとりで作っています";
@@ -847,11 +882,33 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
   });
 }
 
+function publishLocalCollabProfile(): void {
+  collabSession?.setLocalProfile({
+    displayName: googleDisplayName,
+    avatarUrl: googleAvatarUrl,
+  });
+}
+
+function syncCollabPresencePopover(): void {
+  const participants = lastCollabState?.participants ?? [];
+  if (participants.length === 0) {
+    setCollabPresencePopoverOpen(collabPresencePopover, false);
+    collabPresencePopover.replaceChildren();
+    return;
+  }
+  renderCollabPresencePopover(collabPresencePopover, participants);
+  if (!collabPresencePopover.classList.contains("is-open")) {
+    collabPresencePopover.hidden = true;
+  }
+}
+
 async function syncGoogleAvatarProfile(): Promise<void> {
   const token = driveIntegration.getAccessToken();
   if (!token) {
     googleAvatarFetchGeneration += 1;
     googleAvatarUrl = undefined;
+    googleDisplayName = undefined;
+    publishLocalCollabProfile();
     renderProjectStatus();
     return;
   }
@@ -859,6 +916,8 @@ async function syncGoogleAvatarProfile(): Promise<void> {
   const profile = await fetchGoogleUserProfile(token);
   if (generation !== googleAvatarFetchGeneration) return;
   googleAvatarUrl = profile?.picture;
+  googleDisplayName = profile?.name;
+  publishLocalCollabProfile();
   renderProjectStatus();
 }
 
@@ -879,6 +938,7 @@ function renderProjectStatus(): void {
   saveStatus.title = fatalBootError ?? "";
   projectStatusDetails.textContent = details ? ` · ${details}` : "";
   projectStatusDetails.hidden = details.length === 0;
+  syncCollabPresencePopover();
 }
 
 function renderSaveState(state: LocalSaveState): void {
@@ -956,6 +1016,7 @@ function refreshDriveControlsForCollab(): void {
 function renderCollabIdle(message = "ひとりで作っています"): void {
   lastCollabState = null;
   lastCollabIdleMessage = message;
+  setCollabPresencePopoverOpen(collabPresencePopover, false);
   collabStatus.textContent = message;
   const ready = hasCurrent && evaluateCollabReadiness({signalingUrl}).ok;
   createRoomButton.disabled = Boolean(collabSession) || !ready;
@@ -1224,6 +1285,8 @@ async function startCollaboration(
     collabStatus.title = summary.codes.length > 0
       ? `${summary.codes.join(", ")} / 作品の素材や内容を確認してください。`
       : "作品の素材や内容を確認してください。";
+  } else {
+    publishLocalCollabProfile();
   }
   closePanelFor(host ? createRoomButton : joinRoomButton);
 }
@@ -1853,9 +1916,11 @@ function renderDriveStatus(
   const connected = !["not-configured", "disconnected"].includes(status);
   if (connected && !googleAvatarUrl) {
     void syncGoogleAvatarProfile();
-  } else if (!connected && googleAvatarUrl) {
+  } else if (!connected && (googleAvatarUrl || googleDisplayName)) {
     googleAvatarFetchGeneration += 1;
     googleAvatarUrl = undefined;
+    googleDisplayName = undefined;
+    publishLocalCollabProfile();
     renderProjectStatus();
   }
 }
@@ -2078,6 +2143,8 @@ disconnectGoogleButton.addEventListener("click", () => {
   driveIntegration.disconnect();
   googleAvatarFetchGeneration += 1;
   googleAvatarUrl = undefined;
+  googleDisplayName = undefined;
+  publishLocalCollabProfile();
   renderProjectStatus();
   closePanelFor(disconnectGoogleButton);
 });

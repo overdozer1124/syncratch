@@ -27,6 +27,7 @@ function collab(
     signalingError: null,
     expectedAssets: 0,
     verifiedAssets: 0,
+    participants: partial.participants ?? [],
     ...partial,
   };
 }
@@ -48,18 +49,34 @@ describe("Google Drive status mark", () => {
 });
 
 describe("composeStatusIcons", () => {
-  it("builds online+crown and Google avatar for the host", () => {
+  it("builds online+crown and roster faces for the host", () => {
     const icons = composeStatusIcons({
       local: "clean",
       drive: "disconnected",
       googleAvatarUrl: "https://lh3.googleusercontent.com/a/host",
       collab: collab({
         status: "connected",
-        peerCount: 0,
+        peerCount: 1,
         bootstrapPhase: "ready",
         role: "leader",
         createdThisRoom: true,
         conflict: false,
+        participants: [
+          {
+            participantId: "p-host",
+            displayName: "たろう",
+            avatarUrl: "https://lh3.googleusercontent.com/a/host",
+            isSelf: true,
+            isRoomHost: true,
+          },
+          {
+            participantId: "p-guest",
+            displayName: "はなこ",
+            avatarUrl: "https://lh3.googleusercontent.com/a/guest",
+            isSelf: false,
+            isRoomHost: false,
+          },
+        ],
       }),
     });
 
@@ -76,9 +93,11 @@ describe("composeStatusIcons", () => {
     expect(online?.label).toContain("ホスト");
     const avatar = icons.find(icon => icon.id === "avatar");
     expect(avatar?.kind).toBe("avatar");
-    expect(avatar?.imageUrl).toBe("https://lh3.googleusercontent.com/a/host");
-    expect(avatar?.hostRing).toBe(true);
-    expect(avatar?.badge).toBe("1");
+    expect(avatar?.faces?.map(face => face.imageUrl)).toEqual([
+      "https://lh3.googleusercontent.com/a/host",
+      "https://lh3.googleusercontent.com/a/guest",
+    ]);
+    expect(avatar?.badge).toBe("2");
   });
 
   it("shows guest online without crown and people ×N when many peers join", () => {
@@ -98,8 +117,6 @@ describe("composeStatusIcons", () => {
     expect(icons.find(icon => icon.id === "drive")?.tone).toBe("active");
     expect(icons.find(icon => icon.id === "collab")?.showCrown).toBe(false);
     expect(icons.find(icon => icon.id === "avatar")?.badge).toBe("×6");
-    expect(icons.find(icon => icon.id === "avatar")?.hostRing).toBe(false);
-    expect(icons.find(icon => icon.id === "avatar")?.imageUrl).toBeUndefined();
   });
 
   it("hides Drive when not configured and omits collab when solo", () => {
