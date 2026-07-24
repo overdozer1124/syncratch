@@ -147,9 +147,8 @@ export function composeStatusIcons(input: ProjectStatusInput): StatusIconChip[] 
     icons.push({
       id: "collab",
       kind: "online",
-      label: isHost
-        ? `${collabLabel} · ${collabRoomRoleLabel("host")} · クリックで一覧`
-        : `${collabLabel} · クリックで一覧`,
+      // collabLabel already includes the host/guest role via appendCollabRoomRole.
+      label: `${collabLabel} · クリックで一覧`,
       tone,
       showCrown: Boolean(isHost && input.collab.status !== "disconnected"),
     });
