@@ -37,11 +37,114 @@
               あたらしく作る
             </button>
           </div>
-          <!-- Transparent gap so Scratch 設定/ファイル/編集 sit on the blue bar. -->
-          <div class="chrome-menu-slot" aria-hidden="true"></div>
           <div class="feature-panels">
+            <details class="tool-panel settings-panel" data-testid="settings-panel">
+              <summary>
+                <img
+                  alt=""
+                  class="menu-summary-icon"
+                  src="%BASE_URL%branding/menu/settings.svg"
+                />
+                設定
+              </summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  ことばや見た目、AI の助言の設定です。
+                </p>
+                <div class="settings-controls">
+                  <label class="invite-field" for="scratch-locale">
+                    <span>ことば</span>
+                    <select
+                      data-testid="scratch-locale"
+                      id="scratch-locale"
+                    ></select>
+                  </label>
+                  <label class="invite-field" for="scratch-color-mode">
+                    <span>いろのモード</span>
+                    <select
+                      data-testid="scratch-color-mode"
+                      id="scratch-color-mode"
+                    >
+                      <option value="default">ふつう</option>
+                      <option value="high-contrast">くっきり</option>
+                    </select>
+                  </label>
+                  <hr class="settings-divider" />
+                  <p class="panel-help settings-ai-help">
+                    AI のコーディング助言は、はじめはオフです。使うときだけオンにして、API キーを入れてください。
+                    キーはこのパソコンにだけ保存され、作品ファイルやいっしょに作る通信には入りません。
+                  </p>
+                  <label class="settings-toggle" for="ai-enabled">
+                    <input id="ai-enabled" type="checkbox" />
+                    <span>AI の助言を使う</span>
+                  </label>
+                  <label class="invite-field" for="ai-api-key">
+                    <span>AI の API キー</span>
+                    <!--
+                      Use type=text (masked via CSS), not type=password.
+                      Chrome otherwise treats project-title + this field as a
+                      login form and pops "Save password?" over Scratch dialogs.
+                    -->
+                    <input
+                      autocomplete="off"
+                      class="secret-text-input"
+                      data-1p-ignore="true"
+                      data-bwignore="true"
+                      data-form-type="other"
+                      data-lpignore="true"
+                      id="ai-api-key"
+                      name="syncratch-ai-api-key"
+                      placeholder="ここに API キーを入れる"
+                      spellcheck="false"
+                      type="text"
+                    />
+                  </label>
+                  <label class="invite-field" for="ai-provider">
+                    <span>AI の種類（わからないときだけ手動）</span>
+                    <select id="ai-provider"></select>
+                  </label>
+                  <label class="invite-field" for="ai-level">
+                    <span>AI の使い方レベル</span>
+                    <select id="ai-level"></select>
+                  </label>
+                  <label class="invite-field" for="ai-model-override">
+                    <span>モデル指定（空欄なら安いモデルを自動選択）</span>
+                    <input
+                      autocomplete="off"
+                      id="ai-model-override"
+                      placeholder="空欄でOK"
+                      spellcheck="false"
+                      type="text"
+                    />
+                  </label>
+                  <button id="ai-settings-save" type="button">AI 設定を保存</button>
+                  <button id="ai-settings-clear-key" type="button">API キーを消す</button>
+                  <span
+                    aria-live="polite"
+                    class="panel-status"
+                    data-testid="ai-settings-status"
+                    id="ai-settings-status"
+                  >AI はオフ</span>
+                </div>
+                <p class="safety-help">
+                  ふつうは API キーの形から自動で判別します
+                  （例: Gemini の新しいキー AQ.… / 旧キー AIza…、OpenAI sk-…、Claude sk-ant-…）。
+                  判別できないときは「AI の種類」を選んでください。
+                  Gemini の既定モデルは gemini-3.1-flash-lite（安い現行モデル）です。
+                </p>
+                <p aria-live="polite" class="panel-feedback" id="ai-settings-feedback"></p>
+              </div>
+            </details>
+
             <details class="tool-panel file-panel" data-testid="file-panel">
-              <summary>作品ファイル</summary>
+              <summary>
+                <img
+                  alt=""
+                  class="menu-summary-icon"
+                  src="%BASE_URL%branding/menu/file.svg"
+                />
+                ファイル
+              </summary>
               <div class="panel-content">
                 <p class="panel-help">
                   Scratch の作品ファイルを開いたり、この作品をファイルにして残したりできます。
@@ -57,6 +160,41 @@
                   />
                   <button id="download-project" type="button">作品ファイルをダウンロード</button>
                   <button id="save-project" type="button">今すぐ保存</button>
+                </div>
+              </div>
+            </details>
+
+            <details class="tool-panel edit-panel" data-testid="edit-panel">
+              <summary>
+                <img
+                  alt=""
+                  class="menu-summary-icon"
+                  src="%BASE_URL%branding/menu/edit.svg"
+                />
+                編集
+              </summary>
+              <div class="panel-content">
+                <p class="panel-help">
+                  けしたものを戻したり、ターボモードを切り替えたりできます。
+                </p>
+                <div class="edit-controls">
+                  <button
+                    data-testid="restore-deletion"
+                    disabled
+                    id="restore-deletion"
+                    type="button"
+                  >けしたものを もとにもどす</button>
+                  <button
+                    data-testid="toggle-turbo"
+                    id="toggle-turbo"
+                    type="button"
+                  >ターボモードを オンにする</button>
+                  <span
+                    aria-live="polite"
+                    class="panel-status"
+                    data-testid="edit-status"
+                    id="edit-status"
+                  ></span>
                 </div>
               </div>
             </details>
@@ -118,76 +256,6 @@
                     id="drive-status"
                   >このパソコンでは使えません</span>
                 </div>
-              </div>
-            </details>
-
-            <details class="tool-panel settings-panel" data-testid="settings-panel">
-              <summary>AI 設定</summary>
-              <div class="panel-content">
-                <p class="panel-help">
-                  AI のコーディング助言は、はじめはオフです。使うときだけオンにして、API キーを入れてください。
-                  キーはこのパソコンにだけ保存され、作品ファイルやいっしょに作る通信には入りません。
-                </p>
-                <div class="settings-controls">
-                  <label class="settings-toggle" for="ai-enabled">
-                    <input id="ai-enabled" type="checkbox" />
-                    <span>AI の助言を使う</span>
-                  </label>
-                  <label class="invite-field" for="ai-api-key">
-                    <span>AI の API キー</span>
-                    <!--
-                      Use type=text (masked via CSS), not type=password.
-                      Chrome otherwise treats project-title + this field as a
-                      login form and pops "Save password?" over Scratch dialogs.
-                    -->
-                    <input
-                      autocomplete="off"
-                      class="secret-text-input"
-                      data-1p-ignore="true"
-                      data-bwignore="true"
-                      data-form-type="other"
-                      data-lpignore="true"
-                      id="ai-api-key"
-                      name="syncratch-ai-api-key"
-                      placeholder="ここに API キーを入れる"
-                      spellcheck="false"
-                      type="text"
-                    />
-                  </label>
-                  <label class="invite-field" for="ai-provider">
-                    <span>AI の種類（わからないときだけ手動）</span>
-                    <select id="ai-provider"></select>
-                  </label>
-                  <label class="invite-field" for="ai-level">
-                    <span>AI の使い方レベル</span>
-                    <select id="ai-level"></select>
-                  </label>
-                  <label class="invite-field" for="ai-model-override">
-                    <span>モデル指定（空欄なら安いモデルを自動選択）</span>
-                    <input
-                      autocomplete="off"
-                      id="ai-model-override"
-                      placeholder="空欄でOK"
-                      spellcheck="false"
-                      type="text"
-                    />
-                  </label>
-                  <button id="ai-settings-save" type="button">AI 設定を保存</button>
-                  <button id="ai-settings-clear-key" type="button">API キーを消す</button>
-                  <span
-                    aria-live="polite"
-                    class="panel-status"
-                    data-testid="ai-settings-status"
-                    id="ai-settings-status"
-                  >AI はオフ</span>
-                </div>
-                <p class="safety-help">
-                  ふつうは API キーの形から自動で判別します
-                  （例: Gemini の新しいキー AQ.… / 旧キー AIza…、OpenAI sk-…、Claude sk-ant-…）。
-                  判別できないときは「AI の種類」を選んでください。
-                  Gemini の既定モデルは gemini-3.1-flash-lite（安い現行モデル）です。
-                </p>
-                <p aria-live="polite" class="panel-feedback" id="ai-settings-feedback"></p>
               </div>
             </details>
 

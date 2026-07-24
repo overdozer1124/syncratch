@@ -86,9 +86,8 @@ body,
 }
 
 /*
- * Keep .primary-controls itself pointer-events:none so the transparent
- * chrome-menu-slot gap lets Scratch 設定/ファイル/編集 receive clicks.
- * Only the interactive clusters re-enable hit testing.
+ * Toolbar shell stays non-hit-testing; interactive clusters re-enable hits.
+ * Scratch 設定/ファイル/編集 are owned by Syncratch feature panels now.
  */
 .toolbar .chrome-left,
 .toolbar .feature-panels,
@@ -156,15 +155,6 @@ body,
   min-width: 0;
 }
 
-.file-controls,
-.collab-controls,
-.drive-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
 .primary-controls {
   width: 100%;
 }
@@ -176,16 +166,6 @@ body,
   gap: 8px;
 }
 
-/* Lets Scratch Settings/File/Edit show through under the overlay.
-   Width is measured at runtime (--syncratch-menu-slot).
-   Must stay pointer-events:none; parent .primary-controls is also none. */
-.chrome-menu-slot {
-  flex: 0 0 var(--syncratch-menu-slot, 22.5rem);
-  width: var(--syncratch-menu-slot, 22.5rem);
-  align-self: stretch;
-  pointer-events: none;
-}
-
 .feature-panels {
   position: relative;
   gap: 2px;
@@ -193,6 +173,33 @@ body,
   margin-left: 2px;
   padding-left: 8px;
   border-left: 1px solid rgb(255 255 255 / 28%);
+}
+
+.menu-summary-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  display: block;
+  object-fit: contain;
+  /* Scratch SVG icons are purple-tinted; force toolbar white. */
+  filter: brightness(0) invert(1);
+}
+
+.file-controls,
+.collab-controls,
+.drive-controls,
+.edit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-divider {
+  width: 100%;
+  margin: 4px 0 2px;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / 28%);
 }
 
 .app-brand {
@@ -735,11 +742,15 @@ body,
   right: 0;
 }
 
+.settings-panel .panel-content,
+.edit-panel .panel-content {
+  left: 0;
+  right: auto;
+}
+
 .settings-panel .panel-content {
-  left: auto;
-  right: 0;
   width: max(100%, min(420px, 94vw));
-  max-height: min(70vh, 520px);
+  max-height: min(78vh, 560px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1406,14 +1417,14 @@ body,
   box-sizing: border-box;
 }
 
-/*
- * Push Scratch 設定/ファイル/編集 to the right of Syncratch brand/title/new.
- * Prefer margin on the first file-group — padding on the banner is unreliable
- * against Scratch CSS-module rules.
- */
-#scratch-gui header[role="banner"] [class*="menu-bar_main-menu_"] > [class*="menu-bar_file-group_"]:first-child,
-#scratch-gui [class*="menu-bar_menu-bar_"] [class*="menu-bar_main-menu_"] > [class*="menu-bar_file-group_"]:first-child {
-  margin-left: var(--syncratch-chrome-left, 0px) !important;
+/* Scratch native 設定/ファイル/編集 are replaced by Syncratch menus. */
+#scratch-gui button[aria-label="設定メニュー"],
+#scratch-gui button[aria-label="Settings menu"],
+#scratch-gui button[aria-label="ファイルメニュー"],
+#scratch-gui button[aria-label="File menu"],
+#scratch-gui button[aria-label="編集メニュー"],
+#scratch-gui button[aria-label="Edit menu"] {
+  display: none !important;
 }
 
 #scratch-gui [class*="menu_menu_"],

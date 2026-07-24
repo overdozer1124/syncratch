@@ -17,7 +17,12 @@ async function waitUntilReady(page: Page): Promise<void> {
 
 async function openPanel(
   page: Page,
-  testId: "file-panel" | "collab-panel" | "drive-panel",
+  testId:
+    | "settings-panel"
+    | "file-panel"
+    | "edit-panel"
+    | "collab-panel"
+    | "drive-panel",
 ): Promise<void> {
   const panel = page.getByTestId(testId);
   if (await panel.getAttribute("open") === null) {
@@ -39,12 +44,22 @@ test("fresh load mounts the standalone GUI and reports local save ready", async 
     "このパソコンに保存しました",
   );
   await expect(page.getByText("動き", {exact: true}).first()).toBeVisible();
+  // Scratch-native menus are suppressed; Syncratch owns 設定/ファイル/編集.
   await expect(
     page.locator('#scratch-gui [aria-label="設定メニュー"]'),
-  ).toHaveCount(1);
+  ).toHaveCount(0);
   await expect(
     page.locator('#scratch-gui [aria-label="Settings menu"]'),
   ).toHaveCount(0);
+  await expect(
+    page.locator('#scratch-gui [aria-label="ファイルメニュー"]'),
+  ).toHaveCount(0);
+  await expect(
+    page.locator('#scratch-gui [aria-label="編集メニュー"]'),
+  ).toBeHidden();
+  await expect(page.getByTestId("settings-panel")).toContainText("設定");
+  await expect(page.getByTestId("file-panel")).toContainText("ファイル");
+  await expect(page.getByTestId("edit-panel")).toContainText("編集");
   await expect(page.getByText("Debug", {exact: true})).toBeHidden();
   await expect(page.getByTestId("file-panel")).not.toHaveAttribute("open", "");
   await expect(page.getByTestId("collab-panel")).not.toHaveAttribute("open", "");
