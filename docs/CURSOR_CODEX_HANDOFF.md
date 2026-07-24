@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 09:06:18 JST |
+| 最終更新 | 2026-07-24 09:33:31 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`4a8fa19` = PR #69 merge） |
+| 作業ブランチ | `main`（`6b0ad71` = PR #71 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠／Google アバター（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | 共同編集接続者名簿（awareness で avatar+名前・クリックで一覧 #71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に 設定/ファイル/編集 の中央クリックを確認 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に接続者一覧（online/アバタークリック）を確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、Scratch 設定/ファイル/編集が中央でも反応することの確認を推奨。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、ホストで online/アバターをクリックし接続者（アイコン＋名前）が一覧表示されること、ゲストが Google 接続するとアバターが反映されることを確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
@@ -4886,6 +4886,25 @@ merge: 4a8fa1902a4f8a3aa662ac8fe9dd7e50000f2726
 - .primary-controls を pointer-events:none にし、メニュー隙間のクリックを Scratch へ通す
 - gh pr merge --merge --delete-branch
 
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+
+### 2026-07-24 09:33:31 JST — Cursor（PR #71 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: ゲスト側アイコンが反映されない／接続者をアイコン＋名前で判別したい
+対象: PR #71 → base main
+merge: 6b0ad71e7e0edf7708792a8ae7cce504bc443c89
+
+実施:
+- awareness で displayName / avatarUrl / roomHost を共有し接続者名簿を構築
+- online / アバタークリックで「つながっている人」ポップオーバー（アイコン＋名前）
+- ゲストも Google 接続可（Drive open/save は従来どおりブロック）
+- Gate 0 PASS 後 gh pr merge --merge --delete-branch
+
+テスト: apps/editor-web 252 PASS / Gate 0 PASS
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー
 ```
