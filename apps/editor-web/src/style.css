@@ -20,7 +20,7 @@
   max-width: min(28rem, calc(100vw - 1.5rem));
   padding: 0.7rem 1.1rem;
   border: 1px solid rgb(15 77 122 / 22%);
-  border-radius: 999px;
+  border-radius: 12px;
   background: linear-gradient(180deg, #fffef8 0%, #eef6fc 100%);
   color: var(--syncratch-chrome-dark);
   font-size: 0.95rem;
