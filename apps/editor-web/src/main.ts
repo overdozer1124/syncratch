@@ -86,6 +86,19 @@ import {
 } from "./tool-panel-dismiss.js";
 import {installAiFloatingPanel} from "./ai-floating-panel.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
+import {
+  listLocales,
+  localeLabel,
+  readColorMode,
+  readLocale,
+  readRestoreDeletion,
+  readTurboMode,
+  restoreDeletionLabel,
+  restoreLastDeletion,
+  selectLocale,
+  setColorMode,
+  toggleTurboMode,
+} from "./scratch-native-menus.js";
 import {shouldLeaveCollaborationOnGoogleDisconnect} from "./google-disconnect-policy.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
@@ -231,6 +244,7 @@ interface ScratchVm {
   attachStorage(storage: ScratchStorageInstance): void;
   loadProject(project: unknown): Promise<void>;
   setEditingTarget(targetId: string): void;
+  setTurboMode(enabled: boolean): void;
   editingTarget?: {
     id?: string;
     isStage?: boolean;
@@ -273,6 +287,10 @@ interface ScratchGuiGlobal {
     render(options: {
       canEditTitle: boolean;
       canSave: boolean;
+      canManageFiles?: boolean;
+      canChangeLanguage?: boolean;
+      canChangeColorMode?: boolean;
+      canChangeTheme?: boolean;
       isEmbedded?: boolean;
       onVmInit(vm: ScratchVm): void;
     }): void;
@@ -367,6 +385,15 @@ const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
 const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
 const appToast = createEphemeralToast(requiredElement<HTMLElement>("app-toast"));
+const scratchLocaleSelect = requiredElement<HTMLSelectElement>("scratch-locale");
+const scratchColorModeSelect = requiredElement<HTMLSelectElement>(
+  "scratch-color-mode",
+);
+const restoreDeletionButton = requiredElement<HTMLButtonElement>(
+  "restore-deletion",
+);
+const toggleTurboButton = requiredElement<HTMLButtonElement>("toggle-turbo");
+const editStatus = requiredElement<HTMLElement>("edit-status");
 const aiEnabledInput = requiredElement<HTMLInputElement>("ai-enabled");
 const aiApiKeyInput = requiredElement<HTMLInputElement>("ai-api-key");
 const aiProviderSelect = requiredElement<HTMLSelectElement>("ai-provider");
@@ -1797,6 +1824,11 @@ async function getVm(): Promise<ScratchVm> {
     root.render({
       canEditTitle: false,
       canSave: false,
+      // Syncratch owns 設定/ファイル/編集 menus (see feature-panels).
+      canManageFiles: false,
+      canChangeLanguage: false,
+      canChangeColorMode: false,
+      canChangeTheme: false,
       onVmInit: vmInstance => {
         setGuiSplashProgress(guiSplash, {
           ratio: 1,
@@ -1804,9 +1836,58 @@ async function getVm(): Promise<ScratchVm> {
         });
         setGuiLoadingVisible(guiHost, false);
         setGuiSplashVisible(guiSplash, false);
+        installScratchNativeMenus(state);
         resolve(vmInstance);
       },
     });
+  });
+}
+
+function fillScratchLocaleSelect(store: EditorGuiState["store"]): void {
+  const current = readLocale(store);
+  const locales = listLocales(store);
+  scratchLocaleSelect.replaceChildren();
+  for (const code of locales) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = localeLabel(code);
+    scratchLocaleSelect.append(option);
+  }
+  scratchLocaleSelect.value = locales.includes(current)
+    ? current
+    : (locales[0] ?? "ja");
+}
+
+function syncScratchNativeMenuControls(): void {
+  if (!editorGuiState) return;
+  const store = editorGuiState.store;
+  if (scratchLocaleSelect.options.length === 0) {
+    fillScratchLocaleSelect(store);
+  } else {
+    const current = readLocale(store);
+    if (
+      [...scratchLocaleSelect.options].some(option => option.value === current)
+    ) {
+      scratchLocaleSelect.value = current;
+    }
+  }
+  scratchColorModeSelect.value = readColorMode(store);
+
+  const restore = readRestoreDeletion(store);
+  restoreDeletionButton.disabled = !restore.restorable;
+  restoreDeletionButton.textContent = restoreDeletionLabel(restore.deletedItem);
+
+  const turboOn = readTurboMode(store);
+  toggleTurboButton.textContent = turboOn
+    ? "ターボモードを オフにする"
+    : "ターボモードを オンにする";
+}
+
+function installScratchNativeMenus(state: EditorGuiState): void {
+  fillScratchLocaleSelect(state.store);
+  syncScratchNativeMenuControls();
+  state.store.subscribe?.(() => {
+    syncScratchNativeMenuControls();
   });
 }
 
@@ -2139,6 +2220,37 @@ downloadButton.addEventListener("click", () => {
 saveButton.addEventListener("click", () => {
   void saveCoordinator.flush();
   closePanelFor(saveButton);
+});
+scratchLocaleSelect.addEventListener("change", () => {
+  if (!editorGuiState) return;
+  selectLocale(editorGuiState.store, scratchLocaleSelect.value);
+  document.documentElement.lang =
+    scratchLocaleSelect.value === "ja" ||
+    scratchLocaleSelect.value.startsWith("ja-")
+      ? "ja"
+      : scratchLocaleSelect.value.startsWith("en")
+        ? "en"
+        : document.documentElement.lang;
+});
+scratchColorModeSelect.addEventListener("change", () => {
+  if (!editorGuiState) return;
+  setColorMode(editorGuiState.store, scratchColorModeSelect.value);
+});
+restoreDeletionButton.addEventListener("click", () => {
+  if (!editorGuiState) return;
+  const ok = restoreLastDeletion(editorGuiState.store);
+  editStatus.textContent = ok
+    ? "けしたものを もどしたよ。"
+    : "いま もどせるものは ないよ。";
+  syncScratchNativeMenuControls();
+});
+toggleTurboButton.addEventListener("click", () => {
+  if (!editorGuiState || !vm) return;
+  const on = toggleTurboMode(vm, editorGuiState.store);
+  editStatus.textContent = on
+    ? "ターボモードを オンにしたよ。"
+    : "ターボモードを オフにしたよ。";
+  syncScratchNativeMenuControls();
 });
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
 connectGoogleButton.addEventListener("click", () => {

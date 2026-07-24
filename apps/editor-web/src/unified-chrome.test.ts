@@ -135,17 +135,15 @@ describe("unified chrome layout", () => {
     );
   });
 
-  it("lets Scratch menus receive clicks through the Syncratch menu slot", () => {
-    // Regression: .primary-controls used to be pointer-events:auto and stole
-    // hits from Scratch 設定/ファイル/編集 in the transparent gap.
+  it("hides Scratch-native 設定/ファイル/編集 in favor of Syncratch menus", () => {
+    expect(styleCss).toContain('aria-label="設定メニュー"');
+    expect(styleCss).toContain('aria-label="ファイルメニュー"');
+    expect(styleCss).toContain('aria-label="編集メニュー"');
+    expect(styleCss).toMatch(
+      /#scratch-gui button\[aria-label="設定メニュー"\][\s\S]*?display:\s*none\s*!important/,
+    );
     expect(styleCss).toMatch(
       /\.toolbar\s+\.primary-controls\s*\{[^}]*pointer-events:\s*none/s,
-    );
-    expect(styleCss).toMatch(
-      /\.chrome-menu-slot\s*\{[^}]*pointer-events:\s*none/s,
-    );
-    expect(styleCss).toMatch(
-      /\.toolbar\s+\.chrome-left[\s\S]*?pointer-events:\s*auto/,
     );
     expect(styleCss).toMatch(
       /\.toolbar\s+\.feature-panels[\s\S]*?pointer-events:\s*auto/,
