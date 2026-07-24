@@ -2667,10 +2667,15 @@ async function askAiWithIntent(
       {role: "assistant", content: answerContent},
     ];
     renderAiConversationThread({jumpToLatest: true});
-    aiQuestionInput.value = "";
-    aiFeedback.textContent = looksTruncatedAiAnswer(answerContent)
-      ? "こたえが途中で止まっているみたい。もういちど「つづけてきく」をおしてみてね。"
-      : "";
+    const stillTruncated = looksTruncatedAiAnswer(answerContent);
+    if (stillTruncated) {
+      // Keep the question so the learner can retry without retyping.
+      aiFeedback.textContent =
+        "こたえが途中で止まっているみたい。同じしつもんで、もういちどきいてみてね。";
+    } else {
+      aiQuestionInput.value = "";
+      aiFeedback.textContent = "";
+    }
     const modeNote = mode !== selectedMode ? `（${mode}で診断）` : "";
     aiRuntimeStatus.textContent = continuing
       ? `${targetLabel} の つづきに ${config.providerLabel} / ${result.model} が答えました${modeNote}`
