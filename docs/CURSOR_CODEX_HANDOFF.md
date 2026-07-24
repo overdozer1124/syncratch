@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 09:55:39 JST |
+| 最終更新 | 2026-07-24 13:20:56 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 / #73 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 / #73 / #75 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`33a5435` = PR #73 merge） |
+| 作業ブランチ | `main`（`bbbf63d` = PR #75 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | いっしょに作るリンク作成時の自動コピー＋2秒トースト（#73）。共同編集接続者名簿（#71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | online ホスト tooltip 二重表示修正（#75）。いっしょに作るリンク自動コピー＋2秒トースト（#73）。共同編集接続者名簿（#71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にリンク作成トースト／接続者一覧を確認 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に online ホバー文言が1回だけ出ることを確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、「いっしょに作るリンクを作る」で URL がコピーされトーストが出ること、接続者一覧が表示されることを確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、online ホバーでホスト文言が1回だけ出ること、リンク作成トースト／接続者一覧を確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
