@@ -42,25 +42,25 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 09:33:31 JST |
+| 最終更新 | 2026-07-24 09:55:39 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
 | 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
 | 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 / #73 merge 済み） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`6b0ad71` = PR #71 merge） |
+| 作業ブランチ | `main`（`33a5435` = PR #73 merge） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | 共同編集接続者名簿（awareness で avatar+名前・クリックで一覧 #71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | いっしょに作るリンク作成時の自動コピー＋2秒トースト（#73）。共同編集接続者名簿（#71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に接続者一覧（online/アバタークリック）を確認 |
+| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後にリンク作成トースト／接続者一覧を確認 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、ホストで online/アバターをクリックし接続者（アイコン＋名前）が一覧表示されること、ゲストが Google 接続するとアバターが反映されることを確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、「いっしょに作るリンクを作る」で URL がコピーされトーストが出ること、接続者一覧が表示されることを確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
@@ -4905,6 +4905,25 @@ merge: 6b0ad71e7e0edf7708792a8ae7cce504bc443c89
 - Gate 0 PASS 後 gh pr merge --merge --delete-branch
 
 テスト: apps/editor-web 252 PASS / Gate 0 PASS
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+```
+
+### 2026-07-24 09:55:39 JST — Cursor（PR #73 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: いっしょに作るリンク作成時に自動コピー＋短いポップアップ
+対象: PR #73 → base main
+merge: 33a54357747d7926f3afb4154c6322d5bead7c9b
+
+実施:
+- リンク作成直後に clipboard へ URL をコピー
+- 約2秒の app-toast「いっしょに作るリンクがコピーされました。友だちに教えてね。」
+- 「リンクをコピー」も同じ文言・トーストに統一
+- Gate 0 PASS 後 gh pr merge --merge --delete-branch
+
+テスト: apps/editor-web 255 PASS / Gate 0 PASS
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー
 ```
