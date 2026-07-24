@@ -61,7 +61,10 @@ import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
+  INVITE_LINK_COPIED_TOAST,
+  INVITE_LINK_COPY_FAILED_TOAST,
 } from "./ui-copy.js";
+import {createEphemeralToast} from "./ephemeral-toast.js";
 import {
   DEFAULT_GUEST_COLLAB_TITLE,
   friendlyProjectTitle,
@@ -363,6 +366,7 @@ const collabDiagnosticsButton = requiredElement<HTMLButtonElement>("collab-diagn
 const collabInviteInput = requiredElement<HTMLInputElement>("collab-invite");
 const collabStatus = requiredElement<HTMLElement>("collab-status");
 const collabFeedback = requiredElement<HTMLElement>("collab-feedback");
+const appToast = createEphemeralToast(requiredElement<HTMLElement>("app-toast"));
 const aiEnabledInput = requiredElement<HTMLInputElement>("ai-enabled");
 const aiApiKeyInput = requiredElement<HTMLInputElement>("ai-api-key");
 const aiProviderSelect = requiredElement<HTMLSelectElement>("ai-provider");
@@ -1291,6 +1295,28 @@ async function startCollaboration(
   closePanelFor(host ? createRoomButton : joinRoomButton);
 }
 
+async function copyActiveInviteLink(options?: {
+  /** Also mirror success/failure into the collab panel feedback line. */
+  panelFeedback?: boolean;
+}): Promise<boolean> {
+  if (!activeInvite) return false;
+  const url = inviteUrl(window.location.href, activeInvite);
+  try {
+    await navigator.clipboard.writeText(url);
+    appToast.show(INVITE_LINK_COPIED_TOAST);
+    if (options?.panelFeedback) {
+      collabFeedback.textContent = INVITE_LINK_COPIED_TOAST;
+    }
+    return true;
+  } catch {
+    appToast.show(INVITE_LINK_COPY_FAILED_TOAST);
+    if (options?.panelFeedback) {
+      collabFeedback.textContent = INVITE_LINK_COPY_FAILED_TOAST;
+    }
+    return false;
+  }
+}
+
 async function createRoom(): Promise<void> {
   try {
     const readiness = evaluateCollabReadiness({signalingUrl});
@@ -1302,6 +1328,10 @@ async function createRoom(): Promise<void> {
       return;
     }
     await startCollaboration(createInvite(), true);
+    if (activeInvite) {
+      // Panel closes after create; toast keeps the success message visible.
+      await copyActiveInviteLink();
+    }
   } catch {
     renderCollabIdle(
       "いっしょに作るリンクを作れませんでした。インターネットをたしかめてください。",
@@ -2162,17 +2192,7 @@ document.addEventListener("visibilitychange", () => {
 createRoomButton.addEventListener("click", () => void createRoom());
 joinRoomButton.addEventListener("click", () => void joinRoom());
 copyInviteButton.addEventListener("click", () => {
-  if (!activeInvite) return;
-  void navigator.clipboard
-    .writeText(inviteUrl(window.location.href, activeInvite))
-    .then(() => {
-      collabFeedback.textContent =
-        "コピーしました。いっしょに作りたい友だちに送ってね。";
-    })
-    .catch(() => {
-      collabFeedback.textContent =
-        "コピーできませんでした。リンクを選んでコピーしてください。";
-    });
+  void copyActiveInviteLink({panelFeedback: true});
 });
 leaveRoomButton.addEventListener("click", () => {
   leaveRoom();

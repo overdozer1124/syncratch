@@ -3,6 +3,7 @@ import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
+  INVITE_LINK_COPIED_TOAST,
 } from "./ui-copy.js";
 
 describe("friendlyDriveMessage", () => {
@@ -57,6 +58,13 @@ describe("friendlyCollaborationMessage", () => {
     expect(friendlyCollaborationMessage("unknown transport failure")).toBe(
       "友だちとつながりませんでした。インターネットをたしかめてください。",
     );
+  });
+});
+
+describe("INVITE_LINK_COPIED_TOAST", () => {
+  it("tells friends the create-together link was copied", () => {
+    expect(INVITE_LINK_COPIED_TOAST).toContain("コピーされました");
+    expect(INVITE_LINK_COPIED_TOAST).toContain("友だちに教えてね");
   });
 });
 

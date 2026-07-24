@@ -800,7 +800,10 @@ test("two Chromium contexts converge different-target edits over WebRTC and reco
   await openPanel(pageA, "collab-panel");
   await pageA.getByRole("button", {name: "リンクをコピー"}).click();
   await expect(pageA.locator("#collab-feedback")).toHaveText(
-    "コピーしました。いっしょに作りたい友だちに送ってね。",
+    "いっしょに作るリンクがコピーされました。友だちに教えてね。",
+  );
+  await expect(pageA.getByTestId("app-toast")).toHaveText(
+    "いっしょに作るリンクがコピーされました。友だちに教えてね。",
   );
 
   // Exercise the real Scratch library path, not a synthetic target with

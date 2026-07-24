@@ -8,6 +8,39 @@
   --syncratch-modal-z: 800;
   /* AI ask floats above Scratch libraries; Drive picker stays higher. */
   --syncratch-ai-modal-z: 850;
+  --syncratch-toast-z: 860;
+}
+
+.app-toast {
+  position: fixed;
+  top: 4.25rem;
+  left: 50%;
+  z-index: var(--syncratch-toast-z);
+  box-sizing: border-box;
+  max-width: min(28rem, calc(100vw - 1.5rem));
+  padding: 0.7rem 1.1rem;
+  border: 1px solid rgb(15 77 122 / 22%);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fffef8 0%, #eef6fc 100%);
+  color: var(--syncratch-chrome-dark);
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  box-shadow: 0 10px 24px rgb(15 45 80 / 22%);
+  transform: translate(-50%, -0.35rem);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.app-toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.app-toast[hidden] {
+  display: none !important;
 }
 
 html,
