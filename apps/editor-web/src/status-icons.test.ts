@@ -90,7 +90,11 @@ describe("composeStatusIcons", () => {
     const online = icons.find(icon => icon.id === "collab");
     expect(online?.kind).toBe("online");
     expect(online?.showCrown).toBe(true);
-    expect(online?.label).toContain("ホスト");
+    expect(online?.label).toContain("あなたはホスト（リンクを作った人）");
+    expect(online?.label?.match(/あなたはホスト（リンクを作った人）/g)).toHaveLength(
+      1,
+    );
+    expect(online?.label).toContain("クリックで一覧");
     const avatar = icons.find(icon => icon.id === "avatar");
     expect(avatar?.kind).toBe("avatar");
     expect(avatar?.faces?.map(face => face.imageUrl)).toEqual([
