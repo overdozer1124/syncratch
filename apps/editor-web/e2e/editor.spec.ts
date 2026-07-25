@@ -336,7 +336,7 @@ async function connectTwoCollabPeers(
   const inviteUrl = new URL(invite);
   expect(inviteUrl.origin).toBe("http://127.0.0.1:4173");
   await pageB.getByLabel("いっしょに作るリンク").fill(invite);
-  await pageB.getByRole("button", {name: "友だちの作品に入る"}).click();
+  await pageB.getByRole("button", {name: "入る"}).click();
   await expect(pageA.getByTestId("collab-status")).toContainText(
     "1人といっしょに作っています",
   );
