@@ -7,6 +7,7 @@ import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/projec
 import {
   createCollabSession,
   evaluateCollabReadiness,
+  PEER_LOSS_STALL_GRACE_MS,
   type ApplyRemoteContext,
   type CollabProviderConfig,
   type CollabSession,
@@ -471,6 +472,44 @@ describe("guest bootstrap terminal-state guards", () => {
     expect(stateEvents).toHaveLength(frozenEventCount);
   });
 
+  it("does not stall on a brief peer-list flap after a peer was seen", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const source = project([stage(), sprite("s1", "S1")]);
+    const common = {
+      roomId: "room-peer-flap-grace",
+      secret: "peer-flap-grace-secret-peer-flap-grace",
+      debounceMs: 0,
+    };
+    const host = createCollabSession({
+      ...common,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: fakeVm(source).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      ...common,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: fakeVm(project([stage()])).materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    host.start({host: true});
+    guest.start({host: false});
+    await flush(guest);
+    expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(true);
+
+    // Simulate a transient empty peer list (ICE flap), then recover.
+    guest.provider.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(guest.getBootstrapPhase()).not.toBe("stalled-project");
+    guest.provider.connect();
+    host.provider.connect();
+    await flush(guest);
+    expect(guest.getBootstrapPhase()).not.toBe("stalled-project");
+  });
+
   it("does not stall immediately on empty peers before any peer is seen", async () => {
     const mesh = createMemoryMesh();
     const create = sessionFactory(mesh);
@@ -582,6 +621,11 @@ describe("guest bootstrap terminal-state guards", () => {
     guest.start({host: false});
     host.leave();
     await flush(guest);
+    // Peer-loss stall waits a short grace window for ICE flaps.
+    expect(guest.getBootstrapPhase()).not.toBe("stalled-project");
+    await new Promise(resolve =>
+      setTimeout(resolve, PEER_LOSS_STALL_GRACE_MS + 20),
+    );
     expect(guest.getBootstrapPhase()).toBe("stalled-project");
     expect(guest.getDiagnostics().sawPeerDuringBootstrap).toBe(true);
 

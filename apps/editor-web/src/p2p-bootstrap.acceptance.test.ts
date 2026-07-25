@@ -15,6 +15,7 @@ import type {CostumeRef, ProjectDocument, ScratchTarget} from "@blocksync/projec
 import {
   createCollabSession,
   evaluateCollabReadiness,
+  PEER_LOSS_STALL_GRACE_MS,
   type CollabSession,
 } from "./collab-session.js";
 import {isDriveAutosaveEligible} from "./drive-autosave.js";
@@ -421,6 +422,9 @@ describe("§13 acceptance: Drive-independent P2P bootstrap", () => {
     // Leave before guest finishes.
     host.leave();
     await flush(guest);
+    await new Promise(resolve =>
+      setTimeout(resolve, PEER_LOSS_STALL_GRACE_MS + 20),
+    );
     expect(guest.getBootstrapPhase()).toBe("stalled-project");
     expect(guestVm.meta().projectId).toBe(before.projectId);
     expect(guestVm.meta().driveFileId).toBe(before.driveFileId);
