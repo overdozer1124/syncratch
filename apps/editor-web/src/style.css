@@ -1163,7 +1163,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 /*
  * AI ask: modeless floating dialog portaled to document.body so it stacks
  * above Scratch libraries and stays usable while editing underneath.
- * Layout: chrome (header) / scroll body / fixed composer — Claude Design 1:1.
+ * Layout: chrome + two columns (ask | answer) for Chromebook-height screens.
  */
 .ai-floating-panel {
   position: fixed;
@@ -1171,8 +1171,8 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   top: calc(var(--sc-toolbar-height) + 6px);
   right: 20px;
   left: auto;
-  width: min(428px, 96vw);
-  max-height: min(88vh, 760px);
+  width: min(820px, 96vw);
+  max-height: min(72vh, 560px);
   box-sizing: border-box;
   display: none;
   flex-direction: column;
@@ -1208,7 +1208,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   gap: 10px;
   flex: 0 0 auto;
   margin: 0;
-  padding: 18px 20px 14px;
+  padding: 14px 18px 12px;
   border-bottom: 1px solid #eef2f7;
   cursor: grab;
   touch-action: none;
@@ -1268,21 +1268,72 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   outline-offset: 1px;
 }
 
+.ai-panel-columns {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.92fr) minmax(280px, 1.2fr);
+  align-items: stretch;
+}
+
+.ai-panel-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-panel-col--ask {
+  border-right: 1px solid #eef2f7;
+}
+
 .ai-panel-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 16px 20px 4px;
+  padding: 14px 16px 12px;
+  background: #fff;
 }
 
 .ai-compose {
-  flex: 0 0 auto;
-  border-top: 1px solid #eef2f7;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border-top: 0;
   background: #fbfdff;
-  padding: 14px 20px 16px;
+  padding: 14px 16px 12px;
+}
+
+.ai-compose .ai-controls {
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 10px;
+}
+
+.ai-compose .ai-question-field {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ai-compose .ai-question-field textarea {
+  flex: 1 1 auto;
+  min-height: 96px;
+  height: 100%;
+  resize: vertical;
 }
 
 .ai-floating-panel .ai-panel-intro {
+  margin: 0 0 10px;
+  padding: 12px 13px;
+  border-radius: 12px;
+  background: var(--sc-accent-ai-soft);
+  border: 1px solid var(--sc-ai-thread-border);
+  color: var(--sc-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ai-floating-panel.ai-panel--answering .ai-panel-intro {
   display: none;
 }
 
@@ -1295,10 +1346,18 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .ai-floating-panel .ai-clarify {
   flex: 0 0 auto;
+  margin-top: 10px;
 }
 
 .ai-floating-panel .ai-answer-pager {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ai-floating-panel .ai-answer-pager[hidden],
+.ai-floating-panel .ai-clarify[hidden],
+.ai-floating-panel .ai-answer[hidden] {
+  display: none !important;
 }
 
 .ai-floating-panel #ai-question-target-hint {
@@ -1310,7 +1369,35 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .ai-floating-panel.ai-panel--answering .ai-controls textarea {
-  min-height: 44px;
+  min-height: 88px;
+}
+
+@media (max-width: 720px) {
+  .ai-floating-panel {
+    width: min(428px, 96vw);
+    max-height: min(88vh, 720px);
+  }
+
+  .ai-panel-columns {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .ai-panel-col--ask {
+    border-right: 0;
+    border-bottom: 1px solid #eef2f7;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .ai-compose {
+    overflow: visible;
+  }
+
+  .ai-compose .ai-question-field textarea {
+    min-height: 64px;
+    height: auto;
+  }
 }
 
 .settings-controls,
@@ -1661,7 +1748,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .ai-answer-pager {
-  margin: 0 0 16px;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1669,7 +1756,9 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   color: var(--sc-ink);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .ai-answer-pager[hidden] {
@@ -1732,9 +1821,9 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 0 0 auto;
-  min-height: 0;
-  overflow: visible;
+  flex: 1 1 auto;
+  min-height: 120px;
+  overflow: auto;
   margin: 0;
   padding: 12px;
   border-radius: 14px;

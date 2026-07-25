@@ -23,9 +23,20 @@ describe("AI panel Claude Design blue theme", () => {
   it("keeps Syncratch chrome blue and star badge (not legacy purple)", () => {
     expect(styleCss).not.toMatch(/--sc-accent-ai:\s*#6b57c9/i);
     expect(indexHtml).toContain('class="ai-panel-badge"');
-    expect(indexHtml).toContain('class="ai-compose"');
-    expect(indexHtml).toContain('class="ai-panel-body"');
+    expect(indexHtml).toContain("ai-compose");
+    expect(indexHtml).toContain("ai-panel-body");
     expect(indexHtml).not.toContain('fill="#6b57c9"');
+  });
+
+  it("uses a two-column ask | answer layout for shorter Chromebook viewports", () => {
+    expect(indexHtml).toContain('class="ai-panel-columns"');
+    expect(indexHtml).toContain("ai-panel-col--ask");
+    expect(indexHtml).toContain("ai-panel-col--answer");
+    expect(styleCss).toMatch(
+      /\.ai-panel-columns\s*\{[^}]*grid-template-columns:/s,
+    );
+    expect(styleCss).toMatch(/width:\s*min\(820px,\s*96vw\)/);
+    expect(styleCss).toMatch(/max-height:\s*min\(72vh,\s*560px\)/);
   });
 
   it("keeps clarify choice focus text dark on a light blue hover", () => {
