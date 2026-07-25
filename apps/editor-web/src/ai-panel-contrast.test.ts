@@ -7,10 +7,11 @@ const root = dirname(fileURLToPath(import.meta.url));
 const styleCss = readFileSync(join(root, "style.css"), "utf8");
 const indexHtml = readFileSync(join(root, "../index.html"), "utf8");
 
-describe("AI panel contrast and Scratch blue accents", () => {
-  it("uses warm yellow thread surfaces instead of gray washes", () => {
-    expect(styleCss).toMatch(/--sc-ai-thread-bg:\s*#fff6e0/i);
-    expect(styleCss).toMatch(/--sc-ai-clarify-bg:\s*#fff8d6/i);
+describe("AI panel Claude Design blue theme", () => {
+  it("uses cool blue thread surfaces instead of yellow or gray washes", () => {
+    expect(styleCss).toMatch(/--sc-ai-thread-bg:\s*#eff5fb/i);
+    expect(styleCss).toMatch(/--sc-accent-ai:\s*#1565a9/i);
+    expect(styleCss).not.toMatch(/--sc-ai-thread-bg:\s*#fff6e0/i);
     expect(styleCss).not.toMatch(
       /\.ai-answer-pager\s*\{[^}]*background:\s*rgb\(0 0 0 \/ 12%\)/s,
     );
@@ -19,19 +20,29 @@ describe("AI panel contrast and Scratch blue accents", () => {
     );
   });
 
-  it("uses current Scratch blue instead of legacy purple for AI chrome", () => {
-    expect(styleCss).toMatch(/--sc-accent-ai:\s*#4c97ff/i);
+  it("keeps Syncratch chrome blue and star badge (not legacy purple)", () => {
     expect(styleCss).not.toMatch(/--sc-accent-ai:\s*#6b57c9/i);
-    expect(indexHtml).toContain('fill="#4c97ff"');
+    expect(indexHtml).toContain('class="ai-panel-badge"');
+    expect(indexHtml).toContain('class="ai-compose"');
+    expect(indexHtml).toContain('class="ai-panel-body"');
     expect(indexHtml).not.toContain('fill="#6b57c9"');
   });
 
-  it("keeps clarify choice focus text dark on a light yellow hover", () => {
+  it("keeps clarify choice focus text dark on a light blue hover", () => {
     expect(styleCss).toMatch(
+      /\.ai-clarify-choices[\s\S]*?button:hover[\s\S]*?background:\s*var\(--sc-accent-ai-soft\)/i,
+    );
+    expect(styleCss).toMatch(
+      /\.ai-clarify-choices[\s\S]*?button:hover[\s\S]*?color:\s*var\(--sc-ink\)/i,
+    );
+    expect(styleCss).not.toMatch(
       /\.ai-clarify-choices button:hover[\s\S]*?background:\s*#ffe082/i,
     );
-    expect(styleCss).toMatch(
-      /\.ai-clarify-choices button:hover[\s\S]*?color:\s*var\(--sc-ink\)/i,
-    );
+  });
+
+  it("styles user bubbles as solid blue and AI bubbles as white cards", () => {
+    expect(styleCss).toMatch(/--sc-ai-user-bg:\s*#1565a9/i);
+    expect(styleCss).toMatch(/--sc-ai-assistant-bg:\s*#ffffff/i);
+    expect(styleCss).toMatch(/\.ai-choice__key\s*\{/);
   });
 });
