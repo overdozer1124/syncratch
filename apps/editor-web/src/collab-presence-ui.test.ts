@@ -2,6 +2,7 @@ import {describe, expect, it} from "vitest";
 import {
   isCollabPresenceToggleTarget,
   setCollabPresencePopoverOpen,
+  shouldShowLocalPresenceEditor,
   toggleCollabPresencePopover,
 } from "./collab-presence-ui.js";
 
@@ -21,6 +22,30 @@ describe("collab presence popover helpers", () => {
       } as unknown as EventTarget),
     ).toBe(false);
     expect(isCollabPresenceToggleTarget(null)).toBe(false);
+  });
+
+  it("shows local name editor only without Google profile", () => {
+    expect(
+      shouldShowLocalPresenceEditor({
+        hasSelf: true,
+        canSaveLocalName: true,
+        googleProfileActive: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowLocalPresenceEditor({
+        hasSelf: true,
+        canSaveLocalName: true,
+        googleProfileActive: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowLocalPresenceEditor({
+        hasSelf: false,
+        canSaveLocalName: true,
+        googleProfileActive: false,
+      }),
+    ).toBe(false);
   });
 
   it("opens and closes the popover flag classes", () => {

@@ -47,6 +47,7 @@ describe("collab room role UI", () => {
     expect(guestSynced.openDisabled).toBe(true);
     expect(guestSynced.saveDisabled).toBe(true);
     expect(GUEST_DRIVE_SAVE_BLOCKED_STATUS).toContain("ゲスト");
+    expect(GUEST_DRIVE_SAVE_BLOCKED_STATUS).toContain("なまえ");
 
     const guestDisconnected = driveControlFlags({
       driveReady: true,

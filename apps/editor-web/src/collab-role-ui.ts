@@ -29,7 +29,7 @@ export function appendCollabRoomRole(
 }
 
 export const GUEST_DRIVE_SAVE_BLOCKED_STATUS =
-  "ゲストのあいだは Google ドライブに保存できません。このパソコンには保存されます。";
+  "ゲストはドライブに保存できません（このパソコンには保存されます）。アイコン用なら「Google とつなぐ」か、つながっている人メニューでなまえを決められます。";
 
 export interface DriveControlFlags {
   connectDisabled: boolean;
