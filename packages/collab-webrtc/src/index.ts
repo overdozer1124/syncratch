@@ -33,6 +33,14 @@ export {
   type WebSocketLike,
 } from "./webrtc-transport.js";
 export {
+  OPENRELAY_CREDENTIAL_TTL_SEC,
+  OPENRELAY_STATIC_AUTH_HOST,
+  OPENRELAY_STATIC_AUTH_SECRET,
+  createOpenRelayIceServers,
+  createStunOnlyIceServers,
+  type OpenRelayIceOptions,
+} from "./openrelay-ice.js";
+export {
   DATA_CHANNEL_CHUNK_CHARS,
   DATA_CHANNEL_MAX_CHUNKS,
   createChunkReassembler,

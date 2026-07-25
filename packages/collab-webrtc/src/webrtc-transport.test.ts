@@ -421,7 +421,7 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(onSignalingError).toHaveBeenCalledWith("duplicate_peer");
   });
 
-  it("uses default STUN+TURN servers when iceServers are omitted", () => {
+  it("uses default STUN servers when iceServers are omitted", () => {
     FakeSocket.instances = [];
     let config: RTCConfiguration | undefined;
     const transport = createWebRtcTransport({
@@ -446,7 +446,8 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(config?.iceServers?.length).toBeGreaterThan(0);
     const serialized = JSON.stringify(config?.iceServers);
     expect(serialized.includes("stun.l.google.com")).toBe(true);
-    expect(serialized.includes("turn:")).toBe(true);
+    // TURN must be minted via createOpenRelayIceServers(); defaults stay STUN-only.
+    expect(serialized.includes("turn:")).toBe(false);
   });
 
   it("re-offers after connectionState failed while peer stays on signaling roster", async () => {

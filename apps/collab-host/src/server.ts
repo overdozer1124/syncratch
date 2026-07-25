@@ -3,9 +3,10 @@
  * - GET /*  → apps/editor-web/dist static files
  * - POST /ai/chat → optional AI advice proxy (API key from client Authorization)
  * - /oauth/google/* → Drive authorization-code + refresh-token sessions
+ * - GET /ice → ephemeral Open Relay TURN credentials (HMAC static-auth)
  * - WS /signal → @blocksync/collab-signaling
  *
- * No TURN. Project bytes never transit this process (WebRTC data channels only).
+ * This process does not relay project bytes (WebRTC data channels are P2P/TURN).
  * AI proxy never stores API keys and never touches Yjs / signaling traffic.
  * Drive refresh tokens stay server-side (HttpOnly session cookie).
  */
@@ -21,6 +22,7 @@ import {
   createDriveOAuthHandler,
   readDriveOAuthConfigFromEnv,
 } from "./drive-oauth.js";
+import {handleIceCredentials} from "./ice-endpoint.js";
 import {createStaticRequestHandler} from "./static.js";
 
 export interface StartCollabHostOptions {
@@ -63,6 +65,7 @@ export async function startCollabHost(
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
+      if (await handleIceCredentials(req, res)) return;
       if (handleStatic(req, res)) return;
       res.writeHead(405, {"content-type": "text/plain; charset=utf-8"});
       res.end("method not allowed");

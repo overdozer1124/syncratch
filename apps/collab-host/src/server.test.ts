@@ -44,6 +44,29 @@ describe("startCollabHost", () => {
     b.close();
   });
 
+  it("serves ephemeral Open Relay ICE credentials on /ice", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-ice-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+    });
+
+    const response = await fetch(new URL("/ice", handle.url));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = (await response.json()) as {
+      iceServers: Array<{urls: string | string[]; username?: string}>;
+    };
+    expect(body.iceServers.length).toBeGreaterThan(1);
+    const turn = body.iceServers.find(server =>
+      JSON.stringify(server.urls).includes("staticauth.openrelay.metered.ca"),
+    );
+    expect(turn?.username).toMatch(/^\d+:/);
+  });
+
   it("proxies /ai/chat without touching signaling", async () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-ai-"));
     writeFileSync(join(root, "index.html"), "<html>host</html>");
