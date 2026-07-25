@@ -158,6 +158,9 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .toolbar .panel-content button,
 .ai-floating-panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
@@ -166,6 +169,14 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   color: #fff;
   font-weight: 800;
   font-size: 15px;
+}
+
+/* Author display rules must not override the HTML hidden attribute. */
+.toolbar .panel-content button[hidden],
+.toolbar .panel-content input[hidden],
+.ai-floating-panel button[hidden],
+.ai-floating-panel[hidden] {
+  display: none !important;
 }
 
 .toolbar .panel-content button:hover,

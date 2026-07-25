@@ -1035,6 +1035,8 @@ function randomParticipantId(): string {
   return `p-${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+let lastBootstrapPhaseForUi: CollabState["bootstrapPhase"] | "idle" = "idle";
+
 function renderBootstrapActions(state: CollabState | null): void {
   const phase = state?.bootstrapPhase ?? "idle";
   collabReconnectButton.hidden = phase !== "stalled-project";
@@ -1047,6 +1049,18 @@ function renderBootstrapActions(state: CollabState | null): void {
     phase === "receiving-project" ||
     phase === "verifying-project"
   );
+  // Surface recovery actions when receive stalls — don't leave guests stuck
+  // looking only at the status chip.
+  if (
+    phase === "stalled-project" &&
+    lastBootstrapPhaseForUi !== "stalled-project"
+  ) {
+    const collabPanel = document.querySelector<HTMLDetailsElement>(
+      ".collab-panel",
+    );
+    if (collabPanel) collabPanel.open = true;
+  }
+  lastBootstrapPhaseForUi = phase;
   const bootstrapping = Boolean(
     state &&
     !state.createdThisRoom &&

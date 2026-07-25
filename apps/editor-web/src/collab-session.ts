@@ -207,6 +207,8 @@ const DEFAULT_STALL_MS = 15_000;
 const ICE_NEGOTIATION_STALL_MS = 45_000;
 /** Guest joined an empty room: wait longer for the host to (re)appear. */
 const EMPTY_ROOM_STALL_MS = 120_000;
+/** Absorb brief WebRTC peer-list flaps before treating host departure as final. */
+export const PEER_LOSS_STALL_GRACE_MS = 3_000;
 /** Bounded signaling reconnects for hosts waiting on guests and guests bootstrapping. */
 const MAX_SIGNALING_AUTO_RECONNECTS = 5;
 /**
@@ -241,6 +243,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   let issueCodes: string[] = [];
   let lastProgressAt = 0;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let peerLossStallTimer: ReturnType<typeof setTimeout> | null = null;
   let sawPeerDuringBootstrap = false;
   let sawSignalingPeer = false;
   let ignoreEmptyPeerStall = false;
@@ -1133,27 +1136,58 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       emitState();
     });
   });
+  const clearPeerLossStallTimer = (): void => {
+    if (peerLossStallTimer) {
+      clearTimeout(peerLossStallTimer);
+      peerLossStallTimer = null;
+    }
+  };
+
+  const maybeArmPeerLossStall = (): void => {
+    if (
+      createdThisRoom ||
+      guestReady ||
+      !active ||
+      ignoreEmptyPeerStall ||
+      !sawPeerDuringBootstrap ||
+      provider.getPeers().length > 0 ||
+      (bootstrapPhase !== "receiving-project" &&
+        bootstrapPhase !== "verifying-project")
+    ) {
+      clearPeerLossStallTimer();
+      return;
+    }
+    if (peerLossStallTimer) return;
+    peerLossStallTimer = setTimeout(() => {
+      peerLossStallTimer = null;
+      if (
+        createdThisRoom ||
+        guestReady ||
+        !active ||
+        ignoreEmptyPeerStall ||
+        provider.getPeers().length > 0 ||
+        (bootstrapPhase !== "receiving-project" &&
+          bootstrapPhase !== "verifying-project")
+      ) {
+        return;
+      }
+      // Host/sealer still gone after the grace window.
+      bootstrapPhase = "stalled-project";
+      emitState();
+    }, PEER_LOSS_STALL_GRACE_MS);
+  };
+
   provider.on("peers", () => {
     const peers = provider.getPeers();
     if (peers.length > 0) {
       sawPeerDuringBootstrap = true;
       signalingAutoReconnects = 0;
       markProgress("peer");
-    }
-    if (
-      !createdThisRoom &&
-      !guestReady &&
-      active &&
-      !ignoreEmptyPeerStall &&
-      peers.length === 0 &&
-      sawPeerDuringBootstrap &&
-      (bootstrapPhase === "receiving-project" ||
-        bootstrapPhase === "verifying-project")
-    ) {
-      // Host/sealer departed after we had already connected to them.
-      bootstrapPhase = "stalled-project";
-      emitState();
-      return;
+      clearPeerLossStallTimer();
+    } else {
+      // Brief peer-list flaps during ICE renegotiation are common; wait before
+      // declaring the host departed so bootstrap can resume.
+      maybeArmPeerLossStall();
     }
     recomputeLeadership();
   });
@@ -1239,6 +1273,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         clearTimeout(stallTimer);
         stallTimer = null;
       }
+      clearPeerLossStallTimer();
       if (guestEvaluateTimer) {
         clearTimeout(guestEvaluateTimer);
         guestEvaluateTimer = null;
@@ -1395,6 +1430,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       bootstrapPhase = "receiving-project";
       signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
+      clearPeerLossStallTimer();
       armStallTimer();
       // Always cycle the transport: signaling can stay "connected" after the
       // data channel dies, and a no-op connect() leaves the guest stranded.
