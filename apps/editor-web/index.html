@@ -231,7 +231,10 @@
                     class="button-secondary"
                     id="open-project"
                     type="button"
-                  >作品ファイルを開く</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">📂</span>
+                    <span class="menu-item-label">作品ファイルを開く</span>
+                  </button>
                   <input
                     aria-label="Scratch の作品ファイル"
                     id="open-file"
@@ -243,8 +246,14 @@
                     class="button-secondary"
                     id="download-project"
                     type="button"
-                  >作品ファイルをダウンロード</button>
-                  <button id="save-project" type="button">今すぐ保存</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">⬇️</span>
+                    <span class="menu-item-label">作品ファイルをダウンロード</span>
+                  </button>
+                  <button id="save-project" type="button">
+                    <span aria-hidden="true" class="menu-item-icon">💾</span>
+                    <span class="menu-item-label">今すぐ保存</span>
+                  </button>
                 </div>
                 <div class="drive-section">
                   <div class="drive-section-header">
@@ -301,27 +310,39 @@
                     disabled
                     id="edit-undo"
                     type="button"
-                  >もとにもどす</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">↶</span>
+                    <span class="menu-item-label">もとにもどす</span>
+                  </button>
                   <button
                     class="button-secondary"
                     data-testid="edit-redo"
                     disabled
                     id="edit-redo"
                     type="button"
-                  >やりなおす</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">↷</span>
+                    <span class="menu-item-label">やりなおす</span>
+                  </button>
                   <button
                     class="button-secondary"
                     data-testid="restore-deletion"
                     disabled
                     id="restore-deletion"
                     type="button"
-                  >けしたものを もどす</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">♻️</span>
+                    <span class="menu-item-label">けしたものを もどす</span>
+                  </button>
                   <button
                     class="button-secondary"
                     data-testid="toggle-turbo"
                     id="toggle-turbo"
                     type="button"
-                  >ターボモードを オンにする</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">⚡</span>
+                    <span class="menu-item-label">ターボモードを オンにする</span>
+                  </button>
                   <span
                     aria-live="polite"
                     class="panel-status"
@@ -372,9 +393,12 @@
                   「いっしょに作るリンク」を使うと、友だちと同じ作品を作れます。
                 </p>
                 <div class="collab-controls">
-                  <button id="create-room" type="button" disabled>いっしょに作るリンクを作る</button>
-                  <label class="invite-field invite-field--with-action" for="collab-invite">
-                    <span>いっしょに作るリンク</span>
+                  <button id="create-room" type="button" disabled>
+                    <span aria-hidden="true" class="menu-item-icon">🔗</span>
+                    <span class="menu-item-label">いっしょに作るリンクを作る</span>
+                  </button>
+                  <div class="invite-field invite-field--with-action">
+                    <label for="collab-invite">いっしょに作るリンク</label>
                     <span class="invite-field-row">
                       <input
                         id="collab-invite"
@@ -382,13 +406,16 @@
                       />
                       <button id="join-room" type="button" disabled>入る</button>
                     </span>
-                  </label>
+                  </div>
                   <button
                     class="button-secondary"
                     id="copy-invite"
                     type="button"
                     disabled
-                  >リンクをコピー</button>
+                  >
+                    <span aria-hidden="true" class="menu-item-icon">📋</span>
+                    <span class="menu-item-label">リンクをコピー</span>
+                  </button>
                   <button id="collab-reconnect" type="button" hidden>もう一度つなぐ</button>
                   <button id="collab-retry-save" type="button" hidden>もう一度このパソコンに保存</button>
                   <button id="collab-download-sb3" type="button" hidden>作品ファイルをダウンロード</button>
@@ -402,8 +429,11 @@
                 </div>
                 <p aria-live="polite" class="panel-feedback" id="collab-feedback"></p>
                 <p class="safety-help">
-                  このリンクを知っている人は作品に入れます。知らない人には送らないでね。
-                  リンクを作った人がホスト、入った人がゲストです。ゲストの編集はこのパソコンに保存され、Google ドライブへはホストだけが保存できます。
+                  <span aria-hidden="true" class="safety-help-icon">💡</span>
+                  <span>
+                    このリンクを知っている人は作品に入れます。知らない人には送らないでね。
+                    リンクを作った人がホスト、入った人がゲストです。ゲストの編集はこのパソコンに保存され、Google ドライブへはホストだけが保存できます。
+                  </span>
                 </p>
               </div>
             </details>
@@ -495,7 +525,10 @@
                     ></textarea>
                   </label>
                   <div class="ai-ask-row">
-                    <button id="ai-ask" type="button">AI にきく</button>
+                    <button id="ai-ask" type="button">
+                      <span aria-hidden="true" class="menu-item-icon">✨</span>
+                      <span class="menu-item-label">AI にきく</span>
+                    </button>
                     <button
                       hidden
                       id="ai-clear-chat"
