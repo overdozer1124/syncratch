@@ -217,8 +217,15 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     });
   };
 
+  let lastEmittedSignalingRosterKey = "";
   const emitSignalingRoster = (): void => {
-    handlers?.onSignalingRoster?.([...signalingRoster].sort());
+    const roster = [...signalingRoster].sort();
+    const key = roster.join("\0");
+    // ICE candidate signals re-add the same peer; only notify on membership change
+    // so session stall timers are not reset by candidate spam.
+    if (key === lastEmittedSignalingRosterKey) return;
+    lastEmittedSignalingRosterKey = key;
+    handlers?.onSignalingRoster?.(roster);
   };
 
   const clearOfferRetry = (peerId: string): void => {
@@ -422,8 +429,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         break;
       case "signal":
         if (typeof msg.from === "string") {
+          const wasKnown = signalingRoster.has(msg.from);
           signalingRoster.add(msg.from);
-          emitSignalingRoster();
+          if (!wasKnown) emitSignalingRoster();
           void onSignal(msg.from, msg.data);
         }
         break;
@@ -507,6 +515,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       sendTail.clear();
       pendingIceCandidates.clear();
       signalingRoster.clear();
+      lastEmittedSignalingRosterKey = "";
       const closingSocket = socket;
       socket = null;
       try {

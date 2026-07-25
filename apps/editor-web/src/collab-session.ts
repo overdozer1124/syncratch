@@ -616,7 +616,13 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     options.onState?.(snapshotState());
   };
 
-  const markProgress = (_kind: string): void => {
+  /**
+   * Meaningful bootstrap progress (bytes / DC peer / seal advance). Signaling
+   * roster churn alone must not reset the stall clock — ICE candidates used to
+   * keep guests stuck in receiving-project forever.
+   */
+  const markProgress = (kind: "bytes" | "peer" | "bootstrap"): void => {
+    void kind;
     lastProgressAt = Date.now();
     if (
       bootstrapPhase === "stalled-project" &&
@@ -761,12 +767,22 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     }, Math.max(debounceMs, 20));
   };
 
+  let lastSeenBootstrapId: string | null = null;
+  let lastVerifiedAssets = -1;
+
   const validateCurrentGuestStaging = (): LocalMaterialization | null => {
     const checkpoint = readBootstrapCheckpoint(domain.ydoc);
     if (checkpoint?.assetManifest) {
       expectedAssets = checkpoint.assetManifest.length;
     }
-    if (checkpoint?.state === "sealed") {
+    const bootstrapId =
+      typeof checkpoint?.bootstrapId === "string" ? checkpoint.bootstrapId : null;
+    if (
+      checkpoint?.state === "sealed" &&
+      bootstrapId &&
+      bootstrapId !== lastSeenBootstrapId
+    ) {
+      lastSeenBootstrapId = bootstrapId;
       markProgress("bootstrap");
     }
 
@@ -780,6 +796,10 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
     const result = validateSealedCheckpoint(domain.ydoc, () => domain.materialize());
     verifiedAssets = result.verifiedAssetCount;
     expectedAssets = result.expectedAssetCount;
+    if (verifiedAssets > lastVerifiedAssets) {
+      lastVerifiedAssets = verifiedAssets;
+      markProgress("bootstrap");
+    }
 
     if (result.status === "incomplete-vector" || result.status === "missing-assets") {
       if (bootstrapPhase !== "stalled-project") {
@@ -794,7 +814,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       if (bootstrapPhase !== "stalled-project") {
         bootstrapPhase = "receiving-project";
       }
-      markProgress("manifest");
+      // Waiting on the host's next seal is not local progress — do not reset stall.
       emitState();
       armStallTimer();
       return null;
@@ -1194,9 +1214,13 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   provider.on("signaling", () => {
     const signalingPeers = provider.getSignalingPeers();
     if (signalingPeers.length > 0) {
+      const firstSighting = !sawSignalingPeer;
       sawSignalingPeer = true;
-      if (!createdThisRoom && !guestReady) {
-        markProgress("signaling");
+      // First sighting of a signaling peer starts/extends the ICE negotiation
+      // stall window once — later roster events must not keep resetting it.
+      if (firstSighting && !createdThisRoom && !guestReady) {
+        lastProgressAt = Date.now();
+        armStallTimer();
       }
     }
     // Host/guest: surface join failures instead of looking "connected & waiting".
@@ -1241,6 +1265,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       sawPeerDuringBootstrap = false;
       sawSignalingPeer = false;
       signalingAutoReconnects = 0;
+      lastSeenBootstrapId = null;
+      lastVerifiedAssets = -1;
       lastProgressAt = Date.now();
       armStallTimer();
       active = true;
@@ -1292,6 +1318,8 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       sawPeerDuringBootstrap = false;
       sawSignalingPeer = false;
       signalingAutoReconnects = 0;
+      lastSeenBootstrapId = null;
+      lastVerifiedAssets = -1;
       validatedMaterialization = null;
       leadership = null;
       leadershipGeneration += 1;
@@ -1426,7 +1454,16 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       await evaluateGuestBootstrap();
     },
     reconnectBootstrap() {
-      if (bootstrapPhase !== "stalled-project") return;
+      const iceStuckWithoutDataChannel =
+        (bootstrapPhase === "receiving-project" ||
+          bootstrapPhase === "verifying-project") &&
+        provider.getPeers().length === 0;
+      if (
+        bootstrapPhase !== "stalled-project" &&
+        !iceStuckWithoutDataChannel
+      ) {
+        return;
+      }
       bootstrapPhase = "receiving-project";
       signalingAutoReconnects = 0;
       lastProgressAt = Date.now();
