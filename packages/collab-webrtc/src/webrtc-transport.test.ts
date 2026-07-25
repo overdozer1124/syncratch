@@ -500,8 +500,7 @@ describe("createWebRtcTransport signaling wiring", () => {
     vi.useRealTimers();
   });
 
-  it("falls back to signaling relay when data channel never opens", async () => {
-    vi.useFakeTimers();
+  it("opens signaling relay as soon as a peer appears on the roster", async () => {
     FakeSocket.instances = [];
     const onPeerOpen = vi.fn();
     const onMessage = vi.fn();
@@ -523,9 +522,8 @@ describe("createWebRtcTransport signaling wiring", () => {
     const socket = FakeSocket.instances[0]!;
     socket.open();
     socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
-    expect(onPeerOpen).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(SIGNAL_RELAY_FALLBACK_MS);
+    // Default fallback is immediate so ICE-blocked guests are not stuck.
+    expect(SIGNAL_RELAY_FALLBACK_MS).toBe(0);
     expect(onPeerOpen).toHaveBeenCalledWith("peer-b");
 
     transport.send("peer-b", "hello-relay");
@@ -544,6 +542,33 @@ describe("createWebRtcTransport signaling wiring", () => {
       data: {relay: "from-b"},
     });
     expect(onMessage).toHaveBeenCalledWith("peer-b", "from-b");
+    transport.disconnect();
+  });
+
+  it("can delay relay activation when signalRelayFallbackMs is positive", async () => {
+    vi.useFakeTimers();
+    FakeSocket.instances = [];
+    const onPeerOpen = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      signalRelayFallbackMs: 5_000,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: fakePeerConnection,
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen,
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    FakeSocket.instances[0]!.open();
+    FakeSocket.instances[0]!.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
+    expect(onPeerOpen).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(onPeerOpen).toHaveBeenCalledWith("peer-b");
     transport.disconnect();
     vi.useRealTimers();
   });
