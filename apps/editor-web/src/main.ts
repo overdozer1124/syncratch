@@ -2753,7 +2753,7 @@ function syncAiAskChrome(): void {
   aiQuestionInput.placeholder = active
     ? "例: やってみたけど、うまくいかなかった"
     : "例: このスプライトが動かないのはなぜ？";
-  aiQuestionInput.rows = active ? 2 : 3;
+  aiQuestionInput.rows = active ? 4 : 5;
   aiPanel.classList.toggle("ai-panel--answering", active);
   aiPanelContent.classList.toggle("ai-panel--answering", active);
 }
