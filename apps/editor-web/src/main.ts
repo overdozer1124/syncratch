@@ -2685,22 +2685,30 @@ function applyAiSettingsToForm(settings: AiAssistSettings): void {
 
 function appendAiThreadTurn(turn: AiConversationTurn): void {
   const wrap = document.createElement("div");
-  wrap.className =
-    turn.role === "user"
-      ? "ai-thread-turn ai-thread-turn-user"
-      : "ai-thread-turn ai-thread-turn-assistant";
-  const role = document.createElement("p");
-  role.className = "ai-thread-role";
-  role.textContent = turn.role === "user" ? "きみ" : "AI";
-  wrap.append(role);
-  if (turn.role === "assistant") {
-    const body = document.createElement("div");
-    body.innerHTML = formatAiAnswerHtml(turn.content);
-    wrap.append(body);
+  const isUser = turn.role === "user";
+  wrap.className = isUser
+    ? "ai-msg ai-msg--user ai-thread-turn ai-thread-turn-user"
+    : "ai-msg ai-msg--ai ai-thread-turn ai-thread-turn-assistant";
+  const role = document.createElement("span");
+  role.className = "ai-msg__label ai-thread-role";
+  if (isUser) {
+    role.textContent = "きみ";
   } else {
+    role.innerHTML =
+      `<svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">` +
+      `<path fill="currentColor" d="M12 2l1.6 4.9L18 8.5l-4.4 1.6L12 15l-1.6-4.9L6 8.5l4.4-1.6L12 2z"/>` +
+      `</svg>` +
+      `AI`;
+  }
+  wrap.append(role);
+  if (isUser) {
     const body = document.createElement("p");
     body.className = "ai-answer-text";
     body.textContent = turn.content;
+    wrap.append(body);
+  } else {
+    const body = document.createElement("div");
+    body.innerHTML = formatAiAnswerHtml(turn.content);
     wrap.append(body);
   }
   aiThread.append(wrap);
@@ -2842,29 +2850,60 @@ function hideAiClarify(): void {
   aiClarifyOtherInput.value = "";
 }
 
+function stripAiChoiceLetterPrefix(label: string): string {
+  return label.replace(/^[A-D][:：．.]\s*/i, "").trim();
+}
+
+function appendAiChoiceButton(options: {
+  letter: string;
+  label: string;
+  altKey?: boolean;
+  other?: boolean;
+  choiceId?: string;
+  onClick: () => void;
+}): void {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = options.other
+    ? "ai-choice ai-choice--other"
+    : "ai-choice";
+  if (options.choiceId) button.dataset.choiceId = options.choiceId;
+  const key = document.createElement("span");
+  key.className = options.altKey
+    ? "ai-choice__key ai-choice__key--alt"
+    : "ai-choice__key";
+  key.textContent = options.letter;
+  button.append(key, document.createTextNode(options.label));
+  button.addEventListener("click", options.onClick);
+  aiClarifyChoices.append(button);
+}
+
 function renderAiClarifyPrompt(clarify: AiClarifyPrompt): void {
   aiClarifyPromptEl.textContent = clarify.promptText;
   aiClarifyChoices.replaceChildren();
-  for (const choice of clarify.choices) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = choice.label;
-    button.dataset.choiceId = choice.id;
-    button.addEventListener("click", () => {
-      hideAiClarify();
-      void askAiWithIntent(choice);
+  clarify.choices.forEach((choice, index) => {
+    const letter = String.fromCharCode(65 + index);
+    appendAiChoiceButton({
+      letter,
+      label: stripAiChoiceLetterPrefix(choice.label) || choice.label,
+      altKey: index > 0,
+      choiceId: choice.id,
+      onClick: () => {
+        hideAiClarify();
+        void askAiWithIntent(choice);
+      },
     });
-    aiClarifyChoices.append(button);
-  }
+  });
   if (clarify.allowOther) {
-    const otherButton = document.createElement("button");
-    otherButton.type = "button";
-    otherButton.textContent = "D: そのほか（じぶんでかく）";
-    otherButton.addEventListener("click", () => {
-      aiClarifyOther.hidden = false;
-      aiClarifyOtherInput.focus();
+    appendAiChoiceButton({
+      letter: "D",
+      label: "そのほか（じぶんで かく）",
+      other: true,
+      onClick: () => {
+        aiClarifyOther.hidden = false;
+        aiClarifyOtherInput.focus();
+      },
     });
-    aiClarifyChoices.append(otherButton);
   }
   aiClarifyOther.hidden = true;
   aiClarify.hidden = false;

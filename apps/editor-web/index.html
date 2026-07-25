@@ -473,135 +473,154 @@
                 data-testid="ai-floating-panel"
                 hidden
                 id="ai-panel-content"
+                role="dialog"
+                aria-label="AI にきく"
               >
-                <div
+                <header
                   class="ai-panel-chrome"
                   data-testid="ai-panel-drag-handle"
                   id="ai-panel-drag-handle"
                 >
-                  <span class="panel-heading ai-panel-heading">
-                    <span aria-hidden="true" class="panel-heading-icon panel-heading-icon--ai">
-                      <svg height="18" viewBox="0 0 24 24" width="18">
-                        <rect
-                          fill="#4c97ff"
-                          height="10"
-                          rx="2.5"
-                          transform="rotate(45 12 12)"
-                          width="10"
-                          x="7"
-                          y="7"
-                        ></rect>
-                      </svg>
-                    </span>
-                    <span class="ai-panel-title" id="ai-panel-title">AI にきく</span>
+                  <span aria-hidden="true" class="ai-panel-badge">
+                    <svg height="18" viewBox="0 0 24 24" width="18">
+                      <path
+                        fill="currentColor"
+                        d="M12 2l1.6 4.9L18 8.5l-4.4 1.6L12 15l-1.6-4.9L6 8.5l4.4-1.6L12 2z"
+                      ></path>
+                      <circle
+                        cx="18.5"
+                        cy="16.5"
+                        fill="currentColor"
+                        opacity=".55"
+                        r="2.2"
+                      ></circle>
+                    </svg>
                   </span>
+                  <span class="ai-panel-title" id="ai-panel-title">AI にきく</span>
                   <button
                     aria-label="とじる"
-                    class="ai-panel-close button-secondary"
+                    class="ai-panel-close"
                     id="ai-panel-close"
                     type="button"
                   >とじる</button>
-                </div>
-                <p class="panel-help">
-                  作品の説明や、動かないときの助言をもらえます。完成プログラムを勝手に書き換えることはしません。
-                </p>
-                <div class="ai-controls">
-                  <label class="invite-field" for="ai-question-target">
-                    <span>質問するスプライト</span>
-                    <select
-                      data-testid="ai-question-target"
-                      id="ai-question-target"
-                    ></select>
-                  </label>
-                  <p class="panel-help" id="ai-question-target-hint">
-                    どのスプライトのコードについて聞くかを選んでください。
+                </header>
+
+                <div class="ai-panel-body">
+                  <p class="panel-help ai-panel-intro">
+                    作品の説明や、動かないときの助言をもらえます。完成プログラムを勝手に書き換えることはしません。
                   </p>
-                  <label class="invite-field" for="ai-mode">
-                    <span>ききかた</span>
-                    <select id="ai-mode"></select>
-                  </label>
-                  <label class="invite-field" for="ai-question">
-                    <span>しつもん</span>
-                    <textarea
-                      id="ai-question"
-                      placeholder="例: このスプライトが動かないのはなぜ？"
-                      rows="3"
-                    ></textarea>
-                  </label>
-                  <div class="ai-ask-row">
-                    <button id="ai-ask" type="button">
-                      <span aria-hidden="true" class="menu-item-icon">✨</span>
+                  <div
+                    class="ai-answer-pager"
+                    data-testid="ai-answer-pager"
+                    hidden
+                    id="ai-answer-pager"
+                  >
+                    <div class="ai-pager-nav">
+                      <button id="ai-page-prev" type="button">まえのこたえ</button>
+                      <span
+                        aria-live="polite"
+                        class="ai-nav-count"
+                        data-testid="ai-page-status"
+                        id="ai-page-status"
+                      >1 / 1</span>
+                      <button id="ai-page-next" type="button">つぎのこたえ</button>
+                    </div>
+                    <div
+                      aria-live="polite"
+                      class="ai-thread"
+                      data-testid="ai-thread"
+                      id="ai-thread"
+                    ></div>
+                  </div>
+                  <div
+                    aria-live="polite"
+                    class="ai-answer"
+                    data-testid="ai-answer"
+                    hidden
+                    id="ai-answer"
+                  ></div>
+                  <div
+                    class="ai-clarify"
+                    data-testid="ai-clarify"
+                    hidden
+                    id="ai-clarify"
+                  >
+                    <p class="ai-clarify-prompt" id="ai-clarify-prompt"></p>
+                    <div
+                      class="ai-clarify-choices"
+                      data-testid="ai-clarify-choices"
+                      id="ai-clarify-choices"
+                    ></div>
+                    <div class="ai-clarify-other" hidden id="ai-clarify-other">
+                      <label class="invite-field" for="ai-clarify-other-input">
+                        <span>そのほか（じぶんでかく）</span>
+                        <textarea
+                          id="ai-clarify-other-input"
+                          placeholder="したいことを みじかく かいてね"
+                          rows="2"
+                        ></textarea>
+                      </label>
+                      <button id="ai-clarify-other-submit" type="button">
+                        このないようで聞く
+                      </button>
+                    </div>
+                  </div>
+                  <p aria-live="polite" class="panel-feedback" id="ai-feedback"></p>
+                </div>
+
+                <div class="ai-compose">
+                  <div class="ai-controls">
+                    <label class="invite-field" for="ai-question-target">
+                      <span>質問するスプライト</span>
+                      <select
+                        data-testid="ai-question-target"
+                        id="ai-question-target"
+                      ></select>
+                    </label>
+                    <p class="panel-help" id="ai-question-target-hint">
+                      どのスプライトのコードについて聞くかを選んでください。
+                    </p>
+                    <label class="invite-field" for="ai-mode">
+                      <span>ききかた</span>
+                      <select id="ai-mode"></select>
+                    </label>
+                    <label class="invite-field" for="ai-question">
+                      <span>しつもん</span>
+                      <textarea
+                        id="ai-question"
+                        placeholder="例: このスプライトが動かないのはなぜ？"
+                        rows="2"
+                      ></textarea>
+                    </label>
+                    <button class="ai-submit" id="ai-ask" type="button">
+                      <svg
+                        aria-hidden="true"
+                        class="menu-item-icon"
+                        height="17"
+                        viewBox="0 0 24 24"
+                        width="17"
+                      >
+                        <path
+                          fill="currentColor"
+                          d="M12 2l1.6 4.9L18 8.5l-4.4 1.6L12 15l-1.6-4.9L6 8.5l4.4-1.6L12 2z"
+                        ></path>
+                      </svg>
                       <span class="menu-item-label">AI にきく</span>
                     </button>
                     <button
+                      class="button-secondary ai-clear-chat"
                       hidden
                       id="ai-clear-chat"
                       type="button"
                     >あたらしいはなし</button>
-                  </div>
-                  <span
-                    aria-live="polite"
-                    class="panel-status"
-                    data-testid="ai-runtime-status"
-                    id="ai-runtime-status"
-                  ></span>
-                </div>
-                <div
-                  class="ai-clarify"
-                  data-testid="ai-clarify"
-                  hidden
-                  id="ai-clarify"
-                >
-                  <p class="ai-clarify-prompt" id="ai-clarify-prompt"></p>
-                  <div
-                    class="ai-clarify-choices"
-                    data-testid="ai-clarify-choices"
-                    id="ai-clarify-choices"
-                  ></div>
-                  <div class="ai-clarify-other" hidden id="ai-clarify-other">
-                    <label class="invite-field" for="ai-clarify-other-input">
-                      <span>そのほか（じぶんでかく）</span>
-                      <textarea
-                        id="ai-clarify-other-input"
-                        placeholder="したいことを みじかく かいてね"
-                        rows="2"
-                      ></textarea>
-                    </label>
-                    <button id="ai-clarify-other-submit" type="button">
-                      このないようで聞く
-                    </button>
-                  </div>
-                </div>
-                <div
-                  class="ai-answer-pager"
-                  data-testid="ai-answer-pager"
-                  hidden
-                  id="ai-answer-pager"
-                >
-                  <div class="ai-pager-nav">
-                    <button id="ai-page-prev" type="button">まえのこたえ</button>
                     <span
                       aria-live="polite"
-                      data-testid="ai-page-status"
-                      id="ai-page-status"
-                    >1 / 1</span>
-                    <button id="ai-page-next" type="button">つぎのこたえ</button>
+                      class="ai-model"
+                      data-testid="ai-runtime-status"
+                      id="ai-runtime-status"
+                    ></span>
                   </div>
-                  <div
-                    aria-live="polite"
-                    class="ai-thread"
-                    data-testid="ai-thread"
-                    id="ai-thread"
-                  ></div>
                 </div>
-                <div
-                  aria-live="polite"
-                  class="ai-answer"
-                  data-testid="ai-answer"
-                  hidden
-                  id="ai-answer"
-                ></div>
-                <p aria-live="polite" class="panel-feedback" id="ai-feedback"></p>
               </div>
             </details>
           </div>
