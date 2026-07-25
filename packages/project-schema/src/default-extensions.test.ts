@@ -46,4 +46,18 @@ describe("default extensions catalog (Stretch3 / Xcratch)", () => {
     expect(prefix.has("ml2scratch")).toBe(true);
     expect(prefix.has("music")).toBe(false);
   });
+
+  it("points Stretch3 non-CDN extensions at bundled local modules", () => {
+    for (const id of [
+      "iftttWebhooks",
+      "tm2scratch",
+      "numberbank",
+      "qrcode",
+    ]) {
+      const entry = defaultExtensionCatalog.extensions.find(
+        (item) => item.extensionId === id,
+      );
+      expect(entry?.extensionURL).toBe(`extensions/${id}.mjs`);
+    }
+  });
 });

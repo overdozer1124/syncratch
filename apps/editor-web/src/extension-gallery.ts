@@ -193,6 +193,60 @@ type ExtensionModuleImporter = (
   url: string,
 ) => Promise<XcratchExtensionModule>;
 
+const ML5_EXTENSION_IDS = new Set([
+  "facemesh2scratch",
+  "handpose2scratch",
+  "ic2scratch",
+]);
+
+const ML5_CDN_URL = "https://unpkg.com/ml5@0.12.2/dist/ml5.min.js";
+
+let ml5LoadPromise: Promise<void> | null = null;
+
+/** Resolve catalog-relative module URLs against the GUI public path. */
+export function resolveExtensionModuleUrl(url: string): string {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//")) {
+    return url;
+  }
+  const publicPath =
+    (typeof window !== "undefined" &&
+      (window as Window & {__BLOCKSYNC_GUI_PUBLIC_PATH__?: string})
+        .__BLOCKSYNC_GUI_PUBLIC_PATH__) ||
+    "/";
+  const base = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
+  const rel = url.replace(/^\//, "");
+  if (typeof window !== "undefined" && window.location?.href) {
+    return new URL(rel, new URL(base, window.location.href)).href;
+  }
+  return `${base}${rel}`;
+}
+
+export function ensureMl5Loaded(
+  doc: Pick<Document, "createElement" | "head"> = document,
+): Promise<void> {
+  const g = globalThis as typeof globalThis & {ml5?: unknown};
+  if (g.ml5) return Promise.resolve();
+  if (ml5LoadPromise) return ml5LoadPromise;
+  ml5LoadPromise = new Promise((resolve, reject) => {
+    const script = doc.createElement("script");
+    script.src = ML5_CDN_URL;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => {
+      ml5LoadPromise = null;
+      reject(new Error("ml5 の読み込みに失敗しました"));
+    };
+    doc.head.appendChild(script);
+  });
+  return ml5LoadPromise;
+}
+
+/** Test-only seam to reset ml5 loader state. */
+export function resetMl5LoaderForTests(): void {
+  ml5LoadPromise = null;
+  delete (globalThis as {ml5?: unknown}).ml5;
+}
+
 /** Dynamic import that Vite will not rewrite into a local chunk. */
 export const defaultExtensionModuleImporter: ExtensionModuleImporter = (
   url,
@@ -259,12 +313,16 @@ export async function loadExtensionModuleUrl(
   url: string,
   expectedId?: string,
 ): Promise<string> {
-  const mod = await importExtensionModule(url);
+  if (expectedId && ML5_EXTENSION_IDS.has(expectedId)) {
+    await ensureMl5Loaded();
+  }
+  const resolvedUrl = resolveExtensionModuleUrl(url);
+  const mod = await importExtensionModule(resolvedUrl);
   const BlockClass = mod.blockClass;
   if (typeof BlockClass !== "function") {
     // Fall back to stock worker path for classic-script extensions.
-    await vm.extensionManager.loadExtensionURL(url);
-    return expectedId ?? url;
+    await vm.extensionManager.loadExtensionURL(resolvedUrl);
+    return expectedId ?? resolvedUrl;
   }
 
   const instance = new BlockClass(vm.runtime);

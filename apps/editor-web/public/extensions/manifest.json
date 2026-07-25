@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-07-25T15:38:52.439Z",
+  "extensions": [
+    {
+      "id": "iftttWebhooks",
+      "url": "extensions/iftttWebhooks.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/NorifumiOgawa/iftttWebhooks.git"
+    },
+    {
+      "id": "tm2scratch",
+      "url": "extensions/tm2scratch.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/champierre/tm2scratch.git"
+    },
+    {
+      "id": "tmpose2scratch",
+      "url": "extensions/tmpose2scratch.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/champierre/tmpose2scratch.git"
+    },
+    {
+      "id": "scratch2maqueen",
+      "url": "extensions/scratch2maqueen.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/champierre/scratch2maqueen.git"
+    },
+    {
+      "id": "facemesh2scratch",
+      "url": "extensions/facemesh2scratch.mjs",
+      "needsMl5": true,
+      "upstream": "https://github.com/champierre/facemesh2scratch.git"
+    },
+    {
+      "id": "handpose2scratch",
+      "url": "extensions/handpose2scratch.mjs",
+      "needsMl5": true,
+      "upstream": "https://github.com/champierre/handpose2scratch.git"
+    },
+    {
+      "id": "ic2scratch",
+      "url": "extensions/ic2scratch.mjs",
+      "needsMl5": true,
+      "upstream": "https://github.com/champierre/ic2scratch.git"
+    },
+    {
+      "id": "pasorich",
+      "url": "extensions/pasorich.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/con3code/pasorich.git"
+    },
+    {
+      "id": "qrcode",
+      "url": "extensions/qrcode.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/sugiura-lab/scratch3-qrcode.git"
+    },
+    {
+      "id": "numberbank",
+      "url": "extensions/numberbank.mjs",
+      "needsMl5": false,
+      "upstream": "https://github.com/con3code/numberbank.git"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "name": "stretch3-extension-bundle",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "encoding-japanese": "1.0.30",
+    "firebase": "10.7.1",
+    "format-message": "6.2.4",
+    "jsqr": "1.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

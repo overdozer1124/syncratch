@@ -21,7 +21,8 @@
     "r1:auth:test": "pnpm r1:auth:typecheck && pnpm --filter @blocksync/session-service --filter @blocksync/project-store-sqlite --filter @blocksync/r1-persist-server test",
     "r1:scratch:typecheck": "pnpm --filter @blocksync/r1-scratch-host typecheck",
     "r1:scratch:test": "pnpm r1:scratch:typecheck && pnpm gate0:build-vendor-vm && pnpm gate0:build-vendor-gui-spike && pnpm --filter @blocksync/r1-scratch-host test && pnpm --filter @blocksync/r1-scratch-host test:browser",
-    "sb3:opcodes:check": "node scripts/generate-scratch-opcodes.mjs --check"
+    "sb3:opcodes:check": "node scripts/generate-scratch-opcodes.mjs --check",
+    "extensions:bundle-stretch3": "node scripts/stretch3-extensions/bundle.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

@@ -6,6 +6,7 @@ import {
   loadExtensionModuleUrl,
   loadGalleryExtension,
   loadModeForEntry,
+  resolveExtensionModuleUrl,
   setExtensionModuleImporterForTests,
   type ExtensionVm,
 } from "./extension-gallery.js";
@@ -21,6 +22,36 @@ describe("extension gallery catalog wiring", () => {
     expect(keys.has("g2s")).toBe(true);
     expect(keys.has("gai")).toBe(true);
     expect(keys.has("extensionLoader")).toBe(true);
+  });
+
+  it("loads formerly unavailable Stretch3 ids as local modules", () => {
+    const items = buildExtensionGalleryItems();
+    for (const id of [
+      "iftttWebhooks",
+      "tm2scratch",
+      "tmpose2scratch",
+      "scratch2maqueen",
+      "facemesh2scratch",
+      "handpose2scratch",
+      "pasorich",
+      "qrcode",
+      "ic2scratch",
+      "numberbank",
+    ]) {
+      const item = items.find(entry => entry.extensionId === id);
+      expect(item, id).toBeDefined();
+      expect(item!.loadMode).toBe("module");
+      expect(item!.extensionURL).toBe(`extensions/${id}.mjs`);
+    }
+  });
+
+  it("resolves relative extension URLs against the public path", () => {
+    expect(resolveExtensionModuleUrl("https://example.com/a.mjs")).toBe(
+      "https://example.com/a.mjs",
+    );
+    expect(resolveExtensionModuleUrl("extensions/iftttWebhooks.mjs")).toBe(
+      "/extensions/iftttWebhooks.mjs",
+    );
   });
 
   it("classifies stock Scratch ids as builtin and URL modules as module", () => {

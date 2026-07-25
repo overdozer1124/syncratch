@@ -8,7 +8,11 @@
       "description": "Play instruments and drums.",
       "collaborator": null,
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "builtin",
       "opcodePolicy": "pinned"
     },
@@ -18,7 +22,11 @@
       "description": "Draw with your sprites.",
       "collaborator": null,
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "builtin",
       "opcodePolicy": "pinned"
     },
@@ -28,7 +36,11 @@
       "description": "Sense motion with the camera.",
       "collaborator": null,
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "builtin",
       "opcodePolicy": "pinned"
     },
@@ -38,7 +50,11 @@
       "description": "Make your projects talk.",
       "collaborator": "Amazon Web Services",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "builtin",
       "opcodePolicy": "pinned"
     },
@@ -48,7 +64,11 @@
       "description": "Translate text into many languages.",
       "collaborator": "Google",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "builtin",
       "opcodePolicy": "pinned"
     },
@@ -58,7 +78,11 @@
       "description": "Make anything into a key.",
       "collaborator": "JoyLabz",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -68,7 +92,11 @@
       "description": "Connect your projects with the world.",
       "collaborator": "micro:bit",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -78,7 +106,11 @@
       "description": "Build interactive robots and more.",
       "collaborator": "LEGO",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -88,7 +120,11 @@
       "description": "Bring robotic creations to life.",
       "collaborator": "LEGO",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -98,7 +134,11 @@
       "description": "Build with motors and sensors.",
       "collaborator": "LEGO",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -108,7 +148,11 @@
       "description": "Sense push, pull, motion, and spin.",
       "collaborator": "Vernier",
       "extensionURL": null,
-      "sources": ["scratch-foundation", "stretch3", "xcratch"],
+      "sources": [
+        "scratch-foundation",
+        "stretch3",
+        "xcratch"
+      ],
       "kind": "hardware",
       "opcodePolicy": "prefix"
     },
@@ -118,7 +162,9 @@
       "description": "Image recognition with machine learning.",
       "collaborator": "champierre",
       "extensionURL": "https://champierre.github.io/ml2scratch/ml2scratch.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -128,7 +174,9 @@
       "description": "Detect human pose with a webcam.",
       "collaborator": "champierre",
       "extensionURL": "https://champierre.github.io/posenet2scratch/posenet2scratch.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -138,7 +186,9 @@
       "description": "Play with all functions of micro:bit.",
       "collaborator": "Yengawa Lab",
       "extensionURL": "https://microbit-more.github.io/dist/microbitMore.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -147,8 +197,10 @@
       "name": "TM2Scratch",
       "description": "Teachable Machine image and sound recognition.",
       "collaborator": "Tsukurusha, YengawaLab and Google",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/tm2scratch.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -157,8 +209,10 @@
       "name": "TMPose2Scratch",
       "description": "Teachable Machine pose recognition.",
       "collaborator": "Tsukurusha, YengawaLab and Google",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/tmpose2scratch.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -168,7 +222,9 @@
       "description": "Connect Grove sensors and actuators.",
       "collaborator": "TFabWorks",
       "extensionURL": "https://xcx-g2s.surge.sh/g2s.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -177,8 +233,10 @@
       "name": "Scratch2Maqueen",
       "description": "Program Maqueen robots from Scratch.",
       "collaborator": "champierre",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/scratch2maqueen.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -187,8 +245,10 @@
       "name": "Facemesh2Scratch",
       "description": "Track faces with a webcam.",
       "collaborator": "champierre",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/facemesh2scratch.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -197,8 +257,10 @@
       "name": "Handpose2Scratch",
       "description": "Track hands and fingers with a webcam.",
       "collaborator": "champierre",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/handpose2scratch.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -207,8 +269,10 @@
       "name": "PaSoRich 2.0",
       "description": "Read IC cards with a PaSoRi reader.",
       "collaborator": "con3office",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/pasorich.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -217,8 +281,10 @@
       "name": "QR Code",
       "description": "Read QR codes.",
       "collaborator": "Sugiura Lab",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/qrcode.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -228,7 +294,9 @@
       "description": "Convert speech to text in the browser.",
       "collaborator": "champierre",
       "extensionURL": "https://champierre.github.io/speech2scratch/speech2scratch.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -237,8 +305,10 @@
       "name": "ImageClassifier2Scratch",
       "description": "Classify objects from the webcam.",
       "collaborator": "champierre",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/ic2scratch.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -247,8 +317,10 @@
       "name": "IFTTT Webhooks",
       "description": "Connect Scratch to other services via IFTTT.",
       "collaborator": "ogaworks",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/iftttWebhooks.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -257,8 +329,10 @@
       "name": "NumberBank 2.0",
       "description": "Store numbers in the cloud.",
       "collaborator": "con3office",
-      "extensionURL": null,
-      "sources": ["stretch3"],
+      "extensionURL": "extensions/numberbank.mjs",
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -268,7 +342,9 @@
       "description": "Control a LEGO DUPLO train from Scratch.",
       "collaborator": "bricklife",
       "extensionURL": "https://bricklife.com/scratch-gui/xcratch/duplotrain.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -278,7 +354,9 @@
       "description": "Control Geolonia Maps from Scratch.",
       "collaborator": "Geolonia",
       "extensionURL": "https://geolonia.github.io/x-geo-scratch/geoscratch.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -288,7 +366,9 @@
       "description": "Use ChatGPT from Scratch.",
       "collaborator": "ichiroc",
       "extensionURL": "https://champierre.github.io/chatgpt2scratch/chatgpt2scratch.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -298,7 +378,9 @@
       "description": "Serial communication via Web Serial API.",
       "collaborator": "champierre",
       "extensionURL": "https://champierre.github.io/scratch2webserialapi/scratch2webserialapi.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -308,7 +390,9 @@
       "description": "Switch the camera device used by Scratch.",
       "collaborator": "TFabWorks",
       "extensionURL": "https://tfabworks.github.io/xcx-cameraselector/dist/cameraselector.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -318,7 +402,9 @@
       "description": "Capture screenshots of the stage.",
       "collaborator": "tfabworks",
       "extensionURL": "https://tfabworks.github.io/xcx-screenshot/dist/screenshot.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -328,7 +414,9 @@
       "description": "Call Web APIs and parse JSON responses.",
       "collaborator": "TFabWorks",
       "extensionURL": "https://tfabworks.github.io/xcx-webapi/dist/webapiExtension.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -338,7 +426,9 @@
       "description": "Control Arduino from Scratch.",
       "collaborator": "yokobond",
       "extensionURL": "https://yokobond.github.io/xcx-arduino/dist/xcxArduino.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -348,7 +438,9 @@
       "description": "Play with generative AI.",
       "collaborator": "Koji Yokokawa",
       "extensionURL": "https://yokobond.github.io/xcx-gai/dist/gai.mjs",
-      "sources": ["stretch3"],
+      "sources": [
+        "stretch3"
+      ],
       "kind": "external",
       "opcodePolicy": "prefix"
     },
@@ -359,7 +451,9 @@
       "description": "Load an extension from the internet.",
       "collaborator": "Yengawa Lab",
       "extensionURL": null,
-      "sources": ["xcratch"],
+      "sources": [
+        "xcratch"
+      ],
       "kind": "loader",
       "opcodePolicy": "none"
     }
