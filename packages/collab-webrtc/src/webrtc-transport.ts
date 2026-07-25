@@ -60,8 +60,13 @@ export function shouldInitiateOffer(localId: string, remoteId: string): boolean 
 
 export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
 
-/** Prefer WebRTC; after this delay, relay ciphertext over signaling instead. */
-export const SIGNAL_RELAY_FALLBACK_MS = 5_000;
+/**
+ * Prefer WebRTC data channels when they open; meanwhile relay ciphertext over
+ * signaling. `0` = open the relay path as soon as a signaling peer appears
+ * (needed on networks where ICE never connects). Use a positive delay only in
+ * tests; `-1` disables relay.
+ */
+export const SIGNAL_RELAY_FALLBACK_MS = 0;
 
 /**
  * Default ICE is STUN-only. Deprecated long-term Open Relay passwords no longer
@@ -283,9 +288,14 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   };
 
   const scheduleRelayFallback = (peerId: string): void => {
-    if (signalRelayFallbackMs <= 0) return;
-    if (relayFallbackTimers.has(peerId)) return;
+    // `-1` disables; `0` means immediate (production default).
+    if (signalRelayFallbackMs < 0) return;
     if (openedPeers.has(peerId)) return;
+    if (signalRelayFallbackMs === 0) {
+      activateSignalRelay(peerId);
+      return;
+    }
+    if (relayFallbackTimers.has(peerId)) return;
     relayFallbackTimers.set(
       peerId,
       setTimeout(() => {
