@@ -163,7 +163,10 @@ import {
   type CollabInvite,
 } from "@blocksync/collab-invite";
 import {createWebRtcProvider} from "@blocksync/collab-webrtc";
-import {parseCollabIceServers} from "./collab-ice-servers.js";
+import {
+  parseCollabIceServers,
+  resolveCollabIceServers,
+} from "./collab-ice-servers.js";
 import {
   createCollabSession,
   evaluateCollabReadiness,
@@ -1310,6 +1313,11 @@ async function startCollaboration(
   const topic = await deriveSignalingTopic(invite);
   if (generation !== collaborationGeneration) return;
   const participantId = randomParticipantId();
+  const iceServers = await resolveCollabIceServers({
+    envIceServers: collabIceServers,
+    userId: participantId,
+  });
+  if (generation !== collaborationGeneration) return;
   const session = createCollabSession({
     roomId: invite.roomId,
     secret: invite.secret,
@@ -1320,7 +1328,7 @@ async function startCollaboration(
       ...config,
       signalingUrl,
       topic,
-      ...(collabIceServers ? {iceServers: collabIceServers} : {}),
+      iceServers,
       onDiagnostic: message => {
         console.info(`[collab:${participantId}] ${message}`);
       },

@@ -4,9 +4,9 @@
  *
  * There is NO public signaling fallback. A signaling URL must be configured;
  * without it, room creation/join is refused and the app degrades to local
- * editing/export. ICE defaults include public STUN plus a free public TURN
- * fallback so cross-NAT / school networks can connect; callers may override
- * via `iceServers` (e.g. editor `VITE_COLLAB_ICE_SERVERS`).
+ * editing/export. ICE defaults are STUN-only; callers should pass TURN-capable
+ * `iceServers` (e.g. `createOpenRelayIceServers()` or editor
+ * `VITE_COLLAB_ICE_SERVERS`) so cross-NAT / school networks can connect.
  */
 import * as Y from "yjs";
 import {
@@ -15,6 +15,7 @@ import {
   type ChunkReassembler,
 } from "./data-channel-framing.js";
 import {createCollabProvider, type CollabProvider, type CollabProviderOptions} from "./provider.js";
+import {createStunOnlyIceServers} from "./openrelay-ice.js";
 import type {CollabTransport, TransportHandlers} from "./transport.js";
 
 export interface WebSocketLike {
@@ -55,23 +56,10 @@ export function shouldInitiateOffer(localId: string, remoteId: string): boolean 
 export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
 
 /**
- * Default ICE: Google STUN + Open Relay Project TURN (public free credentials).
- * Override in production with a dedicated TURN via `iceServers` when available.
+ * Default ICE is STUN-only. Deprecated long-term Open Relay passwords no longer
+ * work; use `createOpenRelayIceServers()` (HMAC static-auth) or a dedicated TURN.
  */
-export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  {urls: "stun:stun.l.google.com:19302"},
-  {urls: "stun:stun1.l.google.com:19302"},
-  {
-    urls: [
-      "turn:openrelay.metered.ca:80",
-      "turn:openrelay.metered.ca:443",
-      "turn:openrelay.metered.ca:443?transport=tcp",
-      "turns:openrelay.metered.ca:443",
-    ],
-    username: "openrelayproject",
-    credential: "openrelayproject",
-  },
-];
+export const DEFAULT_ICE_SERVERS: RTCIceServer[] = createStunOnlyIceServers();
 
 function requireSignalingUrl(signalingUrl: string): string {
   if (typeof signalingUrl !== "string" || signalingUrl.trim().length === 0) {
@@ -317,10 +305,36 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     const pc = makePc({iceServers});
     const entry: PeerEntry = {pc, channel: null, initiator};
     peerConnections.set(peerId, entry);
+    let gatheredRelay = 0;
+    let gatheredSrflx = 0;
+    let gatheredHost = 0;
     pc.addEventListener("icecandidate", (ev: RTCPeerConnectionIceEvent) => {
       if (peerConnections.get(peerId) !== entry) return;
-      if (options.onDiagnostic) options.onDiagnostic(`cand(${peerId})=${ev.candidate ? "1" : "end"}`);
-      if (ev.candidate) signal(peerId, {candidate: ev.candidate.toJSON()});
+      if (!ev.candidate) {
+        if (options.onDiagnostic) {
+          options.onDiagnostic(
+            `cand(${peerId})=end host=${gatheredHost} srflx=${gatheredSrflx} relay=${gatheredRelay}`,
+          );
+          if (gatheredRelay === 0) {
+            options.onDiagnostic(`ice-no-relay(${peerId})`);
+          }
+        }
+        return;
+      }
+      const candStr = ev.candidate.candidate ?? "";
+      let typ = "other";
+      if (/\btyp relay\b/.test(candStr)) {
+        typ = "relay";
+        gatheredRelay += 1;
+      } else if (/\btyp srflx\b/.test(candStr)) {
+        typ = "srflx";
+        gatheredSrflx += 1;
+      } else if (/\btyp host\b/.test(candStr)) {
+        typ = "host";
+        gatheredHost += 1;
+      }
+      if (options.onDiagnostic) options.onDiagnostic(`cand(${peerId})=${typ}`);
+      signal(peerId, {candidate: ev.candidate.toJSON()});
     });
     pc.addEventListener("connectionstatechange", () => {
       if (peerConnections.get(peerId) !== entry) return;

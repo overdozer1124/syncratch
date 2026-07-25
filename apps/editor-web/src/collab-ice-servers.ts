@@ -1,7 +1,14 @@
 /**
+ * Resolve ICE servers for collaboration:
+ * 1. `VITE_COLLAB_ICE_SERVERS` JSON override (dedicated TURN)
+ * 2. Same-origin `GET /ice` (collab-host minted Open Relay HMAC)
+ * 3. Client-minted Open Relay HMAC (`createOpenRelayIceServers`)
+ */
+import {createOpenRelayIceServers} from "@blocksync/collab-webrtc";
+
+/**
  * Parse optional `VITE_COLLAB_ICE_SERVERS` JSON into RTCIceServer[].
- * When unset or invalid, returns undefined so the WebRTC transport uses defaults
- * (STUN + public TURN fallback).
+ * When unset or invalid, returns undefined so callers fall through to Open Relay.
  */
 export function parseCollabIceServers(
   raw: string | undefined | null,
@@ -32,4 +39,52 @@ export function parseCollabIceServers(
   } catch {
     return undefined;
   }
+}
+
+function isIceServerArray(value: unknown): value is RTCIceServer[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(item => {
+    if (typeof item !== "object" || item === null) return false;
+    const urls = (item as {urls?: unknown}).urls;
+    return typeof urls === "string" || Array.isArray(urls);
+  });
+}
+
+/** Fetch same-origin `/ice` credentials minted by collab-host. */
+export async function fetchHostIceServers(
+  fetchImpl: typeof fetch = fetch,
+  origin: string = typeof location !== "undefined" ? location.origin : "",
+): Promise<RTCIceServer[] | undefined> {
+  if (!origin) return undefined;
+  try {
+    const response = await fetchImpl(new URL("/ice", origin).toString(), {
+      method: "GET",
+      cache: "no-store",
+    });
+    if (!response.ok) return undefined;
+    const body = (await response.json()) as {iceServers?: unknown};
+    if (!isIceServerArray(body.iceServers)) return undefined;
+    return body.iceServers;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function resolveCollabIceServers(options: {
+  envIceServers?: RTCIceServer[];
+  userId: string;
+  fetchImpl?: typeof fetch;
+  origin?: string;
+  createOpenRelay?: typeof createOpenRelayIceServers;
+}): Promise<RTCIceServer[]> {
+  if (options.envIceServers && options.envIceServers.length > 0) {
+    return options.envIceServers;
+  }
+  const fromHost = await fetchHostIceServers(
+    options.fetchImpl,
+    options.origin,
+  );
+  if (fromHost) return fromHost;
+  const mint = options.createOpenRelay ?? createOpenRelayIceServers;
+  return mint({userId: options.userId});
 }
