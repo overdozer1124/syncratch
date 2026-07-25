@@ -84,6 +84,7 @@ import {
   shouldCloseToolPanelsOnKey,
   shouldCloseToolPanelsOnOutsideTarget,
 } from "./tool-panel-dismiss.js";
+import {setMenuButtonLabel} from "./menu-button-label.js";
 import {installAiFloatingPanel} from "./ai-floating-panel.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {
@@ -1069,11 +1070,11 @@ function refreshDriveControlsForCollab(): void {
 
 function syncCollabSessionToggleButton(ready: boolean): void {
   if (collabSession) {
-    createRoomButton.textContent = COLLAB_LEAVE_LABEL;
+    setMenuButtonLabel(createRoomButton, COLLAB_LEAVE_LABEL);
     createRoomButton.disabled = false;
     return;
   }
-  createRoomButton.textContent = COLLAB_CREATE_LABEL;
+  setMenuButtonLabel(createRoomButton, COLLAB_CREATE_LABEL);
   createRoomButton.disabled = !ready;
 }
 
@@ -1944,9 +1945,9 @@ function syncScratchNativeMenuControls(): void {
   const depth = deletionStackDepth(deletionStackState);
   const peek = peekDeletion(deletionStackState);
   restoreDeletionButton.disabled = depth === 0;
-  restoreDeletionButton.textContent = deletionButtonLabel(
-    depth,
-    peek?.deletedItem ?? "",
+  setMenuButtonLabel(
+    restoreDeletionButton,
+    deletionButtonLabel(depth, peek?.deletedItem ?? ""),
   );
 
   ensureBlockUndoKeepAlive();
@@ -1955,9 +1956,10 @@ function syncScratchNativeMenuControls(): void {
   editRedoButton.disabled = !canRedoBlocks(workspace);
 
   const turboOn = readTurboMode(store);
-  toggleTurboButton.textContent = turboOn
-    ? "ターボモードを オフにする"
-    : "ターボモードを オンにする";
+  setMenuButtonLabel(
+    toggleTurboButton,
+    turboOn ? "ターボモードを オフにする" : "ターボモードを オンにする",
+  );
 }
 
 function installScratchNativeMenus(state: EditorGuiState): void {
@@ -2590,7 +2592,7 @@ function renderAiConversationThread(options?: {jumpToLatest?: boolean}): void {
 function syncAiAskChrome(): void {
   const active = hasActiveConversation(aiConversation);
   aiClearChatButton.hidden = !active;
-  aiAskButton.textContent = active ? "つづけてきく" : "AI にきく";
+  setMenuButtonLabel(aiAskButton, active ? "つづけてきく" : "AI にきく");
   aiQuestionInput.placeholder = active
     ? "例: やってみたけど、うまくいかなかった"
     : "例: このスプライトが動かないのはなぜ？";
