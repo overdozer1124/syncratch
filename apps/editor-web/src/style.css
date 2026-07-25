@@ -4,15 +4,19 @@
   --sc-ink: #16324f;
   --sc-muted: #5f7690;
   --sc-card-border: #e3ebf3;
-  --sc-accent-ai: #6b57c9;
+  /* Match current Scratch primary blue (not legacy Looks purple). */
+  --sc-accent-ai: #4c97ff;
+  --sc-accent-ai-hover: #3373cc;
+  --sc-accent-ai-soft: #e8f2ff;
   --sc-underline: #ffd34d;
-  /* AI reply surface: light, high-contrast (not gray-on-gray). */
-  --sc-ai-thread-bg: #e8f2fb;
-  --sc-ai-thread-border: #b7d0e8;
+  /* Warm yellow surfaces for AI thread (readable, less “gray dashboard”). */
+  --sc-ai-thread-bg: #fff6e0;
+  --sc-ai-thread-border: #e8c96a;
   --sc-ai-user-bg: #ffffff;
-  --sc-ai-user-border: #9ec2e3;
-  --sc-ai-assistant-bg: #fffdf6;
-  --sc-ai-assistant-border: #d7e4f0;
+  --sc-ai-user-border: #d7b84e;
+  --sc-ai-assistant-bg: #fffceb;
+  --sc-ai-assistant-border: #e2c86a;
+  --sc-ai-clarify-bg: #fff8d6;
   /* Match upstream Scratch menu-bar height (menu-bar.css uses 3rem). */
   --sc-toolbar-height: 3rem;
   /* Stacking: Scratch menu-bar 491 < toolbar < menus/panels < Scratch modals < Drive picker */
@@ -225,7 +229,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .toolbar .panel-content #ai-ask:hover,
 .ai-floating-panel #ai-ask:hover {
-  background: #5a48b0;
+  background: var(--sc-accent-ai-hover);
 }
 
 .toolbar .panel-content button:disabled,
@@ -930,7 +934,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .panel-heading-icon--ai {
-  background: #f1edfc;
+  background: var(--sc-accent-ai-soft);
 }
 
 .panel-heading-title,
@@ -988,7 +992,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   width: 26px;
   height: 26px;
   border-radius: 8px;
-  background: #f1edfc;
+  background: var(--sc-accent-ai-soft);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1437,9 +1441,9 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 .ai-clarify {
   margin-top: 10px;
   padding: 12px;
-  border: 1px solid var(--sc-card-border);
+  border: 1px solid var(--sc-ai-thread-border);
   border-radius: 12px;
-  background: #f4f7fb;
+  background: var(--sc-ai-clarify-bg);
   color: var(--sc-ink);
 }
 
@@ -1459,25 +1463,49 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   gap: 6px;
 }
 
+/* Beat .ai-floating-panel button(:hover) so focus stays readable. */
+.ai-floating-panel .ai-clarify-choices button,
 .ai-clarify-choices button {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
-  border: 1px solid rgb(0 0 0 / 18%);
-  border-radius: 8px;
+  border: 1.5px solid #d7b84e;
+  border-radius: 10px;
   background: #fffef6;
-  color: #16324f;
+  color: var(--sc-ink);
   font: inherit;
   font-size: 0.84rem;
   font-weight: 650;
   text-align: left;
+  justify-content: flex-start;
   cursor: pointer;
 }
 
+.ai-floating-panel .ai-clarify-choices button:hover,
+.ai-floating-panel .ai-clarify-choices button:focus-visible,
 .ai-clarify-choices button:hover,
 .ai-clarify-choices button:focus-visible {
-  outline: 3px solid #ffe082;
+  background: #ffe082;
+  color: var(--sc-ink);
+  border-color: var(--syncratch-chrome);
+  outline: 3px solid var(--sc-accent-ai);
   outline-offset: 1px;
+}
+
+.ai-floating-panel .ai-clarify-other button,
+.ai-clarify-other button {
+  background: var(--sc-accent-ai);
+  color: #fff;
+  border: 0;
+  font-weight: 800;
+}
+
+.ai-floating-panel .ai-clarify-other button:hover,
+.ai-floating-panel .ai-clarify-other button:focus-visible,
+.ai-clarify-other button:hover,
+.ai-clarify-other button:focus-visible {
+  background: var(--sc-accent-ai-hover);
+  color: #fff;
 }
 
 .ai-clarify-other {
@@ -1535,6 +1563,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   flex: 0 0 auto;
 }
 
+.ai-floating-panel .ai-pager-nav button,
 .ai-pager-nav button {
   flex: 1 1 auto;
   min-height: 2.1rem;
@@ -1549,10 +1578,13 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   cursor: pointer;
 }
 
+.ai-floating-panel .ai-pager-nav button:hover:not(:disabled),
+.ai-floating-panel .ai-pager-nav button:focus-visible,
 .ai-pager-nav button:hover:not(:disabled),
 .ai-pager-nav button:focus-visible {
-  background: #fff8d6;
-  outline: 2px solid var(--sc-underline);
+  background: #ffe082;
+  color: var(--sc-ink);
+  outline: 2px solid var(--sc-accent-ai);
   outline-offset: 1px;
 }
 
