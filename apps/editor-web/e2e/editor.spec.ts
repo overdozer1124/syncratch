@@ -21,8 +21,7 @@ async function openPanel(
     | "settings-panel"
     | "file-panel"
     | "edit-panel"
-    | "collab-panel"
-    | "drive-panel",
+    | "collab-panel",
 ): Promise<void> {
   const panel = page.getByTestId(testId);
   if (await panel.getAttribute("open") === null) {
@@ -119,7 +118,7 @@ test("no Google configuration keeps Drive disabled and local editing available",
   await expect(page.getByTestId("drive-status")).toHaveText(
     "このパソコンでは Google ドライブを使えません",
   );
-  await openPanel(page, "drive-panel");
+  await openPanel(page, "file-panel");
   await expect(
     page.getByRole("button", {name: "Google とつなぐ"}),
   ).toBeDisabled();

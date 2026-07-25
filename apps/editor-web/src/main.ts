@@ -93,12 +93,28 @@ import {
   readLocale,
   readRestoreDeletion,
   readTurboMode,
-  restoreDeletionLabel,
-  restoreLastDeletion,
   selectLocale,
   setColorMode,
   toggleTurboMode,
 } from "./scratch-native-menus.js";
+import {
+  canRedoBlocks,
+  canUndoBlocks,
+  captureUndoBeforeTargetSwitch,
+  configureBlockWorkspaceUndo,
+  createDeletionStackState,
+  deletionButtonLabel,
+  deletionStackDepth,
+  installPerTargetUndoKeepAlive,
+  noteRestoreDeletionCandidate,
+  peekDeletion,
+  popAndRestoreDeletion,
+  redoBlocks,
+  snapshotTargetUndo,
+  undoBlocks,
+  type BlockWorkspaceLike,
+  type TargetUndoStacks,
+} from "./edit-history.js";
 import {shouldLeaveCollaborationOnGoogleDisconnect} from "./google-disconnect-policy.js";
 import {downloadFilename} from "./download-filename.js";
 import {shouldExposeTask3Diagnostics} from "./diagnostics.js";
@@ -376,7 +392,6 @@ const driveStatus = requiredElement<HTMLElement>("drive-status");
 const createRoomButton = requiredElement<HTMLButtonElement>("create-room");
 const joinRoomButton = requiredElement<HTMLButtonElement>("join-room");
 const copyInviteButton = requiredElement<HTMLButtonElement>("copy-invite");
-const leaveRoomButton = requiredElement<HTMLButtonElement>("leave-room");
 const collabReconnectButton = requiredElement<HTMLButtonElement>("collab-reconnect");
 const collabRetrySaveButton = requiredElement<HTMLButtonElement>("collab-retry-save");
 const collabDownloadSb3Button = requiredElement<HTMLButtonElement>("collab-download-sb3");
@@ -389,11 +404,19 @@ const scratchLocaleSelect = requiredElement<HTMLSelectElement>("scratch-locale")
 const scratchColorModeSelect = requiredElement<HTMLSelectElement>(
   "scratch-color-mode",
 );
+const editUndoButton = requiredElement<HTMLButtonElement>("edit-undo");
+const editRedoButton = requiredElement<HTMLButtonElement>("edit-redo");
 const restoreDeletionButton = requiredElement<HTMLButtonElement>(
   "restore-deletion",
 );
 const toggleTurboButton = requiredElement<HTMLButtonElement>("toggle-turbo");
 const editStatus = requiredElement<HTMLElement>("edit-status");
+const COLLAB_CREATE_LABEL = "いっしょに作るリンクを作る";
+const COLLAB_LEAVE_LABEL = "いっしょに作るのをやめる";
+let deletionStackState = createDeletionStackState();
+const targetUndoStacks: TargetUndoStacks = new Map();
+let lastUndoTargetId: string | null = null;
+let undoKeepAliveDispose: (() => void) | null = null;
 const aiEnabledInput = requiredElement<HTMLInputElement>("ai-enabled");
 const aiApiKeyInput = requiredElement<HTMLInputElement>("ai-api-key");
 const aiProviderSelect = requiredElement<HTMLSelectElement>("ai-provider");
@@ -1044,16 +1067,25 @@ function refreshDriveControlsForCollab(): void {
   }
 }
 
+function syncCollabSessionToggleButton(ready: boolean): void {
+  if (collabSession) {
+    createRoomButton.textContent = COLLAB_LEAVE_LABEL;
+    createRoomButton.disabled = false;
+    return;
+  }
+  createRoomButton.textContent = COLLAB_CREATE_LABEL;
+  createRoomButton.disabled = !ready;
+}
+
 function renderCollabIdle(message = "ひとりで作っています"): void {
   lastCollabState = null;
   lastCollabIdleMessage = message;
   setCollabPresencePopoverOpen(collabPresencePopover, false);
   collabStatus.textContent = message;
   const ready = hasCurrent && evaluateCollabReadiness({signalingUrl}).ok;
-  createRoomButton.disabled = Boolean(collabSession) || !ready;
+  syncCollabSessionToggleButton(ready);
   joinRoomButton.disabled = Boolean(collabSession) || !ready;
   copyInviteButton.disabled = activeInvite === null;
-  leaveRoomButton.disabled = collabSession === null;
   renderBootstrapActions(null);
   renderProjectStatus();
   // Leaving a guest room must re-enable Drive controls.
@@ -1067,10 +1099,9 @@ function renderCollabState(state: CollabState): void {
   }
   collabStatus.textContent = collaborationStatusText(state);
   driveAutosave?.eligibilityChanged();
-  createRoomButton.disabled = true;
+  syncCollabSessionToggleButton(true);
   joinRoomButton.disabled = true;
   copyInviteButton.disabled = activeInvite === null;
-  leaveRoomButton.disabled = false;
   renderBootstrapActions(state);
   renderProjectStatus();
   refreshDriveControlsForCollab();
@@ -1543,8 +1574,34 @@ function syncEditingTargetViewportFromMemory(
   );
 }
 
+function ensureBlockUndoKeepAlive(): void {
+  const workspace = scratchWorkspace() as BlockWorkspaceLike | null;
+  if (!workspace) return;
+  configureBlockWorkspaceUndo(workspace);
+  if (undoKeepAliveDispose) return;
+  undoKeepAliveDispose = installPerTargetUndoKeepAlive({
+    workspace,
+    stacks: targetUndoStacks,
+    getEditingTargetId: () => vm?.editingTarget?.id ?? null,
+  });
+  workspace.addChangeListener?.(() => {
+    const editingId = vm?.editingTarget?.id ?? null;
+    // Live snapshot so sprite-switch clearUndo cannot erase history.
+    if (editingId) snapshotTargetUndo(targetUndoStacks, editingId, workspace);
+    syncScratchNativeMenuControls();
+  });
+}
+
 function noteEditingTargetMaybeChanged(): void {
   const editingId = vm?.editingTarget?.id ?? null;
+  ensureBlockUndoKeepAlive();
+  // Best-effort capture if the previous sprite's stack is still present.
+  lastUndoTargetId = captureUndoBeforeTargetSwitch({
+    stacks: targetUndoStacks,
+    workspace: scratchWorkspace() as BlockWorkspaceLike | null,
+    previousTargetId: lastUndoTargetId,
+    nextTargetId: editingId,
+  });
   if (!editingId || !hasCurrent || !editorGuiState) return;
   if (editingId === lastSyncedEditingTargetId) return;
   if (suppressViewportMemoryCapture) return;
@@ -1566,12 +1623,19 @@ function leaveRoom(): void {
   renderCollabIdle();
 }
 
+function resetEditHistory(): void {
+  deletionStackState = createDeletionStackState();
+  targetUndoStacks.clear();
+  lastUndoTargetId = null;
+}
+
 async function loadRecord(
   record: LocalProjectRecord,
   signal?: AbortSignal,
 ): Promise<void> {
   driveAutosave?.cancel();
   clearLocalUiMemoryForProjectReplacement();
+  resetEditHistory();
   const candidate = structuredClone(record);
   const previous = hasCurrent ? structuredClone(current) : undefined;
   const session = projectSessions.begin();
@@ -1873,9 +1937,22 @@ function syncScratchNativeMenuControls(): void {
   }
   scratchColorModeSelect.value = readColorMode(store);
 
-  const restore = readRestoreDeletion(store);
-  restoreDeletionButton.disabled = !restore.restorable;
-  restoreDeletionButton.textContent = restoreDeletionLabel(restore.deletedItem);
+  deletionStackState = noteRestoreDeletionCandidate(
+    deletionStackState,
+    readRestoreDeletion(store),
+  );
+  const depth = deletionStackDepth(deletionStackState);
+  const peek = peekDeletion(deletionStackState);
+  restoreDeletionButton.disabled = depth === 0;
+  restoreDeletionButton.textContent = deletionButtonLabel(
+    depth,
+    peek?.deletedItem ?? "",
+  );
+
+  ensureBlockUndoKeepAlive();
+  const workspace = scratchWorkspace() as BlockWorkspaceLike | null;
+  editUndoButton.disabled = !canUndoBlocks(workspace);
+  editRedoButton.disabled = !canRedoBlocks(workspace);
 
   const turboOn = readTurboMode(store);
   toggleTurboButton.textContent = turboOn
@@ -1888,6 +1965,15 @@ function installScratchNativeMenus(state: EditorGuiState): void {
   syncScratchNativeMenuControls();
   state.store.subscribe?.(() => {
     syncScratchNativeMenuControls();
+  });
+  ensureBlockUndoKeepAlive();
+}
+
+function clearScratchRestoreSlot(): void {
+  if (!editorGuiState) return;
+  editorGuiState.store.dispatch({
+    type: "scratch-gui/restore-deletion/RESTORE_UPDATE",
+    state: {restoreFun: null, deletedItem: ""},
   });
 }
 
@@ -2236,10 +2322,27 @@ scratchColorModeSelect.addEventListener("change", () => {
   if (!editorGuiState) return;
   setColorMode(editorGuiState.store, scratchColorModeSelect.value);
 });
-restoreDeletionButton.addEventListener("click", () => {
-  if (!editorGuiState) return;
-  const ok = restoreLastDeletion(editorGuiState.store);
+editUndoButton.addEventListener("click", () => {
+  ensureBlockUndoKeepAlive();
+  const ok = undoBlocks(scratchWorkspace() as BlockWorkspaceLike | null);
   editStatus.textContent = ok
+    ? "ひとつ もとにもどしたよ。"
+    : "いま もどせる てじゅんは ないよ。";
+  syncScratchNativeMenuControls();
+});
+editRedoButton.addEventListener("click", () => {
+  ensureBlockUndoKeepAlive();
+  const ok = redoBlocks(scratchWorkspace() as BlockWorkspaceLike | null);
+  editStatus.textContent = ok
+    ? "やりなおしたよ。"
+    : "いま やりなおせる てじゅんは ないよ。";
+  syncScratchNativeMenuControls();
+});
+restoreDeletionButton.addEventListener("click", () => {
+  const result = popAndRestoreDeletion(deletionStackState);
+  deletionStackState = result.state;
+  clearScratchRestoreSlot();
+  editStatus.textContent = result.restored
     ? "けしたものを もどしたよ。"
     : "いま もどせるものは ないよ。";
   syncScratchNativeMenuControls();
@@ -2301,14 +2404,17 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") releaseStuckBlockGesture();
 });
 
-createRoomButton.addEventListener("click", () => void createRoom());
+createRoomButton.addEventListener("click", () => {
+  if (collabSession) {
+    leaveRoom();
+    closePanelFor(createRoomButton);
+    return;
+  }
+  void createRoom();
+});
 joinRoomButton.addEventListener("click", () => void joinRoom());
 copyInviteButton.addEventListener("click", () => {
   void copyActiveInviteLink({panelFeedback: true});
-});
-leaveRoomButton.addEventListener("click", () => {
-  leaveRoom();
-  closePanelFor(leaveRoomButton);
 });
 collabReconnectButton.addEventListener("click", () => {
   collabSession?.reconnectBootstrap();

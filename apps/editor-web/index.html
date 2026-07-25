@@ -161,6 +161,23 @@
                   <button id="download-project" type="button">作品ファイルをダウンロード</button>
                   <button id="save-project" type="button">今すぐ保存</button>
                 </div>
+                <hr class="settings-divider" />
+                <p class="panel-help">
+                  Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
+                  いっしょに作るときのゲストは、ドライブに保存できません（リンクを作ったホストだけ）。
+                </p>
+                <div class="drive-controls">
+                  <button id="connect-google" type="button" disabled>Google とつなぐ</button>
+                  <button id="open-drive" type="button" disabled>Google ドライブから作品を開く</button>
+                  <button id="save-drive" type="button" disabled>Google ドライブにも保存</button>
+                  <button id="disconnect-google" type="button" disabled>Google とのつながりを切る</button>
+                  <span
+                    aria-hidden="true"
+                    class="panel-status"
+                    data-testid="drive-status"
+                    id="drive-status"
+                  >このパソコンでは使えません</span>
+                </div>
               </div>
             </details>
 
@@ -175,15 +192,27 @@
               </summary>
               <div class="panel-content">
                 <p class="panel-help">
-                  けしたものを戻したり、ターボモードを切り替えたりできます。
+                  ブロックの操作を戻したり、けしたものを戻したりできます。
                 </p>
                 <div class="edit-controls">
+                  <button
+                    data-testid="edit-undo"
+                    disabled
+                    id="edit-undo"
+                    type="button"
+                  >もとにもどす</button>
+                  <button
+                    data-testid="edit-redo"
+                    disabled
+                    id="edit-redo"
+                    type="button"
+                  >やりなおす</button>
                   <button
                     data-testid="restore-deletion"
                     disabled
                     id="restore-deletion"
                     type="button"
-                  >けしたものを もとにもどす</button>
+                  >けしたものを もどす</button>
                   <button
                     data-testid="toggle-turbo"
                     id="toggle-turbo"
@@ -216,7 +245,6 @@
                   </label>
                   <button id="join-room" type="button" disabled>友だちの作品に入る</button>
                   <button id="copy-invite" type="button" disabled>リンクをコピー</button>
-                  <button id="leave-room" type="button" disabled>いっしょに作るのをやめる</button>
                   <button id="collab-reconnect" type="button" hidden>もう一度つなぐ</button>
                   <button id="collab-retry-save" type="button" hidden>もう一度このパソコンに保存</button>
                   <button id="collab-download-sb3" type="button" hidden>作品ファイルをダウンロード</button>
@@ -233,29 +261,6 @@
                   このリンクを知っている人は作品に入れます。知らない人には送らないでね。
                   リンクを作った人がホスト、入った人がゲストです。ゲストの編集はこのパソコンに保存され、Google ドライブへはホストだけが保存できます。
                 </p>
-              </div>
-            </details>
-
-            <details class="tool-panel drive-panel" data-testid="drive-panel">
-              <summary>Google ドライブ</summary>
-              <div class="panel-content">
-                <p class="panel-help">
-                  このパソコンの保存にくわえて、Google ドライブにもう1つ保存できます。使わなくても作品は作れます。
-                  いっしょに作るときのゲストは、ドライブに保存できません（リンクを作ったホストだけ）。
-                  Google とつなぐと、つながっている人の一覧にアイコンと名前が出ます。
-                </p>
-                <div class="drive-controls">
-                  <button id="connect-google" type="button" disabled>Google とつなぐ</button>
-                  <button id="open-drive" type="button" disabled>Google ドライブから作品を開く</button>
-                  <button id="save-drive" type="button" disabled>Google ドライブにも保存</button>
-                  <button id="disconnect-google" type="button" disabled>Google とのつながりを切る</button>
-                  <span
-                    aria-hidden="true"
-                    class="panel-status"
-                    data-testid="drive-status"
-                    id="drive-status"
-                  >このパソコンでは使えません</span>
-                </div>
               </div>
             </details>
 
