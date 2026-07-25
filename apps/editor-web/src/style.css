@@ -6,7 +6,8 @@
   --sc-card-border: #e3ebf3;
   --sc-accent-ai: #6b57c9;
   --sc-underline: #ffd34d;
-  --sc-toolbar-height: 68px;
+  /* Match upstream Scratch menu-bar height (menu-bar.css uses 3rem). */
+  --sc-toolbar-height: 3rem;
   /* Stacking: Scratch menu-bar 491 < toolbar < menus/panels < Scratch modals < Drive picker */
   --syncratch-toolbar-z: 600;
   --syncratch-menu-z: 700;
@@ -98,7 +99,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   --toolbar-active: rgb(255 255 255 / 24%);
   --toolbar-field-bg: rgb(255 255 255 / 16%);
   --toolbar-field-border: rgb(255 255 255 / 34%);
-  --toolbar-gap: 16px;
+  --toolbar-gap: 8px;
   position: absolute;
   top: 0;
   left: 0;
@@ -106,10 +107,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   box-sizing: border-box;
   height: var(--sc-toolbar-height);
   width: max(100%, 1024px);
-  padding: 0 18px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   background: linear-gradient(180deg, #1c72b6 0%, #125690 100%);
   box-shadow:
     0 2px 0 rgb(9 44 74 / 35%),
@@ -243,21 +244,21 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   flex: 0 0 auto;
   width: max-content;
   max-width: none;
-  gap: 10px;
+  gap: 8px;
 }
 
 .feature-panels {
   position: relative;
-  gap: 6px;
+  gap: 2px;
   flex: 0 0 auto;
-  margin-left: 6px;
-  padding-left: 14px;
+  margin-left: 4px;
+  padding-left: 10px;
   border-left: 1.5px solid rgb(255 255 255 / 26%);
 }
 
 .menu-summary-icon {
-  width: 20px;
-  height: 20px;
+  width: 1.05rem;
+  height: 1.05rem;
   flex: 0 0 auto;
   display: block;
   object-fit: contain;
@@ -321,7 +322,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   align-items: flex-start;
   gap: 0;
   font-family: inherit;
-  font-size: 22px;
+  font-size: 1.12rem;
   font-weight: 800;
   letter-spacing: 0.01em;
   line-height: 1;
@@ -330,10 +331,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .app-brand-kana {
-  margin-top: 3px;
-  font-size: 11px;
+  margin-top: 2px;
+  font-size: 0.55rem;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   line-height: 1;
   opacity: 0.82;
 }
@@ -342,10 +343,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  height: 44px;
-  padding: 0 8px 0 14px;
-  border-radius: 14px;
+  gap: 6px;
+  height: 2.1rem;
+  padding: 0 6px 0 10px;
+  border-radius: 10px;
   background: var(--toolbar-field-bg);
   border: 1.5px solid var(--toolbar-field-border);
   font-size: 0.78rem;
@@ -369,7 +370,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .title-field-label {
-  font-size: 11px;
+  font-size: 0.62rem;
   font-weight: 700;
   opacity: 0.8;
   color: var(--toolbar-ink);
@@ -377,21 +378,23 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .title-field-edit-icon {
   flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
   opacity: 0.75;
   color: var(--toolbar-ink);
 }
 
 /* Title field: glass chip on the blue bar. */
 .title-field input {
-  width: 150px;
+  width: 132px;
   min-height: auto;
-  padding: 2px 0 0;
+  padding: 1px 0 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--toolbar-ink);
   font: inherit;
-  font-size: 16px;
+  font-size: 0.88rem;
   font-weight: 700;
   outline: none;
 }
@@ -405,25 +408,27 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0 16px;
+  gap: 5px;
+  height: 2.1rem;
+  min-height: 2.1rem;
+  padding: 0 0.75rem;
   border: 0;
-  border-radius: 14px;
+  border-radius: 10px;
   background: #fffef8;
   color: var(--syncratch-chrome-dark);
   font: inherit;
-  font-size: 15px;
+  font-size: 0.82rem;
   font-weight: 800;
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 2px 0 rgb(9 44 74 / 18%);
+  box-shadow: 0 1px 0 rgb(9 44 74 / 18%);
 }
 
 .toolbar-action-icon {
   flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
   display: block;
 }
 
@@ -437,11 +442,11 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .toolbar-action--quiet {
-  height: 38px;
-  min-height: 38px;
-  padding: 0 12px;
-  border-radius: 12px;
-  font-size: 13px;
+  height: 2rem;
+  min-height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: 10px;
+  font-size: 0.76rem;
   font-weight: 700;
   background: rgb(255 255 255 / 16%);
   color: var(--toolbar-ink);
@@ -486,7 +491,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 .status-icon-row {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
 }
 
 .status-icon {
@@ -494,8 +499,8 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 1.7rem;
+  height: 1.7rem;
   border-radius: 999px;
   background: rgb(255 255 255 / 12%);
   color: #f4f7fb;
@@ -953,16 +958,16 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 46px;
-  min-height: 46px;
-  padding: 0 14px;
-  border-radius: 13px;
+  gap: 0.35rem;
+  height: 2.1rem;
+  min-height: 2.1rem;
+  padding: 0 0.7rem;
+  border-radius: 10px;
   list-style: none;
   cursor: pointer;
   color: var(--toolbar-ink);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 0.84rem;
   line-height: 1.2;
   white-space: nowrap;
   user-select: none;
