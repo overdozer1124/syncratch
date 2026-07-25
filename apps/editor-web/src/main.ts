@@ -63,6 +63,18 @@ import {
   saveLocalCollabProfile,
 } from "./local-collab-profile.js";
 import {
+  COLLAB_GOOGLE_CONNECT_HINT,
+  COLLAB_GOOGLE_REQUIRED_FOR_CREATE,
+  COLLAB_GOOGLE_REQUIRED_FOR_JOIN,
+  consumePendingGuestInvite,
+  consumePendingHostCreate,
+  ensureInviteHashOnLocation,
+  markPendingHostCreate,
+  peekPendingGuestInvite,
+  savePendingGuestInvite,
+  shouldGateCollabOnGoogle,
+} from "./collab-oauth-gate.js";
+import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
@@ -1435,6 +1447,42 @@ async function copyActiveInviteLink(options?: {
   }
 }
 
+/**
+ * Google OAuth (host-backed) full-page redirects kill WebRTC. Authenticate
+ * before starting collaboration when Drive is configured.
+ * Returns false if the user still needs to finish Google connect.
+ */
+async function ensureGoogleBeforeCollab(intent: {
+  role: "host" | "guest";
+  invite?: CollabInvite;
+}): Promise<boolean> {
+  if (!shouldGateCollabOnGoogle(driveIntegration.getStatus())) return true;
+  if (driveIntegration.isConnected()) return true;
+
+  if (intent.role === "host") {
+    markPendingHostCreate();
+    renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_CREATE);
+  } else if (intent.invite) {
+    ensureInviteHashOnLocation(intent.invite);
+    savePendingGuestInvite(intent.invite);
+    collabInviteInput.value = inviteUrl(window.location.href, intent.invite);
+    renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_JOIN);
+  }
+
+  collabFeedback.textContent = COLLAB_GOOGLE_CONNECT_HINT;
+  const connected = await driveIntegration.connect();
+  await syncGoogleAvatarProfile();
+  if (!connected && !driveIntegration.isConnected()) {
+    if (intent.role === "host") {
+      renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_CREATE);
+    } else {
+      renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_JOIN);
+    }
+    return false;
+  }
+  return true;
+}
+
 async function createRoom(): Promise<void> {
   try {
     const readiness = evaluateCollabReadiness({signalingUrl});
@@ -1445,9 +1493,13 @@ async function createRoom(): Promise<void> {
       );
       return;
     }
+    if (!(await ensureGoogleBeforeCollab({role: "host"}))) return;
+    // Clear stale pending flag if GIS/popup connected without navigation.
+    consumePendingHostCreate();
     await startCollaboration(createInvite(), true);
     if (activeInvite) {
-      // Panel closes after create; toast keeps the success message visible.
+      // Do not put the invite hash on the host address bar — a reload would
+      // auto-join as guest. Mid-session Google connect copies the hash first.
       await copyActiveInviteLink();
     }
   } catch {
@@ -1480,7 +1532,10 @@ async function joinRoom(): Promise<void> {
       );
       return;
     }
+    if (!(await ensureGoogleBeforeCollab({role: "guest", invite}))) return;
+    consumePendingGuestInvite();
     await startCollaboration(invite, false);
+    if (activeInvite) ensureInviteHashOnLocation(activeInvite);
   } catch {
     renderCollabIdle(
       "友だちの作品に入れませんでした。リンクとインターネットをたしかめてください。",
@@ -2308,13 +2363,31 @@ async function boot(): Promise<void> {
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   await syncGoogleAvatarProfile();
-  const fragmentInvite = decodeInviteFragment(window.location.hash);
-  if (fragmentInvite) {
-    // Opening a shared invite URL should join immediately; the input is also
-    // filled so the guest can copy/rejoin after leave.
-    collabInviteInput.value = window.location.href;
+
+  // After host OAuth for "create link", resume create once Google is ready.
+  if (
+    consumePendingHostCreate() &&
+    driveIntegration.isConnected() &&
+    shouldGateCollabOnGoogle(driveIntegration.getStatus())
+  ) {
     renderCollabIdle();
-    await startCollaboration(fragmentInvite, false);
+    await createRoom();
+    return;
+  }
+
+  const fragmentInvite = decodeInviteFragment(window.location.hash);
+  const pendingGuest = peekPendingGuestInvite();
+  const guestInvite = fragmentInvite ?? pendingGuest;
+  if (guestInvite) {
+    // Opening a shared invite URL joins after Google (when configured).
+    collabInviteInput.value = inviteUrl(window.location.href, guestInvite);
+    ensureInviteHashOnLocation(guestInvite);
+    renderCollabIdle();
+    if (!(await ensureGoogleBeforeCollab({role: "guest", invite: guestInvite}))) {
+      return;
+    }
+    consumePendingGuestInvite();
+    await startCollaboration(guestInvite, false);
     return;
   }
   renderCollabIdle();
@@ -2418,10 +2491,27 @@ toggleTurboButton.addEventListener("click", () => {
 });
 retryButton.addEventListener("click", () => void saveCoordinator.flush());
 connectGoogleButton.addEventListener("click", () => {
-  void driveIntegration.connect().finally(() => {
-    void syncGoogleAvatarProfile();
-    closePanelFor(connectGoogleButton);
-  });
+  // If already in a room, keep the invite hash so OAuth return can rejoin.
+  if (activeInvite) ensureInviteHashOnLocation(activeInvite);
+  const pendingGuest = peekPendingGuestInvite();
+  if (pendingGuest) ensureInviteHashOnLocation(pendingGuest);
+  void driveIntegration
+    .connect()
+    .then(async connected => {
+      await syncGoogleAvatarProfile();
+      if (!connected && !driveIntegration.isConnected()) return;
+      // Finish a guest join that was waiting on Google.
+      const invite =
+        consumePendingGuestInvite() ??
+        decodeInviteFragment(window.location.hash);
+      if (invite && !collabSession) {
+        collabInviteInput.value = inviteUrl(window.location.href, invite);
+        await startCollaboration(invite, false);
+      }
+    })
+    .finally(() => {
+      closePanelFor(connectGoogleButton);
+    });
 });
 openDriveButton.addEventListener("click", () => {
   void driveIntegration.openFromDrive().finally(() => {
