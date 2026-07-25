@@ -105,6 +105,12 @@ import {setMenuButtonLabel} from "./menu-button-label.js";
 import {installAiFloatingPanel} from "./ai-floating-panel.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {
+  closeExtensionLibraryAction,
+  isExtensionLibraryOpen,
+  type ExtensionVm,
+} from "./extension-gallery.js";
+import {createExtensionGalleryUi} from "./extension-gallery-ui.js";
+import {
   listLocales,
   localeLabel,
   readColorMode,
@@ -292,6 +298,7 @@ interface ScratchVm {
   toJSON(): string;
   on(event: string, listener: (...args: unknown[]) => void): void;
   emit(event: string): void;
+  extensionManager: ExtensionVm["extensionManager"];
   runtime: {
     storage?: ScratchStorageInstance;
     targets: Array<{
@@ -2015,7 +2022,7 @@ async function getVm(): Promise<ScratchVm> {
         });
         setGuiLoadingVisible(guiHost, false);
         setGuiSplashVisible(guiSplash, false);
-        installScratchNativeMenus(state);
+        installScratchNativeMenus(state, vmInstance);
         resolve(vmInstance);
       },
     });
@@ -2076,13 +2083,64 @@ function syncScratchNativeMenuControls(): void {
   );
 }
 
-function installScratchNativeMenus(state: EditorGuiState): void {
+function installScratchNativeMenus(
+  state: EditorGuiState,
+  scratchVm: ScratchVm,
+): void {
   fillScratchLocaleSelect(state.store);
   syncScratchNativeMenuControls();
   state.store.subscribe?.(() => {
     syncScratchNativeMenuControls();
   });
   ensureBlockUndoKeepAlive();
+  installDefaultExtensionGallery(state, scratchVm);
+}
+
+function installDefaultExtensionGallery(
+  state: EditorGuiState,
+  scratchVm: ScratchVm,
+): void {
+  const gallery = createExtensionGalleryUi({
+    getVm: () => scratchVm as ExtensionVm,
+    onLoaded: (extensionId, alreadyLoaded) => {
+      if (alreadyLoaded && extensionId) {
+        appToast.show(`「${extensionId}」はすでに追加されています`);
+        return;
+      }
+      if (extensionId) {
+        appToast.show(`「${extensionId}」を追加しました`);
+        return;
+      }
+      appToast.show("拡張機能を追加しました");
+    },
+    onError: message => {
+      appToast.show(message);
+    },
+    promptUrl: message => window.prompt(message),
+  });
+
+  let intercepting = false;
+  state.store.subscribe?.(() => {
+    if (intercepting) return;
+    if (!isExtensionLibraryOpen(state.store.getState())) return;
+    if (gallery.isOpen()) {
+      // Keep Scratch's modal closed while ours is visible.
+      intercepting = true;
+      try {
+        state.store.dispatch(closeExtensionLibraryAction());
+      } finally {
+        intercepting = false;
+      }
+      return;
+    }
+    intercepting = true;
+    try {
+      state.store.dispatch(closeExtensionLibraryAction());
+      gallery.open();
+    } finally {
+      intercepting = false;
+    }
+  });
 }
 
 function clearScratchRestoreSlot(): void {

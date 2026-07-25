@@ -8,6 +8,8 @@ coverage/
 .DS_Store
 docs/gate0/evidence/*.log
 apps/gate0-auth-smoke/.cache/
+.cache/stretch3-extensions/
+scripts/stretch3-extensions/node_modules/
 vendor/scratch-editor/node_modules/
 vendor/scratch-editor/**/node_modules/
 vendor/scratch-editor/**/dist/

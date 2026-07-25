@@ -3,7 +3,11 @@
  * Pure domain model: no Scratch VM, Yjs, or React dependencies.
  */
 
-import { allowedExtensionIdSet, allowedOpcodeSet } from "./scratch-opcodes.js";
+import {
+  allowedExtensionIdSet,
+  allowedOpcodeSet,
+} from "./scratch-opcodes.js";
+import { prefixOpcodeExtensionIdSet } from "./default-extensions.js";
 
 export type BlockId = string;
 export type TargetId = string;
@@ -752,6 +756,20 @@ export {
 } from "./scratch-opcodes.js";
 export type { OpcodeArtifact } from "./scratch-opcodes.js";
 export {
+  defaultExtensionCatalog,
+  defaultProjectExtensionIds,
+  defaultProjectExtensionIdSet,
+  findDefaultExtension,
+  prefixOpcodeExtensionIdSet,
+} from "./default-extensions.js";
+export type {
+  DefaultExtensionCatalog,
+  DefaultExtensionEntry,
+  ExtensionKind,
+  ExtensionOpcodePolicy,
+  ExtensionSource,
+} from "./default-extensions.js";
+export {
   assertValidMp3Bytes,
   MAX_MP3_SECONDS,
   Mp3ParseError,
@@ -1167,6 +1185,12 @@ export function validateProject(
   const opcodeAllow =
     options.allowedOpcodes ?? (enforceSb3 ? allowedOpcodeSet() : null);
   const extensionIdAllow = enforceSb3 ? allowedExtensionIdSet() : null;
+  const prefixOpcodeExtensions = enforceSb3
+    ? prefixOpcodeExtensionIdSet()
+    : null;
+  const declaredExtensions = new Set(
+    Array.isArray(doc.extensions) ? doc.extensions : [],
+  );
 
   validateV1OnlyFields(doc, issues);
 
@@ -1366,13 +1390,21 @@ export function validateProject(
       }
 
       if (opcodeAllow && !opcodeAllow.has(block.opcode ?? "")) {
-        issues.push(
-          issue(
-            "UNKNOWN_OPCODE",
-            `opcode ${block.opcode} is not in allow-list`,
-            path,
-          ),
-        );
+        const extForOpcode = extensionIdFromOpcode(block.opcode ?? "");
+        const allowPrefixOpcode =
+          !!extForOpcode &&
+          !!prefixOpcodeExtensions?.has(extForOpcode) &&
+          declaredExtensions.has(extForOpcode) &&
+          (!extensionIdAllow || extensionIdAllow.has(extForOpcode));
+        if (!allowPrefixOpcode) {
+          issues.push(
+            issue(
+              "UNKNOWN_OPCODE",
+              `opcode ${block.opcode} is not in allow-list`,
+              path,
+            ),
+          );
+        }
       }
 
       if (block.topLevel && block.parent) {

@@ -478,11 +478,20 @@ Import → export → re-import must preserve **mutation** bytes-equivalent afte
 
 #### 6.6.2 Allowed extension IDs
 
-`music`, `pen`, `videoSensing`, `text2speech`, `translate`
+Authoritative gallery catalog: `packages/project-schema/src/default-extensions.json`
+(Stretch3 + Xcratch default gallery, including Scratch Foundation soft/hardware extensions).
 
-**Reject:** `wedo2`, `ev3`, `microbit`, `makeymakey`, `gdxfor`, `boost`, URL-shaped ids, any id not listed.
+**Pinned opcode policy** (exact membership in §6.6.3): `music`, `pen`, `videoSensing`, `text2speech`, `translate`
+
+**Prefix opcode policy** (accepted when the extension id is listed in `project.extensions` and in the catalog): Scratch hardware (`makeymakey`, `microbit`, `ev3`, `boost`, `wedo2`, `gdxfor`) and Stretch3 custom ids (`ml2scratch`, `posenet2scratch`, `microbitMore`, `tm2scratch`, `tmpose2scratch`, `g2s`, `scratch2maqueen`, `facemesh2scratch`, `handpose2scratch`, `pasorich`, `qrcode`, `speech2scratch`, `ic2scratch`, `iftttWebhooks`, `numberbank`, `duplotrain`, `geoscratch`, `chatgpt2scratch`, `scratch2webserialapi`, `cameraselector`, `screenshot`, `webapiExtension`, `xcxArduino`, `gai`).
+
+Xcratch **Extension Loader** is a UI-only gallery entry (no `project.extensions` id).
+
+**Reject:** URL-shaped ids and any id not listed in the catalog.
 
 Empty `extensions: []` is valid for core-only + custom procedure projects.
+
+> Note: Catalog membership allows document validation / SB3 import of these extension ids. Runtime loading, isolation, and per-extension adapters remain separate work (system spec §36–38).
 
 #### 6.6.3 Pinned opcode set (208 unique opcodes)
 

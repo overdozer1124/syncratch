@@ -21,13 +21,13 @@
     "@blocksync/collaboration-domain": "workspace:*",
     "@blocksync/google-drive-sync": "workspace:*",
     "@blocksync/project-local-core": "workspace:*",
+    "@blocksync/project-schema": "workspace:*",
     "@blocksync/project-store-idb": "workspace:*",
     "@blocksync/sb3-tools": "workspace:*",
     "yjs": "^13.6.27"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
-    "@blocksync/project-schema": "workspace:*",
     "fake-indexeddb": "^6.2.2",
     "typescript": "^5.8.3",
     "vite": "^7.3.6",

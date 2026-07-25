@@ -17,15 +17,12 @@ const VENDOR_PIN = "7c172e469eb3c21c1e6326ea6cccea60bc14e3a8";
 const VENDOR_TAG = "v14.1.0";
 const EXPECTED_UNIQUE = 208;
 
-const ALLOWED_EXTENSION_IDS = [
-  "music",
-  "pen",
-  "videoSensing",
-  "text2speech",
-  "translate",
-];
-
-const EXTENSION_DIRS = {
+/**
+ * Soft extensions whose opcodes are pinned from vendor sources.
+ * Hardware / Stretch3 / Xcratch gallery ids come from the default-extensions
+ * catalog and are merged into allowedExtensionIds below.
+ */
+const PINNED_EXTENSION_DIRS = {
   music: "scratch3_music",
   pen: "scratch3_pen",
   videoSensing: "scratch3_video_sensing",
@@ -33,9 +30,37 @@ const EXTENSION_DIRS = {
   translate: "scratch3_translate",
 };
 
+const DEFAULT_EXTENSIONS_CATALOG = join(
+  repoRoot,
+  "packages/project-schema/src/default-extensions.json",
+);
+
 function read(path) {
   return readFileSync(path, "utf8");
 }
+
+function loadAllowedExtensionIds() {
+  const catalog = JSON.parse(read(DEFAULT_EXTENSIONS_CATALOG));
+  const ids = [];
+  const seen = new Set();
+  for (const entry of catalog.extensions ?? []) {
+    const id = entry?.extensionId;
+    if (typeof id !== "string" || !id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  for (const id of Object.keys(PINNED_EXTENSION_DIRS)) {
+    if (!seen.has(id)) {
+      throw new Error(
+        `default-extensions.json missing pinned extension id: ${id}`,
+      );
+    }
+  }
+  return ids;
+}
+
+const ALLOWED_EXTENSION_IDS = loadAllowedExtensionIds();
+const EXTENSION_DIRS = PINNED_EXTENSION_DIRS;
 
 /** Extract keys from `methodName () { return { ... }; }` blocks in VM sources. */
 function extractMethodReturnKeys(text, methodName) {

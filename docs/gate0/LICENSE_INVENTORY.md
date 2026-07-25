@@ -16,6 +16,7 @@
 | yjs | npm | MIT | CRDT |
 | jszip | npm | MIT / GPLv3 dual | SB3 zip |
 | ws | npm | MIT | WebSocket |
+| Bundled Stretch3 gallery extensions | `apps/editor-web/public/extensions/*.mjs` | AGPL-3.0 / BSD-3-Clause / MIT (per upstream) | See `apps/editor-web/public/extensions/NOTICE.md` |
 
 Project-level distribution license for BlockSync packages is **not finalized** in Gate 0; Scratch AGPL obligations for combined works must be reviewed before Release 1.
 

@@ -33,5 +33,8 @@ describe("Scratch modal vs Syncratch toolbar stacking", () => {
     expect(styleCss).toMatch(
       /body:has\(\[class\*="modal_full-screen_"\]\) \.toolbar\s*\{[^}]*visibility:\s*hidden/s,
     );
+    expect(styleCss).toContain(
+      "body.syncratch-extension-gallery-open .toolbar",
+    );
   });
 });
