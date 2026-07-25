@@ -58,6 +58,11 @@ import {
   toggleCollabPresencePopover,
 } from "./collab-presence-ui.js";
 import {
+  loadLocalCollabProfile,
+  resolveAdvertisedCollabProfile,
+  saveLocalCollabProfile,
+} from "./local-collab-profile.js";
+import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
@@ -941,11 +946,29 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
   });
 }
 
+let localCollabDisplayName =
+  loadLocalCollabProfile()?.displayName ?? "";
+
 function publishLocalCollabProfile(): void {
-  collabSession?.setLocalProfile({
-    displayName: googleDisplayName,
-    avatarUrl: googleAvatarUrl,
+  const selfId =
+    collabSession?.participantId() ??
+    lastCollabState?.participants.find(p => p.isSelf)?.participantId ??
+    "local";
+  const advertised = resolveAdvertisedCollabProfile({
+    participantId: selfId,
+    googleDisplayName,
+    googleAvatarUrl,
+    localDisplayName: localCollabDisplayName,
   });
+  collabSession?.setLocalProfile(advertised);
+}
+
+function saveLocalCollabDisplayName(rawName: string): void {
+  const saved = saveLocalCollabProfile({displayName: rawName});
+  localCollabDisplayName = saved?.displayName ?? "";
+  publishLocalCollabProfile();
+  renderProjectStatus();
+  syncCollabPresencePopover();
 }
 
 function syncCollabPresencePopover(): void {
@@ -955,7 +978,11 @@ function syncCollabPresencePopover(): void {
     collabPresencePopover.replaceChildren();
     return;
   }
-  renderCollabPresencePopover(collabPresencePopover, participants);
+  renderCollabPresencePopover(collabPresencePopover, participants, {
+    localDisplayName: localCollabDisplayName,
+    googleProfileActive: Boolean(googleAvatarUrl || googleDisplayName),
+    onSaveLocalName: saveLocalCollabDisplayName,
+  });
   if (!collabPresencePopover.classList.contains("is-open")) {
     collabPresencePopover.hidden = true;
   }

@@ -785,6 +785,64 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   color: #fff;
 }
 
+.collab-presence-edit {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(255 255 255 / 22%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.collab-presence-edit-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.collab-presence-edit-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.collab-presence-edit-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgb(255 255 255 / 35%);
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: #16324f;
+  background: #fffef6;
+}
+
+.collab-presence-edit-save {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: #0f3f6e;
+  background: #f4c542;
+  cursor: pointer;
+}
+
+.collab-presence-edit-save:hover {
+  filter: brightness(1.05);
+}
+
+.collab-presence-edit-hint {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  opacity: 0.9;
+}
+
 /* Official Drive mark reads best on a light chip; mute with grayscale. */
 .status-icon--drive {
   border-radius: 0.55rem;

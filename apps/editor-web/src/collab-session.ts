@@ -188,6 +188,8 @@ export interface CollabSession {
   canPersistToDrive(options?: {explicit?: boolean}): {ok: boolean; reason?: string};
   /** Advertise Google profile (or fallback name) over awareness. */
   setLocalProfile(profile: CollabLocalProfile): void;
+  /** Stable id for this browser tab in the room (used for local avatar seed). */
+  participantId(): string;
   leadershipEpoch(): string;
   isLeader(): boolean;
   createdThisRoom(): boolean;
@@ -1405,6 +1407,9 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
         advertisePresence();
         emitState();
       }
+    },
+    participantId() {
+      return options.participantId;
     },
     getBootstrapPhase() {
       return bootstrapPhase;
