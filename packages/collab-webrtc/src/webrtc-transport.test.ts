@@ -356,6 +356,43 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
   });
 
+  it("does not re-emit signaling roster for repeated ICE candidate signals", () => {
+    FakeSocket.instances = [];
+    const onSignalingRoster = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: fakePeerConnection,
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+      onSignalingRoster,
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
+    expect(onSignalingRoster).toHaveBeenCalledTimes(1);
+    expect(onSignalingRoster).toHaveBeenLastCalledWith(["peer-b"]);
+
+    socket.message({
+      t: "signal",
+      from: "peer-b",
+      data: {candidate: {candidate: "cand-1", sdpMid: "0"}},
+    });
+    socket.message({
+      t: "signal",
+      from: "peer-b",
+      data: {candidate: {candidate: "cand-2", sdpMid: "0"}},
+    });
+    expect(onSignalingRoster).toHaveBeenCalledTimes(1);
+  });
+
   it("reports signaling join ack and errors", () => {
     FakeSocket.instances = [];
     const onSignalingJoined = vi.fn();

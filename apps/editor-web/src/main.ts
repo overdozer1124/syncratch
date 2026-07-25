@@ -1035,11 +1035,19 @@ function randomParticipantId(): string {
   return `p-${[...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
-let lastBootstrapPhaseForUi: CollabState["bootstrapPhase"] | "idle" = "idle";
+let lastSurfacedCollabRecovery = false;
 
 function renderBootstrapActions(state: CollabState | null): void {
   const phase = state?.bootstrapPhase ?? "idle";
-  collabReconnectButton.hidden = phase !== "stalled-project";
+  const iceStuckReceiving = Boolean(
+    state &&
+    !state.createdThisRoom &&
+    (phase === "receiving-project" || phase === "verifying-project") &&
+    state.signalingPeerCount > 0 &&
+    state.peerCount === 0,
+  );
+  const needsRecovery = phase === "stalled-project" || iceStuckReceiving;
+  collabReconnectButton.hidden = !needsRecovery;
   collabRetrySaveButton.hidden = phase !== "local-save-failed";
   collabDownloadSb3Button.hidden = phase !== "local-save-failed";
   collabDiagnosticsButton.hidden = !(
@@ -1051,16 +1059,13 @@ function renderBootstrapActions(state: CollabState | null): void {
   );
   // Surface recovery actions when receive stalls — don't leave guests stuck
   // looking only at the status chip.
-  if (
-    phase === "stalled-project" &&
-    lastBootstrapPhaseForUi !== "stalled-project"
-  ) {
+  if (needsRecovery && !lastSurfacedCollabRecovery) {
     const collabPanel = document.querySelector<HTMLDetailsElement>(
       ".collab-panel",
     );
     if (collabPanel) collabPanel.open = true;
   }
-  lastBootstrapPhaseForUi = phase;
+  lastSurfacedCollabRecovery = needsRecovery;
   const bootstrapping = Boolean(
     state &&
     !state.createdThisRoom &&
