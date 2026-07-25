@@ -4,6 +4,10 @@ import {
   type ExtensionKind,
 } from "@blocksync/project-schema";
 import {staticAssetUrl} from "./static-url.js";
+import {
+  isTurbowarpScriptUrl,
+  loadTurbowarpExtensionScript,
+} from "./turbowarp-scratch.js";
 import {ensureRuntimeFormatMessage} from "./xcratch-format-message.js";
 
 export type ExtensionLoadMode = "builtin" | "module" | "loader" | "unavailable";
@@ -90,6 +94,35 @@ const NAME_JA: Record<string, string> = {
   webapiExtension: "データツール",
   xcxArduino: "Arduino",
   gai: "GAI（生成AI）",
+  keyEvents: "キーイベント",
+  httpRequest: "HTTPリクエスト",
+  voice: "ボイス",
+  xcxMesh: "メッシュ",
+  xcxMPHand: "MediaPipe Hand",
+  xcxVPen: "ベクトルペン",
+  xcxml: "機械学習（xcx-ml）",
+  poweredup: "LEGO Powered UP",
+  legoremote: "LEGO Powered UP リモコン",
+  controlplus: "LEGO Technic CONTROL+",
+  legomario: "LEGO Mario",
+  legoluigi: "LEGO Luigi",
+  legopeach: "LEGO Peach",
+  spikeessential: "SPIKE Essential",
+  legoble: "LEGO BLE",
+  fetch: "フェッチ",
+  griffpatch: "Box2D 物理",
+  files: "ファイル",
+  skyhigh173JSON: "JSON",
+  localstorage: "ローカルストレージ",
+  Gamepad: "ゲームパッド",
+  stretch: "ストレッチ",
+  strings: "テキスト",
+  text: "アニメーションテキスト",
+  utilities: "ユーティリティ",
+  clipboard: "クリップボード",
+  cloudlink: "CloudLink",
+  runtimeoptions: "ランタイムオプション",
+  betterpen: "Pen+",
   extensionLoader: "拡張機能を読み込む",
 };
 
@@ -129,6 +162,35 @@ const DESC_JA: Record<string, string> = {
   webapiExtension: "Web API にアクセスして JSON を扱う。",
   xcxArduino: "Arduino を操作する。",
   gai: "生成AIを Scratch から使う。",
+  keyEvents: "キーが押されているあいだのイベントを扱う。",
+  httpRequest: "HTTP でデータを送受信する。",
+  voice: "音声認識や合成を使う。",
+  xcxMesh: "複数端末でデータを共有する。",
+  xcxMPHand: "MediaPipe で手を検出する。",
+  xcxVPen: "ベクトルで線を描く。",
+  xcxml: "機械学習モデルを Scratch から使う。",
+  poweredup: "LEGO Powered UP ハブを動かす。",
+  legoremote: "LEGO Powered UP リモコンを使う。",
+  controlplus: "LEGO Technic CONTROL+ ハブを動かす。",
+  legomario: "LEGO Mario とつなぐ。",
+  legoluigi: "LEGO Luigi とつなぐ。",
+  legopeach: "LEGO Peach とつなぐ。",
+  spikeessential: "SPIKE Essential ハブを動かす。",
+  legoble: "汎用の LEGO BLE デバイスとつなぐ。",
+  fetch: "インターネットへ HTTP リクエストする。",
+  griffpatch: "Box2D で物理シミュレーションする。",
+  files: "ファイルの読み書きとダウンロード。",
+  skyhigh173JSON: "JSON を読み書き・加工する。",
+  localstorage: "ブラウザにデータを保存する。",
+  Gamepad: "ゲームパッドの入力を読む。",
+  stretch: "スプライトの縦横比を変える。",
+  strings: "文字列操作の便利ブロック。",
+  text: "ステージにアニメーション文字を出す。",
+  utilities: "便利な汎用ブロック集。",
+  clipboard: "クリップボードとやりとりする。",
+  cloudlink: "WebSocket でリアルタイム通信する。",
+  runtimeoptions: "フレームレートなど実行設定を変える。",
+  betterpen: "高機能なペンで描画する。",
   extensionLoader: "インターネットから拡張機能を読み込む。",
 };
 
@@ -316,28 +378,14 @@ export async function loadGalleryExtension(
   return {extensionId: item.extensionId, alreadyLoaded: false};
 }
 
-export async function loadExtensionModuleUrl(
+async function registerExtensionInstance(
   vm: ExtensionVm,
-  url: string,
+  instance: {getInfo(): {id: string}},
   expectedId?: string,
+  fallbackId?: string,
 ): Promise<string> {
-  if (expectedId && ML5_EXTENSION_IDS.has(expectedId)) {
-    await ensureMl5Loaded();
-  }
-  const resolvedUrl = resolveExtensionModuleUrl(url);
-  const mod = await importExtensionModule(resolvedUrl);
-  const BlockClass = mod.blockClass;
-  if (typeof BlockClass !== "function") {
-    // Fall back to stock worker path for classic-script extensions.
-    await vm.extensionManager.loadExtensionURL(resolvedUrl);
-    return expectedId ?? resolvedUrl;
-  }
-
-  // Xcratch modules call formatMessage.setup() via runtime.formatMessage.
-  ensureRuntimeFormatMessage(vm.runtime);
-  const instance = new BlockClass(vm.runtime);
   const info = instance.getInfo();
-  const extensionId = info?.id || expectedId || mod.entry?.extensionId;
+  const extensionId = info?.id || expectedId || fallbackId;
   if (!extensionId || typeof extensionId !== "string") {
     throw new Error("拡張機能の ID を取得できませんでした");
   }
@@ -352,4 +400,64 @@ export async function loadExtensionModuleUrl(
   const serviceName = vm.extensionManager._registerInternalExtension(instance);
   vm.extensionManager._loadedExtensions.set(extensionId, serviceName);
   return extensionId;
+}
+
+async function loadTurbowarpExtensionUrl(
+  vm: ExtensionVm,
+  url: string,
+  expectedId?: string,
+): Promise<string> {
+  const resolvedUrl = resolveExtensionModuleUrl(url);
+  const objects = await loadTurbowarpExtensionScript(vm, resolvedUrl);
+  if (!objects.length) {
+    throw new Error("TurboWarp 拡張が register されませんでした");
+  }
+  let lastId = expectedId ?? resolvedUrl;
+  for (const object of objects) {
+    lastId = await registerExtensionInstance(vm, object, expectedId);
+  }
+  return lastId;
+}
+
+export async function loadExtensionModuleUrl(
+  vm: ExtensionVm,
+  url: string,
+  expectedId?: string,
+): Promise<string> {
+  if (expectedId && ML5_EXTENSION_IDS.has(expectedId)) {
+    await ensureMl5Loaded();
+  }
+  const resolvedUrl = resolveExtensionModuleUrl(url);
+  if (isTurbowarpScriptUrl(resolvedUrl)) {
+    return loadTurbowarpExtensionUrl(vm, resolvedUrl, expectedId);
+  }
+
+  let mod: XcratchExtensionModule;
+  try {
+    mod = await importExtensionModule(resolvedUrl);
+  } catch {
+    // Classic scripts (TurboWarp / blob URLs) are not ESM modules.
+    return loadTurbowarpExtensionUrl(vm, resolvedUrl, expectedId);
+  }
+
+  const BlockClass = mod.blockClass;
+  if (typeof BlockClass !== "function") {
+    // Fall back to TurboWarp classic-script loader, then stock worker path.
+    try {
+      return await loadTurbowarpExtensionUrl(vm, resolvedUrl, expectedId);
+    } catch {
+      await vm.extensionManager.loadExtensionURL(resolvedUrl);
+      return expectedId ?? resolvedUrl;
+    }
+  }
+
+  // Xcratch modules call formatMessage.setup() via runtime.formatMessage.
+  ensureRuntimeFormatMessage(vm.runtime);
+  const instance = new BlockClass(vm.runtime);
+  return registerExtensionInstance(
+    vm,
+    instance,
+    expectedId,
+    mod.entry?.extensionId,
+  );
 }

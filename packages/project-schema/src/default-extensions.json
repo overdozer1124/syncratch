@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Default extension gallery catalog merged from Scratch Foundation, Stretch3, and Xcratch.",
+  "description": "Default extension gallery catalog merged from Scratch Foundation, Stretch3, Xcratch, and TurboWarp.",
   "extensions": [
     {
       "extensionId": "music",
@@ -513,6 +513,412 @@
       "opcodePolicy": "prefix",
       "iconURL": "extensions/icons/gai.png",
       "insetIconURL": "extensions/icons/gai-small.svg"
+    },
+    {
+      "extensionId": "keyEvents",
+      "name": "Key Events",
+      "description": "Handle key-pressed-while events.",
+      "collaborator": "yokobond",
+      "extensionURL": "https://yokobond.github.io/xcx-key-events/dist/keyEvents.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/keyEvents.png",
+      "insetIconURL": "extensions/icons/keyEvents-small.svg"
+    },
+    {
+      "extensionId": "httpRequest",
+      "name": "HTTP Request",
+      "description": "Send and receive data over HTTP.",
+      "collaborator": "yokobond",
+      "extensionURL": "https://yokobond.github.io/xcx-http-request/dist/httpRequest.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/httpRequest.png",
+      "insetIconURL": "extensions/icons/httpRequest-small.svg"
+    },
+    {
+      "extensionId": "voice",
+      "name": "Voice",
+      "description": "Speech recognition and synthesis.",
+      "collaborator": "asondemita",
+      "extensionURL": "https://asondemita.github.io/xcx-voice/dist/voice.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/voice.png",
+      "insetIconURL": "extensions/icons/voice-small.svg"
+    },
+    {
+      "extensionId": "xcxMesh",
+      "name": "Mesh",
+      "description": "Share data across devices over a mesh.",
+      "collaborator": "yokobond",
+      "extensionURL": "https://yokobond.github.io/xcx-mesh/dist/xcxMesh.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/xcxMesh.png",
+      "insetIconURL": "extensions/icons/xcxMesh-small.svg"
+    },
+    {
+      "extensionId": "xcxMPHand",
+      "name": "MediaPipe Hand",
+      "description": "Detect hands with MediaPipe.",
+      "collaborator": "yokobond",
+      "extensionURL": "https://yokobond.github.io/xcx-mp-hand/dist/xcxMPHand.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/xcxMPHand.png",
+      "insetIconURL": "extensions/icons/xcxMPHand-small.svg"
+    },
+    {
+      "extensionId": "xcxVPen",
+      "name": "Vector Pen",
+      "description": "Draw vector strokes.",
+      "collaborator": "yokobond",
+      "extensionURL": "https://yokobond.github.io/xcx-vpen/dist/xcxVPen.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/xcxVPen.png",
+      "insetIconURL": "extensions/icons/xcxVPen-small.svg"
+    },
+    {
+      "extensionId": "xcxml",
+      "name": "xcx-ml",
+      "description": "Use machine learning models from Scratch.",
+      "collaborator": "asondemita",
+      "extensionURL": "https://asondemita.github.io/xcx-ml/dist/xcx-ml.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/xcxml.png",
+      "insetIconURL": "extensions/icons/xcxml-small.png"
+    },
+    {
+      "extensionId": "poweredup",
+      "name": "LEGO Powered UP",
+      "description": "Control LEGO Powered UP hubs.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/poweredup.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/poweredup.png",
+      "insetIconURL": "extensions/icons/poweredup-small.svg"
+    },
+    {
+      "extensionId": "legoremote",
+      "name": "LEGO Powered UP Remote",
+      "description": "Use the LEGO Powered UP remote control.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/legoremote.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/legoremote.png",
+      "insetIconURL": "extensions/icons/legoremote-small.svg"
+    },
+    {
+      "extensionId": "controlplus",
+      "name": "LEGO Technic CONTROL+",
+      "description": "Control LEGO Technic CONTROL+ hubs.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/controlplus.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/controlplus.png",
+      "insetIconURL": "extensions/icons/controlplus-small.svg"
+    },
+    {
+      "extensionId": "legomario",
+      "name": "LEGO Mario",
+      "description": "Connect LEGO Mario.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/legomario.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/legomario.png",
+      "insetIconURL": "extensions/icons/legomario-small.svg"
+    },
+    {
+      "extensionId": "legoluigi",
+      "name": "LEGO Luigi",
+      "description": "Connect LEGO Luigi.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/legoluigi.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/legoluigi.png",
+      "insetIconURL": "extensions/icons/legoluigi-small.svg"
+    },
+    {
+      "extensionId": "legopeach",
+      "name": "LEGO Peach",
+      "description": "Connect LEGO Peach.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/legopeach.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/legopeach.png",
+      "insetIconURL": "extensions/icons/legopeach-small.svg"
+    },
+    {
+      "extensionId": "spikeessential",
+      "name": "SPIKE Essential",
+      "description": "Control LEGO Education SPIKE Essential hubs.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/spikeessential.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/spikeessential.png",
+      "insetIconURL": "extensions/icons/spikeessential-small.svg"
+    },
+    {
+      "extensionId": "legoble",
+      "name": "LEGO BLE",
+      "description": "Talk to general LEGO BLE devices.",
+      "collaborator": "bricklife",
+      "extensionURL": "https://bricklife.com/scratch-gui/xcratch/legoble.mjs",
+      "sources": [
+        "xcratch"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/legoble.png",
+      "insetIconURL": "extensions/icons/legoble-small.svg"
+    },
+    {
+      "extensionId": "fetch",
+      "name": "Fetch",
+      "description": "Make requests to the broader internet.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/fetch.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/fetch.svg",
+      "insetIconURL": "extensions/icons/fetch-small.svg"
+    },
+    {
+      "extensionId": "griffpatch",
+      "name": "Box2D Physics",
+      "description": "Box2D physics simulation.",
+      "collaborator": "Griffpatch / TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/box2d.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/griffpatch.svg",
+      "insetIconURL": "extensions/icons/griffpatch-small.svg"
+    },
+    {
+      "extensionId": "files",
+      "name": "Files",
+      "description": "Read, write, and download files.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/files.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/files.svg",
+      "insetIconURL": "extensions/icons/files-small.svg"
+    },
+    {
+      "extensionId": "skyhigh173JSON",
+      "name": "JSON",
+      "description": "Read and manipulate JSON data.",
+      "collaborator": "Skyhigh173 / TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/Skyhigh173/json.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/skyhigh173JSON.svg",
+      "insetIconURL": "extensions/icons/skyhigh173JSON-small.svg"
+    },
+    {
+      "extensionId": "localstorage",
+      "name": "Local Storage",
+      "description": "Store data in the browser.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/local-storage.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/localstorage.svg",
+      "insetIconURL": "extensions/icons/localstorage-small.svg"
+    },
+    {
+      "extensionId": "Gamepad",
+      "name": "Gamepad",
+      "description": "Read gamepad input.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/gamepad.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/Gamepad.svg",
+      "insetIconURL": "extensions/icons/Gamepad-small.svg"
+    },
+    {
+      "extensionId": "stretch",
+      "name": "Stretch",
+      "description": "Stretch sprites independently on each axis.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/stretch.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/stretch.svg",
+      "insetIconURL": "extensions/icons/stretch-small.svg"
+    },
+    {
+      "extensionId": "strings",
+      "name": "Text",
+      "description": "Handy string manipulation blocks.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/text.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/strings.svg",
+      "insetIconURL": "extensions/icons/strings-small.svg"
+    },
+    {
+      "extensionId": "text",
+      "name": "Animated Text",
+      "description": "Display and animate text on the stage.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/lab/text.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/text.svg",
+      "insetIconURL": "extensions/icons/text-small.svg"
+    },
+    {
+      "extensionId": "utilities",
+      "name": "Utilities",
+      "description": "A bunch of interesting utility blocks.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/utilities.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/utilities.svg",
+      "insetIconURL": "extensions/icons/utilities-small.svg"
+    },
+    {
+      "extensionId": "clipboard",
+      "name": "Clipboard",
+      "description": "Read and write the system clipboard.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/clipboard.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/clipboard.svg",
+      "insetIconURL": "extensions/icons/clipboard-small.svg"
+    },
+    {
+      "extensionId": "cloudlink",
+      "name": "CloudLink",
+      "description": "Realtime communication over WebSocket.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/cloudlink.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/cloudlink.svg",
+      "insetIconURL": "extensions/icons/cloudlink-small.svg"
+    },
+    {
+      "extensionId": "runtimeoptions",
+      "name": "Runtime Options",
+      "description": "Change framerate and other runtime settings.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/runtime-options.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/runtimeoptions.svg",
+      "insetIconURL": "extensions/icons/runtimeoptions-small.svg"
+    },
+    {
+      "extensionId": "betterpen",
+      "name": "Pen+",
+      "description": "Advanced pen drawing tools.",
+      "collaborator": "TurboWarp",
+      "extensionURL": "https://extensions.turbowarp.org/penplus.js",
+      "sources": [
+        "turbowarp"
+      ],
+      "kind": "external",
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/betterpen.svg",
+      "insetIconURL": "extensions/icons/betterpen-small.svg"
     },
     {
       "extensionId": null,

@@ -201,6 +201,167 @@ const REMOTE_ICONS = [
     inset:
       "https://raw.githubusercontent.com/yokobond/xcx-gai/stretch3/src/gui/lib/libraries/extensions/entry/inset-icon.svg",
   },
+  {
+    id: "keyEvents",
+    icon: "https://raw.githubusercontent.com/yokobond/xcx-key-events/master/src/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/yokobond/xcx-key-events/master/src/entry/inset-icon.svg",
+  },
+  {
+    id: "httpRequest",
+    icon: "https://raw.githubusercontent.com/yokobond/xcx-http-request/master/src/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/yokobond/xcx-http-request/master/src/entry/inset-icon.svg",
+  },
+  {
+    id: "voice",
+    icon: "https://raw.githubusercontent.com/asondemita/xcx-voice/main/src/gui/lib/libraries/extensions/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/asondemita/xcx-voice/main/src/gui/lib/libraries/extensions/entry/inset-icon.svg",
+  },
+  {
+    id: "xcxMesh",
+    icon: "https://raw.githubusercontent.com/yokobond/xcx-mesh/main/src/gui/lib/libraries/extensions/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/yokobond/xcx-mesh/main/src/gui/lib/libraries/extensions/entry/inset-icon.svg",
+  },
+  {
+    id: "xcxMPHand",
+    icon: "https://raw.githubusercontent.com/yokobond/xcx-mp-hand/main/src/gui/lib/libraries/extensions/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/yokobond/xcx-mp-hand/main/src/gui/lib/libraries/extensions/entry/inset-icon.svg",
+  },
+  {
+    id: "xcxVPen",
+    icon: "https://raw.githubusercontent.com/yokobond/xcx-vpen/main/src/gui/lib/libraries/extensions/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/yokobond/xcx-vpen/main/src/gui/lib/libraries/extensions/entry/inset-icon.svg",
+  },
+  {
+    id: "xcxml",
+    icon: "https://raw.githubusercontent.com/asondemita/xcx-ml/main/src/gui/lib/libraries/extensions/entry/entry-icon.png",
+    inset:
+      "https://raw.githubusercontent.com/asondemita/xcx-ml/main/src/gui/lib/libraries/extensions/entry/inset-icon.png",
+  },
+  {
+    id: "poweredup",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/poweredup/poweredup.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/poweredup/poweredup-small.svg",
+  },
+  {
+    id: "legoremote",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote-small.svg",
+  },
+  {
+    id: "controlplus",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus-small.svg",
+  },
+  {
+    id: "legomario",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legomario/legomario.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legomario/legomario-small.svg",
+  },
+  {
+    id: "legoluigi",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoluigi/legoluigi.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoluigi/legoluigi-small.svg",
+  },
+  {
+    id: "legopeach",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legopeach/legopeach.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legopeach/legopeach-small.svg",
+  },
+  {
+    id: "spikeessential",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/spikeessential/spikeessential.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/spikeessential/spikeessential-small.svg",
+  },
+  {
+    id: "legoble",
+    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoble/legoble.png",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoble/legoble-small.svg",
+  },
+  // TurboWarp gallery images (svg cards; reuse as inset)
+  {
+    id: "fetch",
+    icon: "https://extensions.turbowarp.org/images/fetch.svg",
+    inset: "https://extensions.turbowarp.org/images/fetch.svg",
+  },
+  {
+    id: "griffpatch",
+    icon: "https://extensions.turbowarp.org/images/box2d.svg",
+    inset: "https://extensions.turbowarp.org/images/box2d.svg",
+  },
+  {
+    id: "files",
+    icon: "https://extensions.turbowarp.org/images/files.svg",
+    inset: "https://extensions.turbowarp.org/images/files.svg",
+  },
+  {
+    id: "skyhigh173JSON",
+    icon: "https://extensions.turbowarp.org/images/Skyhigh173/json.svg",
+    inset: "https://extensions.turbowarp.org/images/Skyhigh173/json.svg",
+  },
+  {
+    id: "localstorage",
+    icon: "https://extensions.turbowarp.org/images/local-storage.svg",
+    inset: "https://extensions.turbowarp.org/images/local-storage.svg",
+  },
+  {
+    id: "Gamepad",
+    icon: "https://extensions.turbowarp.org/images/gamepad.svg",
+    inset: "https://extensions.turbowarp.org/images/gamepad.svg",
+  },
+  {
+    id: "stretch",
+    icon: "https://extensions.turbowarp.org/images/stretch.svg",
+    inset: "https://extensions.turbowarp.org/images/stretch.svg",
+  },
+  {
+    id: "strings",
+    icon: "https://extensions.turbowarp.org/images/text.svg",
+    inset: "https://extensions.turbowarp.org/images/text.svg",
+  },
+  {
+    id: "text",
+    icon: "https://extensions.turbowarp.org/images/lab/text.svg",
+    inset: "https://extensions.turbowarp.org/images/lab/text.svg",
+  },
+  {
+    id: "utilities",
+    icon: "https://extensions.turbowarp.org/images/utilities.svg",
+    inset: "https://extensions.turbowarp.org/images/utilities.svg",
+  },
+  {
+    id: "clipboard",
+    icon: "https://extensions.turbowarp.org/images/clipboard.svg",
+    inset: "https://extensions.turbowarp.org/images/clipboard.svg",
+  },
+  {
+    id: "cloudlink",
+    icon: "https://extensions.turbowarp.org/images/cloudlink.svg",
+    inset: "https://extensions.turbowarp.org/images/cloudlink.svg",
+  },
+  {
+    id: "runtimeoptions",
+    icon: "https://extensions.turbowarp.org/images/runtime-options.svg",
+    inset: "https://extensions.turbowarp.org/images/runtime-options.svg",
+  },
+  {
+    id: "betterpen",
+    icon: "https://extensions.turbowarp.org/images/penplus.svg",
+    inset: "https://extensions.turbowarp.org/images/penplus.svg",
+  },
 ];
 
 function extOf(urlOrPath) {

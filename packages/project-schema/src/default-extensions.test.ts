@@ -19,6 +19,12 @@ describe("default extensions catalog (Stretch3 / Xcratch)", () => {
       "chatgpt2scratch",
       "g2s",
       "gai",
+      "keyEvents",
+      "poweredup",
+      "fetch",
+      "griffpatch",
+      "Gamepad",
+      "betterpen",
     ]) {
       expect(ids.has(id)).toBe(true);
     }
