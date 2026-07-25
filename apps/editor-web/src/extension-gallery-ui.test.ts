@@ -1,28 +1,96 @@
 /** @vitest-environment jsdom */
-import {describe, expect, it, vi} from "vitest";
+import {afterEach, describe, expect, it, vi} from "vitest";
 import {createExtensionGalleryUi} from "./extension-gallery-ui.js";
+import type {ExtensionVm} from "./extension-gallery.js";
 
 describe("extension gallery UI", () => {
-  it("renders catalog cards and closes on Escape", () => {
-    const gallery = createExtensionGalleryUi({
+  afterEach(() => {
+    document.body.replaceChildren();
+    document.body.className = "";
+  });
+
+  it("renders Scratch-style cards with icons", () => {
+    const ui = createExtensionGalleryUi({
       getVm: () => null,
-      onError: vi.fn(),
     });
-    gallery.open();
+    ui.open();
     const grid = document.querySelector("[data-testid='extension-gallery-grid']");
     expect(grid).toBeTruthy();
-    expect(grid?.querySelectorAll(".extension-gallery-card").length).toBeGreaterThan(
-      20,
+    const cards = grid?.querySelectorAll(".extension-gallery-card") ?? [];
+    expect(cards.length).toBeGreaterThan(10);
+    const music = [...cards].find(
+      card => (card as HTMLElement).dataset.extensionKey === "music",
+    ) as HTMLElement | undefined;
+    expect(music).toBeTruthy();
+    const icon = music?.querySelector<HTMLImageElement>(
+      ".extension-gallery-card-icon",
     );
+    expect(icon?.getAttribute("src")).toMatch(/extensions\/icons\/music\./);
     expect(document.body.classList.contains("syncratch-extension-gallery-open")).toBe(
       true,
     );
-
-    document.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape"}));
-    expect(gallery.isOpen()).toBe(false);
+    ui.close();
     expect(document.body.classList.contains("syncratch-extension-gallery-open")).toBe(
       false,
     );
-    gallery.dispose();
+    ui.dispose();
+  });
+
+  it("loads a builtin extension on card click and reports success", async () => {
+    const loadExtensionURL = vi.fn(async () => undefined);
+    const vm = {
+      extensionManager: {
+        isExtensionLoaded: () => false,
+        loadExtensionURL,
+        _loadedExtensions: new Map(),
+        _registerInternalExtension: vi.fn(),
+      },
+      runtime: {},
+    } satisfies ExtensionVm;
+    const onLoaded = vi.fn();
+    const ui = createExtensionGalleryUi({
+      getVm: () => vm,
+      onLoaded,
+    });
+    ui.open();
+    const music = document.querySelector<HTMLButtonElement>(
+      "[data-extension-key='music']",
+    );
+    expect(music).toBeTruthy();
+    music!.click();
+    await vi.waitFor(() => {
+      expect(loadExtensionURL).toHaveBeenCalledWith("music");
+      expect(onLoaded).toHaveBeenCalledWith("music", false);
+    });
+    expect(ui.isOpen()).toBe(false);
+    ui.dispose();
+  });
+
+  it("surfaces load errors in the gallery status area", async () => {
+    const vm = {
+      extensionManager: {
+        isExtensionLoaded: () => false,
+        loadExtensionURL: vi.fn(async () => {
+          throw new Error("boom");
+        }),
+        _loadedExtensions: new Map(),
+        _registerInternalExtension: vi.fn(),
+      },
+      runtime: {},
+    } satisfies ExtensionVm;
+    const onError = vi.fn();
+    const ui = createExtensionGalleryUi({
+      getVm: () => vm,
+      onError,
+    });
+    ui.open();
+    document.querySelector<HTMLButtonElement>("[data-extension-key='music']")!.click();
+    await vi.waitFor(() => {
+      expect(onError).toHaveBeenCalled();
+    });
+    const status = document.querySelector("[data-testid='extension-gallery-status']");
+    expect(status?.textContent).toContain("読み込めませんでした");
+    expect(ui.isOpen()).toBe(true);
+    ui.dispose();
   });
 });

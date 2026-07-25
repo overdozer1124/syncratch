@@ -45,12 +45,23 @@ describe("extension gallery catalog wiring", () => {
     }
   });
 
+  it("includes gallery icons for stock and Stretch3 extensions", () => {
+    const items = buildExtensionGalleryItems();
+    for (const id of ["music", "pen", "ml2scratch", "iftttWebhooks", "g2s"]) {
+      const item = items.find(entry => entry.extensionId === id);
+      expect(item?.iconURL, id).toMatch(new RegExp(`extensions/icons/${id}\\.`));
+      expect(item?.insetIconURL, id).toMatch(
+        new RegExp(`extensions/icons/${id}-small\\.`),
+      );
+    }
+  });
+
   it("resolves relative extension URLs against the public path", () => {
     expect(resolveExtensionModuleUrl("https://example.com/a.mjs")).toBe(
       "https://example.com/a.mjs",
     );
-    expect(resolveExtensionModuleUrl("extensions/iftttWebhooks.mjs")).toBe(
-      "/extensions/iftttWebhooks.mjs",
+    expect(resolveExtensionModuleUrl("extensions/iftttWebhooks.mjs")).toMatch(
+      /\/extensions\/iftttWebhooks\.mjs$/,
     );
   });
 

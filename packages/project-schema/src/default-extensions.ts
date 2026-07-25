@@ -18,6 +18,10 @@ export interface DefaultExtensionEntry {
   description: string;
   collaborator: string | null;
   extensionURL: string | null;
+  /** Relative or absolute URL for the large gallery card image. */
+  iconURL?: string | null;
+  /** Relative or absolute URL for the small inset badge image. */
+  insetIconURL?: string | null;
   sources: ExtensionSource[];
   kind: ExtensionKind;
   opcodePolicy: ExtensionOpcodePolicy;
