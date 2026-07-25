@@ -60,4 +60,16 @@ describe("default extensions catalog (Stretch3 / Xcratch)", () => {
       expect(entry?.extensionURL).toBe(`extensions/${id}.mjs`);
     }
   });
+
+  it("includes icon URLs for gallery cards", () => {
+    for (const id of ["music", "ml2scratch", "iftttWebhooks", "gai"]) {
+      const entry = defaultExtensionCatalog.extensions.find(
+        (item) => item.extensionId === id,
+      );
+      expect(entry?.iconURL).toMatch(new RegExp(`^extensions/icons/${id}\\.`));
+      expect(entry?.insetIconURL).toMatch(
+        new RegExp(`^extensions/icons/${id}-small\\.`),
+      );
+    }
+  });
 });

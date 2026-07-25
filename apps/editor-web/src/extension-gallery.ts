@@ -3,6 +3,7 @@ import {
   type DefaultExtensionEntry,
   type ExtensionKind,
 } from "@blocksync/project-schema";
+import {staticAssetUrl} from "./static-url.js";
 
 export type ExtensionLoadMode = "builtin" | "module" | "loader" | "unavailable";
 
@@ -13,6 +14,8 @@ export interface ExtensionGalleryItem {
   description: string;
   collaborator: string | null;
   extensionURL: string | null;
+  iconURL: string | null;
+  insetIconURL: string | null;
   kind: ExtensionKind;
   sources: string[];
   loadMode: ExtensionLoadMode;
@@ -169,10 +172,6 @@ export function buildExtensionGalleryItems(
     let statusNote: string | null = null;
     if (loadMode === "unavailable") {
       statusNote = "この環境ではまだ読み込めません";
-    } else if (loadMode === "module") {
-      statusNote = "外部モジュール（Stretch3 / Xcratch）";
-    } else if (loadMode === "loader") {
-      statusNote = "URL を指定して読み込む";
     }
     return {
       key,
@@ -181,6 +180,8 @@ export function buildExtensionGalleryItems(
       description: DESC_JA[key] ?? entry.description,
       collaborator: entry.collaborator,
       extensionURL: entry.extensionURL,
+      iconURL: entry.iconURL ?? null,
+      insetIconURL: entry.insetIconURL ?? null,
       kind: entry.kind,
       sources: [...entry.sources],
       loadMode,
@@ -203,7 +204,7 @@ const ML5_CDN_URL = "https://unpkg.com/ml5@0.12.2/dist/ml5.min.js";
 
 let ml5LoadPromise: Promise<void> | null = null;
 
-/** Resolve catalog-relative module URLs against the GUI public path. */
+/** Resolve catalog-relative asset/module URLs against the app base path. */
 export function resolveExtensionModuleUrl(url: string): string {
   if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//")) {
     return url;
@@ -212,13 +213,19 @@ export function resolveExtensionModuleUrl(url: string): string {
     (typeof window !== "undefined" &&
       (window as Window & {__BLOCKSYNC_GUI_PUBLIC_PATH__?: string})
         .__BLOCKSYNC_GUI_PUBLIC_PATH__) ||
+    import.meta.env.BASE_URL ||
     "/";
-  const base = publicPath.endsWith("/") ? publicPath : `${publicPath}/`;
-  const rel = url.replace(/^\//, "");
+  const resolved = staticAssetUrl(url, publicPath);
   if (typeof window !== "undefined" && window.location?.href) {
-    return new URL(rel, new URL(base, window.location.href)).href;
+    return new URL(resolved, window.location.href).href;
   }
-  return `${base}${rel}`;
+  return resolved;
+}
+
+/** Resolve gallery icon paths the same way as module URLs. */
+export function resolveExtensionIconUrl(url: string | null): string | null {
+  if (!url) return null;
+  return resolveExtensionModuleUrl(url);
 }
 
 export function ensureMl5Loaded(

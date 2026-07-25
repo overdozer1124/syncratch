@@ -14,7 +14,9 @@
         "xcratch"
       ],
       "kind": "builtin",
-      "opcodePolicy": "pinned"
+      "opcodePolicy": "pinned",
+      "iconURL": "extensions/icons/music.png",
+      "insetIconURL": "extensions/icons/music-small.svg"
     },
     {
       "extensionId": "pen",
@@ -28,7 +30,9 @@
         "xcratch"
       ],
       "kind": "builtin",
-      "opcodePolicy": "pinned"
+      "opcodePolicy": "pinned",
+      "iconURL": "extensions/icons/pen.png",
+      "insetIconURL": "extensions/icons/pen-small.svg"
     },
     {
       "extensionId": "videoSensing",
@@ -42,7 +46,9 @@
         "xcratch"
       ],
       "kind": "builtin",
-      "opcodePolicy": "pinned"
+      "opcodePolicy": "pinned",
+      "iconURL": "extensions/icons/videoSensing.png",
+      "insetIconURL": "extensions/icons/videoSensing-small.svg"
     },
     {
       "extensionId": "text2speech",
@@ -56,7 +62,9 @@
         "xcratch"
       ],
       "kind": "builtin",
-      "opcodePolicy": "pinned"
+      "opcodePolicy": "pinned",
+      "iconURL": "extensions/icons/text2speech.png",
+      "insetIconURL": "extensions/icons/text2speech-small.svg"
     },
     {
       "extensionId": "translate",
@@ -70,7 +78,9 @@
         "xcratch"
       ],
       "kind": "builtin",
-      "opcodePolicy": "pinned"
+      "opcodePolicy": "pinned",
+      "iconURL": "extensions/icons/translate.png",
+      "insetIconURL": "extensions/icons/translate-small.png"
     },
     {
       "extensionId": "makeymakey",
@@ -84,7 +94,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/makeymakey.png",
+      "insetIconURL": "extensions/icons/makeymakey-small.svg"
     },
     {
       "extensionId": "microbit",
@@ -98,7 +110,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/microbit.png",
+      "insetIconURL": "extensions/icons/microbit-small.svg"
     },
     {
       "extensionId": "ev3",
@@ -112,7 +126,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/ev3.png",
+      "insetIconURL": "extensions/icons/ev3-small.svg"
     },
     {
       "extensionId": "boost",
@@ -126,7 +142,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/boost.png",
+      "insetIconURL": "extensions/icons/boost-small.svg"
     },
     {
       "extensionId": "wedo2",
@@ -140,7 +158,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/wedo2.png",
+      "insetIconURL": "extensions/icons/wedo2-small.svg"
     },
     {
       "extensionId": "gdxfor",
@@ -154,7 +174,9 @@
         "xcratch"
       ],
       "kind": "hardware",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/gdxfor.png",
+      "insetIconURL": "extensions/icons/gdxfor-small.svg"
     },
     {
       "extensionId": "ml2scratch",
@@ -166,7 +188,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/ml2scratch.png",
+      "insetIconURL": "extensions/icons/ml2scratch-small.png"
     },
     {
       "extensionId": "posenet2scratch",
@@ -178,7 +202,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/posenet2scratch.png",
+      "insetIconURL": "extensions/icons/posenet2scratch-small.png"
     },
     {
       "extensionId": "microbitMore",
@@ -190,7 +216,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/microbitMore.png",
+      "insetIconURL": "extensions/icons/microbitMore-small.svg"
     },
     {
       "extensionId": "tm2scratch",
@@ -202,7 +230,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/tm2scratch.png",
+      "insetIconURL": "extensions/icons/tm2scratch-small.png"
     },
     {
       "extensionId": "tmpose2scratch",
@@ -214,7 +244,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/tmpose2scratch.png",
+      "insetIconURL": "extensions/icons/tmpose2scratch-small.png"
     },
     {
       "extensionId": "g2s",
@@ -226,7 +258,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/g2s.png",
+      "insetIconURL": "extensions/icons/g2s-small.png"
     },
     {
       "extensionId": "scratch2maqueen",
@@ -238,7 +272,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/scratch2maqueen.png",
+      "insetIconURL": "extensions/icons/scratch2maqueen-small.png"
     },
     {
       "extensionId": "facemesh2scratch",
@@ -250,7 +286,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/facemesh2scratch.png",
+      "insetIconURL": "extensions/icons/facemesh2scratch-small.png"
     },
     {
       "extensionId": "handpose2scratch",
@@ -262,7 +300,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/handpose2scratch.png",
+      "insetIconURL": "extensions/icons/handpose2scratch-small.png"
     },
     {
       "extensionId": "pasorich",
@@ -274,7 +314,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/pasorich.png",
+      "insetIconURL": "extensions/icons/pasorich-small.png"
     },
     {
       "extensionId": "qrcode",
@@ -286,7 +328,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/qrcode.png",
+      "insetIconURL": "extensions/icons/qrcode-small.svg"
     },
     {
       "extensionId": "speech2scratch",
@@ -298,7 +342,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/speech2scratch.png",
+      "insetIconURL": "extensions/icons/speech2scratch-small.png"
     },
     {
       "extensionId": "ic2scratch",
@@ -310,7 +356,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/ic2scratch.png",
+      "insetIconURL": "extensions/icons/ic2scratch-small.png"
     },
     {
       "extensionId": "iftttWebhooks",
@@ -322,7 +370,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/iftttWebhooks.png",
+      "insetIconURL": "extensions/icons/iftttWebhooks-small.png"
     },
     {
       "extensionId": "numberbank",
@@ -334,7 +384,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/numberbank.png",
+      "insetIconURL": "extensions/icons/numberbank-small.png"
     },
     {
       "extensionId": "duplotrain",
@@ -346,7 +398,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/duplotrain.png",
+      "insetIconURL": "extensions/icons/duplotrain-small.svg"
     },
     {
       "extensionId": "geoscratch",
@@ -358,7 +412,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/geoscratch.png",
+      "insetIconURL": "extensions/icons/geoscratch-small.png"
     },
     {
       "extensionId": "chatgpt2scratch",
@@ -370,7 +426,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/chatgpt2scratch.png",
+      "insetIconURL": "extensions/icons/chatgpt2scratch-small.png"
     },
     {
       "extensionId": "scratch2webserialapi",
@@ -382,7 +440,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/scratch2webserialapi.png",
+      "insetIconURL": "extensions/icons/scratch2webserialapi-small.png"
     },
     {
       "extensionId": "cameraselector",
@@ -394,7 +454,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/cameraselector.png",
+      "insetIconURL": "extensions/icons/cameraselector-small.png"
     },
     {
       "extensionId": "screenshot",
@@ -406,7 +468,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/screenshot.png",
+      "insetIconURL": "extensions/icons/screenshot-small.png"
     },
     {
       "extensionId": "webapiExtension",
@@ -418,7 +482,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/webapiExtension.png",
+      "insetIconURL": "extensions/icons/webapiExtension-small.svg"
     },
     {
       "extensionId": "xcxArduino",
@@ -430,7 +496,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/xcxArduino.png",
+      "insetIconURL": "extensions/icons/xcxArduino-small.svg"
     },
     {
       "extensionId": "gai",
@@ -442,7 +510,9 @@
         "stretch3"
       ],
       "kind": "external",
-      "opcodePolicy": "prefix"
+      "opcodePolicy": "prefix",
+      "iconURL": "extensions/icons/gai.png",
+      "insetIconURL": "extensions/icons/gai-small.svg"
     },
     {
       "extensionId": null,
@@ -455,7 +525,9 @@
         "xcratch"
       ],
       "kind": "loader",
-      "opcodePolicy": "none"
+      "opcodePolicy": "none",
+      "iconURL": "extensions/icons/extensionLoader.svg",
+      "insetIconURL": "extensions/icons/extensionLoader-small.svg"
     }
   ]
 }

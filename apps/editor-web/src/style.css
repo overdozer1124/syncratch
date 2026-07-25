@@ -2316,6 +2316,12 @@ body.syncratch-extension-gallery-open .toolbar {
   pointer-events: none;
 }
 
+/* Hide Scratch's own library modal while Syncratch gallery is open. */
+body.syncratch-extension-gallery-open [class*="modal_modal-overlay"],
+body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
+  display: none !important;
+}
+
 .extension-gallery-overlay {
   position: fixed;
   inset: 0;
@@ -2324,8 +2330,7 @@ body.syncratch-extension-gallery-open .toolbar {
   align-items: stretch;
   justify-content: center;
   padding: 0;
-  background: rgb(12 40 70 / 45%);
-  backdrop-filter: blur(2px);
+  background: rgb(0 0 0 / 40%);
 }
 
 .extension-gallery-overlay[hidden] {
@@ -2335,12 +2340,12 @@ body.syncratch-extension-gallery-open .toolbar {
 .extension-gallery-panel {
   display: flex;
   flex-direction: column;
-  width: min(1100px, 100%);
+  width: min(980px, 100%);
   height: 100%;
   margin: 0 auto;
-  background: linear-gradient(180deg, #f4f8fc 0%, #e7f0f8 100%);
-  color: var(--sc-ink);
-  box-shadow: 0 0 0 1px rgb(15 77 122 / 12%);
+  background: #e9f1fc;
+  color: #575e75;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 8%);
 }
 
 .extension-gallery-header {
@@ -2348,102 +2353,153 @@ body.syncratch-extension-gallery-open .toolbar {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.85rem 1.1rem;
+  padding: 0.75rem 1rem;
   background: var(--syncratch-chrome);
   color: #fff;
 }
 
 .extension-gallery-header h2 {
   margin: 0;
-  font-family: "M PLUS Rounded 1c", sans-serif;
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
 }
 
 .extension-gallery-close {
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2rem;
+  height: 2rem;
   border: 0;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 16%);
+  border-radius: 0.35rem;
+  background: rgb(255 255 255 / 18%);
   color: inherit;
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   line-height: 1;
   cursor: pointer;
 }
 
 .extension-gallery-close:hover {
-  background: rgb(255 255 255 / 28%);
+  background: rgb(255 255 255 / 30%);
 }
 
-.extension-gallery-help {
+.extension-gallery-status {
   margin: 0;
-  padding: 0.85rem 1.1rem 0.35rem;
-  color: var(--sc-muted);
-  font-size: 0.92rem;
-  line-height: 1.45;
+  padding: 0.65rem 1rem;
+  background: #fff6d8;
+  color: #5c4b12;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  border-bottom: 1px solid rgb(0 0 0 / 8%);
+}
+
+.extension-gallery-status[hidden] {
+  display: none !important;
 }
 
 .extension-gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.85rem;
-  padding: 0.85rem 1.1rem 1.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 0.75rem;
+  padding: 1rem;
   overflow: auto;
 }
 
 .extension-gallery-card {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  min-height: 9.5rem;
-  padding: 0.95rem 1rem;
-  border: 1px solid var(--sc-card-border);
-  border-radius: 14px;
+  flex: 0 0 300px;
+  width: 300px;
+  max-width: 100%;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid rgb(0 0 0 / 12%);
+  border-radius: 0.5rem;
   background: #fff;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition:
-    transform 0.16s ease,
-    box-shadow 0.16s ease,
-    border-color 0.16s ease;
+  transition: border-color 0.12s ease;
 }
 
 .extension-gallery-card:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: rgb(21 101 169 / 35%);
-  box-shadow: 0 10px 22px rgb(15 45 80 / 12%);
+  border-color: var(--syncratch-chrome);
 }
 
 .extension-gallery-card:disabled {
-  opacity: 0.62;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
+.extension-gallery-card-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  background: #d9e8f7;
+}
+
+.extension-gallery-card-icon,
+.extension-gallery-card-icon-fallback {
+  display: block;
+  width: 100%;
+  aspect-ratio: 600 / 372;
+  object-fit: cover;
+  background: #cfe3f6;
+}
+
+.extension-gallery-card-inset {
+  position: absolute;
+  left: 1rem;
+  bottom: -1.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 0.25rem solid #fff;
+  border-radius: 0.5rem;
+  background: #0fbd8c;
+  overflow: hidden;
+}
+
+.extension-gallery-card-inset img {
+  width: 2.5rem;
+  height: 2.5rem;
+  object-fit: contain;
+}
+
+.extension-gallery-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 1.75rem 1.25rem 0.5rem;
+}
+
 .extension-gallery-card-name {
-  font-family: "M PLUS Rounded 1c", sans-serif;
-  font-size: 1.02rem;
-  font-weight: 800;
-  color: var(--syncratch-chrome-dark);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #575e75;
 }
 
 .extension-gallery-card-desc {
-  flex: 1;
-  font-size: 0.88rem;
-  line-height: 1.4;
-  color: var(--sc-ink);
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  color: #575e75;
 }
 
 .extension-gallery-card-meta {
+  min-height: 1.1rem;
+  padding: 0 1.25rem 1rem;
   font-size: 0.75rem;
   line-height: 1.35;
-  color: var(--sc-muted);
+  color: rgb(87 94 117 / 75%);
 }
 
 @media (max-width: 640px) {
-  .extension-gallery-grid {
-    grid-template-columns: 1fr;
+  .extension-gallery-card {
+    flex-basis: 100%;
+    width: 100%;
   }
 }
 

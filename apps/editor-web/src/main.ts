@@ -2103,6 +2103,12 @@ function installDefaultExtensionGallery(
   const gallery = createExtensionGalleryUi({
     getVm: () => scratchVm as ExtensionVm,
     onLoaded: (extensionId, alreadyLoaded) => {
+      if (extensionId) {
+        // Match Scratch: jump to the new extension category in the toolbox.
+        window.setTimeout(() => {
+          restoreToolboxCategory(extensionId);
+        }, 50);
+      }
       if (alreadyLoaded && extensionId) {
         appToast.show(`「${extensionId}」はすでに追加されています`);
         return;

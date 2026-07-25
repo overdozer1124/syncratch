@@ -22,7 +22,8 @@
     "r1:scratch:typecheck": "pnpm --filter @blocksync/r1-scratch-host typecheck",
     "r1:scratch:test": "pnpm r1:scratch:typecheck && pnpm gate0:build-vendor-vm && pnpm gate0:build-vendor-gui-spike && pnpm --filter @blocksync/r1-scratch-host test && pnpm --filter @blocksync/r1-scratch-host test:browser",
     "sb3:opcodes:check": "node scripts/generate-scratch-opcodes.mjs --check",
-    "extensions:bundle-stretch3": "node scripts/stretch3-extensions/bundle.mjs"
+    "extensions:bundle-stretch3": "node scripts/stretch3-extensions/bundle.mjs",
+    "extensions:collect-icons": "node scripts/stretch3-extensions/collect-icons.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

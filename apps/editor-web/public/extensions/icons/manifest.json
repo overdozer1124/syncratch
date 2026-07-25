@@ -1,0 +1,146 @@
+{
+  "music": {
+    "iconURL": "extensions/icons/music.png",
+    "insetIconURL": "extensions/icons/music-small.svg"
+  },
+  "pen": {
+    "iconURL": "extensions/icons/pen.png",
+    "insetIconURL": "extensions/icons/pen-small.svg"
+  },
+  "videoSensing": {
+    "iconURL": "extensions/icons/videoSensing.png",
+    "insetIconURL": "extensions/icons/videoSensing-small.svg"
+  },
+  "text2speech": {
+    "iconURL": "extensions/icons/text2speech.png",
+    "insetIconURL": "extensions/icons/text2speech-small.svg"
+  },
+  "translate": {
+    "iconURL": "extensions/icons/translate.png",
+    "insetIconURL": "extensions/icons/translate-small.png"
+  },
+  "makeymakey": {
+    "iconURL": "extensions/icons/makeymakey.png",
+    "insetIconURL": "extensions/icons/makeymakey-small.svg"
+  },
+  "microbit": {
+    "iconURL": "extensions/icons/microbit.png",
+    "insetIconURL": "extensions/icons/microbit-small.svg"
+  },
+  "ev3": {
+    "iconURL": "extensions/icons/ev3.png",
+    "insetIconURL": "extensions/icons/ev3-small.svg"
+  },
+  "boost": {
+    "iconURL": "extensions/icons/boost.png",
+    "insetIconURL": "extensions/icons/boost-small.svg"
+  },
+  "wedo2": {
+    "iconURL": "extensions/icons/wedo2.png",
+    "insetIconURL": "extensions/icons/wedo2-small.svg"
+  },
+  "gdxfor": {
+    "iconURL": "extensions/icons/gdxfor.png",
+    "insetIconURL": "extensions/icons/gdxfor-small.svg"
+  },
+  "tm2scratch": {
+    "iconURL": "extensions/icons/tm2scratch.png",
+    "insetIconURL": "extensions/icons/tm2scratch-small.png"
+  },
+  "tmpose2scratch": {
+    "iconURL": "extensions/icons/tmpose2scratch.png",
+    "insetIconURL": "extensions/icons/tmpose2scratch-small.png"
+  },
+  "scratch2maqueen": {
+    "iconURL": "extensions/icons/scratch2maqueen.png",
+    "insetIconURL": "extensions/icons/scratch2maqueen-small.png"
+  },
+  "facemesh2scratch": {
+    "iconURL": "extensions/icons/facemesh2scratch.png",
+    "insetIconURL": "extensions/icons/facemesh2scratch-small.png"
+  },
+  "handpose2scratch": {
+    "iconURL": "extensions/icons/handpose2scratch.png",
+    "insetIconURL": "extensions/icons/handpose2scratch-small.png"
+  },
+  "ic2scratch": {
+    "iconURL": "extensions/icons/ic2scratch.png",
+    "insetIconURL": "extensions/icons/ic2scratch-small.png"
+  },
+  "pasorich": {
+    "iconURL": "extensions/icons/pasorich.png",
+    "insetIconURL": "extensions/icons/pasorich-small.png"
+  },
+  "qrcode": {
+    "iconURL": "extensions/icons/qrcode.png",
+    "insetIconURL": "extensions/icons/qrcode-small.svg"
+  },
+  "numberbank": {
+    "iconURL": "extensions/icons/numberbank.png",
+    "insetIconURL": "extensions/icons/numberbank-small.png"
+  },
+  "iftttWebhooks": {
+    "iconURL": "extensions/icons/iftttWebhooks.png",
+    "insetIconURL": "extensions/icons/iftttWebhooks-small.png"
+  },
+  "ml2scratch": {
+    "iconURL": "extensions/icons/ml2scratch.png",
+    "insetIconURL": "extensions/icons/ml2scratch-small.png"
+  },
+  "posenet2scratch": {
+    "iconURL": "extensions/icons/posenet2scratch.png",
+    "insetIconURL": "extensions/icons/posenet2scratch-small.png"
+  },
+  "speech2scratch": {
+    "iconURL": "extensions/icons/speech2scratch.png",
+    "insetIconURL": "extensions/icons/speech2scratch-small.png"
+  },
+  "chatgpt2scratch": {
+    "iconURL": "extensions/icons/chatgpt2scratch.png",
+    "insetIconURL": "extensions/icons/chatgpt2scratch-small.png"
+  },
+  "scratch2webserialapi": {
+    "iconURL": "extensions/icons/scratch2webserialapi.png",
+    "insetIconURL": "extensions/icons/scratch2webserialapi-small.png"
+  },
+  "duplotrain": {
+    "iconURL": "extensions/icons/duplotrain.png",
+    "insetIconURL": "extensions/icons/duplotrain-small.svg"
+  },
+  "geoscratch": {
+    "iconURL": "extensions/icons/geoscratch.png",
+    "insetIconURL": "extensions/icons/geoscratch-small.png"
+  },
+  "extensionLoader": {
+    "iconURL": "extensions/icons/extensionLoader.png",
+    "insetIconURL": "extensions/icons/extensionLoader-small.svg"
+  },
+  "microbitMore": {
+    "iconURL": "extensions/icons/microbitMore.png",
+    "insetIconURL": "extensions/icons/microbitMore-small.svg"
+  },
+  "g2s": {
+    "iconURL": "extensions/icons/g2s.png",
+    "insetIconURL": "extensions/icons/g2s-small.png"
+  },
+  "cameraselector": {
+    "iconURL": "extensions/icons/cameraselector.png",
+    "insetIconURL": "extensions/icons/cameraselector-small.png"
+  },
+  "screenshot": {
+    "iconURL": "extensions/icons/screenshot.png",
+    "insetIconURL": "extensions/icons/screenshot-small.png"
+  },
+  "webapiExtension": {
+    "iconURL": "extensions/icons/webapiExtension.png",
+    "insetIconURL": "extensions/icons/webapiExtension-small.svg"
+  },
+  "xcxArduino": {
+    "iconURL": "extensions/icons/xcxArduino.png",
+    "insetIconURL": "extensions/icons/xcxArduino-small.svg"
+  },
+  "gai": {
+    "iconURL": "extensions/icons/gai.png",
+    "insetIconURL": "extensions/icons/gai-small.svg"
+  }
+}

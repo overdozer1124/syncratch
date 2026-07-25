@@ -1,6 +1,7 @@
 import {
   buildExtensionGalleryItems,
   loadGalleryExtension,
+  resolveExtensionIconUrl,
   type ExtensionGalleryItem,
   type ExtensionVm,
 } from "./extension-gallery.js";
@@ -23,6 +24,7 @@ export function createExtensionGalleryUi(options: {
   const items = buildExtensionGalleryItems();
   let open = false;
   let loadingKey: string | null = null;
+  let statusMessage: string | null = null;
 
   const overlay = documentRef.createElement("div");
   overlay.className = "extension-gallery-overlay";
@@ -37,17 +39,27 @@ export function createExtensionGalleryUi(options: {
         <h2 id="extension-gallery-title">拡張機能を選ぶ</h2>
         <button type="button" class="extension-gallery-close" aria-label="閉じる">×</button>
       </header>
-      <p class="extension-gallery-help">
-        Stretch3 / Xcratch のデフォルト拡張を含む一覧です。タップすると作品に追加されます。
-      </p>
+      <p class="extension-gallery-status" hidden data-testid="extension-gallery-status"></p>
       <div class="extension-gallery-grid" data-testid="extension-gallery-grid"></div>
     </div>
   `;
 
   const grid = overlay.querySelector<HTMLElement>(".extension-gallery-grid")!;
+  const statusEl = overlay.querySelector<HTMLElement>(".extension-gallery-status")!;
   const closeButton = overlay.querySelector<HTMLButtonElement>(
     ".extension-gallery-close",
   )!;
+
+  function setStatus(message: string | null): void {
+    statusMessage = message;
+    if (message) {
+      statusEl.hidden = false;
+      statusEl.textContent = message;
+    } else {
+      statusEl.hidden = true;
+      statusEl.textContent = "";
+    }
+  }
 
   function render(): void {
     grid.replaceChildren();
@@ -64,26 +76,47 @@ export function createExtensionGalleryUi(options: {
     button.disabled =
       item.loadMode === "unavailable" || loadingKey === item.key;
 
-    const sources = item.sources
-      .map(source => {
-        if (source === "stretch3") return "Stretch3";
-        if (source === "xcratch") return "Xcratch";
-        if (source === "scratch-foundation") return "Scratch";
-        return source;
-      })
-      .join(" · ");
+    const iconUrl = resolveExtensionIconUrl(item.iconURL);
+    const insetUrl = resolveExtensionIconUrl(item.insetIconURL);
 
     button.innerHTML = `
-      <span class="extension-gallery-card-name"></span>
-      <span class="extension-gallery-card-desc"></span>
+      <span class="extension-gallery-card-media">
+        ${
+          iconUrl
+            ? `<img class="extension-gallery-card-icon" alt="" decoding="async" />`
+            : `<span class="extension-gallery-card-icon-fallback" aria-hidden="true"></span>`
+        }
+        ${
+          insetUrl
+            ? `<span class="extension-gallery-card-inset"><img alt="" decoding="async" /></span>`
+            : ""
+        }
+      </span>
+      <span class="extension-gallery-card-body">
+        <span class="extension-gallery-card-name"></span>
+        <span class="extension-gallery-card-desc"></span>
+      </span>
       <span class="extension-gallery-card-meta"></span>
     `;
+
+    const iconImg = button.querySelector<HTMLImageElement>(
+      ".extension-gallery-card-icon",
+    );
+    if (iconImg && iconUrl) iconImg.src = iconUrl;
+    const insetImg = button.querySelector<HTMLImageElement>(
+      ".extension-gallery-card-inset img",
+    );
+    if (insetImg && insetUrl) insetImg.src = insetUrl;
+
     button.querySelector(".extension-gallery-card-name")!.textContent =
       item.name;
     button.querySelector(".extension-gallery-card-desc")!.textContent =
       item.description;
-    const metaBits = [sources];
-    if (item.collaborator) metaBits.push(item.collaborator);
+
+    const metaBits: string[] = [];
+    if (item.collaborator) {
+      metaBits.push(`協力: ${item.collaborator}`);
+    }
     if (item.statusNote) metaBits.push(item.statusNote);
     if (loadingKey === item.key) metaBits.push("読み込み中…");
     button.querySelector(".extension-gallery-card-meta")!.textContent =
@@ -98,17 +131,20 @@ export function createExtensionGalleryUi(options: {
   async function handleSelect(item: ExtensionGalleryItem): Promise<void> {
     const vm = options.getVm();
     if (!vm) {
-      options.onError?.("エディターの準備がまだです");
+      const message = "エディターの準備がまだです";
+      setStatus(message);
+      options.onError?.(message);
       return;
     }
     if (item.loadMode === "unavailable") {
-      options.onError?.(
-        `${item.name} は一覧に入っていますが、まだこの環境では読み込めません`,
-      );
+      const message = `${item.name} は一覧に入っていますが、まだこの環境では読み込めません`;
+      setStatus(message);
+      options.onError?.(message);
       return;
     }
 
     loadingKey = item.key;
+    setStatus(`${item.name} を読み込んでいます…`);
     render();
     try {
       const result = await loadGalleryExtension(vm, item, {
@@ -117,16 +153,23 @@ export function createExtensionGalleryUi(options: {
             "読み込む拡張機能の URL を入力してください（.mjs など）",
           ) ?? null,
       });
-      if (item.loadMode === "loader" && !result.alreadyLoaded && result.extensionId === null) {
-        // User cancelled the prompt.
+      if (
+        item.loadMode === "loader" &&
+        !result.alreadyLoaded &&
+        result.extensionId === null
+      ) {
+        setStatus(null);
         return;
       }
+      setStatus(null);
       options.onLoaded?.(result.extensionId, result.alreadyLoaded);
       close();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : String(error ?? "不明なエラー");
-      options.onError?.(`${item.name} を読み込めませんでした: ${message}`);
+      const full = `${item.name} を読み込めませんでした: ${message}`;
+      setStatus(full);
+      options.onError?.(full);
     } finally {
       loadingKey = null;
       if (open) render();
@@ -139,6 +182,7 @@ export function createExtensionGalleryUi(options: {
     }
     open = true;
     overlay.hidden = false;
+    setStatus(null);
     documentRef.body.classList.add("syncratch-extension-gallery-open");
     render();
     closeButton.focus();
