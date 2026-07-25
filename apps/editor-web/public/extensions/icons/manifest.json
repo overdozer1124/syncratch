@@ -103,18 +103,6 @@
     "iconURL": "extensions/icons/scratch2webserialapi.png",
     "insetIconURL": "extensions/icons/scratch2webserialapi-small.png"
   },
-  "duplotrain": {
-    "iconURL": "extensions/icons/duplotrain.png",
-    "insetIconURL": "extensions/icons/duplotrain-small.svg"
-  },
-  "geoscratch": {
-    "iconURL": "extensions/icons/geoscratch.png",
-    "insetIconURL": "extensions/icons/geoscratch-small.png"
-  },
-  "extensionLoader": {
-    "iconURL": "extensions/icons/extensionLoader.png",
-    "insetIconURL": "extensions/icons/extensionLoader-small.svg"
-  },
   "microbitMore": {
     "iconURL": "extensions/icons/microbitMore.png",
     "insetIconURL": "extensions/icons/microbitMore-small.svg"
@@ -122,6 +110,14 @@
   "g2s": {
     "iconURL": "extensions/icons/g2s.png",
     "insetIconURL": "extensions/icons/g2s-small.png"
+  },
+  "duplotrain": {
+    "iconURL": "extensions/icons/duplotrain.png",
+    "insetIconURL": "extensions/icons/duplotrain-small.svg"
+  },
+  "geoscratch": {
+    "iconURL": "extensions/icons/geoscratch.png",
+    "insetIconURL": "extensions/icons/geoscratch-small.png"
   },
   "cameraselector": {
     "iconURL": "extensions/icons/cameraselector.png",
@@ -142,5 +138,125 @@
   "gai": {
     "iconURL": "extensions/icons/gai.png",
     "insetIconURL": "extensions/icons/gai-small.svg"
+  },
+  "keyEvents": {
+    "iconURL": "extensions/icons/keyEvents.png",
+    "insetIconURL": "extensions/icons/keyEvents-small.svg"
+  },
+  "httpRequest": {
+    "iconURL": "extensions/icons/httpRequest.png",
+    "insetIconURL": "extensions/icons/httpRequest-small.svg"
+  },
+  "voice": {
+    "iconURL": "extensions/icons/voice.png",
+    "insetIconURL": "extensions/icons/voice-small.svg"
+  },
+  "xcxMesh": {
+    "iconURL": "extensions/icons/xcxMesh.png",
+    "insetIconURL": "extensions/icons/xcxMesh-small.svg"
+  },
+  "xcxMPHand": {
+    "iconURL": "extensions/icons/xcxMPHand.png",
+    "insetIconURL": "extensions/icons/xcxMPHand-small.svg"
+  },
+  "xcxVPen": {
+    "iconURL": "extensions/icons/xcxVPen.png",
+    "insetIconURL": "extensions/icons/xcxVPen-small.svg"
+  },
+  "xcxml": {
+    "iconURL": "extensions/icons/xcxml.png",
+    "insetIconURL": "extensions/icons/xcxml-small.png"
+  },
+  "poweredup": {
+    "iconURL": "extensions/icons/poweredup.png",
+    "insetIconURL": "extensions/icons/poweredup-small.svg"
+  },
+  "legoremote": {
+    "iconURL": "extensions/icons/legoremote.png",
+    "insetIconURL": "extensions/icons/legoremote-small.svg"
+  },
+  "controlplus": {
+    "iconURL": "extensions/icons/controlplus.png",
+    "insetIconURL": "extensions/icons/controlplus-small.svg"
+  },
+  "legomario": {
+    "iconURL": "extensions/icons/legomario.png",
+    "insetIconURL": "extensions/icons/legomario-small.svg"
+  },
+  "legoluigi": {
+    "iconURL": "extensions/icons/legoluigi.png",
+    "insetIconURL": "extensions/icons/legoluigi-small.svg"
+  },
+  "legopeach": {
+    "iconURL": "extensions/icons/legopeach.png",
+    "insetIconURL": "extensions/icons/legopeach-small.svg"
+  },
+  "spikeessential": {
+    "iconURL": "extensions/icons/spikeessential.png",
+    "insetIconURL": "extensions/icons/spikeessential-small.svg"
+  },
+  "legoble": {
+    "iconURL": "extensions/icons/legoble.png",
+    "insetIconURL": "extensions/icons/legoble-small.svg"
+  },
+  "fetch": {
+    "iconURL": "extensions/icons/fetch.svg",
+    "insetIconURL": "extensions/icons/fetch-small.svg"
+  },
+  "griffpatch": {
+    "iconURL": "extensions/icons/griffpatch.svg",
+    "insetIconURL": "extensions/icons/griffpatch-small.svg"
+  },
+  "files": {
+    "iconURL": "extensions/icons/files.svg",
+    "insetIconURL": "extensions/icons/files-small.svg"
+  },
+  "skyhigh173JSON": {
+    "iconURL": "extensions/icons/skyhigh173JSON.svg",
+    "insetIconURL": "extensions/icons/skyhigh173JSON-small.svg"
+  },
+  "localstorage": {
+    "iconURL": "extensions/icons/localstorage.svg",
+    "insetIconURL": "extensions/icons/localstorage-small.svg"
+  },
+  "Gamepad": {
+    "iconURL": "extensions/icons/Gamepad.svg",
+    "insetIconURL": "extensions/icons/Gamepad-small.svg"
+  },
+  "stretch": {
+    "iconURL": "extensions/icons/stretch.svg",
+    "insetIconURL": "extensions/icons/stretch-small.svg"
+  },
+  "strings": {
+    "iconURL": "extensions/icons/strings.svg",
+    "insetIconURL": "extensions/icons/strings-small.svg"
+  },
+  "text": {
+    "iconURL": "extensions/icons/text.svg",
+    "insetIconURL": "extensions/icons/text-small.svg"
+  },
+  "utilities": {
+    "iconURL": "extensions/icons/utilities.svg",
+    "insetIconURL": "extensions/icons/utilities-small.svg"
+  },
+  "clipboard": {
+    "iconURL": "extensions/icons/clipboard.svg",
+    "insetIconURL": "extensions/icons/clipboard-small.svg"
+  },
+  "cloudlink": {
+    "iconURL": "extensions/icons/cloudlink.svg",
+    "insetIconURL": "extensions/icons/cloudlink-small.svg"
+  },
+  "runtimeoptions": {
+    "iconURL": "extensions/icons/runtimeoptions.svg",
+    "insetIconURL": "extensions/icons/runtimeoptions-small.svg"
+  },
+  "betterpen": {
+    "iconURL": "extensions/icons/betterpen.svg",
+    "insetIconURL": "extensions/icons/betterpen-small.svg"
+  },
+  "extensionLoader": {
+    "iconURL": "extensions/icons/extensionLoader.svg",
+    "insetIconURL": "extensions/icons/extensionLoader-small.svg"
   }
 }

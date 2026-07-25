@@ -3,7 +3,8 @@ import catalogJson from "./default-extensions.json" with {type: "json"};
 export type ExtensionSource =
   | "scratch-foundation"
   | "stretch3"
-  | "xcratch";
+  | "xcratch"
+  | "turbowarp";
 
 export type ExtensionKind = "builtin" | "hardware" | "external" | "loader";
 

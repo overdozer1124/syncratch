@@ -11,6 +11,10 @@ import {
   type ExtensionVm,
 } from "./extension-gallery.js";
 import type {DefaultExtensionEntry} from "@blocksync/project-schema";
+import {
+  resetTurbowarpLoadQueueForTests,
+  setTurbowarpScriptFetcherForTests,
+} from "./turbowarp-scratch.js";
 
 describe("extension gallery catalog wiring", () => {
   it("includes Stretch3 and Xcratch defaults in the gallery list", () => {
@@ -21,7 +25,36 @@ describe("extension gallery catalog wiring", () => {
     expect(keys.has("ml2scratch")).toBe(true);
     expect(keys.has("g2s")).toBe(true);
     expect(keys.has("gai")).toBe(true);
+    expect(keys.has("keyEvents")).toBe(true);
+    expect(keys.has("poweredup")).toBe(true);
+    expect(keys.has("fetch")).toBe(true);
+    expect(keys.has("griffpatch")).toBe(true);
+    expect(keys.has("Gamepad")).toBe(true);
+    expect(keys.has("betterpen")).toBe(true);
     expect(keys.has("extensionLoader")).toBe(true);
+  });
+
+  it("loads Xcratch A-group and TurboWarp B-group as modules", () => {
+    const items = buildExtensionGalleryItems();
+    for (const id of [
+      "keyEvents",
+      "httpRequest",
+      "xcxMPHand",
+      "xcxml",
+      "poweredup",
+      "fetch",
+      "files",
+      "skyhigh173JSON",
+      "localstorage",
+      "stretch",
+      "text",
+      "cloudlink",
+    ]) {
+      const item = items.find(entry => entry.extensionId === id);
+      expect(item, id).toBeDefined();
+      expect(item!.loadMode).toBe("module");
+      expect(item!.extensionURL).toBeTruthy();
+    }
   });
 
   it("loads formerly unavailable Stretch3 ids as local modules", () => {
@@ -127,6 +160,44 @@ describe("extension gallery loading", () => {
     const result = await loadGalleryExtension(vm, item);
     expect(result).toEqual({extensionId: "music", alreadyLoaded: false});
     expect(loadExtensionURL).toHaveBeenCalledWith("music");
+  });
+
+  it("registers TurboWarp classic scripts via Scratch.extensions.register", async () => {
+    resetTurbowarpLoadQueueForTests();
+    setTurbowarpScriptFetcherForTests(async () => {
+      return `(function (Scratch) {
+  class Fetch {
+    getInfo() { return { id: "fetch", name: "Fetch", blocks: [] }; }
+  }
+  Scratch.extensions.register(new Fetch());
+})(Scratch);`;
+    });
+    const register = vi.fn(() => "extension_1_fetch");
+    const loaded = new Map<string, string>();
+    const vm = {
+      extensionManager: {
+        isExtensionLoaded: (id: string) => loaded.has(id),
+        loadExtensionURL: vi.fn(async () => undefined),
+        _loadedExtensions: loaded,
+        _registerInternalExtension: register,
+      },
+      runtime: {},
+    } satisfies ExtensionVm;
+
+    try {
+      const id = await loadExtensionModuleUrl(
+        vm,
+        "https://extensions.turbowarp.org/fetch.js",
+        "fetch",
+      );
+      expect(id).toBe("fetch");
+      expect(register).toHaveBeenCalledOnce();
+      expect(loaded.get("fetch")).toBe("extension_1_fetch");
+    } finally {
+      setTurbowarpScriptFetcherForTests(null);
+      resetTurbowarpLoadQueueForTests();
+      delete (globalThis as {Scratch?: unknown}).Scratch;
+    }
   });
 
   it("registers Xcratch-style modules via internal extension API", async () => {
