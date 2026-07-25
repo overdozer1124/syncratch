@@ -1,7 +1,9 @@
 export {
   DEFAULT_SIGNALING_LIMITS,
   SignalingHub,
+  isDataRelaySignal,
   isIceCandidateSignal,
+  isRateExemptSignal,
   type SignalingConnection,
   type SignalingHubOptions,
   type SignalingLimits,

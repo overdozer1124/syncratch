@@ -2,11 +2,11 @@
  * Browser-only WebRTC transport: signaling over a configured WebSocket URL and
  * peer-to-peer data channels over RTCPeerConnection.
  *
- * There is NO public signaling fallback. A signaling URL must be configured;
- * without it, room creation/join is refused and the app degrades to local
- * editing/export. ICE defaults are STUN-only; callers should pass TURN-capable
- * `iceServers` (e.g. `createOpenRelayIceServers()` or editor
- * `VITE_COLLAB_ICE_SERVERS`) so cross-NAT / school networks can connect.
+ * A signaling URL must be configured; without it, room creation/join is refused.
+ * ICE defaults are STUN-only; callers should pass TURN-capable `iceServers`.
+ * When ICE/TURN cannot open a data channel (common on school NATs), encrypted
+ * wires are relayed over the same-origin signaling WebSocket as `{relay: frame}`
+ * so collaboration still works. Payloads remain room-secret ciphertext.
  */
 import * as Y from "yjs";
 import {
@@ -37,6 +37,11 @@ export interface WebRtcTransportOptions {
   onDiagnostic?: (message: string) => void;
   /** Keepalive interval for signaling ping; default 20s (hub idle is 60s). */
   pingIntervalMs?: number;
+  /**
+   * After this many ms with a signaling peer but no open data channel, fall back
+   * to relaying encrypted wires over the signaling socket. Set 0 to disable.
+   */
+  signalRelayFallbackMs?: number;
 }
 
 interface PeerEntry {
@@ -54,6 +59,9 @@ export function shouldInitiateOffer(localId: string, remoteId: string): boolean 
 }
 
 export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
+
+/** Prefer WebRTC; after this delay, relay ciphertext over signaling instead. */
+export const SIGNAL_RELAY_FALLBACK_MS = 5_000;
 
 /**
  * Default ICE is STUN-only. Deprecated long-term Open Relay passwords no longer
@@ -90,6 +98,8 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS;
   const pingIntervalMs =
     options.pingIntervalMs ?? DEFAULT_SIGNALING_PING_INTERVAL_MS;
+  const signalRelayFallbackMs =
+    options.signalRelayFallbackMs ?? SIGNAL_RELAY_FALLBACK_MS;
   const makeSocket: WebSocketFactory =
     options.WebSocketImpl ?? ((url) => new WebSocket(url) as unknown as WebSocketLike);
   const makePc =
@@ -106,6 +116,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const signalingRoster = new Set<string>();
   const offerRetries = new Map<string, number>();
   const offerRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const openedPeers = new Set<string>();
+  const signalRelayPeers = new Set<string>();
+  const relayFallbackTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Initial offer + this many recreations while the peer stays on the roster. */
   const MAX_OFFER_RETRIES = 5;
   const OFFER_RETRY_MS = 5_000;
@@ -236,6 +249,78 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     offerRetryTimers.delete(peerId);
   };
 
+  const clearRelayFallback = (peerId: string): void => {
+    const timer = relayFallbackTimers.get(peerId);
+    if (timer) clearTimeout(timer);
+    relayFallbackTimers.delete(peerId);
+  };
+
+  const markPeerOpen = (peerId: string, via: "dc" | "relay"): void => {
+    if (via === "relay") signalRelayPeers.add(peerId);
+    if (options.onDiagnostic) {
+      options.onDiagnostic(`peer-open(${peerId})=${via}`);
+    }
+    if (openedPeers.has(peerId)) return;
+    openedPeers.add(peerId);
+    handlers?.onPeerOpen(peerId);
+  };
+
+  const markPeerClosed = (peerId: string): void => {
+    const wasOpen = openedPeers.delete(peerId);
+    signalRelayPeers.delete(peerId);
+    clearRelayFallback(peerId);
+    if (wasOpen) handlers?.onPeerClose(peerId);
+  };
+
+  const activateSignalRelay = (peerId: string): void => {
+    if (!signalingRoster.has(peerId)) return;
+    if (peerConnections.get(peerId)?.channel?.readyState === "open") return;
+    clearRelayFallback(peerId);
+    if (options.onDiagnostic) {
+      options.onDiagnostic(`signal-relay(${peerId})`);
+    }
+    markPeerOpen(peerId, "relay");
+  };
+
+  const scheduleRelayFallback = (peerId: string): void => {
+    if (signalRelayFallbackMs <= 0) return;
+    if (relayFallbackTimers.has(peerId)) return;
+    if (openedPeers.has(peerId)) return;
+    relayFallbackTimers.set(
+      peerId,
+      setTimeout(() => {
+        relayFallbackTimers.delete(peerId);
+        activateSignalRelay(peerId);
+      }, signalRelayFallbackMs),
+    );
+  };
+
+  /** Close RTCPeerConnection only; keep logical peer (relay may continue). */
+  const teardownPc = (peerId: string, expected?: PeerEntry): void => {
+    const entry = peerConnections.get(peerId);
+    if (!entry) return;
+    if (expected && entry !== expected) return;
+    clearOfferRetry(peerId);
+    peerConnections.delete(peerId);
+    sendTail.delete(peerId);
+    pendingIceCandidates.delete(peerId);
+    try {
+      entry.channel?.close();
+      entry.pc.close();
+    } catch {
+      // ignore teardown errors
+    }
+  };
+
+  /** Full peer forget: PC + relay + provider onPeerClose. */
+  const forgetPeer = (peerId: string, expected?: PeerEntry): void => {
+    const entry = peerConnections.get(peerId);
+    if (expected && entry && entry !== expected) return;
+    teardownPc(peerId, expected);
+    reassemblers.delete(peerId);
+    markPeerClosed(peerId);
+  };
+
   const scheduleOfferRetry = (
     peerId: string,
     delayMs: number = OFFER_RETRY_MS,
@@ -255,28 +340,36 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         if (options.onDiagnostic) {
           options.onDiagnostic(`offer-retry(${peerId})=${attempts + 1}`);
         }
-        if (entry) closePeer(peerId, entry);
+        if (entry) teardownPc(peerId, entry);
         createPeer(peerId, true);
       }, delayMs),
     );
   };
 
-  const closePeer = (peerId: string, expected?: PeerEntry): void => {
-    const entry = peerConnections.get(peerId);
-    if (!entry) return;
-    if (expected && entry !== expected) return;
-    clearOfferRetry(peerId);
-    peerConnections.delete(peerId);
-    reassemblers.delete(peerId);
-    sendTail.delete(peerId);
-    pendingIceCandidates.delete(peerId);
+  const sendViaSignalRelay = (peerId: string, wire: string): void => {
+    let frames: string[];
     try {
-      entry.channel?.close();
-      entry.pc.close();
-    } catch {
-      // ignore teardown errors
+      frames = packDataChannelWire(wire);
+    } catch (error) {
+      if (options.onDiagnostic) {
+        options.onDiagnostic(`pack-error=${String(error)}`);
+      }
+      return;
     }
-    handlers?.onPeerClose(peerId);
+    for (const frame of frames) {
+      signal(peerId, {relay: frame});
+    }
+  };
+
+  const deliverWire = (peerId: string, wire: string): void => {
+    const channel = peerConnections.get(peerId)?.channel;
+    if (channel && channel.readyState === "open") {
+      sendOnChannel(peerId, channel, wire);
+      return;
+    }
+    if (openedPeers.has(peerId) && signalingRoster.has(peerId)) {
+      sendViaSignalRelay(peerId, wire);
+    }
   };
 
   const attachChannel = (peerId: string, entry: PeerEntry, channel: RTCDataChannel): void => {
@@ -285,7 +378,9 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       if (peerConnections.get(peerId) !== entry) return;
       clearOfferRetry(peerId);
       offerRetries.delete(peerId);
-      handlers?.onPeerOpen(peerId);
+      clearRelayFallback(peerId);
+      signalRelayPeers.delete(peerId);
+      markPeerOpen(peerId, "dc");
     });
     channel.addEventListener("message", (ev: MessageEvent) => {
       if (peerConnections.get(peerId) !== entry) return;
@@ -297,7 +392,14 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       if (options.onDiagnostic) options.onDiagnostic(`channel-error(${peerId})`);
     });
     channel.addEventListener("close", () => {
-      closePeer(peerId, entry);
+      if (peerConnections.get(peerId) !== entry) return;
+      teardownPc(peerId, entry);
+      if (signalingRoster.has(peerId)) {
+        activateSignalRelay(peerId);
+      } else {
+        reassemblers.delete(peerId);
+        markPeerClosed(peerId);
+      }
     });
   };
 
@@ -341,19 +443,31 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       if (options.onDiagnostic) options.onDiagnostic(`pc(${peerId})=${pc.connectionState}`);
       if (pc.connectionState === "failed") {
         const wasInitiator = entry.initiator;
-        closePeer(peerId, entry);
-        // Failed PC used to clear retries and leave the guest stuck with
-        // signaling peers but no data channel. Re-offer while roster still has them.
-        if (wasInitiator && signalingRoster.has(peerId)) {
-          if (options.onDiagnostic) {
-            options.onDiagnostic(`pc-failed-recover(${peerId})`);
+        teardownPc(peerId, entry);
+        if (signalingRoster.has(peerId)) {
+          // Prefer immediate signal relay so guests are not stuck receiving.
+          activateSignalRelay(peerId);
+          if (wasInitiator) {
+            if (options.onDiagnostic) {
+              options.onDiagnostic(`pc-failed-recover(${peerId})`);
+            }
+            scheduleOfferRetry(peerId, FAILED_RECOVERY_MS);
           }
-          scheduleOfferRetry(peerId, FAILED_RECOVERY_MS);
+        } else {
+          reassemblers.delete(peerId);
+          markPeerClosed(peerId);
         }
         return;
       }
       if (pc.connectionState === "closed") {
-        closePeer(peerId, entry);
+        if (peerConnections.get(peerId) !== entry) return;
+        teardownPc(peerId, entry);
+        if (signalingRoster.has(peerId)) {
+          if (!openedPeers.has(peerId)) activateSignalRelay(peerId);
+        } else {
+          reassemblers.delete(peerId);
+          markPeerClosed(peerId);
+        }
       }
     });
     pc.addEventListener("iceconnectionstatechange", () => {
@@ -416,9 +530,16 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
 
   const onSignal = async (from: string, data: any): Promise<void> => {
     try {
+      if (typeof data?.relay === "string") {
+        // Encrypted wire (or chunk frame) over signaling — ICE-independent path.
+        activateSignalRelay(from);
+        const wire = reassemblerFor(from).push(data.relay);
+        if (wire !== null) handlers?.onMessage(from, wire);
+        return;
+      }
       let entry = peerConnections.get(from);
       if (data?.description?.type === "offer") {
-        // Already connected — ignore renegotiation noise.
+        // Already connected on DC — ignore renegotiation noise.
         if (entry?.channel?.readyState === "open") {
           if (options.onDiagnostic) {
             options.onDiagnostic(`offer-ignore-open(${from})`);
@@ -436,7 +557,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           if (options.onDiagnostic) {
             options.onDiagnostic(`glare-yield(${from})`);
           }
-          closePeer(from, entry);
+          teardownPc(from, entry);
           entry = undefined;
         } else if (entry) {
           // Stale answerer PC (ICE failed / never opened): always recreate
@@ -444,7 +565,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           if (options.onDiagnostic) {
             options.onDiagnostic(`answerer-recreate(${from})`);
           }
-          closePeer(from, entry);
+          teardownPc(from, entry);
           entry = undefined;
         }
         if (!entry) entry = createPeer(from, false);
@@ -491,6 +612,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           if (typeof peer !== "string" || peer.length === 0) continue;
           signalingRoster.add(peer);
           if (!peerConnections.has(peer)) createPeer(peer, true);
+          scheduleRelayFallback(peer);
         }
         emitSignalingRoster();
         handlers?.onSignalingJoined?.([...signalingRoster].sort());
@@ -500,6 +622,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         // Existing member: wait for the joiner's offer (they initiate via joined).
         if (typeof msg.peer === "string" && msg.peer.length > 0) {
           signalingRoster.add(msg.peer);
+          scheduleRelayFallback(msg.peer);
           emitSignalingRoster();
         }
         break;
@@ -507,7 +630,10 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         if (typeof msg.from === "string") {
           const wasKnown = signalingRoster.has(msg.from);
           signalingRoster.add(msg.from);
-          if (!wasKnown) emitSignalingRoster();
+          if (!wasKnown) {
+            scheduleRelayFallback(msg.from);
+            emitSignalingRoster();
+          }
           void onSignal(msg.from, msg.data);
         }
         break;
@@ -515,7 +641,7 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
         if (typeof msg.peer === "string") {
           signalingRoster.delete(msg.peer);
           emitSignalingRoster();
-          closePeer(msg.peer);
+          forgetPeer(msg.peer);
         }
         break;
       case "error":
@@ -567,16 +693,11 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       connectionSocket.addEventListener("error", disconnected);
     },
     send(peerId, wire) {
-      const channel = peerConnections.get(peerId)?.channel;
-      if (channel && channel.readyState === "open") {
-        sendOnChannel(peerId, channel, wire);
-      }
+      deliverWire(peerId, wire);
     },
     broadcast(wire) {
-      for (const [peerId, entry] of peerConnections) {
-        if (entry.channel && entry.channel.readyState === "open") {
-          sendOnChannel(peerId, entry.channel, wire);
-        }
+      for (const peerId of openedPeers) {
+        deliverWire(peerId, wire);
       }
     },
     disconnect() {
@@ -586,11 +707,16 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
       }
       for (const peerId of [...offerRetryTimers.keys()]) clearOfferRetry(peerId);
       offerRetries.clear();
-      for (const peerId of [...peerConnections.keys()]) closePeer(peerId);
+      for (const peerId of [...relayFallbackTimers.keys()]) clearRelayFallback(peerId);
+      for (const peerId of [...new Set([...peerConnections.keys(), ...openedPeers])]) {
+        forgetPeer(peerId);
+      }
       reassemblers.clear();
       sendTail.clear();
       pendingIceCandidates.clear();
       signalingRoster.clear();
+      openedPeers.clear();
+      signalRelayPeers.clear();
       lastEmittedSignalingRosterKey = "";
       const closingSocket = socket;
       socket = null;
@@ -618,6 +744,7 @@ export function createWebRtcProvider(options: WebRtcProviderOptions): CollabProv
     topic: options.topic,
     iceServers: options.iceServers,
     pingIntervalMs: options.pingIntervalMs,
+    signalRelayFallbackMs: options.signalRelayFallbackMs,
     WebSocketImpl: options.WebSocketImpl,
     createPeerConnection: options.createPeerConnection,
     onDiagnostic: options.onDiagnostic,

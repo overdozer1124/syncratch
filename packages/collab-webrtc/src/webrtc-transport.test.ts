@@ -6,6 +6,7 @@ import {
 } from "./data-channel-framing.js";
 import {
   DEFAULT_SIGNALING_PING_INTERVAL_MS,
+  SIGNAL_RELAY_FALLBACK_MS,
   createWebRtcProvider,
   createWebRtcTransport,
   shouldInitiateOffer,
@@ -455,11 +456,13 @@ describe("createWebRtcTransport signaling wiring", () => {
     FakeSocket.instances = [];
     const created: ReturnType<typeof fakePeerConnection>[] = [];
     const onDiagnostic = vi.fn();
+    const onPeerOpen = vi.fn();
     const transport = createWebRtcTransport({
       signalingUrl: "ws://127.0.0.1:9999/signal",
       topic: TOPIC,
       pingIntervalMs: 0,
       iceServers: [],
+      signalRelayFallbackMs: 0,
       onDiagnostic,
       WebSocketImpl: (url) => new FakeSocket(url),
       createPeerConnection: () => {
@@ -470,7 +473,7 @@ describe("createWebRtcTransport signaling wiring", () => {
     });
     transport.connect("peer-a", {
       onStatus: vi.fn(),
-      onPeerOpen: vi.fn(),
+      onPeerOpen,
       onPeerClose: vi.fn(),
       onMessage: vi.fn(),
     });
@@ -486,10 +489,61 @@ describe("createWebRtcTransport signaling wiring", () => {
     )?.[1] as () => void;
     (failedPc as {connectionState: string}).connectionState = "failed";
     onState();
+    // With signalRelayFallbackMs: 0, failed still activates relay immediately.
+    expect(onDiagnostic).toHaveBeenCalledWith("signal-relay(peer-b)");
     expect(onDiagnostic).toHaveBeenCalledWith("pc-failed-recover(peer-b)");
+    expect(onPeerOpen).toHaveBeenCalledWith("peer-b");
 
     await vi.advanceTimersByTimeAsync(1_500);
     expect(created.length).toBeGreaterThanOrEqual(2);
+    transport.disconnect();
+    vi.useRealTimers();
+  });
+
+  it("falls back to signaling relay when data channel never opens", async () => {
+    vi.useFakeTimers();
+    FakeSocket.instances = [];
+    const onPeerOpen = vi.fn();
+    const onMessage = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      signalRelayFallbackMs: SIGNAL_RELAY_FALLBACK_MS,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: fakePeerConnection,
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen,
+      onPeerClose: vi.fn(),
+      onMessage,
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
+    expect(onPeerOpen).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(SIGNAL_RELAY_FALLBACK_MS);
+    expect(onPeerOpen).toHaveBeenCalledWith("peer-b");
+
+    transport.send("peer-b", "hello-relay");
+    expect(
+      socket.sent.some(
+        (m) =>
+          m.t === "signal" &&
+          m.to === "peer-b" &&
+          m.data?.relay === "hello-relay",
+      ),
+    ).toBe(true);
+
+    socket.message({
+      t: "signal",
+      from: "peer-b",
+      data: {relay: "from-b"},
+    });
+    expect(onMessage).toHaveBeenCalledWith("peer-b", "from-b");
     transport.disconnect();
     vi.useRealTimers();
   });

@@ -24,6 +24,7 @@ export {
 export {
   DEFAULT_ICE_SERVERS,
   DEFAULT_SIGNALING_PING_INTERVAL_MS,
+  SIGNAL_RELAY_FALLBACK_MS,
   createWebRtcProvider,
   createWebRtcTransport,
   shouldInitiateOffer,

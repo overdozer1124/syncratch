@@ -130,6 +130,41 @@ describe("validation and limits", () => {
     expect(a.closed).toEqual({code: 1008, reason: "message rate exceeded"});
   });
 
+  it("does not count data-relay signals toward the message rate limit", () => {
+    const limited = new SignalingHub({
+      now: () => now,
+      maxMessagesPerWindow: 2,
+      rateWindowMs: 1000,
+    });
+    const a = new FakeConnection("a");
+    const b = new FakeConnection("b");
+    limited.handleConnection(a);
+    limited.handleConnection(b);
+    limited.handleMessage(
+      a,
+      JSON.stringify({t: "join", topic: TOPIC, peer: "peer-a"}),
+    );
+    limited.handleMessage(
+      b,
+      JSON.stringify({t: "join", topic: TOPIC, peer: "peer-b"}),
+    );
+    for (let i = 0; i < 20; i += 1) {
+      limited.handleMessage(
+        a,
+        JSON.stringify({
+          t: "signal",
+          topic: TOPIC,
+          to: "peer-b",
+          data: {relay: `chunk-${i}`},
+        }),
+      );
+    }
+    expect(a.closed).toBeNull();
+    expect(b.sent.filter((m) => (m as {t?: string}).t === "signal").length).toBe(
+      20,
+    );
+  });
+
   it("does not count ICE candidate signals toward the message rate limit", () => {
     const limited = new SignalingHub({
       now: () => now,
