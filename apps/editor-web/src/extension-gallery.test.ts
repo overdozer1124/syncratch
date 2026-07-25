@@ -131,13 +131,21 @@ describe("extension gallery loading", () => {
 
   it("registers Xcratch-style modules via internal extension API", async () => {
     class FakeBlocks {
-      constructor(public runtime: unknown) {}
+      constructor(public runtime: {formatMessage?: {setup?: () => unknown}}) {
+        // Mimic AkaDako / GAI: replace local stub from runtime.formatMessage.
+        if (runtime.formatMessage) {
+          runtime.formatMessage.setup?.();
+        }
+      }
       getInfo() {
         return {id: "ml2scratch", name: "ML2Scratch", blocks: []};
       }
     }
     const register = vi.fn(() => "extension_1_ml2scratch");
     const loaded = new Map<string, string>();
+    const runtime: {tag: string; formatMessage?: {setup?: () => unknown}} = {
+      tag: "runtime",
+    };
     const vm = {
       extensionManager: {
         isExtensionLoaded: (id: string) => loaded.has(id),
@@ -145,7 +153,7 @@ describe("extension gallery loading", () => {
         _loadedExtensions: loaded,
         _registerInternalExtension: register,
       },
-      runtime: {tag: "runtime"},
+      runtime,
     } satisfies ExtensionVm;
 
     setExtensionModuleImporterForTests(async () => ({
@@ -158,6 +166,7 @@ describe("extension gallery loading", () => {
         "ml2scratch",
       );
       expect(id).toBe("ml2scratch");
+      expect(typeof runtime.formatMessage?.setup).toBe("function");
       expect(register).toHaveBeenCalledOnce();
       expect(loaded.get("ml2scratch")).toBe("extension_1_ml2scratch");
     } finally {
