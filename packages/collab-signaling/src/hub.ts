@@ -51,6 +51,15 @@ export const DEFAULT_SIGNALING_LIMITS: SignalingLimits = {
 const TOPIC_PATTERN = /^[A-Za-z0-9_-]+$/;
 const PEER_PATTERN = /^[A-Za-z0-9_-]+$/;
 
+/** True when the message is a signaling relay that only carries an ICE candidate. */
+export function isIceCandidateSignal(record: Record<string, unknown>): boolean {
+  if (record.t !== "signal") return false;
+  const data = record.data;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return false;
+  const payload = data as Record<string, unknown>;
+  return payload.candidate != null && payload.description == null;
+}
+
 export interface SignalingHubOptions extends Partial<SignalingLimits> {
   now?: () => number;
 }
@@ -126,16 +135,6 @@ export class SignalingHub {
     if (!member) return;
     const now = this.now();
     member.lastSeen = now;
-    if (now - member.rateWindowStartedAt >= this.limits.rateWindowMs) {
-      member.rateWindowStartedAt = now;
-      member.messagesInWindow = 0;
-    }
-    member.messagesInWindow += 1;
-    if (member.messagesInWindow > this.limits.maxMessagesPerWindow) {
-      conn.close(1008, "message rate exceeded");
-      this.handleClose(conn);
-      return;
-    }
 
     const text = typeof raw === "string" ? raw : Buffer.from(raw).toString("utf8");
     let msg: unknown;
@@ -150,6 +149,24 @@ export class SignalingHub {
       return;
     }
     const record = msg as Record<string, unknown>;
+
+    // ICE candidate storms are normal during WebRTC setup (especially with TURN).
+    // Counting them toward the hard disconnect limit drops the signaling socket
+    // mid-handshake and leaves guests stuck "receiving".
+    const countsTowardRate = !isIceCandidateSignal(record);
+    if (countsTowardRate) {
+      if (now - member.rateWindowStartedAt >= this.limits.rateWindowMs) {
+        member.rateWindowStartedAt = now;
+        member.messagesInWindow = 0;
+      }
+      member.messagesInWindow += 1;
+      if (member.messagesInWindow > this.limits.maxMessagesPerWindow) {
+        conn.close(1008, "message rate exceeded");
+        this.handleClose(conn);
+        return;
+      }
+    }
+
     switch (record.t) {
       case "ping":
         conn.send(JSON.stringify({t: "pong"}));

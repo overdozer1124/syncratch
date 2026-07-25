@@ -4,10 +4,9 @@
  *
  * There is NO public signaling fallback. A signaling URL must be configured;
  * without it, room creation/join is refused and the app degrades to local
- * editing/export. ICE servers default to none (host candidates only, which is
- * enough for same-machine E2E and many LANs). A caller may configure STUN/TURN,
- * but this project neither ships nor purchases a TURN service, so WebRTC may
- * still fail on restrictive networks.
+ * editing/export. ICE defaults include public STUN plus a free public TURN
+ * fallback so cross-NAT / school networks can connect; callers may override
+ * via `iceServers` (e.g. editor `VITE_COLLAB_ICE_SERVERS`).
  */
 import * as Y from "yjs";
 import {
@@ -55,10 +54,23 @@ export function shouldInitiateOffer(localId: string, remoteId: string): boolean 
 
 export const DEFAULT_SIGNALING_PING_INTERVAL_MS = 20_000;
 
-/** Public STUN only (not TURN). Helps many NATs; school networks may still block. */
+/**
+ * Default ICE: Google STUN + Open Relay Project TURN (public free credentials).
+ * Override in production with a dedicated TURN via `iceServers` when available.
+ */
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   {urls: "stun:stun.l.google.com:19302"},
   {urls: "stun:stun1.l.google.com:19302"},
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+      "turns:openrelay.metered.ca:443",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
 ];
 
 function requireSignalingUrl(signalingUrl: string): string {
@@ -106,8 +118,10 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
   const signalingRoster = new Set<string>();
   const offerRetries = new Map<string, number>();
   const offerRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const MAX_OFFER_RETRIES = 2;
-  const OFFER_RETRY_MS = 8_000;
+  /** Initial offer + this many recreations while the peer stays on the roster. */
+  const MAX_OFFER_RETRIES = 5;
+  const OFFER_RETRY_MS = 5_000;
+  const FAILED_RECOVERY_MS = 1_500;
   /** High-water mark before we wait for bufferedamountlow (bytes). */
   const BUFFER_HIGH = 256 * 1024;
   const BUFFER_LOW = 64 * 1024;
@@ -234,24 +248,28 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     offerRetryTimers.delete(peerId);
   };
 
-  const scheduleOfferRetry = (peerId: string): void => {
+  const scheduleOfferRetry = (
+    peerId: string,
+    delayMs: number = OFFER_RETRY_MS,
+  ): void => {
     clearOfferRetry(peerId);
+    if (!signalingRoster.has(peerId)) return;
     const attempts = offerRetries.get(peerId) ?? 0;
     if (attempts >= MAX_OFFER_RETRIES) return;
     offerRetryTimers.set(
       peerId,
       setTimeout(() => {
         offerRetryTimers.delete(peerId);
+        if (!signalingRoster.has(peerId)) return;
         const entry = peerConnections.get(peerId);
-        if (!entry?.initiator) return;
-        if (entry.channel?.readyState === "open") return;
+        if (entry?.channel?.readyState === "open") return;
         offerRetries.set(peerId, attempts + 1);
         if (options.onDiagnostic) {
           options.onDiagnostic(`offer-retry(${peerId})=${attempts + 1}`);
         }
-        closePeer(peerId, entry);
+        if (entry) closePeer(peerId, entry);
         createPeer(peerId, true);
-      }, OFFER_RETRY_MS),
+      }, delayMs),
     );
   };
 
@@ -307,13 +325,42 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     pc.addEventListener("connectionstatechange", () => {
       if (peerConnections.get(peerId) !== entry) return;
       if (options.onDiagnostic) options.onDiagnostic(`pc(${peerId})=${pc.connectionState}`);
-      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+      if (pc.connectionState === "failed") {
+        const wasInitiator = entry.initiator;
+        closePeer(peerId, entry);
+        // Failed PC used to clear retries and leave the guest stuck with
+        // signaling peers but no data channel. Re-offer while roster still has them.
+        if (wasInitiator && signalingRoster.has(peerId)) {
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`pc-failed-recover(${peerId})`);
+          }
+          scheduleOfferRetry(peerId, FAILED_RECOVERY_MS);
+        }
+        return;
+      }
+      if (pc.connectionState === "closed") {
         closePeer(peerId, entry);
       }
     });
     pc.addEventListener("iceconnectionstatechange", () => {
+      if (peerConnections.get(peerId) !== entry) return;
+      const iceState = (pc as RTCPeerConnection).iceConnectionState;
       if (options.onDiagnostic) {
-        options.onDiagnostic(`ice(${peerId})=${(pc as RTCPeerConnection).iceConnectionState}`);
+        options.onDiagnostic(`ice(${peerId})=${iceState}`);
+      }
+      // Soft disconnect: try ICE restart before giving up (initiator only).
+      if (iceState === "disconnected" && entry.initiator) {
+        try {
+          const restart = (pc as RTCPeerConnection & {restartIce?: () => void}).restartIce;
+          if (typeof restart === "function") {
+            restart.call(pc);
+            if (options.onDiagnostic) {
+              options.onDiagnostic(`ice-restart(${peerId})`);
+            }
+          }
+        } catch {
+          // ignore; offer retry / failed path will recover
+        }
       }
     });
     if (initiator) {
@@ -357,6 +404,13 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
     try {
       let entry = peerConnections.get(from);
       if (data?.description?.type === "offer") {
+        // Already connected — ignore renegotiation noise.
+        if (entry?.channel?.readyState === "open") {
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`offer-ignore-open(${from})`);
+          }
+          return;
+        }
         // Glare: both sides offered. Keep the lexicographically smaller id's offer.
         if (entry?.initiator) {
           if (shouldInitiateOffer(localPeerId, from)) {
@@ -367,6 +421,14 @@ export function createWebRtcTransport(options: WebRtcTransportOptions): CollabTr
           }
           if (options.onDiagnostic) {
             options.onDiagnostic(`glare-yield(${from})`);
+          }
+          closePeer(from, entry);
+          entry = undefined;
+        } else if (entry) {
+          // Stale answerer PC (ICE failed / never opened): always recreate
+          // so a host re-offer can complete instead of setRemoteDescription failing.
+          if (options.onDiagnostic) {
+            options.onDiagnostic(`answerer-recreate(${from})`);
           }
           closePeer(from, entry);
           entry = undefined;

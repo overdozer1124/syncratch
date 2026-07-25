@@ -421,7 +421,7 @@ describe("createWebRtcTransport signaling wiring", () => {
     expect(onSignalingError).toHaveBeenCalledWith("duplicate_peer");
   });
 
-  it("uses default STUN servers when iceServers are omitted", () => {
+  it("uses default STUN+TURN servers when iceServers are omitted", () => {
     FakeSocket.instances = [];
     let config: RTCConfiguration | undefined;
     const transport = createWebRtcTransport({
@@ -444,9 +444,107 @@ describe("createWebRtcTransport signaling wiring", () => {
     socket.open();
     socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
     expect(config?.iceServers?.length).toBeGreaterThan(0);
-    expect(
-      JSON.stringify(config?.iceServers).includes("stun.l.google.com"),
-    ).toBe(true);
+    const serialized = JSON.stringify(config?.iceServers);
+    expect(serialized.includes("stun.l.google.com")).toBe(true);
+    expect(serialized.includes("turn:")).toBe(true);
+  });
+
+  it("re-offers after connectionState failed while peer stays on signaling roster", async () => {
+    vi.useFakeTimers();
+    FakeSocket.instances = [];
+    const created: ReturnType<typeof fakePeerConnection>[] = [];
+    const onDiagnostic = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      onDiagnostic,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: () => {
+        const pc = fakePeerConnection();
+        created.push(pc);
+        return pc;
+      },
+    });
+    transport.connect("peer-a", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: ["peer-b"]});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(created).toHaveLength(1);
+
+    const failedPc = created[0]!;
+    const onState = failedPc.addEventListener.mock.calls.find(
+      ([event]) => event === "connectionstatechange",
+    )?.[1] as () => void;
+    (failedPc as {connectionState: string}).connectionState = "failed";
+    onState();
+    expect(onDiagnostic).toHaveBeenCalledWith("pc-failed-recover(peer-b)");
+
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(created.length).toBeGreaterThanOrEqual(2);
+    transport.disconnect();
+    vi.useRealTimers();
+  });
+
+  it("recreates a stale answerer PC when a new offer arrives", async () => {
+    FakeSocket.instances = [];
+    const created: ReturnType<typeof fakePeerConnection>[] = [];
+    const onDiagnostic = vi.fn();
+    const transport = createWebRtcTransport({
+      signalingUrl: "ws://127.0.0.1:9999/signal",
+      topic: TOPIC,
+      pingIntervalMs: 0,
+      iceServers: [],
+      onDiagnostic,
+      WebSocketImpl: (url) => new FakeSocket(url),
+      createPeerConnection: () => {
+        const pc = fakePeerConnection();
+        created.push(pc);
+        return pc;
+      },
+    });
+    transport.connect("peer-z", {
+      onStatus: vi.fn(),
+      onPeerOpen: vi.fn(),
+      onPeerClose: vi.fn(),
+      onMessage: vi.fn(),
+    });
+    const socket = FakeSocket.instances[0]!;
+    socket.open();
+    socket.message({t: "joined", topic: TOPIC, peers: []});
+
+    socket.message({
+      t: "signal",
+      topic: TOPIC,
+      from: "peer-a",
+      data: {description: {type: "offer", sdp: "offer-1"}},
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(created).toHaveLength(1);
+
+    socket.message({
+      t: "signal",
+      topic: TOPIC,
+      from: "peer-a",
+      data: {description: {type: "offer", sdp: "offer-2"}},
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(created).toHaveLength(2);
+    expect(onDiagnostic).toHaveBeenCalledWith("answerer-recreate(peer-a)");
+    expect(created[1]!.setRemoteDescription).toHaveBeenCalledWith({
+      type: "offer",
+      sdp: "offer-2",
+    });
   });
 
   it("chunks large data-channel payloads and reassembles on receive", async () => {

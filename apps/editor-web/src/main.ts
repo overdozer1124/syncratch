@@ -163,6 +163,7 @@ import {
   type CollabInvite,
 } from "@blocksync/collab-invite";
 import {createWebRtcProvider} from "@blocksync/collab-webrtc";
+import {parseCollabIceServers} from "./collab-ice-servers.js";
 import {
   createCollabSession,
   evaluateCollabReadiness,
@@ -1029,6 +1030,9 @@ function markDirty(): void {
 const signalingUrl = resolveCollabSignalingUrl(
   import.meta.env.VITE_COLLAB_SIGNALING_URL,
 );
+const collabIceServers = parseCollabIceServers(
+  import.meta.env.VITE_COLLAB_ICE_SERVERS,
+);
 
 function randomParticipantId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(12));
@@ -1316,6 +1320,7 @@ async function startCollaboration(
       ...config,
       signalingUrl,
       topic,
+      ...(collabIceServers ? {iceServers: collabIceServers} : {}),
       onDiagnostic: message => {
         console.info(`[collab:${participantId}] ${message}`);
       },
