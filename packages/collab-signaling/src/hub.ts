@@ -60,6 +60,19 @@ export function isIceCandidateSignal(record: Record<string, unknown>): boolean {
   return payload.candidate != null && payload.description == null;
 }
 
+/** True when the message carries an encrypted data-channel fallback frame. */
+export function isDataRelaySignal(record: Record<string, unknown>): boolean {
+  if (record.t !== "signal") return false;
+  const data = record.data;
+  if (typeof data !== "object" || data === null || Array.isArray(data)) return false;
+  return typeof (data as Record<string, unknown>).relay === "string";
+}
+
+/** ICE candidates + data-relay frames must not trip the hard disconnect limit. */
+export function isRateExemptSignal(record: Record<string, unknown>): boolean {
+  return isIceCandidateSignal(record) || isDataRelaySignal(record);
+}
+
 export interface SignalingHubOptions extends Partial<SignalingLimits> {
   now?: () => number;
 }
@@ -150,10 +163,10 @@ export class SignalingHub {
     }
     const record = msg as Record<string, unknown>;
 
-    // ICE candidate storms are normal during WebRTC setup (especially with TURN).
+    // ICE candidate storms and encrypted data-relay frames are high volume.
     // Counting them toward the hard disconnect limit drops the signaling socket
-    // mid-handshake and leaves guests stuck "receiving".
-    const countsTowardRate = !isIceCandidateSignal(record);
+    // mid-handshake / mid-sync and leaves guests stuck "receiving".
+    const countsTowardRate = !isRateExemptSignal(record);
     if (countsTowardRate) {
       if (now - member.rateWindowStartedAt >= this.limits.rateWindowMs) {
         member.rateWindowStartedAt = now;
