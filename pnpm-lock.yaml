@@ -74,6 +74,9 @@ importers:
       '@blocksync/project-local-core':
         specifier: workspace:*
         version: link:../../packages/project-local-core
+      '@blocksync/project-schema':
+        specifier: workspace:*
+        version: link:../../packages/project-schema
       '@blocksync/project-store-idb':
         specifier: workspace:*
         version: link:../../packages/project-store-idb
@@ -84,9 +87,6 @@ importers:
         specifier: ^13.6.27
         version: 13.6.31
     devDependencies:
-      '@blocksync/project-schema':
-        specifier: workspace:*
-        version: link:../../packages/project-schema
       '@playwright/test':
         specifier: ^1.52.0
         version: 1.61.1
