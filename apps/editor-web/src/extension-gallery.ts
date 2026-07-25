@@ -4,6 +4,7 @@ import {
   type ExtensionKind,
 } from "@blocksync/project-schema";
 import {staticAssetUrl} from "./static-url.js";
+import {ensureRuntimeFormatMessage} from "./xcratch-format-message.js";
 
 export type ExtensionLoadMode = "builtin" | "module" | "loader" | "unavailable";
 
@@ -332,6 +333,8 @@ export async function loadExtensionModuleUrl(
     return expectedId ?? resolvedUrl;
   }
 
+  // Xcratch modules call formatMessage.setup() via runtime.formatMessage.
+  ensureRuntimeFormatMessage(vm.runtime);
   const instance = new BlockClass(vm.runtime);
   const info = instance.getInfo();
   const extensionId = info?.id || expectedId || mod.entry?.extensionId;
