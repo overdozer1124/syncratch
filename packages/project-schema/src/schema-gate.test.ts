@@ -769,11 +769,78 @@ describe("extension opcode declaration (§6.6.1)", () => {
   });
 
   it("rejects disallowed extension id in project.extensions", () => {
-    const doc = musicBlockDoc(["wedo2"]);
+    const doc = musicBlockDoc(["notInDefaultCatalog"]);
     expect(
       validateProject(doc).issues.some(
         (i) => i.code === "DISALLOWED_EXTENSION_ID",
       ),
+    ).toBe(true);
+  });
+
+  it("accepts Stretch3/Xcratch default gallery extension ids", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: ["wedo2", "ml2scratch", "g2s"],
+      monitors: [],
+      targets: [v2Sprite()],
+    };
+    expect(
+      validateProject(doc).issues.some(
+        (i) => i.code === "DISALLOWED_EXTENSION_ID",
+      ),
+    ).toBe(false);
+    expect(validateProject(doc).ok).toBe(true);
+  });
+
+  it("accepts prefix opcodes for curated default extensions when declared", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: ["ml2scratch"],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            m: {
+              id: "m",
+              opcode: "ml2scratch_classify",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "UNKNOWN_OPCODE"),
+    ).toBe(false);
+  });
+
+  it("rejects prefix opcodes for curated extensions when not declared", () => {
+    const doc: ProjectDocument = {
+      schemaVersion: 2,
+      extensions: [],
+      monitors: [],
+      targets: [
+        v2Sprite({
+          blocks: {
+            m: {
+              id: "m",
+              opcode: "ml2scratch_classify",
+              next: null,
+              parent: null,
+              inputs: {},
+              fields: {},
+              topLevel: true,
+            },
+          },
+        }),
+      ],
+    };
+    expect(
+      validateProject(doc).issues.some((i) => i.code === "UNKNOWN_OPCODE"),
     ).toBe(true);
   });
 });

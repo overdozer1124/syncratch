@@ -35,7 +35,10 @@ describe("generate-scratch-opcodes --check contract", () => {
     const generated = generate();
     const tampered = {
       ...generated,
-      allowedExtensionIds: [...generated.allowedExtensionIds, "wedo2"],
+      allowedExtensionIds: [
+        ...generated.allowedExtensionIds,
+        "notInDefaultCatalog",
+      ],
     };
     expect(artifactsEqual(generated, tampered)).toBe(false);
   });
