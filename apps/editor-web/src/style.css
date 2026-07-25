@@ -6,6 +6,13 @@
   --sc-card-border: #e3ebf3;
   --sc-accent-ai: #6b57c9;
   --sc-underline: #ffd34d;
+  /* AI reply surface: light, high-contrast (not gray-on-gray). */
+  --sc-ai-thread-bg: #e8f2fb;
+  --sc-ai-thread-border: #b7d0e8;
+  --sc-ai-user-bg: #ffffff;
+  --sc-ai-user-border: #9ec2e3;
+  --sc-ai-assistant-bg: #fffdf6;
+  --sc-ai-assistant-border: #d7e4f0;
   /* Match upstream Scratch menu-bar height (menu-bar.css uses 3rem). */
   --sc-toolbar-height: 3rem;
   /* Stacking: Scratch menu-bar 491 < toolbar < menus/panels < Scratch modals < Drive picker */
@@ -1507,13 +1514,14 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .ai-answer-pager {
   margin-top: 4px;
-  padding: 10px;
-  border: 1px solid rgb(255 255 255 / 28%);
-  border-radius: 8px;
-  background: rgb(0 0 0 / 12%);
+  padding: 12px;
+  border: 1px solid var(--sc-ai-thread-border);
+  border-radius: 14px;
+  background: var(--sc-ai-thread-bg);
+  color: var(--sc-ink);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .ai-answer-pager[hidden] {
@@ -1529,20 +1537,29 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .ai-pager-nav button {
   flex: 1 1 auto;
-  min-height: 2rem;
-  padding: 4px 8px;
-  border: 1px solid rgb(0 0 0 / 18%);
-  border-radius: 8px;
-  background: #fffef6;
-  color: #16324f;
+  min-height: 2.1rem;
+  padding: 4px 10px;
+  border: 1.5px solid var(--syncratch-chrome);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--syncratch-chrome-dark);
   font: inherit;
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.8rem;
+  font-weight: 750;
   cursor: pointer;
 }
 
+.ai-pager-nav button:hover:not(:disabled),
+.ai-pager-nav button:focus-visible {
+  background: #fff8d6;
+  outline: 2px solid var(--sc-underline);
+  outline-offset: 1px;
+}
+
 .ai-pager-nav button:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
+  border-color: #9aaec2;
+  color: #5f7690;
   cursor: not-allowed;
 }
 
@@ -1550,17 +1567,19 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   flex: 0 0 auto;
   min-width: 3.5rem;
   text-align: center;
-  font-size: 0.78rem;
-  font-weight: 750;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--syncratch-chrome-dark);
 }
 
 .ai-thread {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   flex: 1 1 auto;
   min-height: min(38vh, 300px);
   overflow: auto;
+  padding: 2px;
 }
 
 .ai-floating-panel.ai-panel--answering .ai-thread {
@@ -1572,28 +1591,36 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .ai-thread-turn {
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   word-break: break-word;
-  font-size: 0.9rem;
-  line-height: 1.4;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--sc-ink);
 }
 
 .ai-thread-turn-user {
-  background: rgb(255 255 255 / 14%);
+  background: var(--sc-ai-user-bg);
+  border-color: var(--sc-ai-user-border);
+  box-shadow: 0 1px 0 rgb(15 77 122 / 6%);
 }
 
 .ai-thread-turn-assistant {
-  background: rgb(0 0 0 / 22%);
+  background: var(--sc-ai-assistant-bg);
+  border-color: var(--sc-ai-assistant-border);
   font-size: 0.95rem;
-  line-height: 1.45;
+  line-height: 1.5;
+  box-shadow: 0 1px 0 rgb(15 45 80 / 5%);
 }
 
 .ai-thread-role {
-  margin: 0 0 4px;
+  margin: 0 0 5px;
   font-size: 0.72rem;
-  font-weight: 750;
-  opacity: 0.9;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--syncratch-chrome-dark);
+  opacity: 1;
 }
 
 .ai-answer {
@@ -1626,10 +1653,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .ai-diagram {
   margin: 0 0 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--sc-card-border);
-  border-radius: 8px;
-  background: #fff;
+  padding: 10px 12px;
+  border: 1px solid var(--sc-ai-thread-border);
+  border-radius: 10px;
+  background: #ffffff;
 }
 
 .ai-diagram:last-child {
@@ -1639,9 +1666,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 .ai-diagram-title {
   margin: 0 0 6px;
   font-size: 0.78rem;
-  font-weight: 750;
+  font-weight: 800;
   letter-spacing: 0.02em;
-  opacity: 0.95;
+  color: var(--syncratch-chrome-dark);
+  opacity: 1;
 }
 
 .ai-diagram-body {
