@@ -776,13 +776,13 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 /* Official Drive mark reads best on a light chip; mute with grayscale. */
 .status-icon--drive {
-  border-radius: 12px;
+  border-radius: 0.55rem;
   background: rgb(255 255 255 / 94%);
 }
 
 .status-icon-drive-logo {
-  width: 22px;
-  height: 22px;
+  width: 1.1rem;
+  height: 1.1rem;
   display: block;
   object-fit: contain;
 }
@@ -1000,11 +1000,11 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 .tool-panel[open] summary::before {
   content: "";
   position: absolute;
-  left: 14px;
-  right: 8px;
-  bottom: -1px;
-  height: 3px;
-  border-radius: 3px;
+  left: 0.7rem;
+  right: 0.45rem;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
   background: var(--sc-underline);
 }
 
@@ -1695,17 +1695,17 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 @media (max-width: 480px) {
   .title-field {
-    height: 40px;
+    height: 1.85rem;
   }
 
   .toolbar-action,
   .tool-panel summary {
-    height: 40px;
-    min-height: 40px;
+    height: 1.85rem;
+    min-height: 1.85rem;
   }
 
   .app-brand {
-    font-size: 18px;
+    font-size: 1rem;
   }
 
   .toolbar-action,
@@ -1885,7 +1885,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
  * menu-bar painting and keep the unified Syncratch header blue.
  */
 
-/* One Syncratch-blue menu bar: match redesigned toolbar height/paint. */
+/* One Syncratch-blue menu bar: keep Scratch's 3rem height, paint to match. */
 #scratch-gui header[role="banner"],
 #scratch-gui [class*="menu-bar_menu-bar_"] {
   height: var(--sc-toolbar-height) !important;
