@@ -2728,3 +2728,33 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
     transition: width 120ms ease;
   }
 }
+
+/* Execution controls (pause / single-frame step) */
+.exec-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.35rem;
+}
+
+.exec-control-button[aria-pressed="true"] {
+  background: #ffe9b8;
+  box-shadow: inset 0 0 0 2px #e0a01a;
+}
+
+.exec-control-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.exec-control-status {
+  font-size: 0.8rem;
+  color: var(--syncratch-chrome-dark);
+  white-space: nowrap;
+}
+
+/* Paused: keep the glowing block readable against the stage. */
+.exec-control[data-state="paused"] .exec-control-status {
+  font-weight: 700;
+  color: #9a5b00;
+}

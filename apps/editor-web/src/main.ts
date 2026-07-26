@@ -235,6 +235,10 @@ import {
 } from "./scratch-workspace.js";
 import {installProjectExtensionLoader} from "./extension-project-load.js";
 import {ensureTurbowarpVmCompat} from "./turbowarp-vm-compat.js";
+import {
+  installExecutionControl,
+  type ExecutionController,
+} from "./execution-control.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
@@ -413,6 +417,10 @@ const fileInput = requiredElement<HTMLInputElement>("open-file");
 const downloadButton = requiredElement<HTMLButtonElement>("download-project");
 const saveButton = requiredElement<HTMLButtonElement>("save-project");
 const retryButton = requiredElement<HTMLButtonElement>("retry-save");
+const execControlGroup = requiredElement<HTMLElement>("exec-control");
+const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
+const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
+const execStatus = requiredElement<HTMLElement>("exec-status");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
@@ -2046,6 +2054,7 @@ async function getVm(): Promise<ScratchVm> {
         });
         setGuiLoadingVisible(guiHost, false);
         setGuiSplashVisible(guiSplash, false);
+        installExecutionControls(vmInstance);
         installScratchNativeMenus(state, vmInstance);
         installFlyoutLayout({
           root: guiHost,
@@ -2122,6 +2131,80 @@ function installScratchNativeMenus(
   });
   ensureBlockUndoKeepAlive();
   installDefaultExtensionGallery(state, scratchVm);
+}
+
+let executionController: ExecutionController | null = null;
+
+/** scratch-blocks builds this filter at inject time (src/glows.ts). */
+const BLOCK_GLOW_FILTER = "url(#blocklyStackGlowFilter)";
+let glowingBlockRoots: SVGElement[] = [];
+
+/**
+ * Paint "currently running" on specific blocks.
+ *
+ * Not via `runtime.glowBlock`: the GUI's BLOCK_GLOW_ON/OFF handlers are no-ops
+ * in this scratch-gui, so that route lights nothing up. `glowStack` is the
+ * script-level equivalent and throws for blocks that are not on the workspace,
+ * so the filter is applied directly to the block's SVG root instead.
+ */
+function highlightExecutingBlocks(blockIds: string[]): void {
+  for (const root of glowingBlockRoots) {
+    root.removeAttribute("filter");
+  }
+  glowingBlockRoots = [];
+  if (blockIds.length === 0) return;
+
+  const workspace = scratchWorkspace() as {
+    getBlockById?: (id: string) => {getSvgRoot?: () => SVGElement} | null;
+  } | null;
+  if (!workspace?.getBlockById) return;
+
+  for (const id of blockIds) {
+    const root = workspace.getBlockById(id)?.getSvgRoot?.();
+    if (!root) continue;
+    root.setAttribute("filter", BLOCK_GLOW_FILTER);
+    glowingBlockRoots.push(root);
+  }
+}
+
+/**
+ * Wire the toolbar pause / step buttons to the VM.
+ *
+ * Kept best-effort: if the runtime shape ever stops matching, the editor must
+ * still boot, so a failure here only hides the controls.
+ */
+function installExecutionControls(vmInstance: ScratchVm): void {
+  executionController?.dispose();
+  const controller = installExecutionControl(
+    vmInstance as unknown as {runtime?: unknown},
+    {highlight: highlightExecutingBlocks},
+  );
+  if (!controller) {
+    execControlGroup.hidden = true;
+    return;
+  }
+  executionController = controller;
+  execControlGroup.hidden = false;
+
+  const render = () => {
+    const {state} = controller.getSnapshot();
+    const paused = state === "paused";
+    execControlGroup.dataset.state = state;
+    execPauseButton.textContent = paused ? "再開" : "一時停止";
+    execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
+    execStatus.textContent = paused ? "止まっています" : "動いています";
+  };
+
+  controller.subscribe(render);
+  execPauseButton.addEventListener("click", () => {
+    const {state} = controller.getSnapshot();
+    if (state === "paused") controller.resume();
+    else controller.pause();
+  });
+  execStepButton.addEventListener("click", () => {
+    controller.stepFrame();
+  });
+  render();
 }
 
 function installDefaultExtensionGallery(

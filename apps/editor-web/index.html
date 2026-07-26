@@ -663,6 +663,35 @@
             type="button"
             hidden
           >もう一度保存</button>
+          <div
+            class="exec-control"
+            role="group"
+            aria-label="プログラムの実行"
+            data-testid="exec-control"
+            id="exec-control"
+            hidden
+          >
+            <button
+              class="toolbar-action exec-control-button"
+              data-testid="exec-pause"
+              id="exec-pause"
+              type="button"
+              aria-pressed="false"
+            >一時停止</button>
+            <button
+              class="toolbar-action exec-control-button"
+              data-testid="exec-step"
+              id="exec-step"
+              type="button"
+            >1コマ進む</button>
+            <span
+              class="exec-control-status"
+              data-testid="exec-status"
+              id="exec-status"
+              role="status"
+              aria-live="polite"
+            >動いています</span>
+          </div>
         </div>
       </div>
       <section
