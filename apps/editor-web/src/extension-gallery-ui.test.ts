@@ -66,7 +66,7 @@ describe("extension gallery UI", () => {
     ui.dispose();
   });
 
-  it("filters the grid when a category tab is selected", () => {
+  it("filters the grid when a use-case topic tab is selected", () => {
     const ui = createExtensionGalleryUi({
       getVm: () => null,
     });
@@ -76,32 +76,43 @@ describe("extension gallery UI", () => {
     );
     expect(filters).toBeTruthy();
     const tabs = filters?.querySelectorAll(".extension-gallery-filter") ?? [];
-    expect(tabs.length).toBeGreaterThanOrEqual(4);
+    expect(tabs.length).toBeGreaterThanOrEqual(6);
 
-    const turbowarp = [...tabs].find(
-      tab => (tab as HTMLElement).dataset.filterId === "turbowarp",
+    const mlTab = [...tabs].find(
+      tab => (tab as HTMLElement).dataset.filterId === "ml",
     ) as HTMLButtonElement | undefined;
-    expect(turbowarp).toBeTruthy();
-    turbowarp!.click();
+    expect(mlTab).toBeTruthy();
+    mlTab!.click();
 
-    expect(ui.getFilter()).toBe("turbowarp");
-    const activeTurbowarp = document.querySelector<HTMLButtonElement>(
-      ".extension-gallery-filter[data-filter-id='turbowarp']",
+    expect(ui.getFilter()).toBe("ml");
+    const activeMl = document.querySelector<HTMLButtonElement>(
+      ".extension-gallery-filter[data-filter-id='ml']",
     );
-    expect(activeTurbowarp?.classList.contains("is-active")).toBe(true);
-    expect(activeTurbowarp?.getAttribute("aria-selected")).toBe("true");
+    expect(activeMl?.classList.contains("is-active")).toBe(true);
+    expect(activeMl?.getAttribute("aria-selected")).toBe("true");
 
     const cards = [
       ...document.querySelectorAll<HTMLElement>(".extension-gallery-card"),
     ];
     expect(cards.length).toBeGreaterThan(0);
-    expect(cards.some(card => card.dataset.extensionKey === "fetch")).toBe(
+    expect(cards.some(card => card.dataset.extensionKey === "ml2scratch")).toBe(
       true,
     );
-    // Builtin Scratch music should not appear under TurboWarp-only filter.
-    expect(cards.some(card => card.dataset.extensionKey === "music")).toBe(
+    // Network-only Fetch should not appear under ML.
+    expect(cards.some(card => card.dataset.extensionKey === "fetch")).toBe(
       false,
     );
+
+    ui.setFilter("design");
+    const designCards = [
+      ...document.querySelectorAll<HTMLElement>(".extension-gallery-card"),
+    ];
+    expect(
+      designCards.some(card => card.dataset.extensionKey === "betterpen"),
+    ).toBe(true);
+    expect(
+      designCards.some(card => card.dataset.extensionKey === "ml2scratch"),
+    ).toBe(false);
 
     ui.setFilter("all");
     expect(ui.getFilter()).toBe("all");
