@@ -3,9 +3,10 @@
  * 1. Collapse / expand the continuous flyout while keeping the category rail
  * 2. Temporarily widen the flyout on hover so clipped long blocks are visible
  *
- * Scratch Blocks hard-codes CheckableContinuousFlyout.getWidth() = 250. Metrics
- * (ContinuousMetrics) read that value, so width changes must go through getWidth
- * + workspace.resize() — CSS-only widening desyncs the workspace origin.
+ * Important: ContinuousMetrics reads flyout.getWidth() to place the workspace
+ * origin. Hover-expand MUST NOT change getWidth() / workspace.resize(), or
+ * placed blocks slide sideways. Hover widening is a visual overlay only.
+ * Collapse still uses getWidth() === 0 + setVisible(false).
  */
 
 export const DEFAULT_FLYOUT_WIDTH_PX = 250;
@@ -48,6 +49,41 @@ export function clampFlyoutWidth(widthPx: number): number {
     MAX_FLYOUT_WIDTH_PX,
     Math.max(DEFAULT_FLYOUT_WIDTH_PX, Math.ceil(widthPx)),
   );
+}
+
+/**
+ * Width reported to Blockly metrics / getWidth().
+ * Hover-expand is intentionally ignored so the workspace origin stays put.
+ */
+export function computeMetricsFlyoutWidth(options: {
+  collapsed: boolean;
+  defaultWidthPx?: number;
+}): number {
+  if (options.collapsed) return 0;
+  return options.defaultWidthPx ?? DEFAULT_FLYOUT_WIDTH_PX;
+}
+
+/** Visible flyout width (may overlay the workspace when hover-expanded). */
+export function computeVisualFlyoutWidth(options: {
+  collapsed: boolean;
+  hoverExpanded: boolean;
+  contentWidthPx: number;
+  defaultWidthPx?: number;
+}): number {
+  if (options.collapsed) return 0;
+  const base = options.defaultWidthPx ?? DEFAULT_FLYOUT_WIDTH_PX;
+  if (!options.hoverExpanded) return base;
+  return clampFlyoutWidth(Math.max(base, options.contentWidthPx));
+}
+
+/** @deprecated Use computeVisualFlyoutWidth / computeMetricsFlyoutWidth. */
+export function computeFlyoutDisplayWidth(options: {
+  collapsed: boolean;
+  hoverExpanded: boolean;
+  contentWidthPx: number;
+  defaultWidthPx?: number;
+}): number {
+  return computeVisualFlyoutWidth(options);
 }
 
 /**
@@ -95,33 +131,39 @@ export function measureFlyoutContentWidthPx(
   return DEFAULT_FLYOUT_WIDTH_PX;
 }
 
-export function computeFlyoutDisplayWidth(options: {
-  collapsed: boolean;
-  hoverExpanded: boolean;
-  contentWidthPx: number;
-  defaultWidthPx?: number;
-}): number {
-  if (options.collapsed) return 0;
-  const base = options.defaultWidthPx ?? DEFAULT_FLYOUT_WIDTH_PX;
-  if (!options.hoverExpanded) return base;
-  return clampFlyoutWidth(Math.max(base, options.contentWidthPx));
-}
-
-/**
- * Collapse-toggle X position. Always anchored to the *default* flyout edge
- * while open — not the hover-expanded edge — so the button does not slide
- * away to the right when long blocks temporarily widen the list.
- */
+/** Collapse-toggle X follows the *visual* flyout edge. */
 export function computeToggleEdgeX(options: {
   collapsed: boolean;
   toolboxRightPx: number;
-  defaultFlyoutWidthPx?: number;
+  visualFlyoutWidthPx: number;
 }): number {
   if (options.collapsed) return options.toolboxRightPx;
-  return (
-    options.toolboxRightPx +
-    (options.defaultFlyoutWidthPx ?? DEFAULT_FLYOUT_WIDTH_PX)
-  );
+  return options.toolboxRightPx + options.visualFlyoutWidthPx;
+}
+
+/** Apply / clear the hover overlay width on the flyout SVG (metrics untouched). */
+export function applyFlyoutVisualOverlay(
+  flyoutSvg: SVGElement | null | undefined,
+  options: {expanded: boolean; widthPx: number},
+): void {
+  if (!flyoutSvg) return;
+  flyoutSvg.classList.toggle("syncratch-flyout-expanded", options.expanded);
+  if (options.expanded) {
+    const w = String(Math.max(DEFAULT_FLYOUT_WIDTH_PX, options.widthPx));
+    flyoutSvg.setAttribute("width", w);
+    flyoutSvg.style.width = `${w}px`;
+    flyoutSvg.style.overflow = "visible";
+    // Blockly background / clip often live on the first rect / clipPath.
+    const bg = flyoutSvg.querySelector<SVGRectElement>("rect.blocklyFlyoutBackground");
+    if (bg) bg.setAttribute("width", w);
+    for (const clip of flyoutSvg.querySelectorAll("clipPath rect, .blocklyFlyoutClip")) {
+      if (clip instanceof SVGRectElement) clip.setAttribute("width", w);
+    }
+  } else {
+    flyoutSvg.style.width = "";
+    flyoutSvg.style.overflow = "";
+    // Let Blockly position() restore the default width attribute next layout.
+  }
 }
 
 function resolveFlyout(workspace: WorkspaceWithFlyout | null): FlyoutLike | null {
@@ -145,14 +187,13 @@ function findToolboxDiv(root: ParentNode): HTMLElement | null {
   return root.querySelector<HTMLElement>(".blocklyToolboxDiv");
 }
 
-/** True when the pointer is over the flyout content (not the collapse toggle). */
 function isFlyoutHoverTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  // Intentionally exclude `.syncratch-flyout-toggle`: including it kept
-  // hover-expand latched because the toggle used to ride the expanded edge.
   return Boolean(
     target.closest("svg.blocklyFlyout") ||
-      target.closest(".blocklyFlyoutScrollbar"),
+      target.closest(".blocklyFlyoutScrollbar") ||
+      // Toggle rides the visual edge; keep expand while aiming for it.
+      target.closest(".syncratch-flyout-toggle"),
   );
 }
 
@@ -174,6 +215,7 @@ export function installFlyoutLayout(options: {
   let disposed = false;
   let attachTimer: ReturnType<typeof setTimeout> | null = null;
   let toolboxEl: HTMLElement | null = null;
+  let lastMetricsWidth = DEFAULT_FLYOUT_WIDTH_PX;
 
   let host: HTMLElement =
     findBlocksHost(options.root) ??
@@ -187,7 +229,6 @@ export function installFlyoutLayout(options: {
   toggle.className = "syncratch-flyout-toggle";
   toggle.dataset.testid = "flyout-collapse-toggle";
   toggle.setAttribute("aria-controls", "syncratch-block-flyout");
-  // Mount on body so fixed positioning is never clipped by Blockly overflow.
   documentRef.body.append(toggle);
 
   function ensureHost(): void {
@@ -227,6 +268,13 @@ export function installFlyoutLayout(options: {
     if (!flyout) return;
     ensureHost();
 
+    const metricsWidth = computeMetricsFlyoutWidth({collapsed});
+    const visualWidth = computeVisualFlyoutWidth({
+      collapsed,
+      hoverExpanded,
+      contentWidthPx,
+    });
+
     if (patchedFlyout !== flyout) {
       if (patchedFlyout && originalGetWidth) {
         patchedFlyout.getWidth = originalGetWidth;
@@ -234,12 +282,8 @@ export function installFlyoutLayout(options: {
       originalGetWidth =
         flyout.getWidth?.bind(flyout) ?? (() => DEFAULT_FLYOUT_WIDTH_PX);
       patchedFlyout = flyout;
-      flyout.getWidth = () =>
-        computeFlyoutDisplayWidth({
-          collapsed,
-          hoverExpanded,
-          contentWidthPx,
-        });
+      // Metrics width only — never the hover-expanded visual width.
+      flyout.getWidth = () => computeMetricsFlyoutWidth({collapsed});
     }
 
     if (typeof flyout.setVisible === "function") {
@@ -249,19 +293,27 @@ export function installFlyoutLayout(options: {
       }
     }
 
+    const metricsChanged = metricsWidth !== lastMetricsWidth;
+    lastMetricsWidth = metricsWidth;
+
     try {
+      // Reflow/position always OK; resize only when metrics width changes
+      // (collapse/expand). Hover overlay must not call workspace.resize().
       flyout.reflow?.();
       flyout.position?.();
-      workspace?.resize?.();
+      if (metricsChanged) {
+        workspace?.resize?.();
+      }
     } catch {
       // Blockly may throw during teardown / mid-gesture.
     }
 
     const flyoutSvg = findFlyoutSvg(options.root);
-    if (flyoutSvg) {
-      flyoutSvg.id = "syncratch-block-flyout";
-      flyoutSvg.classList.toggle("syncratch-flyout-expanded", hoverExpanded);
-    }
+    if (flyoutSvg) flyoutSvg.id = "syncratch-block-flyout";
+    applyFlyoutVisualOverlay(flyoutSvg, {
+      expanded: hoverExpanded && !collapsed,
+      widthPx: visualWidth,
+    });
 
     const toolbox = findToolboxDiv(options.root);
     if (toolbox && toolbox !== toolboxEl) {
@@ -270,17 +322,9 @@ export function installFlyoutLayout(options: {
       toolboxEl.addEventListener("click", onCategoryClick);
     }
     const toolboxWidth = toolbox?.getBoundingClientRect().width ?? 60;
-    const displayWidth = computeFlyoutDisplayWidth({
-      collapsed,
-      hoverExpanded,
-      contentWidthPx,
-    });
     host.style.setProperty("--syncratch-toolbox-width", `${toolboxWidth}px`);
-    host.style.setProperty("--syncratch-flyout-width", `${displayWidth}px`);
+    host.style.setProperty("--syncratch-flyout-width", `${visualWidth}px`);
 
-    // Fixed positioning avoids Blockly stacking contexts stealing clicks.
-    // Dock the toggle at the *default* flyout edge even while hover-expanded,
-    // so it does not slide right with the temporary width and "never return".
     const toolboxRect = toolbox?.getBoundingClientRect();
     const hostRect = host.getBoundingClientRect();
     const hostVisible =
@@ -298,15 +342,14 @@ export function installFlyoutLayout(options: {
     const edgeX = computeToggleEdgeX({
       collapsed,
       toolboxRightPx: toolboxRight,
+      visualFlyoutWidthPx: visualWidth,
     });
-    // Prefer the upper-middle of the toolbox column (more discoverable / less
-    // likely to sit under sprite-pane chrome on short windows).
     const columnTop = toolboxRect?.top ?? hostRect.top;
     const columnHeight = toolboxRect?.height ?? hostRect.height;
-    const midY = columnTop + Math.min(Math.max(columnHeight * 0.4, 120), 360) - 36;
+    const midY =
+      columnTop + Math.min(Math.max(columnHeight * 0.4, 120), 360) - 36;
     toggle.style.left = `${Math.round(edgeX)}px`;
     toggle.style.top = `${Math.round(midY)}px`;
-    toggle.classList.toggle("is-docked-at-default", !collapsed);
     if (!toggle.isConnected) documentRef.body.append(toggle);
     syncToggleUi();
   }
@@ -353,11 +396,9 @@ export function installFlyoutLayout(options: {
   }
 
   function onTogglePointerDown(event: Event): void {
-    // Capture early so Blockly workspace gesture handlers cannot swallow it.
     event.preventDefault();
     event.stopPropagation();
     ignoreClickUntil = Date.now() + 400;
-    // Collapse from the docked default edge; drop any hover-expand first.
     hoverExpanded = false;
     setCollapsed(!collapsed);
   }
@@ -378,7 +419,6 @@ export function installFlyoutLayout(options: {
 
   function scheduleHoverLeave(): void {
     clearLeaveTimer();
-    // Short delay so moving between flyout SVG children does not flicker.
     leaveTimer = setTimeout(() => {
       leaveTimer = null;
       onHoverLeave();
@@ -402,8 +442,6 @@ export function installFlyoutLayout(options: {
     scheduleHoverLeave();
   };
 
-  // pointerdown+click: Blockly often starts a gesture on pointerdown and
-  // prevents the subsequent click from reaching late listeners.
   toggle.addEventListener("pointerdown", onTogglePointerDown, true);
   toggle.addEventListener("click", onToggleClick);
   options.root.addEventListener("pointerover", onRootPointerOver);
@@ -418,7 +456,6 @@ export function installFlyoutLayout(options: {
       if (disposed) return;
       const flyout = resolveFlyout(options.getWorkspace());
       if (!flyout) return;
-      // Re-bind if Blockly replaced the flyout instance; keep toggle aligned.
       applyWidth();
     });
   };
@@ -461,6 +498,10 @@ export function installFlyoutLayout(options: {
       if (patchedFlyout && originalGetWidth) {
         patchedFlyout.getWidth = originalGetWidth;
       }
+      applyFlyoutVisualOverlay(findFlyoutSvg(options.root), {
+        expanded: false,
+        widthPx: DEFAULT_FLYOUT_WIDTH_PX,
+      });
       toggle.remove();
       host.classList.remove(
         "syncratch-flyout-host",
