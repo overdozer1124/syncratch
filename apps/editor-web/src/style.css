@@ -2480,11 +2480,15 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 .extension-gallery-grid {
-  display: grid;
+  /* Keep flex-wrap (not CSS grid): grid + minmax(0,1fr) squashed card
+     aspect-ratio media into thin strips. */
+  --extension-gallery-gap: 0.75rem;
+  --extension-gallery-cols: 3;
+  display: flex;
   flex: 1 1 auto;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex-wrap: wrap;
   align-content: flex-start;
-  gap: 0.75rem;
+  gap: var(--extension-gallery-gap);
   min-height: 0;
   padding: 1rem;
   overflow: auto;
@@ -2502,7 +2506,20 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .extension-gallery-card {
   display: flex;
   flex-direction: column;
-  width: 100%;
+  /* 3 columns: subtract gaps between columns, keep natural card height. */
+  flex: 0 0
+    calc(
+      (100% - (var(--extension-gallery-cols) - 1) * var(--extension-gallery-gap)) /
+        var(--extension-gallery-cols)
+    );
+  width: calc(
+    (100% - (var(--extension-gallery-cols) - 1) * var(--extension-gallery-gap)) /
+      var(--extension-gallery-cols)
+  );
+  max-width: calc(
+    (100% - (var(--extension-gallery-cols) - 1) * var(--extension-gallery-gap)) /
+      var(--extension-gallery-cols)
+  );
   min-width: 0;
   padding: 0;
   overflow: hidden;
@@ -2527,6 +2544,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .extension-gallery-card-media {
   position: relative;
   display: block;
+  flex: 0 0 auto;
   width: 100%;
   background: #d9e8f7;
 }
@@ -2534,7 +2552,9 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .extension-gallery-card-icon,
 .extension-gallery-card-icon-fallback {
   display: block;
+  flex: 0 0 auto;
   width: 100%;
+  height: auto;
   aspect-ratio: 600 / 372;
   object-fit: cover;
   background: #cfe3f6;
@@ -2563,6 +2583,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 
 .extension-gallery-card-body {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 0.25rem;
   padding: 1.75rem 1.25rem 0.5rem;
@@ -2583,6 +2604,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 .extension-gallery-card-meta {
+  flex: 0 0 auto;
   min-height: 1.1rem;
   padding: 0 1.25rem 1rem;
   font-size: 0.75rem;
@@ -2592,7 +2614,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 
 @media (max-width: 1100px) {
   .extension-gallery-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    --extension-gallery-cols: 2;
   }
 }
 
@@ -2624,7 +2646,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   }
 
   .extension-gallery-grid {
-    grid-template-columns: 1fr;
+    --extension-gallery-cols: 1;
   }
 }
 
