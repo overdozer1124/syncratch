@@ -2662,3 +2662,69 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .picker-dialog {
   z-index: 2147483647 !important;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Block flyout: collapse toggle + hover-expand for clipped long blocks.       */
+/* -------------------------------------------------------------------------- */
+
+.syncratch-flyout-host {
+  position: relative;
+}
+
+.syncratch-flyout-toggle {
+  position: fixed;
+  /* Above Scratch workspace SVG / drag surfaces; below modal/picker. */
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 72px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  background: linear-gradient(180deg, #f7f7f7 0%, #ebebeb 100%);
+  color: #4c4c4c;
+  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.12);
+  /* Sit mostly over the workspace so Blockly flyout SVG cannot steal clicks. */
+  transform: translateX(0);
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.syncratch-flyout-toggle:hover,
+.syncratch-flyout-toggle:focus-visible {
+  background: linear-gradient(180deg, #ffffff 0%, #f0f0f0 100%);
+  color: #125690;
+  outline: none;
+}
+
+.syncratch-flyout-toggle::before {
+  content: "";
+  display: block;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 6px 7px 6px 0;
+  border-color: transparent currentColor transparent transparent;
+}
+
+.syncratch-flyout-toggle.is-collapsed::before {
+  border-width: 6px 0 6px 7px;
+  border-color: transparent transparent transparent currentColor;
+}
+
+/* While hover-expanded, paint the flyout above the workspace so long blocks
+   are readable without fighting neighboring chrome. */
+#scratch-gui svg.blocklyFlyout.syncratch-flyout-expanded {
+  z-index: 30;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #scratch-gui svg.blocklyFlyout {
+    transition: width 120ms ease;
+  }
+}
