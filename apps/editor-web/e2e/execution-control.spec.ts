@@ -107,7 +107,7 @@ test("pause stops the VM and resume restarts it", async ({page}) => {
 
   await page.getByTestId("exec-pause").click();
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
-  await expect(page.getByTestId("exec-pause")).toHaveText("再開");
+  await expect(page.getByTestId("exec-pause-label")).toHaveText("再開");
 
   const paused = await readSpriteX(page);
   await page.waitForTimeout(400);
@@ -173,3 +173,58 @@ test("the trace panel records what actually ran", async ({page}) => {
   await page.getByTestId("trace-clear").click();
   await expect(page.getByTestId("trace-list").locator(".trace-empty")).toBeVisible();
 });
+
+/**
+ * The toolbar is a single nowrap row. Adding the run controls made it wider
+ * than the window, which pushed the trace dropdown off the right edge and
+ * clipped the sprite names. Check both the row and the panel stay inside the
+ * window, at a narrow laptop width and a wide one.
+ */
+for (const size of [
+  {width: 1280, height: 800},
+  {width: 1920, height: 1000},
+]) {
+  test(`toolbar and trace panel fit at ${size.width}px`, async ({page}) => {
+    await page.setViewportSize(size);
+    await bootEditor(page);
+
+    await page.getByTestId("trace-panel").locator("summary").click();
+    const panel = page.getByTestId("trace-panel").locator(".panel-content");
+    await expect(panel).toBeVisible();
+
+    const box = (await panel.boundingBox())!;
+    expect(box.x, "panel starts inside the window").toBeGreaterThanOrEqual(0);
+    expect(
+      box.x + box.width,
+      "panel must not overflow the right edge",
+    ).toBeLessThanOrEqual(size.width);
+    expect(
+      box.y + box.height,
+      "panel must not overflow the bottom",
+    ).toBeLessThanOrEqual(size.height);
+
+    // Worst case: every optional panel (AI on, collab warnings, ...) visible.
+    const toolbar = await page.evaluate(() => {
+      const row = document.querySelector(".primary-controls");
+      const hidden = Array.from(
+        row?.querySelectorAll<HTMLElement>("[hidden]") ?? [],
+      );
+      for (const el of hidden) el.hidden = false;
+      let content = 0;
+      for (const child of Array.from(row?.children ?? [])) {
+        content += child.getBoundingClientRect().width;
+      }
+      for (const el of hidden) el.hidden = true;
+      return {content, available: row?.clientWidth ?? 0};
+    });
+    expect(
+      toolbar.content,
+      "toolbar must fit even with every panel shown",
+    ).toBeLessThanOrEqual(toolbar.available);
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+      "the page must not scroll sideways",
+    ).toBeLessThanOrEqual(size.width);
+  });
+}

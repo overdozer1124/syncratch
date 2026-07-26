@@ -677,13 +677,19 @@
               id="exec-pause"
               type="button"
               aria-pressed="false"
-            >一時停止</button>
+              aria-label="一時停止"
+              title="一時停止"
+            ><span aria-hidden="true" class="exec-icon">⏯</span
+            ><span class="exec-label" data-testid="exec-pause-label" id="exec-pause-label">一時停止</span></button>
             <button
               class="toolbar-action exec-control-button"
               data-testid="exec-step"
               id="exec-step"
+              title="1コマ進む"
+              aria-label="1コマ進む"
               type="button"
-            >1コマ進む</button>
+            ><span aria-hidden="true" class="exec-icon">⏭</span
+            ><span class="exec-label">1コマ</span></button>
             <span
               class="exec-control-status"
               data-testid="exec-status"
@@ -692,7 +698,9 @@
               aria-live="polite"
             >動いています</span>
             <details class="tool-panel trace-panel" data-testid="trace-panel">
-              <summary>じっこう履歴</summary>
+              <summary title="じっこう履歴" aria-label="じっこう履歴"
+                ><span aria-hidden="true" class="exec-icon">🕘</span
+                ><span class="exec-label">履歴</span></summary>
               <div class="panel-content">
                 <div class="trace-panel-actions">
                   <button
