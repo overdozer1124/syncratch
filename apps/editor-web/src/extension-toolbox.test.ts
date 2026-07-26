@@ -3,6 +3,7 @@ import {
   assertExtensionPrimitivesRegistered,
   defineExtensionBlocks,
   ensureCategoryColors,
+  extensionHasWorkspaceBlocks,
   ensureExtensionInToolbox,
   injectCategoryIntoToolboxXml,
   prepareExtensionBlockJson,
@@ -112,6 +113,31 @@ describe("extension toolbox helpers", () => {
     expect(prepared.colour).toBe("#9966FF");
     expect(prepared.colourSecondary).toBe("#9966FF");
     expect(prepared.colourTertiary).toBe("#9966FF");
+  });
+
+  // scratch-vm's Blocks class keeps its blocks in `_blocks` and has no
+  // getAllBlocks() method, so reading only the method always found nothing.
+  it("extensionHasWorkspaceBlocks reads scratch-vm's _blocks", () => {
+    const vm = {
+      runtime: {
+        targets: [
+          {blocks: {_blocks: {a: {opcode: "motion_movesteps"}}}},
+          {blocks: {_blocks: {b: {opcode: "text_setText"}}}},
+        ],
+      },
+    };
+    expect(extensionHasWorkspaceBlocks(vm, "text")).toBe(true);
+    expect(extensionHasWorkspaceBlocks(vm, "stretch")).toBe(false);
+  });
+
+  it("extensionHasWorkspaceBlocks still supports a getAllBlocks() container", () => {
+    const vm = {
+      runtime: {targets: []},
+      editingTarget: {
+        blocks: {getAllBlocks: () => ({a: {opcode: "stretch_setStretch"}})},
+      },
+    };
+    expect(extensionHasWorkspaceBlocks(vm, "stretch")).toBe(true);
   });
 
   it("defineExtensionBlocks leaves definitions the GUI already made", () => {

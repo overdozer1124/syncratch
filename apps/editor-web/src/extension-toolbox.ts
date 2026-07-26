@@ -30,10 +30,38 @@ export type ToolboxRuntime = {
 };
 
 export type ToolboxVm = {
-  runtime?: ToolboxRuntime | null;
+  /**
+   * `unknown` on purpose: callers hold a scratch-vm typed by the app, by the
+   * gallery, or not at all. The helpers below narrow it structurally.
+   */
+  runtime?: unknown;
   editingTarget?: unknown;
   emit?: (event: string, payload?: unknown) => void;
 };
+
+function asToolboxRuntime(runtime: unknown): ToolboxRuntime | null {
+  return runtime && typeof runtime === "object"
+    ? (runtime as ToolboxRuntime)
+    : null;
+}
+
+type VmBlockContainer = {
+  /** scratch-vm `Blocks` stores its blocks here; there is no getAllBlocks(). */
+  _blocks?: Record<string, unknown>;
+  getAllBlocks?: () => unknown;
+};
+
+/** Blocks held by a scratch-vm target, or null when the shape is unfamiliar. */
+function readTargetBlocks(target: unknown): unknown {
+  const blocks = (target as {blocks?: VmBlockContainer} | null | undefined)
+    ?.blocks;
+  if (!blocks) return null;
+  if (blocks._blocks && typeof blocks._blocks === "object") {
+    return blocks._blocks;
+  }
+  const all = blocks.getAllBlocks?.();
+  return all && typeof all === "object" ? all : null;
+}
 
 /** True when any target already has blocks whose opcode belongs to extensionId. */
 export function extensionHasWorkspaceBlocks(
@@ -42,20 +70,17 @@ export function extensionHasWorkspaceBlocks(
 ): boolean {
   if (!extensionId) return false;
   const prefix = `${extensionId}_`;
-  const targets = (
-    vm.runtime as {targets?: Array<{blocks?: {getAllBlocks?: () => unknown}}>} | null | undefined
-  )?.targets;
+  const targets = (vm.runtime as {targets?: unknown[]} | null | undefined)
+    ?.targets;
   const candidates: unknown[] = [];
   if (Array.isArray(targets)) {
     for (const target of targets) {
-      const all = target?.blocks?.getAllBlocks?.();
-      if (all && typeof all === "object") candidates.push(all);
+      const all = readTargetBlocks(target);
+      if (all) candidates.push(all);
     }
   }
-  const editingBlocks = (
-    vm.editingTarget as {blocks?: {getAllBlocks?: () => unknown}} | undefined
-  )?.blocks?.getAllBlocks?.();
-  if (editingBlocks && typeof editingBlocks === "object") {
+  const editingBlocks = readTargetBlocks(vm.editingTarget);
+  if (editingBlocks) {
     candidates.push(editingBlocks);
   }
   for (const bag of candidates) {
@@ -223,7 +248,7 @@ export function findExtensionCategory(
   vm: ToolboxVm,
   extensionId: string,
 ): ToolboxCategoryInfo | null {
-  const list = vm.runtime?._blockInfo;
+  const list = asToolboxRuntime(vm.runtime)?._blockInfo;
   if (!Array.isArray(list)) return null;
   return list.find(entry => entry?.id === extensionId) ?? null;
 }
@@ -232,7 +257,7 @@ export function getExtensionCategoryXml(
   vm: ToolboxVm,
   extensionId: string,
 ): string | null {
-  const runtime = vm.runtime;
+  const runtime = asToolboxRuntime(vm.runtime);
   if (!runtime || typeof runtime.getBlocksXML !== "function") return null;
   const target = vm.editingTarget ?? runtime.getTargetForStage?.();
   try {
