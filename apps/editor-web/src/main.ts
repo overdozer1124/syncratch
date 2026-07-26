@@ -232,6 +232,7 @@ import {
   resolveScratchBlocksApi,
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
+import {installProjectExtensionLoader} from "./extension-project-load.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
@@ -2021,6 +2022,18 @@ async function getVm(): Promise<ScratchVm> {
       canChangeColorMode: false,
       canChangeTheme: false,
       onVmInit: vmInstance => {
+        // Before any IndexedDB project restore: custom gallery extensions must
+        // not go through the stock extension worker (that rejects and bricks boot).
+        installProjectExtensionLoader(vmInstance, {
+          onSkipped: (extensionIdOrUrl, error) => {
+            const detail =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[syncratch] skipped extension during project load: ${extensionIdOrUrl}`,
+              detail,
+            );
+          },
+        });
         setGuiSplashProgress(guiSplash, {
           ratio: 1,
           label: "もうすぐ始まります…",
@@ -2438,7 +2451,23 @@ async function boot(): Promise<void> {
     await store.createOrReplace(initial, null);
     await loadRecord(initial);
   } else {
-    await loadRecord(latest);
+    try {
+      await loadRecord(latest);
+    } catch (error) {
+      // Last-resort recovery: keep the saved record in IndexedDB, open a fresh
+      // in-memory fixture so the editor is usable, and surface the real error.
+      diagnostic.error =
+        error instanceof Error ? error.message : String(error);
+      console.error("[syncratch] failed to restore saved project", error);
+      const fallback = await loadFixtureRecord(
+        crypto.randomUUID(),
+        "一時的な新しい作品",
+      );
+      await loadRecord(fallback);
+      appToast.show(
+        "保存されていた作品を開けませんでした。新しい作品を表示しています。ページを再読み込みするか、ファイルから開き直してください。",
+      );
+    }
   }
   diagnostic.ready = true;
   driveReady = true;
@@ -3243,6 +3272,7 @@ boot().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
   fatalBootError =
     "エディターを始められませんでした。ページを読み直してください。";
+  console.error("[syncratch] boot failed", error);
   setGuiSplashVisible(guiSplash, true);
   setGuiSplashProgress(guiSplash, {
     ratio: 1,
