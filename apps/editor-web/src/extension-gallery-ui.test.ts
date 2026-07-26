@@ -71,10 +71,13 @@ describe("extension gallery UI", () => {
       getVm: () => null,
     });
     ui.open();
+    expect(document.querySelector(".extension-gallery-body")).toBeTruthy();
+    expect(document.querySelector(".extension-gallery-main")).toBeTruthy();
     const filters = document.querySelector(
       "[data-testid='extension-gallery-filters']",
     );
     expect(filters).toBeTruthy();
+    expect(filters?.getAttribute("aria-orientation")).toBe("vertical");
     const tabs = filters?.querySelectorAll(".extension-gallery-filter") ?? [];
     expect(tabs.length).toBeGreaterThanOrEqual(6);
 
