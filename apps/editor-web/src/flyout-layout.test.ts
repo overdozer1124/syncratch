@@ -3,6 +3,7 @@ import {describe, expect, it, vi} from "vitest";
 import {
   clampFlyoutWidth,
   computeFlyoutDisplayWidth,
+  computeToggleEdgeX,
   DEFAULT_FLYOUT_WIDTH_PX,
   MAX_FLYOUT_WIDTH_PX,
   measureFlyoutContentWidthPx,
@@ -64,6 +65,15 @@ describe("flyout layout helpers", () => {
       getWorkspace: () => ({getAllBlocks: () => []}),
     };
     expect(measureFlyoutContentWidthPx(flyout)).toBe(DEFAULT_FLYOUT_WIDTH_PX);
+  });
+
+  it("computeToggleEdgeX docks at default width, not hover-expanded width", () => {
+    expect(
+      computeToggleEdgeX({collapsed: false, toolboxRightPx: 60}),
+    ).toBe(60 + DEFAULT_FLYOUT_WIDTH_PX);
+    expect(
+      computeToggleEdgeX({collapsed: true, toolboxRightPx: 60}),
+    ).toBe(60);
   });
 });
 
@@ -131,16 +141,22 @@ describe("installFlyoutLayout", () => {
     toggle?.click();
     expect(controller.isCollapsed()).toBe(false);
 
+    const leftBeforeHover = toggle!.style.left;
+
     const over = new PointerEvent("pointerover", {bubbles: true});
     Object.defineProperty(over, "target", {value: flyoutSvg});
     root.dispatchEvent(over);
     expect(controller.isHoverExpanded()).toBe(true);
     expect(flyout.getWidth?.()).toBeGreaterThan(DEFAULT_FLYOUT_WIDTH_PX);
+    // Toggle must stay docked at the default edge while the list widens.
+    expect(toggle!.style.left).toBe(leftBeforeHover);
 
     const out = new PointerEvent("pointerout", {bubbles: true});
     Object.defineProperty(out, "relatedTarget", {value: document.body});
     root.dispatchEvent(out);
+    await new Promise(r => setTimeout(r, 100));
     expect(controller.isHoverExpanded()).toBe(false);
+    expect(toggle!.style.left).toBe(leftBeforeHover);
 
     controller.dispose();
     expect(
