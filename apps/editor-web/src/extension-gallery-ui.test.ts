@@ -66,6 +66,51 @@ describe("extension gallery UI", () => {
     ui.dispose();
   });
 
+  it("filters the grid when a category tab is selected", () => {
+    const ui = createExtensionGalleryUi({
+      getVm: () => null,
+    });
+    ui.open();
+    const filters = document.querySelector(
+      "[data-testid='extension-gallery-filters']",
+    );
+    expect(filters).toBeTruthy();
+    const tabs = filters?.querySelectorAll(".extension-gallery-filter") ?? [];
+    expect(tabs.length).toBeGreaterThanOrEqual(4);
+
+    const turbowarp = [...tabs].find(
+      tab => (tab as HTMLElement).dataset.filterId === "turbowarp",
+    ) as HTMLButtonElement | undefined;
+    expect(turbowarp).toBeTruthy();
+    turbowarp!.click();
+
+    expect(ui.getFilter()).toBe("turbowarp");
+    const activeTurbowarp = document.querySelector<HTMLButtonElement>(
+      ".extension-gallery-filter[data-filter-id='turbowarp']",
+    );
+    expect(activeTurbowarp?.classList.contains("is-active")).toBe(true);
+    expect(activeTurbowarp?.getAttribute("aria-selected")).toBe("true");
+
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>(".extension-gallery-card"),
+    ];
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.some(card => card.dataset.extensionKey === "fetch")).toBe(
+      true,
+    );
+    // Builtin Scratch music should not appear under TurboWarp-only filter.
+    expect(cards.some(card => card.dataset.extensionKey === "music")).toBe(
+      false,
+    );
+
+    ui.setFilter("all");
+    expect(ui.getFilter()).toBe("all");
+    expect(
+      document.querySelectorAll(".extension-gallery-card").length,
+    ).toBeGreaterThan(cards.length);
+    ui.dispose();
+  });
+
   it("surfaces load errors in the gallery status area", async () => {
     const vm = {
       extensionManager: {

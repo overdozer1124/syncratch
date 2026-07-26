@@ -2381,6 +2381,60 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   background: rgb(255 255 255 / 30%);
 }
 
+.extension-gallery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.65rem 1rem;
+  background: #f4f8fd;
+  border-bottom: 1px solid rgb(0 0 0 / 8%);
+}
+
+.extension-gallery-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid rgb(87 94 117 / 25%);
+  border-radius: 0.35rem;
+  background: #fff;
+  color: #575e75;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.extension-gallery-filter:hover {
+  border-color: var(--syncratch-chrome);
+  color: var(--syncratch-chrome);
+}
+
+.extension-gallery-filter.is-active {
+  border-color: var(--syncratch-chrome);
+  background: var(--syncratch-chrome);
+  color: #fff;
+}
+
+.extension-gallery-filter-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  background: rgb(87 94 117 / 12%);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.extension-gallery-filter.is-active .extension-gallery-filter-count {
+  background: rgb(255 255 255 / 22%);
+  color: #fff;
+}
+
 .extension-gallery-status {
   margin: 0;
   padding: 0.65rem 1rem;
@@ -2402,6 +2456,15 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   gap: 0.75rem;
   padding: 1rem;
   overflow: auto;
+}
+
+.extension-gallery-empty {
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+  width: 100%;
+  color: rgb(87 94 117 / 80%);
+  font-size: 0.95rem;
+  text-align: center;
 }
 
 .extension-gallery-card {
