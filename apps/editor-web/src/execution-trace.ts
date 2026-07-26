@@ -94,6 +94,8 @@ export type TraceThreadLike = {
 export type TraceRuntimeLike = {
   threads?: TraceThreadLike[];
   _step?: (...args: unknown[]) => unknown;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  off?: (event: string, handler: (...args: unknown[]) => void) => void;
   [TRACE_FLAG]?: boolean;
 };
 
@@ -175,6 +177,14 @@ export function installExecutionTrace(
     }
   };
 
+  // The green flag starts a fresh run, so the log starts fresh too. Without
+  // this the panel keeps showing blocks from an earlier version of the program,
+  // which reads as "this history has nothing to do with my code".
+  const onProjectStart = () => {
+    trace.clear();
+  };
+  runtime.on?.("PROJECT_START", onProjectStart);
+
   runtime._step = (...args: unknown[]) => {
     if (!disposed) instrumentAll();
     return originalStep(...args);
@@ -186,6 +196,7 @@ export function installExecutionTrace(
     dispose() {
       if (disposed) return;
       disposed = true;
+      runtime.off?.("PROJECT_START", onProjectStart);
       runtime._step = rawStep;
       runtime[TRACE_FLAG] = false;
     },

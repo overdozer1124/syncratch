@@ -543,6 +543,13 @@ for (const panel of toolPanels) {
 }
 
 document.addEventListener("pointerdown", event => {
+  // Pausing or stepping while watching the history must not close the history.
+  if (
+    event.target instanceof Node &&
+    execControlGroup.contains(event.target)
+  ) {
+    return;
+  }
   if (
     !shouldCloseToolPanelsOnOutsideTarget(event.target, dismissibleToolPanels)
   ) {
