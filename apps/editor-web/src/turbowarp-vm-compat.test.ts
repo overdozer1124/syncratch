@@ -1,10 +1,15 @@
-import {describe, expect, it, vi} from "vitest";
+import {beforeEach, describe, expect, it, vi} from "vitest";
 import {
   CanvasMeasurementProvider,
   createMinimalTwgl,
   createSimpleTextWrapper,
   ensureTurbowarpVmCompat,
+  resetTurbowarpVmCompatCacheForTests,
 } from "./turbowarp-vm-compat.js";
+
+beforeEach(() => {
+  resetTurbowarpVmCompatCacheForTests();
+});
 
 function makeFakeVm() {
   class BaseSkin {
@@ -131,5 +136,33 @@ describe("turbowarp vm compat", () => {
     const skin = new Skin(1, resolvedRenderer);
     expect(typeof skin.emitWasAltered).toBe("function");
     expect(typeof renderer.createTextWrapper).toBe("function");
+  });
+
+  it("keeps AnimatedText's version gate green after loadProject clear()", () => {
+    const {vm, runtime, renderer} = makeFakeVm();
+    ensureTurbowarpVmCompat(vm);
+    // Simulate deserializeProject → clear(): targets gone, skins disposed.
+    runtime.targets = [];
+    renderer._allSkins = [];
+    delete (renderer as {exports?: unknown}).exports;
+    delete (vm as {exports?: unknown}).exports;
+
+    ensureTurbowarpVmCompat(vm);
+
+    const tooOld =
+      !renderer.exports || !renderer.exports.Skin || !vm.exports;
+    expect(tooOld).toBe(false);
+    expect(vm.exports?.RenderedTarget).toBeTruthy();
+    expect(renderer.exports?.Skin).toBeTruthy();
+  });
+
+  it("uses a fallback Skin when none were ever cached", () => {
+    const {vm, runtime, renderer} = makeFakeVm();
+    runtime.targets = [];
+    renderer._allSkins = [];
+    ensureTurbowarpVmCompat(vm);
+    expect(renderer.exports?.Skin).toBeTruthy();
+    // RenderedTarget still needs a live or cached target.
+    expect(vm.exports?.RenderedTarget).toBeUndefined();
   });
 });
