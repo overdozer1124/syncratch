@@ -419,6 +419,9 @@ async function registerExtensionInstance(
 /**
  * Stock Scratch VM has no BlockType.LABEL/XML. Map labels to separators so the
  * rest of the category still registers; drop raw XML entries.
+ * Also strip TurboWarp-only Blockly extension hooks (e.g. colours_looks) that
+ * stock scratch-blocks never registers — unknown hooks can leave workspace
+ * blocks as icon-only husks that refuse to snap.
  */
 export function normalizeTurbowarpExtensionInfo<T extends {blocks?: unknown[]}>(
   info: T,
@@ -430,7 +433,10 @@ export function normalizeTurbowarpExtensionInfo<T extends {blocks?: unknown[]}>(
     const blockType = (block as {blockType?: unknown}).blockType;
     if (blockType === "label") return ["---"];
     if (blockType === "xml") return [];
-    return [block];
+    if (!("extensions" in block)) return [block];
+    const rest = {...(block as Record<string, unknown>)};
+    delete rest.extensions;
+    return [rest];
   });
   return {...info, blocks};
 }

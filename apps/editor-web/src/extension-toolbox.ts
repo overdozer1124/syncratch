@@ -51,6 +51,54 @@ export type ScratchBlocksLike = {
   } | null;
 };
 
+/** Blockly extensions that stock Scratch/scratch-blocks actually register. */
+const KNOWN_BLOCKLY_EXTENSIONS = new Set([
+  "scratch_extension",
+  "shape_hat",
+  "monitor_block",
+  "from_extension",
+  "default_extension_colors",
+]);
+
+type CategoryColors = {
+  color1?: string;
+  color2?: string;
+  color3?: string;
+};
+
+/**
+ * Prepare block JSON for stock ScratchBlocks:
+ * - drop TurboWarp-only Blockly extensions such as `colours_looks`
+ * - add legacy colour fields so blocks still render when theme styles are missing
+ */
+export function prepareExtensionBlockJson(
+  json: Record<string, unknown>,
+  colors: CategoryColors = {},
+): Record<string, unknown> {
+  const next: Record<string, unknown> = {...json};
+  if (Array.isArray(next.extensions)) {
+    next.extensions = next.extensions.filter(
+      entry => typeof entry === "string" && KNOWN_BLOCKLY_EXTENSIONS.has(entry),
+    );
+  }
+  const colourPrimary =
+    (typeof next.colour === "string" && next.colour) ||
+    colors.color1 ||
+    "#0FBD8C";
+  const colourSecondary =
+    (typeof next.colourSecondary === "string" && next.colourSecondary) ||
+    colors.color2 ||
+    colourPrimary;
+  const colourTertiary =
+    (typeof next.colourTertiary === "string" && next.colourTertiary) ||
+    colors.color3 ||
+    colourSecondary;
+  next.colour = colourPrimary;
+  next.colourSecondary = colourSecondary;
+  next.colourTertiary = colourTertiary;
+  return next;
+}
+
 /** Read current toolbox XML from Scratch GUI Redux. */
 export function readToolboxXml(storeState: unknown): string | null {
   if (!storeState || typeof storeState !== "object") return null;
@@ -113,11 +161,18 @@ export function getExtensionCategoryXml(
   }
 }
 
-function collectBlockJson(categoryInfo: ToolboxCategoryInfo): Record<string, unknown>[] {
+function collectBlockJson(
+  categoryInfo: ToolboxCategoryInfo & CategoryColors,
+): Record<string, unknown>[] {
+  const colors: CategoryColors = {
+    color1: categoryInfo.color1,
+    color2: categoryInfo.color2,
+    color3: categoryInfo.color3,
+  };
   const out: Record<string, unknown>[] = [];
   const push = (entry: {json?: Record<string, unknown>} | undefined) => {
     if (entry?.json && typeof entry.json === "object") {
-      out.push(entry.json);
+      out.push(prepareExtensionBlockJson(entry.json, colors));
     }
   };
 
@@ -140,33 +195,40 @@ function collectBlockJson(categoryInfo: ToolboxCategoryInfo): Record<string, unk
 /** Best-effort: define extension block types on the live ScratchBlocks namespace. */
 export function defineExtensionBlocks(
   scratchBlocks: ScratchBlocksLike | null | undefined,
-  categoryInfo: ToolboxCategoryInfo,
-): void {
+  categoryInfo: ToolboxCategoryInfo & CategoryColors,
+): boolean {
   if (!scratchBlocks || typeof scratchBlocks.defineBlocksWithJsonArray !== "function") {
-    return;
+    return false;
   }
   const json = collectBlockJson(categoryInfo);
-  if (json.length === 0) return;
+  if (json.length === 0) return false;
   try {
     scratchBlocks.defineBlocksWithJsonArray(json);
+    return true;
   } catch {
-    // Re-defining existing types can warn/throw; toolbox XML injection still helps.
+    // Re-defining existing types can warn/throw; try one-by-one.
+    let defined = 0;
+    for (const block of json) {
+      try {
+        scratchBlocks.defineBlocksWithJsonArray([block]);
+        defined += 1;
+      } catch {
+        // skip broken entry
+      }
+    }
+    return defined > 0;
   }
 }
 
 /** Best-effort theme styles so block colours resolve when GUI path skipped them. */
 export function ensureExtensionBlockStyles(
   scratchBlocks: ScratchBlocksLike | null | undefined,
-  categoryInfo: ToolboxCategoryInfo & {
-    color1?: string;
-    color2?: string;
-    color3?: string;
-  },
-): void {
+  categoryInfo: ToolboxCategoryInfo & CategoryColors,
+): boolean {
   try {
     const workspace = scratchBlocks?.getMainWorkspace?.();
     const theme = workspace?.getTheme?.();
-    if (!theme || typeof theme.setBlockStyle !== "function") return;
+    if (!theme || typeof theme.setBlockStyle !== "function") return false;
     const colourPrimary = categoryInfo.color1 ?? "#0FBD8C";
     const colourSecondary = categoryInfo.color2 ?? "#0DA57A";
     const colourTertiary = categoryInfo.color3 ?? "#0B8E69";
@@ -183,16 +245,19 @@ export function ensureExtensionBlockStyles(
       colourQuaternary: colourTertiary,
     });
     workspace?.setTheme?.(theme);
+    return true;
   } catch {
-    // Theme is cosmetic relative to showing the category.
+    return false;
   }
 }
 
 export type EnsureExtensionToolboxOptions = {
-  vm: ToolboxVm;
+  vm: ToolboxVm & {emitWorkspaceUpdate?: () => void};
   store: ToolboxStore;
   extensionId: string;
   scratchBlocks?: ScratchBlocksLike | null;
+  /** Lazy resolver when the first ScratchBlocks reference is a stub. */
+  resolveScratchBlocks?: () => ScratchBlocksLike | null;
   /** Select the category in the toolbox after it appears. */
   selectCategory?: (extensionId: string) => boolean;
   /** How many times to retry GUI event + XML injection. */
@@ -207,9 +272,23 @@ const defaultSleep = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
+function resolveBlocksApi(
+  scratchBlocks: ScratchBlocksLike | null | undefined,
+  resolveScratchBlocks?: () => ScratchBlocksLike | null,
+): ScratchBlocksLike | null {
+  if (scratchBlocks && typeof scratchBlocks.defineBlocksWithJsonArray === "function") {
+    return scratchBlocks;
+  }
+  const resolved = resolveScratchBlocks?.() ?? null;
+  if (resolved && typeof resolved.defineBlocksWithJsonArray === "function") {
+    return resolved;
+  }
+  return scratchBlocks ?? resolved;
+}
+
 /**
- * Make sure `extensionId` is present in the live toolbox.
- * Returns true when the category is in Redux toolbox XML (or was already there).
+ * Make sure `extensionId` is present in the live toolbox and its ScratchBlocks
+ * definitions can render (not icon-only) on the workspace.
  */
 export async function ensureExtensionInToolbox(
   options: EnsureExtensionToolboxOptions,
@@ -218,7 +297,6 @@ export async function ensureExtensionInToolbox(
     vm,
     store,
     extensionId,
-    scratchBlocks = null,
     selectCategory,
     attempts = 8,
     delayMs = 40,
@@ -226,13 +304,25 @@ export async function ensureExtensionInToolbox(
   } = options;
 
   if (!extensionId) return false;
+  let definedBlocks = false;
 
   for (let i = 0; i < attempts; i++) {
-    const categoryInfo = findExtensionCategory(vm, extensionId);
+    const categoryInfo = findExtensionCategory(vm, extensionId) as
+      | (ToolboxCategoryInfo & CategoryColors)
+      | null;
     if (!categoryInfo) {
       await sleep(delayMs);
       continue;
     }
+
+    const scratchBlocks = resolveBlocksApi(
+      options.scratchBlocks,
+      options.resolveScratchBlocks,
+    );
+
+    // Styles first: stock GUI defines blocks with `style: extensionId`, and
+    // missing theme styles can render workspace blocks as icon-only husks.
+    ensureExtensionBlockStyles(scratchBlocks, categoryInfo);
 
     // Give the stock GUI listener another chance (defines blocks + toolbox).
     try {
@@ -241,15 +331,11 @@ export async function ensureExtensionInToolbox(
       // Listener errors are why we need the fallback below.
     }
 
-    defineExtensionBlocks(scratchBlocks, categoryInfo);
-    ensureExtensionBlockStyles(
-      scratchBlocks,
-      categoryInfo as ToolboxCategoryInfo & {
-        color1?: string;
-        color2?: string;
-        color3?: string;
-      },
-    );
+    // Re-apply styles after GUI handler (it may have thrown mid-theme update).
+    ensureExtensionBlockStyles(scratchBlocks, categoryInfo);
+    if (defineExtensionBlocks(scratchBlocks, categoryInfo)) {
+      definedBlocks = true;
+    }
 
     let toolboxXML = readToolboxXml(store.getState()) ?? "";
     if (!toolboxHasCategory(toolboxXML, extensionId)) {
@@ -270,6 +356,14 @@ export async function ensureExtensionInToolbox(
 
     toolboxXML = readToolboxXml(store.getState()) ?? toolboxXML;
     if (toolboxHasCategory(toolboxXML, extensionId)) {
+      // Rebuild workspace SVGs so already-placed husks pick up fixed definitions.
+      if (definedBlocks) {
+        try {
+          vm.emitWorkspaceUpdate?.();
+        } catch {
+          // ignore
+        }
+      }
       selectCategory?.(extensionId);
       return true;
     }

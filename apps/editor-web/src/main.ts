@@ -229,6 +229,7 @@ import {
   applyViewportToScratchWorkspace,
   isInternalMetricsEcho,
   readWorkspaceViewportFromScratch,
+  resolveScratchBlocksApi,
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
@@ -2115,8 +2116,9 @@ function installDefaultExtensionGallery(
           vm: scratchVm,
           store: state.store,
           extensionId,
-          scratchBlocks: (globalThis as unknown as {Blockly?: ScratchBlocksLike})
-            .Blockly,
+          scratchBlocks: resolveScratchBlocksApi(guiHost) as ScratchBlocksLike | null,
+          resolveScratchBlocks: () =>
+            resolveScratchBlocksApi(guiHost) as ScratchBlocksLike | null,
           selectCategory: restoreToolboxCategory,
         }).then(visible => {
           if (!visible) {

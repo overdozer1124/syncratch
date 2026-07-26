@@ -3,6 +3,7 @@ import {
   applyViewportToScratchWorkspace,
   isInternalMetricsEcho,
   readWorkspaceViewportFromScratch,
+  resolveScratchBlocksApi,
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
 
@@ -40,6 +41,32 @@ describe("scratch workspace access", () => {
         {getMainWorkspace: () => null},
       ),
     ).toBe(workspace);
+  });
+
+  it("resolves ScratchBlocks from the Blocks container when Blockly is a stub", () => {
+    const ScratchBlocks = {
+      defineBlocksWithJsonArray: () => undefined,
+      getMainWorkspace: () => null,
+    };
+    const blocksHost = {className: "blocks_blocks_test"};
+    Object.defineProperty(blocksHost, "__reactFiber$test", {
+      value: {
+        stateNode: {ScratchBlocks},
+        return: null,
+      },
+      enumerable: false,
+      configurable: true,
+    });
+    const root = {
+      querySelector(selector: string) {
+        return selector.includes("blocks_blocks") ? blocksHost : null;
+      },
+    };
+    expect(
+      resolveScratchBlocksApi(root as unknown as ParentNode, {
+        getMainWorkspace: () => null,
+      }),
+    ).toBe(ScratchBlocks);
   });
 
   it("reads and applies viewport metrics on a workspace handle", () => {
