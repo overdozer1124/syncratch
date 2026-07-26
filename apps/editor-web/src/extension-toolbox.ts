@@ -106,6 +106,29 @@ type CategoryColors = {
   color3?: string;
 };
 
+const DEFAULT_EXTENSION_COLOR = "#0FBD8C";
+
+/**
+ * Fill missing category colours in-place before stock GUI handleExtensionAdded
+ * runs. Animated Text only provides color1; undefined color2/3 poison the
+ * Blockly theme and blank every flyout category.
+ */
+export function ensureCategoryColors<T extends CategoryColors>(
+  categoryInfo: T,
+): T & Required<CategoryColors> {
+  const color1 =
+    (typeof categoryInfo.color1 === "string" && categoryInfo.color1) ||
+    DEFAULT_EXTENSION_COLOR;
+  const color2 =
+    (typeof categoryInfo.color2 === "string" && categoryInfo.color2) || color1;
+  const color3 =
+    (typeof categoryInfo.color3 === "string" && categoryInfo.color3) || color2;
+  categoryInfo.color1 = color1;
+  categoryInfo.color2 = color2;
+  categoryInfo.color3 = color3;
+  return categoryInfo as T & Required<CategoryColors>;
+}
+
 /**
  * Prepare block JSON for stock ScratchBlocks:
  * - drop TurboWarp-only Blockly extensions such as `colours_looks`
@@ -121,18 +144,15 @@ export function prepareExtensionBlockJson(
       entry => typeof entry === "string" && KNOWN_BLOCKLY_EXTENSIONS.has(entry),
     );
   }
+  const filled = ensureCategoryColors({...colors});
   const colourPrimary =
-    (typeof next.colour === "string" && next.colour) ||
-    colors.color1 ||
-    "#0FBD8C";
+    (typeof next.colour === "string" && next.colour) || filled.color1;
   const colourSecondary =
     (typeof next.colourSecondary === "string" && next.colourSecondary) ||
-    colors.color2 ||
-    colourPrimary;
+    filled.color2;
   const colourTertiary =
     (typeof next.colourTertiary === "string" && next.colourTertiary) ||
-    colors.color3 ||
-    colourSecondary;
+    filled.color3;
   next.colour = colourPrimary;
   next.colourSecondary = colourSecondary;
   next.colourTertiary = colourTertiary;
@@ -269,9 +289,8 @@ export function ensureExtensionBlockStyles(
     const workspace = scratchBlocks?.getMainWorkspace?.();
     const theme = workspace?.getTheme?.();
     if (!theme || typeof theme.setBlockStyle !== "function") return false;
-    const colourPrimary = categoryInfo.color1 ?? "#0FBD8C";
-    const colourSecondary = categoryInfo.color2 ?? "#0DA57A";
-    const colourTertiary = categoryInfo.color3 ?? "#0B8E69";
+    const {color1: colourPrimary, color2: colourSecondary, color3: colourTertiary} =
+      ensureCategoryColors(categoryInfo);
     theme.setBlockStyle(categoryInfo.id, {
       colourPrimary,
       colourSecondary,
@@ -354,6 +373,10 @@ export async function ensureExtensionInToolbox(
       await sleep(delayMs);
       continue;
     }
+
+    // Must run before EXTENSION_ADDED: stock GUI copies color2/color3 into the
+    // Blockly theme verbatim (undefined → Invalid colour → empty flyout).
+    ensureCategoryColors(categoryInfo);
 
     const scratchBlocks = resolveBlocksApi(
       options.scratchBlocks,

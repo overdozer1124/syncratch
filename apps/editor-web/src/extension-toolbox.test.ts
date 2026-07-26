@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from "vitest";
 import {
   assertExtensionPrimitivesRegistered,
+  ensureCategoryColors,
   ensureExtensionInToolbox,
   injectCategoryIntoToolboxXml,
   prepareExtensionBlockJson,
@@ -51,6 +52,20 @@ describe("extension toolbox helpers", () => {
         "fetch",
       ),
     ).not.toThrow();
+  });
+
+  it("ensureCategoryColors fills missing color2/color3 in place", () => {
+    const category = {id: "text", color1: "#9966FF"} as {
+      id: string;
+      color1?: string;
+      color2?: string;
+      color3?: string;
+    };
+    const filled = ensureCategoryColors(category);
+    expect(filled.color1).toBe("#9966FF");
+    expect(filled.color2).toBe("#9966FF");
+    expect(filled.color3).toBe("#9966FF");
+    expect(category.color2).toBe("#9966FF");
   });
 
   it("prepareExtensionBlockJson strips unknown Blockly extensions and adds colours", () => {

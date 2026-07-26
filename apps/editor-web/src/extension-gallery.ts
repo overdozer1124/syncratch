@@ -390,10 +390,14 @@ export async function loadGalleryExtension(
 
 async function registerExtensionInstance(
   vm: ExtensionVm,
-  instance: {getInfo(): {id: string}},
+  instance: {getInfo(): {id: string; blocks?: unknown[]; color1?: string}},
   expectedId?: string,
   fallbackId?: string,
 ): Promise<string> {
+  // Normalize before the VM reads getInfo during registration. Missing
+  // color2/color3 (Animated Text) otherwise poison the Blockly theme and blank
+  // the flyout for every category, not just the new extension.
+  wrapTurbowarpExtensionObject(instance);
   const info = instance.getInfo();
   const extensionId = info?.id || expectedId || fallbackId;
   if (!extensionId || typeof extensionId !== "string") {
@@ -417,16 +421,65 @@ async function registerExtensionInstance(
 }
 
 /**
+ * Derive a darker companion colour when an extension only ships `color1`.
+ * Animated Text (lab/text) omits color2/color3; stock GUI then calls
+ * theme.setBlockStyle({colourSecondary: undefined}) and Blockly throws
+ * `Invalid colour: "undefined"`, emptying the entire flyout.
+ */
+export function deriveExtensionCompanionColor(
+  color: string,
+  factor = 0.75,
+): string {
+  const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (!match) return color;
+  let hex = match[1];
+  if (hex.length === 3) {
+    hex = hex
+      .split("")
+      .map(ch => ch + ch)
+      .join("");
+  }
+  const channel = (offset: number) => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16);
+    return Math.max(0, Math.min(255, Math.round(value * factor)))
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(0)}${channel(2)}${channel(4)}`;
+}
+
+/**
  * Stock Scratch VM has no BlockType.LABEL/XML. Map labels to separators so the
  * rest of the category still registers; drop raw XML entries.
  * Also strip TurboWarp-only Blockly extension hooks (e.g. colours_looks) that
  * stock scratch-blocks never registers — unknown hooks can leave workspace
  * blocks as icon-only husks that refuse to snap.
+ * Always fill color2/color3 when color1 is present so GUI theme updates stay valid.
  */
-export function normalizeTurbowarpExtensionInfo<T extends {blocks?: unknown[]}>(
-  info: T,
-): T {
-  if (!info || !Array.isArray(info.blocks)) return info;
+export function normalizeTurbowarpExtensionInfo<
+  T extends {
+    blocks?: unknown[];
+    color1?: string;
+    color2?: string;
+    color3?: string;
+  },
+>(info: T): T {
+  if (!info) return info;
+  const color1 =
+    typeof info.color1 === "string" && info.color1 ? info.color1 : undefined;
+  const color2 =
+    (typeof info.color2 === "string" && info.color2) ||
+    (color1 ? deriveExtensionCompanionColor(color1, 0.78) : undefined);
+  const color3 =
+    (typeof info.color3 === "string" && info.color3) ||
+    (color2 ? deriveExtensionCompanionColor(color2, 0.78) : undefined);
+
+  if (!Array.isArray(info.blocks)) {
+    return {
+      ...info,
+      ...(color1 ? {color1, color2, color3} : {}),
+    };
+  }
   const blocks = info.blocks.flatMap(block => {
     if (block === "---") return [block];
     if (!block || typeof block !== "object") return [block];
@@ -438,7 +491,11 @@ export function normalizeTurbowarpExtensionInfo<T extends {blocks?: unknown[]}>(
     delete rest.extensions;
     return [rest];
   });
-  return {...info, blocks};
+  return {
+    ...info,
+    ...(color1 ? {color1, color2, color3} : {}),
+    blocks,
+  };
 }
 
 function wrapTurbowarpExtensionObject<T extends {getInfo(): {id: string; blocks?: unknown[]}}>(
@@ -462,11 +519,7 @@ async function loadTurbowarpExtensionUrl(
   }
   let lastId = expectedId ?? resolvedUrl;
   for (const object of objects) {
-    lastId = await registerExtensionInstance(
-      vm,
-      wrapTurbowarpExtensionObject(object),
-      expectedId,
-    );
+    lastId = await registerExtensionInstance(vm, object, expectedId);
   }
   return lastId;
 }
