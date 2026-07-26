@@ -87,6 +87,7 @@ import {
   friendlyProjectTitle,
 } from "./project-title.js";
 import {installScratchAccessibility} from "./scratch-accessibility.js";
+import {installFlyoutLayout} from "./flyout-layout.js";
 import {
   DRIVE_OVERWRITE_CONFIRMATION_REASON,
   driveConflictAction,
@@ -2046,6 +2047,10 @@ async function getVm(): Promise<ScratchVm> {
         setGuiLoadingVisible(guiHost, false);
         setGuiSplashVisible(guiSplash, false);
         installScratchNativeMenus(state, vmInstance);
+        installFlyoutLayout({
+          root: guiHost,
+          getWorkspace: () => scratchWorkspace(),
+        });
         resolve(vmInstance);
       },
     });
