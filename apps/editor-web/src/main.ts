@@ -236,6 +236,7 @@ import {
 import {installProjectExtensionLoader} from "./extension-project-load.js";
 import {ensureTurbowarpVmCompat} from "./turbowarp-vm-compat.js";
 import {
+  guardGlowUpdates,
   installExecutionControl,
   type ExecutionController,
 } from "./execution-control.js";
@@ -2213,6 +2214,30 @@ function highlightExecutingBlocks(blockIds: string[]): void {
  */
 function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
+  executionTrace?.dispose();
+
+  // Order matters. Both wrap Runtime._step, and the pause gate has to sit
+  // OUTSIDE the recorder: gate -> recorder -> real step. Installed the other
+  // way round, the recorder still ran while execution was paused, so pressing
+  // the green flag grew the history while the stage stayed frozen — "the log
+  // moves but my sprite does not".
+  executionTrace = installExecutionTrace(
+    vmInstance as unknown as {runtime?: unknown},
+  );
+
+  // Independent of pause/step: a stale glow must not cancel the frame's draw.
+  let loggedGlowFailure = false;
+  guardGlowUpdates(
+    (vmInstance as unknown as {runtime?: Record<string, unknown>}).runtime ?? {},
+    error => {
+      if (loggedGlowFailure) return;
+      loggedGlowFailure = true;
+      console.warn(
+        "[syncratch] ブロックの光らせ方で失敗しました（描画は続けます）",
+        error,
+      );
+    },
+  );
   const controller = installExecutionControl(
     vmInstance as unknown as {runtime?: unknown},
     {highlight: highlightExecutingBlocks},
@@ -2224,10 +2249,6 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController = controller;
   execControlGroup.hidden = false;
 
-  executionTrace?.dispose();
-  executionTrace = installExecutionTrace(
-    vmInstance as unknown as {runtime?: unknown},
-  );
   const tracePanel = tracePanelList.closest("details");
   tracePanel?.addEventListener("toggle", () => {
     renderExecutionTrace(vmInstance);

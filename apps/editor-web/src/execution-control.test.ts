@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {
+  guardGlowUpdates,
   installExecutionControl,
   readActiveBlockIds,
   type ExecutionRuntimeLike,
@@ -76,6 +77,49 @@ describe("readActiveBlockIds", () => {
     ).toEqual([]);
     expect(readActiveBlockIds(null)).toEqual([]);
     expect(readActiveBlockIds({})).toEqual([]);
+  });
+});
+
+// Runtime._step draws the stage only after _updateGlows returns, so a throw
+// there freezes the picture while the project keeps running.
+describe("guardGlowUpdates", () => {
+  it("swallows a glow failure and reports it", () => {
+    const onError = vi.fn();
+    const runtime = {
+      _updateGlows: () => {
+        throw new Error("Tried to glow block that does not exist.");
+      },
+    };
+    guardGlowUpdates(runtime, onError);
+
+    expect(() => runtime._updateGlows()).not.toThrow();
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes arguments through and returns the result when it works", () => {
+    const inner = vi.fn(() => "ok");
+    const runtime = {_updateGlows: inner};
+    guardGlowUpdates(runtime);
+
+    expect(runtime._updateGlows("a", "b")).toBe("ok");
+    expect(inner).toHaveBeenCalledWith("a", "b");
+  });
+
+  it("is idempotent and restorable", () => {
+    const inner = vi.fn();
+    const runtime = {_updateGlows: inner};
+    const remove = guardGlowUpdates(runtime);
+    const wrapped = runtime._updateGlows;
+    guardGlowUpdates(runtime);
+    expect(runtime._updateGlows, "second call must not double-wrap").toBe(wrapped);
+
+    remove();
+    expect(runtime._updateGlows).toBe(inner);
+  });
+
+  it("does nothing when the runtime has no _updateGlows", () => {
+    const runtime: {_updateGlows?: () => void} = {};
+    expect(() => guardGlowUpdates(runtime)()).not.toThrow();
   });
 });
 
