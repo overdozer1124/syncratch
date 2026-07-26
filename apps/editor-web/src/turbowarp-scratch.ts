@@ -36,12 +36,16 @@ const ArgumentType = {
 const BlockType = {
   BOOLEAN: "Boolean",
   BUTTON: "button",
+  /** TurboWarp: non-block text label in the palette. */
+  LABEL: "label",
   COMMAND: "command",
   CONDITIONAL: "conditional",
   EVENT: "event",
   HAT: "hat",
   LOOP: "loop",
   REPORTER: "reporter",
+  /** TurboWarp: raw scratch-blocks XML entry. */
+  XML: "xml",
 } as const;
 
 const TargetType = {

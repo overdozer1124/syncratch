@@ -141,6 +141,28 @@ describe("extension gallery catalog wiring", () => {
   });
 });
 
+describe("TurboWarp info normalization", () => {
+  it("maps LABEL blocks to separators and drops XML entries", async () => {
+    const {normalizeTurbowarpExtensionInfo} = await import(
+      "./extension-gallery.js"
+    );
+    const normalized = normalizeTurbowarpExtensionInfo({
+      id: "demo",
+      blocks: [
+        {blockType: "label", text: "Section"},
+        {opcode: "a", blockType: "command", text: "do A"},
+        {blockType: "xml", xml: "<label text='x'></label>"},
+        "---",
+      ],
+    });
+    expect(normalized.blocks).toEqual([
+      "---",
+      {opcode: "a", blockType: "command", text: "do A"},
+      "---",
+    ]);
+  });
+});
+
 describe("extension gallery loading", () => {
   it("loads builtin extensions through loadExtensionURL(id)", async () => {
     const loadExtensionURL = vi.fn(async () => undefined);
@@ -172,7 +194,11 @@ describe("extension gallery loading", () => {
   Scratch.extensions.register(new Fetch());
 })(Scratch);`;
     });
-    const register = vi.fn(() => "extension_1_fetch");
+    const blockInfo: Array<{id: string; blocks: unknown[]}> = [];
+    const register = vi.fn((instance: {getInfo(): {id: string}}) => {
+      blockInfo.push({id: instance.getInfo().id, blocks: []});
+      return "extension_1_fetch";
+    });
     const loaded = new Map<string, string>();
     const vm = {
       extensionManager: {
@@ -181,7 +207,7 @@ describe("extension gallery loading", () => {
         _loadedExtensions: loaded,
         _registerInternalExtension: register,
       },
-      runtime: {},
+      runtime: {_blockInfo: blockInfo},
     } satisfies ExtensionVm;
 
     try {
@@ -212,10 +238,19 @@ describe("extension gallery loading", () => {
         return {id: "ml2scratch", name: "ML2Scratch", blocks: []};
       }
     }
-    const register = vi.fn(() => "extension_1_ml2scratch");
+    const blockInfo: Array<{id: string; blocks: unknown[]}> = [];
+    const register = vi.fn((instance: {getInfo(): {id: string}}) => {
+      blockInfo.push({id: instance.getInfo().id, blocks: []});
+      return "extension_1_ml2scratch";
+    });
     const loaded = new Map<string, string>();
-    const runtime: {tag: string; formatMessage?: {setup?: () => unknown}} = {
+    const runtime: {
+      tag: string;
+      formatMessage?: {setup?: () => unknown};
+      _blockInfo: Array<{id: string; blocks: unknown[]}>;
+    } = {
       tag: "runtime",
+      _blockInfo: blockInfo,
     };
     const vm = {
       extensionManager: {

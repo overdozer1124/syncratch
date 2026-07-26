@@ -53,6 +53,12 @@ describe("turbowarp scratch helpers", () => {
     expect(objects[0]!.getInfo().id).toBe("fetch");
   });
 
+  it("exposes TurboWarp BlockType.LABEL / XML on the Scratch shim", () => {
+    const Scratch = createTurbowarpScratch({runtime: {}}, () => undefined);
+    expect(Scratch.BlockType.LABEL).toBe("label");
+    expect(Scratch.BlockType.XML).toBe("xml");
+  });
+
   it("exposes translate.setup before the extension IIFE runs", () => {
     const registered: unknown[] = [];
     const Scratch = createTurbowarpScratch(
