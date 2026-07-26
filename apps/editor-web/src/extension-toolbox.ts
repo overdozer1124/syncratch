@@ -82,6 +82,8 @@ export type ToolboxStore = {
 
 export type ScratchBlocksLike = {
   defineBlocksWithJsonArray?: (blocks: Record<string, unknown>[]) => void;
+  /** Live block-definition registry (`Blockly.Blocks`). */
+  Blocks?: Record<string, unknown>;
   getMainWorkspace?: () => {
     updateToolbox?: (xml: string) => void;
     getTheme?: () => {
@@ -132,7 +134,16 @@ export function ensureCategoryColors<T extends CategoryColors>(
 /**
  * Prepare block JSON for stock ScratchBlocks:
  * - drop TurboWarp-only Blockly extensions such as `colours_looks`
- * - add legacy colour fields so blocks still render when theme styles are missing
+ * - pick exactly one colour source: `style` (theme) or legacy `colour*` fields
+ *
+ * Blockly refuses JSON that carries both. `Block.jsonInit` throws
+ * `Must not have both a colour and a style.` (blockly/core/block.ts), and every
+ * block scratch-vm emits already has `style: categoryInfo.id`
+ * (`Runtime._convertBlockForScratchBlocks`, `Runtime._buildMenuForScratchBlocks`).
+ * That throw happens while the continuous flyout is inflating, i.e. after
+ * `Flyout.show()` already ran `hide()` + `clearOldBlocks()` — so a single bad
+ * definition blanks the whole shared flyout, motion and looks included, while
+ * the category rail stays on screen.
  */
 export function prepareExtensionBlockJson(
   json: Record<string, unknown>,
@@ -144,6 +155,17 @@ export function prepareExtensionBlockJson(
       entry => typeof entry === "string" && KNOWN_BLOCKLY_EXTENSIONS.has(entry),
     );
   }
+
+  // A themed block resolves its colours through `theme.setBlockStyle(id, …)`
+  // (see ensureExtensionBlockStyles). Adding legacy colours here would make the
+  // definition unusable rather than more robust.
+  if (typeof next.style === "string" && next.style) {
+    delete next.colour;
+    delete next.colourSecondary;
+    delete next.colourTertiary;
+    return next;
+  }
+
   const filled = ensureCategoryColors({...colors});
   const colourPrimary =
     (typeof next.colour === "string" && next.colour) || filled.color1;
@@ -252,7 +274,14 @@ function collectBlockJson(
   return out;
 }
 
-/** Best-effort: define extension block types on the live ScratchBlocks namespace. */
+/**
+ * Best-effort: define extension block types on the live ScratchBlocks namespace.
+ *
+ * This is a *fallback* for when stock GUI `handleExtensionAdded` threw before it
+ * reached `defineBlocksWithJsonArray`. Types the GUI already defined are left
+ * alone: it handles dynamic blocks and colour-mode icons that this path cannot,
+ * and re-defining them would silently downgrade working definitions.
+ */
 export function defineExtensionBlocks(
   scratchBlocks: ScratchBlocksLike | null | undefined,
   categoryInfo: ToolboxCategoryInfo & CategoryColors,
@@ -260,7 +289,12 @@ export function defineExtensionBlocks(
   if (!scratchBlocks || typeof scratchBlocks.defineBlocksWithJsonArray !== "function") {
     return false;
   }
-  const json = collectBlockJson(categoryInfo);
+  const defined = scratchBlocks.Blocks;
+  const json = collectBlockJson(categoryInfo).filter(entry => {
+    const type = entry.type;
+    if (typeof type !== "string" || !type) return false;
+    return !defined || defined[type] === undefined;
+  });
   if (json.length === 0) return false;
   try {
     scratchBlocks.defineBlocksWithJsonArray(json);
