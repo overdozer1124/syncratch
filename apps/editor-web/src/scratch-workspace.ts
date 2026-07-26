@@ -19,6 +19,8 @@ export interface ScratchWorkspaceLike {
 
 export interface ScratchBlocksApiLike {
   getMainWorkspace?: () => ScratchWorkspaceLike | null;
+  defineBlocksWithJsonArray?: (blocks: Record<string, unknown>[]) => void;
+  Blocks?: Record<string, unknown>;
   Workspace?: {
     getAll?: () => ScratchWorkspaceLike[];
   };
@@ -91,6 +93,65 @@ export function resolveScratchWorkspace(
       fiber = (fiber.return as typeof fiber) ?? null;
     }
   }
+  return null;
+}
+
+function isUsableScratchBlocksApi(
+  value: unknown,
+): value is ScratchBlocksApiLike {
+  if (!value || typeof value !== "object") return false;
+  const api = value as ScratchBlocksApiLike;
+  return typeof api.defineBlocksWithJsonArray === "function";
+}
+
+/**
+ * Resolve the live ScratchBlocks namespace used by the GUI Blocks container.
+ * `globalThis.Blockly` is often a Msg-only stub without defineBlocksWithJsonArray.
+ */
+export function resolveScratchBlocksApi(
+  root: ParentNode | null | undefined,
+  blocksApi: ScratchBlocksApiLike | null | undefined = (
+    globalThis as unknown as {Blockly?: ScratchBlocksApiLike}
+  ).Blockly,
+): ScratchBlocksApiLike | null {
+  if (isUsableScratchBlocksApi(blocksApi)) return blocksApi;
+
+  if (!root || typeof root.querySelector !== "function") return null;
+  const starts = [
+    root.querySelector('[class*="blocks_blocks"]'),
+    root.querySelector(".injectionDiv"),
+    root.querySelector("svg.blocklySvg"),
+  ].filter((node): node is Element => Boolean(node));
+
+  for (const start of starts) {
+    const fiberKey = Object.getOwnPropertyNames(start).find(
+      key =>
+        key.startsWith("__reactFiber$") ||
+        key.startsWith("__reactInternalInstance$") ||
+        key.startsWith("__reactContainer$"),
+    );
+    let fiber: {
+      stateNode?: {ScratchBlocks?: unknown; workspace?: unknown};
+      return?: unknown;
+    } | null = fiberKey
+      ? ((start as unknown as Record<string, unknown>)[fiberKey] as {
+          stateNode?: {ScratchBlocks?: unknown; workspace?: unknown};
+          return?: unknown;
+        })
+      : null;
+    for (let depth = 0; fiber && depth < 80; depth += 1) {
+      const fromComponent = fiber.stateNode?.ScratchBlocks;
+      if (isUsableScratchBlocksApi(fromComponent)) return fromComponent;
+      fiber = (fiber.return as typeof fiber) ?? null;
+    }
+  }
+
+  // Last resort: WorkspaceSvg constructor sometimes exposes the Blockly namespace.
+  const workspace = resolveScratchWorkspace(root, blocksApi);
+  const ctor = workspace
+    ? (workspace as {constructor?: unknown}).constructor
+    : null;
+  if (isUsableScratchBlocksApi(ctor)) return ctor;
   return null;
 }
 

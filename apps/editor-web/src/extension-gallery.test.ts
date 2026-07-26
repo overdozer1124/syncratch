@@ -150,7 +150,12 @@ describe("TurboWarp info normalization", () => {
       id: "demo",
       blocks: [
         {blockType: "label", text: "Section"},
-        {opcode: "a", blockType: "command", text: "do A"},
+        {
+          opcode: "a",
+          blockType: "command",
+          text: "do A",
+          extensions: ["colours_looks"],
+        },
         {blockType: "xml", xml: "<label text='x'></label>"},
         "---",
       ],

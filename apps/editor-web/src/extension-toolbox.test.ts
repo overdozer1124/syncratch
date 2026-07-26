@@ -3,6 +3,7 @@ import {
   assertExtensionPrimitivesRegistered,
   ensureExtensionInToolbox,
   injectCategoryIntoToolboxXml,
+  prepareExtensionBlockJson,
   readToolboxXml,
   toolboxHasCategory,
   UPDATE_TOOLBOX_TYPE,
@@ -50,6 +51,22 @@ describe("extension toolbox helpers", () => {
         "fetch",
       ),
     ).not.toThrow();
+  });
+
+  it("prepareExtensionBlockJson strips unknown Blockly extensions and adds colours", () => {
+    const prepared = prepareExtensionBlockJson(
+      {
+        type: "text_setText",
+        style: "text",
+        extensions: ["scratch_extension", "colours_looks", "shape_hat"],
+        message0: "%1 hello",
+      },
+      {color1: "#9966FF", color2: "#774DCB", color3: "#5484D7"},
+    );
+    expect(prepared.extensions).toEqual(["scratch_extension", "shape_hat"]);
+    expect(prepared.colour).toBe("#9966FF");
+    expect(prepared.colourSecondary).toBe("#774DCB");
+    expect(prepared.colourTertiary).toBe("#5484D7");
   });
 
   it("ensureExtensionInToolbox injects XML when GUI listener skips refresh", async () => {
@@ -109,6 +126,12 @@ describe("extension toolbox helpers", () => {
       expect.objectContaining({id: "fetch"}),
     );
     expect(defineBlocksWithJsonArray).toHaveBeenCalled();
+    const defined = defineBlocksWithJsonArray.mock.calls[0]?.[0] as Array<{
+      colour?: string;
+      type?: string;
+    }>;
+    expect(defined[0]?.type).toBe("fetch_get");
+    expect(defined[0]?.colour).toBeTruthy();
     expect(store.dispatch).toHaveBeenCalledWith(
       expect.objectContaining({type: UPDATE_TOOLBOX_TYPE}),
     );
