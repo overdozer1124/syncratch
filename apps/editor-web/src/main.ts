@@ -239,6 +239,12 @@ import {
   installExecutionControl,
   type ExecutionController,
 } from "./execution-control.js";
+import {
+  installExecutionTrace,
+  resolveTraceEntries,
+  type ExecutionTraceHandle,
+} from "./execution-trace.js";
+import {createTraceListView} from "./execution-trace-ui.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
@@ -418,6 +424,8 @@ const downloadButton = requiredElement<HTMLButtonElement>("download-project");
 const saveButton = requiredElement<HTMLButtonElement>("save-project");
 const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const execControlGroup = requiredElement<HTMLElement>("exec-control");
+const tracePanelList = requiredElement<HTMLElement>("trace-list");
+const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
 const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
@@ -2134,6 +2142,28 @@ function installScratchNativeMenus(
 }
 
 let executionController: ExecutionController | null = null;
+let executionTrace: ExecutionTraceHandle | null = null;
+const traceListView = createTraceListView(tracePanelList);
+
+/**
+ * Repaint the trace panel from the recorded entries.
+ *
+ * Only runs while the panel is open: a `forever` loop records constantly, and
+ * rebuilding a list nobody is looking at would burn frames for nothing.
+ */
+function renderExecutionTrace(vmInstance: ScratchVm): void {
+  if (!executionTrace) return;
+  const panel = tracePanelList.closest("details");
+  if (panel && !panel.open) return;
+  const targets = (vmInstance.runtime as {targets?: unknown[]} | undefined)
+    ?.targets;
+  traceListView.render(
+    resolveTraceEntries(
+      executionTrace.trace.getEntries(),
+      (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
+    ),
+  );
+}
 
 /** scratch-blocks builds this filter at inject time (src/glows.ts). */
 const BLOCK_GLOW_FILTER = "url(#blocklyStackGlowFilter)";
@@ -2186,6 +2216,21 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController = controller;
   execControlGroup.hidden = false;
 
+  executionTrace?.dispose();
+  executionTrace = installExecutionTrace(
+    vmInstance as unknown as {runtime?: unknown},
+  );
+  const tracePanel = tracePanelList.closest("details");
+  tracePanel?.addEventListener("toggle", () => {
+    renderExecutionTrace(vmInstance);
+  });
+  traceClearButton.addEventListener("click", () => {
+    executionTrace?.trace.clear();
+    renderExecutionTrace(vmInstance);
+  });
+  // While running, refresh on a timer rather than per frame.
+  window.setInterval(() => renderExecutionTrace(vmInstance), 700);
+
   const render = () => {
     const {state} = controller.getSnapshot();
     const paused = state === "paused";
@@ -2193,6 +2238,7 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     execPauseButton.textContent = paused ? "再開" : "一時停止";
     execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
     execStatus.textContent = paused ? "止まっています" : "動いています";
+    renderExecutionTrace(vmInstance);
   };
 
   controller.subscribe(render);

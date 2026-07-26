@@ -150,3 +150,26 @@ test("step advances exactly one frame and highlights the running block", async (
   );
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
 });
+
+test("the trace panel records what actually ran", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+
+  await page.getByTestId("trace-panel").locator("summary").click();
+  const lines = page.getByTestId("trace-list").locator(".trace-line");
+  await expect(lines.first()).toBeVisible();
+
+  // The forever loop runs "move 1 steps" over and over, under the green flag hat.
+  const labels = await lines.allTextContents();
+  expect(labels.join("\n")).toContain("歩いた");
+  expect(labels.join("\n")).toContain("緑の旗が押された");
+
+  // A forever loop genuinely alternates forever/move, so consecutive-run
+  // coalescing does not apply here; the buffer cap is what bounds the list.
+  expect(await lines.count(), "a forever loop must not flood the trace").toBeLessThan(
+    600,
+  );
+
+  await page.getByTestId("trace-clear").click();
+  await expect(page.getByTestId("trace-list").locator(".trace-empty")).toBeVisible();
+});

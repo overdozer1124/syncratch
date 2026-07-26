@@ -691,6 +691,24 @@
               role="status"
               aria-live="polite"
             >動いています</span>
+            <details class="tool-panel trace-panel" data-testid="trace-panel">
+              <summary>じっこう履歴</summary>
+              <div class="panel-content">
+                <div class="trace-panel-actions">
+                  <button
+                    class="toolbar-action toolbar-action--quiet"
+                    data-testid="trace-clear"
+                    id="trace-clear"
+                    type="button"
+                  >消す</button>
+                </div>
+                <div
+                  class="trace-panel-body"
+                  data-testid="trace-list"
+                  id="trace-list"
+                ></div>
+              </div>
+            </details>
           </div>
         </div>
       </div>
