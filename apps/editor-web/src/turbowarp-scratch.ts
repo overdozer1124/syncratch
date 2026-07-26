@@ -6,6 +6,11 @@
  * TurboWarp VM runner, so we inject a compatible global before loading.
  */
 
+import {
+  ensureTurbowarpVmCompat,
+  type CompatVm,
+} from "./turbowarp-vm-compat.js";
+
 export type TurbowarpExtensionObject = {
   getInfo(): {id: string; name?: string; blocks?: unknown[]};
 };
@@ -388,6 +393,9 @@ export function loadTurbowarpExtensionScript(
   const run = async () => {
     const extensionObjects: TurbowarpExtensionObject[] = [];
     let registered = false;
+
+    // Animated Text / Pen+ expect TurboWarp VM+renderer export surfaces.
+    ensureTurbowarpVmCompat(vm as CompatVm);
 
     const Scratch = createTurbowarpScratch(vm, extensionObject => {
       extensionObjects.push(extensionObject);
