@@ -49,14 +49,19 @@ export function createExtensionGalleryUi(options: {
         <h2 id="extension-gallery-title">拡張機能を選ぶ</h2>
         <button type="button" class="extension-gallery-close" aria-label="閉じる">×</button>
       </header>
-      <div
-        class="extension-gallery-filters"
-        role="tablist"
-        aria-label="拡張機能の用途で絞り込み"
-        data-testid="extension-gallery-filters"
-      ></div>
-      <p class="extension-gallery-status" hidden data-testid="extension-gallery-status"></p>
-      <div class="extension-gallery-grid" data-testid="extension-gallery-grid"></div>
+      <div class="extension-gallery-body">
+        <nav
+          class="extension-gallery-filters"
+          role="tablist"
+          aria-label="拡張機能の用途で絞り込み"
+          aria-orientation="vertical"
+          data-testid="extension-gallery-filters"
+        ></nav>
+        <div class="extension-gallery-main">
+          <p class="extension-gallery-status" hidden data-testid="extension-gallery-status"></p>
+          <div class="extension-gallery-grid" data-testid="extension-gallery-grid"></div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -291,7 +296,15 @@ export function createExtensionGalleryUi(options: {
       close();
       return;
     }
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    // Vertical sidebar: prefer Up/Down; keep Left/Right as aliases.
+    if (
+      event.key !== "ArrowUp" &&
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight"
+    ) {
+      return;
+    }
     const tabs = [...filtersEl.querySelectorAll<HTMLButtonElement>(
       ".extension-gallery-filter",
     )];
@@ -301,7 +314,8 @@ export function createExtensionGalleryUi(options: {
     );
     if (currentIndex < 0) return;
     event.preventDefault();
-    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const delta =
+      event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
     const next =
       tabs[(currentIndex + delta + tabs.length) % tabs.length];
     const nextId = next?.dataset.filterId;
