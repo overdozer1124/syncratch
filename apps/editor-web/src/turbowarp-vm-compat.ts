@@ -161,12 +161,85 @@ export function createMinimalTwgl() {
   };
 }
 
-function resolveSkinBase(
-  renderer: CompatRenderer,
-): (new (id: number, renderer?: unknown) => unknown) & {
+type SkinBaseCtor = (new (id: number, renderer?: unknown) => unknown) & {
   Events?: {WasAltered: string};
   prototype: object;
-} {
+};
+
+/** Survives `vm.clear()` so project-restore can reload Animated Text. */
+let cachedSkinBase: SkinBaseCtor | null = null;
+let cachedRenderedTarget: unknown = null;
+
+/** Test-only: drop cached constructors between cases. */
+export function resetTurbowarpVmCompatCacheForTests(): void {
+  cachedSkinBase = null;
+  cachedRenderedTarget = null;
+}
+
+/**
+ * Minimal Skin stand-in used only when costumes were disposed (mid loadProject)
+ * and we never got a chance to cache the real scratch-render Skin class.
+ * Animated Text subclasses this and calls `emitWasAltered()`.
+ */
+function createFallbackSkinBase(): SkinBaseCtor {
+  type Listener = (...args: unknown[]) => void;
+  class FallbackSkin {
+    static Events = {WasAltered: "WasAltered"};
+    _id: number;
+    _renderer?: unknown;
+    private _listeners = new Map<string, Set<Listener>>();
+
+    constructor(id: number, renderer?: unknown) {
+      this._id = id;
+      this._renderer = renderer;
+    }
+
+    get id(): number {
+      return this._id;
+    }
+
+    get size(): [number, number] {
+      return [0, 0];
+    }
+
+    on(event: string, listener: Listener): this {
+      let set = this._listeners.get(event);
+      if (!set) {
+        set = new Set();
+        this._listeners.set(event, set);
+      }
+      set.add(listener);
+      return this;
+    }
+
+    addListener(event: string, listener: Listener): this {
+      return this.on(event, listener);
+    }
+
+    removeListener(event: string, listener: Listener): this {
+      this._listeners.get(event)?.delete(listener);
+      return this;
+    }
+
+    emit(event: string, ...args: unknown[]): boolean {
+      const set = this._listeners.get(event);
+      if (!set || set.size === 0) return false;
+      for (const listener of [...set]) listener(...args);
+      return true;
+    }
+
+    setMaxListeners(_n: number): this {
+      return this;
+    }
+
+    dispose(): void {
+      this._listeners.clear();
+    }
+  }
+  return FallbackSkin as unknown as SkinBaseCtor;
+}
+
+function resolveSkinBase(renderer: CompatRenderer): SkinBaseCtor {
   const skins = renderer._allSkins ?? [];
   for (const skin of skins) {
     if (!skin || typeof skin !== "object") continue;
@@ -180,15 +253,17 @@ function resolveSkinBase(
         })
       | undefined;
     if (Skin && Skin.Events?.WasAltered === "WasAltered") {
-      return Skin as (new (id: number, renderer?: unknown) => unknown) & {
-        Events?: {WasAltered: string};
-        prototype: object;
-      };
+      const resolved = Skin as SkinBaseCtor;
+      cachedSkinBase = resolved;
+      return resolved;
     }
   }
-  throw new Error(
-    "TurboWarp 互換: レンダラから Skin クラスを取得できませんでした",
-  );
+  if (cachedSkinBase) return cachedSkinBase;
+  // loadProject calls clear()/dispose() before reloading extensions, so
+  // _allSkins is often empty here — fall back rather than failing the gate.
+  const fallback = createFallbackSkinBase();
+  cachedSkinBase = fallback;
+  return fallback;
 }
 
 function createCompatSkinClass(
@@ -223,18 +298,20 @@ function resolveRenderedTarget(runtime: CompatRuntime): unknown {
   const preferred =
     targets.find(target => target && target.isStage === false) ??
     targets.find(Boolean);
-  if (!preferred?.constructor) {
-    throw new Error(
-      "TurboWarp 互換: RenderedTarget クラスを取得できませんでした",
-    );
+  if (preferred?.constructor) {
+    cachedRenderedTarget = preferred.constructor;
+    return preferred.constructor;
   }
-  return preferred.constructor;
+  if (cachedRenderedTarget) return cachedRenderedTarget;
+  throw new Error(
+    "TurboWarp 互換: RenderedTarget クラスを取得できませんでした",
+  );
 }
 
 /**
  * Ensure the live VM/renderer expose TurboWarp extension internals.
- * Safe to call multiple times. Soft-noops when renderer/targets are missing
- * (unit tests / early boot); full gallery loads always have both.
+ * Safe to call multiple times. Call once after the default sprite exists
+ * (onVmInit) so Skin/RenderedTarget are cached before loadProject's clear().
  */
 export function ensureTurbowarpVmCompat(vm: CompatVm): void {
   const runtime = vm.runtime;
@@ -260,11 +337,19 @@ export function ensureTurbowarpVmCompat(vm: CompatVm): void {
 
   const renderer = (vm.renderer ?? runtime.renderer) as CompatRenderer | null;
   if (!renderer || typeof renderer !== "object") {
+    // Still try to keep a previously resolved RenderedTarget on vm.exports.
+    if (cachedRenderedTarget) {
+      vm.exports = {
+        ...(vm.exports ?? {}),
+        RenderedTarget: cachedRenderedTarget,
+      };
+    }
     return;
   }
 
-  // Stock VM has no `vm.renderer` getter (TurboWarp does).
-  if (vm.renderer !== renderer) {
+  // Stock Scratch VM already exposes `vm.renderer` as a getter into
+  // `runtime.renderer`. Only add one when missing (unit tests / odd hosts).
+  if (vm.renderer == null) {
     try {
       Object.defineProperty(vm, "renderer", {
         configurable: true,
@@ -284,19 +369,15 @@ export function ensureTurbowarpVmCompat(vm: CompatVm): void {
       createSimpleTextWrapper(measurementProvider);
   }
 
-  try {
-    const BaseSkin = resolveSkinBase(renderer);
-    const CompatSkin = createCompatSkinClass(BaseSkin);
-    const twgl = createMinimalTwgl();
-    renderer.exports = {
-      ...(renderer.exports ?? {}),
-      Skin: CompatSkin,
-      CanvasMeasurementProvider,
-      twgl,
-    };
-  } catch {
-    // Skins not ready yet — extensions that need them will fail loudly later.
-  }
+  const BaseSkin = resolveSkinBase(renderer);
+  const CompatSkin = createCompatSkinClass(BaseSkin);
+  const twgl = createMinimalTwgl();
+  renderer.exports = {
+    ...(renderer.exports ?? {}),
+    Skin: CompatSkin,
+    CanvasMeasurementProvider,
+    twgl,
+  };
 
   try {
     vm.exports = {
@@ -304,6 +385,11 @@ export function ensureTurbowarpVmCompat(vm: CompatVm): void {
       RenderedTarget: resolveRenderedTarget(runtime),
     };
   } catch {
-    // No targets yet.
+    if (cachedRenderedTarget) {
+      vm.exports = {
+        ...(vm.exports ?? {}),
+        RenderedTarget: cachedRenderedTarget,
+      };
+    }
   }
 }

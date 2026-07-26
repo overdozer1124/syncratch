@@ -409,6 +409,12 @@ export function loadTurbowarpExtensionScript(
     const g = globalThis as typeof globalThis & {Scratch?: TurbowarpScratch};
     g.Scratch = Scratch;
 
+    const previousAlert = globalThis.alert;
+    // lab/text.js calls alert("VM is too old…") before throwing — surface that
+    // as a normal Error instead of a blocking browser dialog.
+    globalThis.alert = (message?: unknown) => {
+      throw new Error(String(message ?? "alert"));
+    };
     try {
       const source = await turbowarpScriptFetcher(extensionURL);
       // Classic scripts expect a global Scratch and top-level translate.setup.
@@ -421,6 +427,7 @@ export function loadTurbowarpExtensionScript(
         ? error
         : new Error(`TurboWarp 拡張の読み込みに失敗しました: ${extensionURL}`);
     } finally {
+      globalThis.alert = previousAlert;
       if (g.Scratch?.extensions) {
         g.Scratch.extensions.register = () => {
           throw new Error("Too late to register new extensions.");

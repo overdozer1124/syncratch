@@ -86,6 +86,7 @@ describe("extension toolbox helpers", () => {
       }),
     };
     const emit = vi.fn();
+    const emitWorkspaceUpdate = vi.fn();
     const defineBlocksWithJsonArray = vi.fn();
     const updateToolbox = vi.fn();
     const selectCategory = vi.fn(() => true);
@@ -93,6 +94,7 @@ describe("extension toolbox helpers", () => {
     const ok = await ensureExtensionInToolbox({
       vm: {
         emit,
+        emitWorkspaceUpdate,
         runtime: {
           _blockInfo: [
             {
@@ -106,6 +108,7 @@ describe("extension toolbox helpers", () => {
             },
           ],
           getBlocksXML: () => [{id: "fetch", xml: categoryXml}],
+          targets: [],
         },
       },
       store,
@@ -137,5 +140,43 @@ describe("extension toolbox helpers", () => {
     );
     expect(toolboxHasCategory(toolboxXML, "fetch")).toBe(true);
     expect(selectCategory).toHaveBeenCalledWith("fetch");
+    // Fresh add with no placed blocks must not rebuild the workspace.
+    expect(emitWorkspaceUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not replace an empty toolbox with only the extension category", async () => {
+    let toolboxXML = "";
+    const store = {
+      getState: () => ({scratchGui: {toolbox: {toolboxXML}}}),
+      dispatch: vi.fn((action: {type?: string; toolboxXML?: string}) => {
+        if (
+          action?.type === UPDATE_TOOLBOX_TYPE &&
+          typeof action.toolboxXML === "string"
+        ) {
+          toolboxXML = action.toolboxXML;
+        }
+      }),
+    };
+    const ok = await ensureExtensionInToolbox({
+      vm: {
+        runtime: {
+          _blockInfo: [{id: "fetch", blocks: []}],
+          getBlocksXML: () => [
+            {
+              id: "fetch",
+              xml: '<category name="Fetch" toolboxitemid="fetch"></category>',
+            },
+          ],
+        },
+      },
+      store,
+      extensionId: "fetch",
+      attempts: 1,
+      delayMs: 0,
+      sleep: async () => undefined,
+    });
+    expect(ok).toBe(false);
+    expect(store.dispatch).not.toHaveBeenCalled();
+    expect(toolboxXML).toBe("");
   });
 });

@@ -35,6 +35,46 @@ export type ToolboxVm = {
   emit?: (event: string, payload?: unknown) => void;
 };
 
+/** True when any target already has blocks whose opcode belongs to extensionId. */
+export function extensionHasWorkspaceBlocks(
+  vm: ToolboxVm,
+  extensionId: string,
+): boolean {
+  if (!extensionId) return false;
+  const prefix = `${extensionId}_`;
+  const targets = (
+    vm.runtime as {targets?: Array<{blocks?: {getAllBlocks?: () => unknown}}>} | null | undefined
+  )?.targets;
+  const candidates: unknown[] = [];
+  if (Array.isArray(targets)) {
+    for (const target of targets) {
+      const all = target?.blocks?.getAllBlocks?.();
+      if (all && typeof all === "object") candidates.push(all);
+    }
+  }
+  const editingBlocks = (
+    vm.editingTarget as {blocks?: {getAllBlocks?: () => unknown}} | undefined
+  )?.blocks?.getAllBlocks?.();
+  if (editingBlocks && typeof editingBlocks === "object") {
+    candidates.push(editingBlocks);
+  }
+  for (const bag of candidates) {
+    const blocks = Array.isArray(bag)
+      ? bag
+      : Object.values(bag as Record<string, unknown>);
+    for (const block of blocks) {
+      const opcode =
+        block && typeof block === "object"
+          ? (block as {opcode?: unknown}).opcode
+          : undefined;
+      if (typeof opcode === "string" && opcode.startsWith(prefix)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export type ToolboxStore = {
   getState: () => unknown;
   dispatch: (action: unknown) => unknown;
@@ -340,7 +380,9 @@ export async function ensureExtensionInToolbox(
     let toolboxXML = readToolboxXml(store.getState()) ?? "";
     if (!toolboxHasCategory(toolboxXML, extensionId)) {
       const categoryXml = getExtensionCategoryXml(vm, extensionId);
-      if (categoryXml) {
+      // Never replace a missing/empty toolbox with only the extension category —
+      // that drops Motion/Looks/… and looks like "all blocks disappeared".
+      if (categoryXml && toolboxXML.includes("<category")) {
         toolboxXML = injectCategoryIntoToolboxXml(toolboxXML, categoryXml);
         store.dispatch({
           type: UPDATE_TOOLBOX_TYPE,
@@ -356,8 +398,10 @@ export async function ensureExtensionInToolbox(
 
     toolboxXML = readToolboxXml(store.getState()) ?? toolboxXML;
     if (toolboxHasCategory(toolboxXML, extensionId)) {
-      // Rebuild workspace SVGs so already-placed husks pick up fixed definitions.
-      if (definedBlocks) {
+      // Only rebuild workspace SVGs when this extension already has placed
+      // blocks. Unconditional emitWorkspaceUpdate can wipe the flyout
+      // (missing category flyoutInflater) right after a fresh gallery add.
+      if (definedBlocks && extensionHasWorkspaceBlocks(vm, extensionId)) {
         try {
           vm.emitWorkspaceUpdate?.();
         } catch {

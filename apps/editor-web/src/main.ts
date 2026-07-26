@@ -233,6 +233,7 @@ import {
   resolveScratchWorkspace,
 } from "./scratch-workspace.js";
 import {installProjectExtensionLoader} from "./extension-project-load.js";
+import {ensureTurbowarpVmCompat} from "./turbowarp-vm-compat.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
@@ -2022,6 +2023,10 @@ async function getVm(): Promise<ScratchVm> {
       canChangeColorMode: false,
       canChangeTheme: false,
       onVmInit: vmInstance => {
+        // Warm TurboWarp compat while the default sprite/skins still exist.
+        // loadProject() clears targets before reloading extensions, so Animated
+        // Text needs cached Skin/RenderedTarget from this moment.
+        ensureTurbowarpVmCompat(vmInstance);
         // Before any IndexedDB project restore: custom gallery extensions must
         // not go through the stock extension worker (that rejects and bricks boot).
         installProjectExtensionLoader(vmInstance, {
