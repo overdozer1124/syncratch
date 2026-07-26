@@ -2673,21 +2673,23 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 
 .syncratch-flyout-toggle {
   position: fixed;
-  z-index: 1200;
+  /* Above Scratch workspace SVG / drag surfaces; below modal/picker. */
+  z-index: 9000;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 64px;
+  width: 28px;
+  height: 72px;
   margin: 0;
   padding: 0;
   border: 1px solid rgba(0, 0, 0, 0.18);
   border-left: none;
-  border-radius: 0 8px 8px 0;
+  border-radius: 0 10px 10px 0;
   background: linear-gradient(180deg, #f7f7f7 0%, #ebebeb 100%);
   color: #4c4c4c;
-  box-shadow: 1px 0 2px rgba(0, 0, 0, 0.08);
-  transform: translateX(-1px);
+  box-shadow: 1px 0 3px rgba(0, 0, 0, 0.12);
+  /* Sit mostly over the workspace so Blockly flyout SVG cannot steal clicks. */
+  transform: translateX(0);
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;

@@ -278,8 +278,11 @@ export function installFlyoutLayout(options: {
       ? (toolboxRect?.right ?? hostRect.left + toolboxWidth)
       : (flyoutRect?.right ??
         hostRect.left + toolboxWidth + displayWidth);
-    // Vertical center against the blocks pane, not the toolbox chrome alone.
-    const midY = hostRect.top + hostRect.height / 2 - 32;
+    // Prefer the upper-middle of the toolbox column (more discoverable / less
+    // likely to sit under sprite-pane chrome on short windows).
+    const columnTop = toolboxRect?.top ?? hostRect.top;
+    const columnHeight = toolboxRect?.height ?? hostRect.height;
+    const midY = columnTop + Math.min(Math.max(columnHeight * 0.4, 120), 360) - 36;
     toggle.style.left = `${Math.round(edgeX)}px`;
     toggle.style.top = `${Math.round(midY)}px`;
     if (!toggle.isConnected) documentRef.body.append(toggle);
@@ -317,9 +320,19 @@ export function installFlyoutLayout(options: {
     applyWidth();
   }
 
+  let ignoreClickUntil = 0;
+  function onTogglePointerDown(event: Event): void {
+    // Capture early so Blockly workspace gesture handlers cannot swallow it.
+    event.preventDefault();
+    event.stopPropagation();
+    ignoreClickUntil = Date.now() + 400;
+    setCollapsed(!collapsed);
+  }
+
   function onToggleClick(event: Event): void {
     event.preventDefault();
     event.stopPropagation();
+    if (Date.now() < ignoreClickUntil) return;
     setCollapsed(!collapsed);
   }
 
@@ -345,6 +358,9 @@ export function installFlyoutLayout(options: {
     onHoverLeave();
   };
 
+  // pointerdown+click: Blockly often starts a gesture on pointerdown and
+  // prevents the subsequent click from reaching late listeners.
+  toggle.addEventListener("pointerdown", onTogglePointerDown, true);
   toggle.addEventListener("click", onToggleClick);
   options.root.addEventListener("pointerover", onRootPointerOver);
   options.root.addEventListener("pointerout", onRootPointerOut);
@@ -394,6 +410,7 @@ export function installFlyoutLayout(options: {
       window.removeEventListener("resize", onResize);
       options.root.removeEventListener("pointerover", onRootPointerOver);
       options.root.removeEventListener("pointerout", onRootPointerOut);
+      toggle.removeEventListener("pointerdown", onTogglePointerDown, true);
       toggle.removeEventListener("click", onToggleClick);
       toolboxEl?.removeEventListener("click", onCategoryClick);
       if (patchedFlyout && originalGetWidth) {
