@@ -47,14 +47,17 @@ class FakeSocket implements WebSocketLike {
   }
 }
 
-function fakePeerConnection(): RTCPeerConnection & {
+type FakePeerConnection = Omit<RTCPeerConnection, "addEventListener"> & {
+  addEventListener: ReturnType<typeof vi.fn>;
   __channel: {
     readyState: string;
     send: ReturnType<typeof vi.fn>;
     addEventListener: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   };
-} {
+};
+
+function fakePeerConnection(): FakePeerConnection {
   const channel = {
     readyState: "connecting",
     addEventListener: vi.fn(),
@@ -72,7 +75,7 @@ function fakePeerConnection(): RTCPeerConnection & {
     addEventListener: vi.fn(),
     close: vi.fn(),
     connectionState: "new",
-  } as unknown as RTCPeerConnection & {__channel: typeof channel};
+  } as unknown as FakePeerConnection;
 }
 
 const TOPIC = "c".repeat(43);
@@ -485,10 +488,11 @@ describe("createWebRtcTransport signaling wiring", () => {
 
     const failedPc = created[0]!;
     const onState = failedPc.addEventListener.mock.calls.find(
-      ([event]) => event === "connectionstatechange",
-    )?.[1] as () => void;
+      (call: unknown[]) => call[0] === "connectionstatechange",
+    )?.[1] as (() => void) | undefined;
+    expect(onState).toEqual(expect.any(Function));
     (failedPc as {connectionState: string}).connectionState = "failed";
-    onState();
+    onState!();
     // With signalRelayFallbackMs: 0, failed still activates relay immediately.
     expect(onDiagnostic).toHaveBeenCalledWith("signal-relay(peer-b)");
     expect(onDiagnostic).toHaveBeenCalledWith("pc-failed-recover(peer-b)");
