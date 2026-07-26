@@ -8,6 +8,7 @@ import {
   isTurbowarpScriptUrl,
   loadTurbowarpExtensionScript,
 } from "./turbowarp-scratch.js";
+import {assertExtensionPrimitivesRegistered} from "./extension-toolbox.js";
 import {ensureRuntimeFormatMessage} from "./xcratch-format-message.js";
 
 export type ExtensionLoadMode = "builtin" | "module" | "loader" | "unavailable";
@@ -36,6 +37,8 @@ export type ExtensionVm = {
     _registerInternalExtension(extensionObject: {getInfo(): {id: string}}): string;
   };
   runtime: unknown;
+  editingTarget?: unknown;
+  emit?: (event: string, payload?: unknown) => void;
 };
 
 export type XcratchExtensionModule = {
@@ -398,8 +401,40 @@ async function registerExtensionInstance(
     return extensionId;
   }
   const serviceName = vm.extensionManager._registerInternalExtension(instance);
+  // Stock `_registerExtensionInfo` fires primitives via dispatch.call and only
+  // log.errors failures — without this check the gallery can toast "added"
+  // while the toolbox category never appears.
+  assertExtensionPrimitivesRegistered(vm, extensionId);
   vm.extensionManager._loadedExtensions.set(extensionId, serviceName);
   return extensionId;
+}
+
+/**
+ * Stock Scratch VM has no BlockType.LABEL/XML. Map labels to separators so the
+ * rest of the category still registers; drop raw XML entries.
+ */
+export function normalizeTurbowarpExtensionInfo<T extends {blocks?: unknown[]}>(
+  info: T,
+): T {
+  if (!info || !Array.isArray(info.blocks)) return info;
+  const blocks = info.blocks.flatMap(block => {
+    if (block === "---") return [block];
+    if (!block || typeof block !== "object") return [block];
+    const blockType = (block as {blockType?: unknown}).blockType;
+    if (blockType === "label") return ["---"];
+    if (blockType === "xml") return [];
+    return [block];
+  });
+  return {...info, blocks};
+}
+
+function wrapTurbowarpExtensionObject<T extends {getInfo(): {id: string; blocks?: unknown[]}}>(
+  object: T,
+): T {
+  // Patch in place so prototype methods (opcodes) stay on the service object.
+  const original = object.getInfo.bind(object);
+  object.getInfo = () => normalizeTurbowarpExtensionInfo(original());
+  return object;
 }
 
 async function loadTurbowarpExtensionUrl(
@@ -414,7 +449,11 @@ async function loadTurbowarpExtensionUrl(
   }
   let lastId = expectedId ?? resolvedUrl;
   for (const object of objects) {
-    lastId = await registerExtensionInstance(vm, object, expectedId);
+    lastId = await registerExtensionInstance(
+      vm,
+      wrapTurbowarpExtensionObject(object),
+      expectedId,
+    );
   }
   return lastId;
 }

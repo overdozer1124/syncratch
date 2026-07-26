@@ -111,6 +111,10 @@ import {
 } from "./extension-gallery.js";
 import {createExtensionGalleryUi} from "./extension-gallery-ui.js";
 import {
+  ensureExtensionInToolbox,
+  type ScratchBlocksLike,
+} from "./extension-toolbox.js";
+import {
   listLocales,
   localeLabel,
   readColorMode,
@@ -2104,10 +2108,23 @@ function installDefaultExtensionGallery(
     getVm: () => scratchVm as ExtensionVm,
     onLoaded: (extensionId, alreadyLoaded) => {
       if (extensionId) {
-        // Match Scratch: jump to the new extension category in the toolbox.
-        window.setTimeout(() => {
-          restoreToolboxCategory(extensionId);
-        }, 50);
+        // Stock GUI may skip toolbox refresh when theme setup throws after
+        // EXTENSION_ADDED. Re-emit + inject category XML so TurboWarp/Xcratch
+        // blocks actually appear in the palette.
+        void ensureExtensionInToolbox({
+          vm: scratchVm,
+          store: state.store,
+          extensionId,
+          scratchBlocks: (globalThis as unknown as {Blockly?: ScratchBlocksLike})
+            .Blockly,
+          selectCategory: restoreToolboxCategory,
+        }).then(visible => {
+          if (!visible) {
+            appToast.show(
+              `「${extensionId}」は読み込みましたが、ブロック一覧への反映に失敗しました。別のスプライトを選ぶか、ページを再読み込みしてください`,
+            );
+          }
+        });
       }
       if (alreadyLoaded && extensionId) {
         appToast.show(`「${extensionId}」はすでに追加されています`);
