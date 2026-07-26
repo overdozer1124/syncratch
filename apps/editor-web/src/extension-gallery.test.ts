@@ -166,6 +166,23 @@ describe("TurboWarp info normalization", () => {
       "---",
     ]);
   });
+
+  it("fills color2/color3 when only color1 is provided (Animated Text)", async () => {
+    const {
+      normalizeTurbowarpExtensionInfo,
+      deriveExtensionCompanionColor,
+    } = await import("./extension-gallery.js");
+    const normalized = normalizeTurbowarpExtensionInfo({
+      id: "text",
+      color1: "#9966FF",
+      blocks: [],
+    });
+    expect(normalized.color1).toBe("#9966FF");
+    expect(normalized.color2).toBe(deriveExtensionCompanionColor("#9966FF", 0.78));
+    expect(normalized.color3).toBe(
+      deriveExtensionCompanionColor(normalized.color2!, 0.78),
+    );
+  });
 });
 
 describe("extension gallery loading", () => {
