@@ -52,7 +52,7 @@ export function createExtensionGalleryUi(options: {
       <div
         class="extension-gallery-filters"
         role="tablist"
-        aria-label="拡張機能の分類"
+        aria-label="拡張機能の用途で絞り込み"
         data-testid="extension-gallery-filters"
       ></div>
       <p class="extension-gallery-status" hidden data-testid="extension-gallery-status"></p>

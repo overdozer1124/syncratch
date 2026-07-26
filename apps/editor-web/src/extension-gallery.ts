@@ -9,6 +9,10 @@ import {
   loadTurbowarpExtensionScript,
 } from "./turbowarp-scratch.js";
 import {assertExtensionPrimitivesRegistered} from "./extension-toolbox.js";
+import {
+  topicsForExtensionKey,
+  type ExtensionGalleryTopicId,
+} from "./extension-gallery-filters.js";
 import {ensureRuntimeFormatMessage} from "./xcratch-format-message.js";
 
 export type ExtensionLoadMode = "builtin" | "module" | "loader" | "unavailable";
@@ -24,6 +28,8 @@ export interface ExtensionGalleryItem {
   insetIconURL: string | null;
   kind: ExtensionKind;
   sources: string[];
+  /** Use-case topics for gallery filter tabs. */
+  topics: ExtensionGalleryTopicId[];
   loadMode: ExtensionLoadMode;
   /** Shown under the name when the item cannot be loaded yet. */
   statusNote: string | null;
@@ -250,6 +256,7 @@ export function buildExtensionGalleryItems(
       insetIconURL: entry.insetIconURL ?? null,
       kind: entry.kind,
       sources: [...entry.sources],
+      topics: topicsForExtensionKey(key),
       loadMode,
       statusNote,
     };
