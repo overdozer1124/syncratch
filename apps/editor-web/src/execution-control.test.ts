@@ -11,15 +11,27 @@ function makeVm(overrides: Partial<ExecutionRuntimeLike> = {}): {
   runtime: ExecutionRuntimeLike;
   step: ReturnType<typeof vi.fn>;
   highlight: ReturnType<typeof vi.fn>;
+  fire: (event: string) => void;
 } {
   const step = vi.fn(() => "stepped");
   const highlight = vi.fn();
+  const handlers = new Map<string, Set<(...args: unknown[]) => void>>();
   const runtime: ExecutionRuntimeLike = {
     threads: [],
     _step: step,
+    on: (event, handler) => {
+      if (!handlers.has(event)) handlers.set(event, new Set());
+      handlers.get(event)!.add(handler);
+    },
+    off: (event, handler) => {
+      handlers.get(event)?.delete(handler);
+    },
     ...overrides,
   };
-  return {vm: {runtime}, runtime, step, highlight};
+  const fire = (event: string) => {
+    for (const handler of handlers.get(event) ?? []) handler();
+  };
+  return {vm: {runtime}, runtime, step, highlight, fire};
 }
 
 describe("readActiveBlockIds", () => {
@@ -207,6 +219,44 @@ describe("installExecutionControl", () => {
     control.stepFrame();
     expect(() => runtime._step!()).not.toThrow();
     expect(step).toHaveBeenCalledTimes(1);
+  });
+
+  // Pressing the green flag while paused looked like a broken editor: the
+  // thread starts but nothing moves.
+  it("the green flag resumes a paused VM", () => {
+    const {vm, runtime, step, fire, highlight} = makeVm({
+      threads: [{blockGlowInFrame: "b1"}],
+    });
+    const control = installExecutionControl(vm, {highlight})!;
+    control.pause();
+    expect(control.getSnapshot().state).toBe("paused");
+
+    fire("PROJECT_START");
+    expect(control.getSnapshot().state).toBe("running");
+    expect(highlight).toHaveBeenLastCalledWith([]);
+
+    runtime._step!();
+    runtime._step!();
+    expect(step).toHaveBeenCalledTimes(2);
+  });
+
+  it("the green flag leaves an already running VM alone", () => {
+    const {vm, fire} = makeVm();
+    const control = installExecutionControl(vm)!;
+    const states: string[] = [];
+    control.subscribe(s => states.push(s.state));
+
+    fire("PROJECT_START");
+    expect(control.getSnapshot().state).toBe("running");
+    expect(states, "no redundant notification").toEqual([]);
+  });
+
+  it("dispose stops listening for the green flag", () => {
+    const {vm, fire} = makeVm();
+    const control = installExecutionControl(vm)!;
+    control.pause();
+    control.dispose();
+    expect(() => fire("PROJECT_START")).not.toThrow();
   });
 
   it("dispose restores the original _step and clears the highlight", () => {

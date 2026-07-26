@@ -228,3 +228,50 @@ for (const size of [
     ).toBeLessThanOrEqual(size.width);
   });
 }
+
+/**
+ * Reported after shipping: history full of blocks the learner never wrote, and
+ * a green flag that appeared to do nothing. Both come from state surviving
+ * across runs — the log kept entries from an earlier version of the program,
+ * and a paused VM stayed paused when the flag was pressed.
+ */
+test("the green flag resumes a paused project and starts a fresh log", async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+
+  await page.getByTestId("exec-pause").click();
+  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
+  const paused = await readSpriteX(page);
+
+  // The history panel must survive clicking the run controls beside it.
+  await page.getByTestId("trace-panel").locator("summary").click();
+  await expect(
+    page.getByTestId("trace-panel").locator(".panel-content"),
+  ).toBeVisible();
+  await page.getByTestId("exec-step").click();
+  await expect(
+    page.getByTestId("trace-panel").locator(".panel-content"),
+    "stepping must not close the history panel",
+  ).toBeVisible();
+
+  // Pressing the green flag has to actually start the project.
+  await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+  await page.waitForTimeout(500);
+  expect(
+    await readSpriteX(page),
+    "the green flag must run the project even when paused",
+  ).not.toBe(paused);
+
+  // ...and the log it produced belongs to this run only.
+  const labels = (
+    await page.getByTestId("trace-list").locator(".trace-line").allTextContents()
+  ).join("\n");
+  expect(labels).toContain("緑の旗が押された");
+  expect(
+    labels.match(/緑の旗が押された/g)?.length,
+    "one green-flag entry, not one per run ever made",
+  ).toBe(1);
+});

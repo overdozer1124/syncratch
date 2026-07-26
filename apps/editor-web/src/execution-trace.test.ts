@@ -147,8 +147,20 @@ describe("installExecutionTrace", () => {
   function makeVm() {
     const threads: TraceThreadLike[] = [];
     const step = vi.fn();
-    const runtime: TraceRuntimeLike = {threads, _step: step};
-    return {vm: {runtime}, runtime, threads, step};
+    const handlers = new Map<string, Set<(...a: unknown[]) => void>>();
+    const runtime: TraceRuntimeLike = {
+      threads,
+      _step: step,
+      on: (event, handler) => {
+        if (!handlers.has(event)) handlers.set(event, new Set());
+        handlers.get(event)!.add(handler);
+      },
+      off: (event, handler) => handlers.get(event)?.delete(handler),
+    };
+    const fire = (event: string) => {
+      for (const handler of handlers.get(event) ?? []) handler();
+    };
+    return {vm: {runtime}, runtime, threads, step, fire};
   }
 
   it("returns null without a runtime to wrap", () => {
@@ -170,6 +182,27 @@ describe("installExecutionTrace", () => {
 
     thread.blockGlowInFrame = "b1";
     expect(handle.trace.getEntries().map(e => e.blockId)).toEqual(["b1"]);
+  });
+
+  // Otherwise the panel keeps showing blocks from an earlier version of the
+  // program, which reads as "this history is not my code".
+  it("the green flag starts a fresh log", () => {
+    const {vm, fire} = makeVm();
+    const handle = installExecutionTrace(vm, {now: () => 0})!;
+    handle.trace.record("old-block", "t1");
+    expect(handle.trace.size()).toBe(1);
+
+    fire("PROJECT_START");
+    expect(handle.trace.size()).toBe(0);
+  });
+
+  it("dispose stops clearing on the green flag", () => {
+    const {vm, fire} = makeVm();
+    const handle = installExecutionTrace(vm, {now: () => 0})!;
+    handle.dispose();
+    handle.trace.record("kept", "t1");
+    fire("PROJECT_START");
+    expect(handle.trace.size()).toBe(1);
   });
 
   it("dispose restores the original _step and stops recording new threads", () => {

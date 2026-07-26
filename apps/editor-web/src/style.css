@@ -2799,9 +2799,25 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   cursor: default;
 }
 
-/* The state is already visible on the button itself (一時停止 / 再開 plus
-   aria-pressed), so this stays for screen readers only. Rendering it as text
-   made the toolbar wide enough to overflow the window on smaller displays. */
+/* Paused is a mode the whole editor is in — the green flag looks dead while it
+   lasts — so it needs to be visible, not just announced. Shown only while
+   paused, which keeps the running toolbar as narrow as #120 made it. */
+.exec-control[data-state="paused"] .exec-control-status {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 0.4rem;
+  overflow: visible;
+  clip: auto;
+  border-radius: 999px;
+  background: #ffe9b8;
+  color: #7a4600;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.9;
+}
+
 .exec-control-status {
   position: absolute;
   width: 1px;

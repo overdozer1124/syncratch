@@ -33,6 +33,8 @@ export type ExecutionThreadLike = {
 export type ExecutionRuntimeLike = {
   threads?: ExecutionThreadLike[];
   _step?: (...args: unknown[]) => unknown;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  off?: (event: string, handler: (...args: unknown[]) => void) => void;
   [PATCH_FLAG]?: boolean;
 };
 
@@ -157,6 +159,19 @@ export function installExecutionControl(
     }
   };
 
+  // Pressing the green flag must always start the project. Leaving it paused
+  // looks exactly like a broken editor: the flag lights up, a thread is
+  // created, and nothing moves.
+  const onProjectStart = () => {
+    if (state === "paused") {
+      state = "running";
+      framesToRun = 0;
+      setHighlight([]);
+      notify();
+    }
+  };
+  runtime.on?.("PROJECT_START", onProjectStart);
+
   runtime._step = (...args: unknown[]) => {
     if (disposed) return originalStep(...args);
     if (state === "paused") {
@@ -206,6 +221,7 @@ export function installExecutionControl(
     dispose() {
       if (disposed) return;
       disposed = true;
+      runtime.off?.("PROJECT_START", onProjectStart);
       setHighlight([]);
       listeners.clear();
       runtime._step = rawStep;
