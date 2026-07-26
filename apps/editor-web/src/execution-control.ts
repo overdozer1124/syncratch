@@ -33,10 +33,50 @@ export type ExecutionThreadLike = {
 export type ExecutionRuntimeLike = {
   threads?: ExecutionThreadLike[];
   _step?: (...args: unknown[]) => unknown;
+  _updateGlows?: (...args: unknown[]) => unknown;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   off?: (event: string, handler: (...args: unknown[]) => void) => void;
   [PATCH_FLAG]?: boolean;
+  [GLOW_GUARD_FLAG]?: boolean;
 };
+
+const GLOW_GUARD_FLAG = "_syncratchGlowGuardInstalled";
+
+/**
+ * Stop a failed glow from cancelling the rest of the frame.
+ *
+ * `Runtime._step` calls `_updateGlows` and only reaches `renderer.draw()`
+ * afterwards. scratch-gui's glow handler throws "Tried to glow block that does
+ * not exist." whenever a running script's blocks were deleted, and that
+ * exception skips the draw — so the project keeps executing while the stage
+ * stops updating. Reproduced on a build predating these controls, so this
+ * guards upstream behaviour rather than our own.
+ *
+ * Returns a function that removes the guard.
+ */
+export function guardGlowUpdates(
+  runtime: ExecutionRuntimeLike,
+  onError?: (error: unknown) => void,
+): () => void {
+  const original = runtime._updateGlows;
+  if (typeof original !== "function" || runtime[GLOW_GUARD_FLAG]) {
+    return () => {};
+  }
+  const bound = original.bind(runtime);
+  runtime._updateGlows = (...args: unknown[]) => {
+    try {
+      return bound(...args);
+    } catch (error) {
+      onError?.(error);
+      return undefined;
+    }
+  };
+  runtime[GLOW_GUARD_FLAG] = true;
+  return () => {
+    runtime._updateGlows = original;
+    runtime[GLOW_GUARD_FLAG] = false;
+  };
+}
 
 /** Paints the given blocks as "currently running"; called with [] to clear. */
 export type BlockHighlighter = (blockIds: string[]) => void;

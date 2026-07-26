@@ -1,5 +1,11 @@
 import {expect, test, type Page} from "@playwright/test";
 
+declare global {
+  interface Window {
+    __syncratchDraws?: number;
+  }
+}
+
 /**
  * Pause / single-frame step must actually stop the VM and highlight the block
  * the project is sitting on. Unit tests cover the gate logic against a fake
@@ -265,7 +271,11 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
     "the green flag must run the project even when paused",
   ).not.toBe(paused);
 
-  // ...and the log it produced belongs to this run only.
+  // ...and the log it produced belongs to this run only. The panel repaints on
+  // an interval, so wait for the new run's first entry instead of guessing.
+  await expect(
+    page.getByTestId("trace-list").locator(".trace-line").first(),
+  ).toBeVisible();
   const labels = (
     await page.getByTestId("trace-list").locator(".trace-line").allTextContents()
   ).join("\n");
@@ -274,4 +284,67 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
     labels.match(/緑の旗が押された/g)?.length,
     "one green-flag entry, not one per run ever made",
   ).toBe(1);
+});
+
+/**
+ * Reported after shipping: "the sprite stops moving but the history keeps
+ * going". Two independent causes, both checked here against the real VM.
+ */
+test("a paused project neither runs nor logs", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+
+  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("trace-panel").locator("summary").click();
+  await expect(
+    page.getByTestId("trace-panel").locator(".panel-content"),
+  ).toBeVisible();
+  await page.getByTestId("trace-clear").click();
+
+  // Starting scripts while paused must not grow the log: a log that moves
+  // while the stage is frozen is what made this look broken.
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    vm.runtime.startHats('event_whenflagclicked');
+  })()`);
+  await page.waitForTimeout(900);
+
+  await expect(
+    page.getByTestId("trace-list").locator(".trace-empty"),
+    "the log must stay empty while execution is paused",
+  ).toBeVisible();
+});
+
+test("deleting a running script does not freeze the stage", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(400);
+
+  // Count real draws so we measure painting, not just execution.
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const renderer = resolveVm().runtime.renderer;
+    const original = renderer.draw.bind(renderer);
+    window.__syncratchDraws = 0;
+    renderer.draw = (...args) => {
+      window.__syncratchDraws += 1;
+      return original(...args);
+    };
+  })()`);
+
+  // Upstream scratch-gui throws "Tried to glow block that does not exist."
+  // here; Runtime._step draws only after the glow update, so an unguarded
+  // throw would stop the stage repainting.
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    for (const id of ['steps', 'move', 'loop', 'hat']) {
+      vm.editingTarget.blocks.deleteBlock(id);
+    }
+    vm.emitWorkspaceUpdate();
+  })()`);
+  await page.waitForTimeout(400);
+
+  const before = await page.evaluate(() => window.__syncratchDraws ?? 0);
+  await page.waitForTimeout(900);
+  const after = await page.evaluate(() => window.__syncratchDraws ?? 0);
+  expect(after - before, "the stage must keep repainting").toBeGreaterThan(5);
 });
