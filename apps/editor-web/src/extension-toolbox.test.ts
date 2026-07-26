@@ -1,7 +1,9 @@
 import {describe, expect, it, vi} from "vitest";
 import {
   assertExtensionPrimitivesRegistered,
+  defineExtensionBlocks,
   ensureCategoryColors,
+  extensionHasWorkspaceBlocks,
   ensureExtensionInToolbox,
   injectCategoryIntoToolboxXml,
   prepareExtensionBlockJson,
@@ -68,7 +70,7 @@ describe("extension toolbox helpers", () => {
     expect(category.color2).toBe("#9966FF");
   });
 
-  it("prepareExtensionBlockJson strips unknown Blockly extensions and adds colours", () => {
+  it("prepareExtensionBlockJson strips unknown Blockly extensions", () => {
     const prepared = prepareExtensionBlockJson(
       {
         type: "text_setText",
@@ -79,9 +81,98 @@ describe("extension toolbox helpers", () => {
       {color1: "#9966FF", color2: "#774DCB", color3: "#5484D7"},
     );
     expect(prepared.extensions).toEqual(["scratch_extension", "shape_hat"]);
+  });
+
+  // Blockly's Block.jsonInit throws "Must not have both a colour and a style."
+  // Every block scratch-vm emits carries `style: categoryInfo.id`, and the throw
+  // lands inside Flyout.show() after clearOldBlocks() — one poisoned definition
+  // empties the entire shared continuous flyout.
+  it("prepareExtensionBlockJson never emits both style and colour", () => {
+    const prepared = prepareExtensionBlockJson(
+      {
+        type: "text_setText",
+        style: "text",
+        colour: "#9966FF",
+        colourSecondary: "#774DCB",
+        colourTertiary: "#5484D7",
+        message0: "%1 hello",
+      },
+      {color1: "#9966FF", color2: "#774DCB", color3: "#5484D7"},
+    );
+    expect(prepared.style).toBe("text");
+    expect(prepared).not.toHaveProperty("colour");
+    expect(prepared).not.toHaveProperty("colourSecondary");
+    expect(prepared).not.toHaveProperty("colourTertiary");
+  });
+
+  it("prepareExtensionBlockJson still fills colours for style-less JSON", () => {
+    const prepared = prepareExtensionBlockJson(
+      {type: "legacy_block", message0: "hello"},
+      {color1: "#9966FF"},
+    );
     expect(prepared.colour).toBe("#9966FF");
-    expect(prepared.colourSecondary).toBe("#774DCB");
-    expect(prepared.colourTertiary).toBe("#5484D7");
+    expect(prepared.colourSecondary).toBe("#9966FF");
+    expect(prepared.colourTertiary).toBe("#9966FF");
+  });
+
+  // scratch-vm's Blocks class keeps its blocks in `_blocks` and has no
+  // getAllBlocks() method, so reading only the method always found nothing.
+  it("extensionHasWorkspaceBlocks reads scratch-vm's _blocks", () => {
+    const vm = {
+      runtime: {
+        targets: [
+          {blocks: {_blocks: {a: {opcode: "motion_movesteps"}}}},
+          {blocks: {_blocks: {b: {opcode: "text_setText"}}}},
+        ],
+      },
+    };
+    expect(extensionHasWorkspaceBlocks(vm, "text")).toBe(true);
+    expect(extensionHasWorkspaceBlocks(vm, "stretch")).toBe(false);
+  });
+
+  it("extensionHasWorkspaceBlocks still supports a getAllBlocks() container", () => {
+    const vm = {
+      runtime: {targets: []},
+      editingTarget: {
+        blocks: {getAllBlocks: () => ({a: {opcode: "stretch_setStretch"}})},
+      },
+    };
+    expect(extensionHasWorkspaceBlocks(vm, "stretch")).toBe(true);
+  });
+
+  it("defineExtensionBlocks leaves definitions the GUI already made", () => {
+    const defineBlocksWithJsonArray = vi.fn();
+    const categoryInfo = {
+      id: "text",
+      color1: "#9966FF",
+      blocks: [
+        {info: {opcode: "setText"}, json: {type: "text_setText"}},
+        {info: {opcode: "animate"}, json: {type: "text_animate"}},
+      ],
+    };
+
+    // GUI handleExtensionAdded already defined one of the two.
+    const defined = defineExtensionBlocks(
+      {defineBlocksWithJsonArray, Blocks: {text_setText: {init: () => {}}}},
+      categoryInfo,
+    );
+    expect(defined).toBe(true);
+    expect(defineBlocksWithJsonArray).toHaveBeenCalledWith([
+      expect.objectContaining({type: "text_animate"}),
+    ]);
+
+    // Nothing left to add: do not touch the registry at all.
+    defineBlocksWithJsonArray.mockClear();
+    expect(
+      defineExtensionBlocks(
+        {
+          defineBlocksWithJsonArray,
+          Blocks: {text_setText: {}, text_animate: {}},
+        },
+        categoryInfo,
+      ),
+    ).toBe(false);
+    expect(defineBlocksWithJsonArray).not.toHaveBeenCalled();
   });
 
   it("ensureExtensionInToolbox injects XML when GUI listener skips refresh", async () => {

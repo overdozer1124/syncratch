@@ -45,7 +45,7 @@ jobs:
       - run: pnpm --filter @blocksync/editor-web test
       - run: pnpm --filter @blocksync/editor-web typecheck
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts
+      - run: pnpm --filter @blocksync/editor-web test:e2e -- e2e/editor.spec.ts e2e/collab.spec.ts e2e/extension-blocks.spec.ts
       - run: pnpm --filter @blocksync/classroom-apps-script test
       - run: pnpm --filter @blocksync/collab-invite test
       - run: pnpm --filter @blocksync/collab-leader test
