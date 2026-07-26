@@ -114,6 +114,9 @@ describe("extension toolbox helpers", () => {
           _blockInfo: [
             {
               id: "fetch",
+              color1: "#0FBD8C",
+              color2: "#0DA57A",
+              color3: "#0B8E69",
               blocks: [
                 {
                   json: {type: "fetch_get", message0: "GET"},
@@ -154,7 +157,10 @@ describe("extension toolbox helpers", () => {
       expect.objectContaining({type: UPDATE_TOOLBOX_TYPE}),
     );
     expect(toolboxHasCategory(toolboxXML, "fetch")).toBe(true);
-    expect(selectCategory).toHaveBeenCalledWith("fetch");
+    // Must not jump the continuous flyout to the new (possibly empty) category.
+    expect(selectCategory).not.toHaveBeenCalled();
+    // Must not call workspace.updateToolbox directly (races stock GUI).
+    expect(updateToolbox).not.toHaveBeenCalled();
     // Fresh add with no placed blocks must not rebuild the workspace.
     expect(emitWorkspaceUpdate).not.toHaveBeenCalled();
   });

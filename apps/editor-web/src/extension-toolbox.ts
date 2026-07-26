@@ -317,8 +317,14 @@ export type EnsureExtensionToolboxOptions = {
   scratchBlocks?: ScratchBlocksLike | null;
   /** Lazy resolver when the first ScratchBlocks reference is a stub. */
   resolveScratchBlocks?: () => ScratchBlocksLike | null;
-  /** Select the category in the toolbox after it appears. */
+  /** Select a toolbox category. Used only when selectCategoryOnSuccess is set. */
   selectCategory?: (extensionId: string) => boolean;
+  /**
+   * When true, select the new extension category after it appears.
+   * Default false: selecting a fresh extension scrolls the continuous flyout
+   * to a section that often has zero visible blocks yet.
+   */
+  selectCategoryOnSuccess?: boolean;
   /** How many times to retry GUI event + XML injection. */
   attempts?: number;
   delayMs?: number;
@@ -348,6 +354,12 @@ function resolveBlocksApi(
 /**
  * Make sure `extensionId` is present in the live toolbox and its ScratchBlocks
  * definitions can render (not icon-only) on the workspace.
+ *
+ * Important: do not call `workspace.updateToolbox` from here, and do not force
+ * `selectCategory` to the new extension. Direct toolbox updates race the stock
+ * continuous flyout rerender, and selecting a brand-new category scrolls the
+ * shared flyout to an empty/broken section — which looks like "all blocks
+ * disappeared".
  */
 export async function ensureExtensionInToolbox(
   options: EnsureExtensionToolboxOptions,
@@ -364,6 +376,7 @@ export async function ensureExtensionInToolbox(
 
   if (!extensionId) return false;
   let definedBlocks = false;
+  let emitted = false;
 
   for (let i = 0; i < attempts; i++) {
     const categoryInfo = findExtensionCategory(vm, extensionId) as
@@ -387,11 +400,16 @@ export async function ensureExtensionInToolbox(
     // missing theme styles can render workspace blocks as icon-only husks.
     ensureExtensionBlockStyles(scratchBlocks, categoryInfo);
 
-    // Give the stock GUI listener another chance (defines blocks + toolbox).
-    try {
-      vm.emit?.("EXTENSION_ADDED", categoryInfo);
-    } catch {
-      // Listener errors are why we need the fallback below.
+    // Prefer a single stock GUI pass; it rebuilds toolbox XML via makeToolboxXML.
+    if (!emitted) {
+      try {
+        vm.emit?.("EXTENSION_ADDED", categoryInfo);
+      } catch {
+        // Listener errors are why we need the fallback below.
+      }
+      emitted = true;
+      // Blocks.requestToolboxUpdate uses setTimeout(0); give it a turn.
+      await sleep(Math.max(delayMs, 16));
     }
 
     // Re-apply styles after GUI handler (it may have thrown mid-theme update).
@@ -401,29 +419,7 @@ export async function ensureExtensionInToolbox(
     }
 
     let toolboxXML = readToolboxXml(store.getState()) ?? "";
-    if (!toolboxHasCategory(toolboxXML, extensionId)) {
-      const categoryXml = getExtensionCategoryXml(vm, extensionId);
-      // Never replace a missing/empty toolbox with only the extension category —
-      // that drops Motion/Looks/… and looks like "all blocks disappeared".
-      if (categoryXml && toolboxXML.includes("<category")) {
-        toolboxXML = injectCategoryIntoToolboxXml(toolboxXML, categoryXml);
-        store.dispatch({
-          type: UPDATE_TOOLBOX_TYPE,
-          toolboxXML,
-        });
-        try {
-          scratchBlocks?.getMainWorkspace?.()?.updateToolbox?.(toolboxXML);
-        } catch {
-          // Redux update is enough for Blocks.componentDidUpdate.
-        }
-      }
-    }
-
-    toolboxXML = readToolboxXml(store.getState()) ?? toolboxXML;
     if (toolboxHasCategory(toolboxXML, extensionId)) {
-      // Only rebuild workspace SVGs when this extension already has placed
-      // blocks. Unconditional emitWorkspaceUpdate can wipe the flyout
-      // (missing category flyoutInflater) right after a fresh gallery add.
       if (definedBlocks && extensionHasWorkspaceBlocks(vm, extensionId)) {
         try {
           vm.emitWorkspaceUpdate?.();
@@ -431,7 +427,38 @@ export async function ensureExtensionInToolbox(
           // ignore
         }
       }
-      selectCategory?.(extensionId);
+      // Optional: only restore a previously selected category (local UI memory).
+      // Never jump to the newly added extension — that empties the visible flyout.
+      if (selectCategory && options.selectCategoryOnSuccess) {
+        selectCategory(extensionId);
+      }
+      return true;
+    }
+
+    // Fallback: inject into the existing Redux toolbox XML only. Let Scratch GUI
+    // apply it through componentDidUpdate → requestToolboxUpdate. Do not call
+    // workspace.updateToolbox here (races / wrong ScratchBlocks stub).
+    const categoryXml = getExtensionCategoryXml(vm, extensionId);
+    if (categoryXml && toolboxXML.includes("<category")) {
+      const nextXml = injectCategoryIntoToolboxXml(toolboxXML, categoryXml);
+      if (nextXml !== toolboxXML) {
+        store.dispatch({
+          type: UPDATE_TOOLBOX_TYPE,
+          toolboxXML: nextXml,
+        });
+        await sleep(Math.max(delayMs, 16));
+      }
+    }
+
+    toolboxXML = readToolboxXml(store.getState()) ?? toolboxXML;
+    if (toolboxHasCategory(toolboxXML, extensionId)) {
+      if (definedBlocks && extensionHasWorkspaceBlocks(vm, extensionId)) {
+        try {
+          vm.emitWorkspaceUpdate?.();
+        } catch {
+          // ignore
+        }
+      }
       return true;
     }
 

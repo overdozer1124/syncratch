@@ -2137,7 +2137,8 @@ function installDefaultExtensionGallery(
           scratchBlocks: resolveScratchBlocksApi(guiHost) as ScratchBlocksLike | null,
           resolveScratchBlocks: () =>
             resolveScratchBlocksApi(guiHost) as ScratchBlocksLike | null,
-          selectCategory: restoreToolboxCategory,
+          // Do not auto-select the new category: continuous flyout would scroll
+          // to an empty section and look like every block vanished.
         }).then(visible => {
           if (!visible) {
             appToast.show(
