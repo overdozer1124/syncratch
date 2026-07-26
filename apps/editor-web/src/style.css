@@ -2743,15 +2743,12 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 /* Hover-expand overlays the workspace. Metrics width stays 250px so placed
-   blocks do not slide; only the SVG paints wider. */
+   blocks do not slide; only the SVG paints wider. Keep Scratch's default
+   flyout background — no extra gray wash on focus. */
 #scratch-gui svg.blocklyFlyout.syncratch-flyout-expanded {
   z-index: 35;
   overflow: visible !important;
   pointer-events: all;
-}
-
-#scratch-gui svg.blocklyFlyout.syncratch-flyout-expanded .blocklyFlyoutBackground {
-  fill: #e9eef2;
 }
 
 @media (prefers-reduced-motion: no-preference) {
