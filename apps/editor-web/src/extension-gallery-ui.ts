@@ -5,11 +5,21 @@ import {
   type ExtensionGalleryItem,
   type ExtensionVm,
 } from "./extension-gallery.js";
+import {
+  countItemsForFilter,
+  EXTENSION_GALLERY_FILTERS,
+  filterExtensionGalleryItems,
+  isExtensionGalleryFilterId,
+  type ExtensionGalleryFilterId,
+} from "./extension-gallery-filters.js";
 
 export type ExtensionGalleryController = {
   open(): void;
   close(): void;
   isOpen(): boolean;
+  /** Active filter id (for tests / debugging). */
+  getFilter(): ExtensionGalleryFilterId;
+  setFilter(filterId: ExtensionGalleryFilterId): void;
   dispose(): void;
 };
 
@@ -24,7 +34,7 @@ export function createExtensionGalleryUi(options: {
   const items = buildExtensionGalleryItems();
   let open = false;
   let loadingKey: string | null = null;
-  let statusMessage: string | null = null;
+  let activeFilter: ExtensionGalleryFilterId = "all";
 
   const overlay = documentRef.createElement("div");
   overlay.className = "extension-gallery-overlay";
@@ -39,11 +49,20 @@ export function createExtensionGalleryUi(options: {
         <h2 id="extension-gallery-title">拡張機能を選ぶ</h2>
         <button type="button" class="extension-gallery-close" aria-label="閉じる">×</button>
       </header>
+      <div
+        class="extension-gallery-filters"
+        role="tablist"
+        aria-label="拡張機能の分類"
+        data-testid="extension-gallery-filters"
+      ></div>
       <p class="extension-gallery-status" hidden data-testid="extension-gallery-status"></p>
       <div class="extension-gallery-grid" data-testid="extension-gallery-grid"></div>
     </div>
   `;
 
+  const filtersEl = overlay.querySelector<HTMLElement>(
+    ".extension-gallery-filters",
+  )!;
   const grid = overlay.querySelector<HTMLElement>(".extension-gallery-grid")!;
   const statusEl = overlay.querySelector<HTMLElement>(".extension-gallery-status")!;
   const closeButton = overlay.querySelector<HTMLButtonElement>(
@@ -51,7 +70,6 @@ export function createExtensionGalleryUi(options: {
   )!;
 
   function setStatus(message: string | null): void {
-    statusMessage = message;
     if (message) {
       statusEl.hidden = false;
       statusEl.textContent = message;
@@ -61,11 +79,78 @@ export function createExtensionGalleryUi(options: {
     }
   }
 
-  function render(): void {
+  function visibleItems(): ExtensionGalleryItem[] {
+    return filterExtensionGalleryItems(items, activeFilter);
+  }
+
+  function renderFilters(): void {
+    filtersEl.replaceChildren();
+    for (const filter of EXTENSION_GALLERY_FILTERS) {
+      const count = countItemsForFilter(items, filter.id);
+      if (filter.id !== "all" && count === 0) continue;
+
+      const button = documentRef.createElement("button");
+      button.type = "button";
+      button.className = "extension-gallery-filter";
+      button.dataset.filterId = filter.id;
+      button.setAttribute("role", "tab");
+      button.setAttribute(
+        "aria-selected",
+        filter.id === activeFilter ? "true" : "false",
+      );
+      button.tabIndex = filter.id === activeFilter ? 0 : -1;
+      if (filter.id === activeFilter) {
+        button.classList.add("is-active");
+      }
+
+      const label = documentRef.createElement("span");
+      label.className = "extension-gallery-filter-label";
+      label.textContent = filter.label;
+      const countEl = documentRef.createElement("span");
+      countEl.className = "extension-gallery-filter-count";
+      countEl.textContent = String(count);
+      button.append(label, countEl);
+
+      button.addEventListener("click", () => {
+        setFilter(filter.id);
+      });
+      filtersEl.append(button);
+    }
+  }
+
+  function renderGrid(): void {
     grid.replaceChildren();
-    for (const item of items) {
+    const shown = visibleItems();
+    if (shown.length === 0) {
+      const empty = documentRef.createElement("p");
+      empty.className = "extension-gallery-empty";
+      empty.setAttribute("data-testid", "extension-gallery-empty");
+      empty.textContent = "この分類には拡張機能がありません";
+      grid.append(empty);
+      return;
+    }
+    for (const item of shown) {
       grid.append(renderCard(item));
     }
+  }
+
+  function render(): void {
+    renderFilters();
+    renderGrid();
+  }
+
+  function setFilter(filterId: ExtensionGalleryFilterId): void {
+    if (!isExtensionGalleryFilterId(filterId)) return;
+    if (activeFilter === filterId) {
+      renderFilters();
+      return;
+    }
+    activeFilter = filterId;
+    render();
+    const active = filtersEl.querySelector<HTMLButtonElement>(
+      `.extension-gallery-filter[data-filter-id="${filterId}"]`,
+    );
+    active?.focus();
   }
 
   function renderCard(item: ExtensionGalleryItem): HTMLElement {
@@ -204,6 +289,24 @@ export function createExtensionGalleryUi(options: {
     if (event.key === "Escape") {
       event.preventDefault();
       close();
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    const tabs = [...filtersEl.querySelectorAll<HTMLButtonElement>(
+      ".extension-gallery-filter",
+    )];
+    if (tabs.length === 0) return;
+    const currentIndex = tabs.findIndex(
+      tab => tab.dataset.filterId === activeFilter,
+    );
+    if (currentIndex < 0) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 1 : -1;
+    const next =
+      tabs[(currentIndex + delta + tabs.length) % tabs.length];
+    const nextId = next?.dataset.filterId;
+    if (nextId && isExtensionGalleryFilterId(nextId)) {
+      setFilter(nextId);
     }
   };
   documentRef.addEventListener("keydown", onKeyDown);
@@ -214,6 +317,8 @@ export function createExtensionGalleryUi(options: {
     open: openGallery,
     close,
     isOpen: () => open,
+    getFilter: () => activeFilter,
+    setFilter,
     dispose: () => {
       documentRef.removeEventListener("keydown", onKeyDown);
       close();
