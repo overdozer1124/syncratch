@@ -171,14 +171,6 @@
     "iconURL": "extensions/icons/poweredup.png",
     "insetIconURL": "extensions/icons/poweredup-small.svg"
   },
-  "legoremote": {
-    "iconURL": "extensions/icons/legoremote.png",
-    "insetIconURL": "extensions/icons/legoremote-small.svg"
-  },
-  "controlplus": {
-    "iconURL": "extensions/icons/controlplus.png",
-    "insetIconURL": "extensions/icons/controlplus-small.svg"
-  },
   "legomario": {
     "iconURL": "extensions/icons/legomario.png",
     "insetIconURL": "extensions/icons/legomario-small.svg"
@@ -186,18 +178,6 @@
   "legoluigi": {
     "iconURL": "extensions/icons/legoluigi.png",
     "insetIconURL": "extensions/icons/legoluigi-small.svg"
-  },
-  "legopeach": {
-    "iconURL": "extensions/icons/legopeach.png",
-    "insetIconURL": "extensions/icons/legopeach-small.svg"
-  },
-  "spikeessential": {
-    "iconURL": "extensions/icons/spikeessential.png",
-    "insetIconURL": "extensions/icons/spikeessential-small.svg"
-  },
-  "legoble": {
-    "iconURL": "extensions/icons/legoble.png",
-    "insetIconURL": "extensions/icons/legoble-small.svg"
   },
   "fetch": {
     "iconURL": "extensions/icons/fetch.svg",
@@ -254,6 +234,26 @@
   "betterpen": {
     "iconURL": "extensions/icons/betterpen.svg",
     "insetIconURL": "extensions/icons/betterpen-small.svg"
+  },
+  "legoremote": {
+    "iconURL": "extensions/icons/legoremote.svg",
+    "insetIconURL": "extensions/icons/legoremote-small.svg"
+  },
+  "controlplus": {
+    "iconURL": "extensions/icons/controlplus.svg",
+    "insetIconURL": "extensions/icons/controlplus-small.svg"
+  },
+  "legopeach": {
+    "iconURL": "extensions/icons/legopeach.svg",
+    "insetIconURL": "extensions/icons/legopeach-small.svg"
+  },
+  "spikeessential": {
+    "iconURL": "extensions/icons/spikeessential.svg",
+    "insetIconURL": "extensions/icons/spikeessential-small.svg"
+  },
+  "legoble": {
+    "iconURL": "extensions/icons/legoble.svg",
+    "insetIconURL": "extensions/icons/legoble-small.svg"
   },
   "extensionLoader": {
     "iconURL": "extensions/icons/extensionLoader.svg",
