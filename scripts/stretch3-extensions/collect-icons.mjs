@@ -3,7 +3,14 @@
  * Collect gallery icons for default extensions into
  * apps/editor-web/public/extensions/icons/
  */
-import {cpSync, existsSync, mkdirSync, readFileSync, writeFileSync} from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import {dirname, join, relative} from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -243,23 +250,12 @@ const REMOTE_ICONS = [
     inset:
       "https://raw.githubusercontent.com/asondemita/xcx-ml/main/src/gui/lib/libraries/extensions/entry/inset-icon.png",
   },
+  // Mario / Luigi / Powered UP ship full featured PNGs upstream.
   {
     id: "poweredup",
     icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/poweredup/poweredup.png",
     inset:
       "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/poweredup/poweredup-small.svg",
-  },
-  {
-    id: "legoremote",
-    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote.png",
-    inset:
-      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote-small.svg",
-  },
-  {
-    id: "controlplus",
-    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus.png",
-    inset:
-      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus-small.svg",
   },
   {
     id: "legomario",
@@ -273,24 +269,57 @@ const REMOTE_ICONS = [
     inset:
       "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoluigi/legoluigi-small.svg",
   },
+];
+
+/**
+ * bricklife gallery PNGs for these ids are solid brand colors only.
+ * Composite the connection-flow illustration onto that color for a real card.
+ */
+const BRICKLIFE_COMPOSITE_ICONS = [
+  {
+    id: "legoremote",
+    fill: "#FF661A",
+    illustration:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote-illustration.svg",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoremote/legoremote-small.svg",
+  },
+  {
+    id: "controlplus",
+    fill: "#1A1A1A",
+    illustration:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus-illustration.svg",
+    inset:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/controlplus/controlplus-small.svg",
+  },
   {
     id: "legopeach",
-    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legopeach/legopeach.png",
+    fill: "#ECA7CA",
+    illustration:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legopeach/legopeach-illustration.svg",
     inset:
       "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legopeach/legopeach-small.svg",
   },
   {
     id: "spikeessential",
-    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/spikeessential/spikeessential.png",
+    fill: "#FFD500",
+    illustration:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/spikeessential/spikeessential-illustration.svg",
     inset:
       "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/spikeessential/spikeessential-small.svg",
   },
   {
     id: "legoble",
-    icon: "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoble/legoble.png",
+    fill: "#7F7F7F",
+    illustration:
+      "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoble/legoble-illustration.svg",
     inset:
       "https://raw.githubusercontent.com/bricklife/scratch-lego-bluetooth-extensions/master/scratch-gui/src/lib/libraries/extensions/legoble/legoble-small.svg",
   },
+];
+
+// Keep TurboWarp / other remotes after bricklife composites (array continues below).
+const REMOTE_ICONS_CONTINUED = [
   // TurboWarp gallery images (svg cards; reuse as inset)
   {
     id: "fetch",
@@ -432,6 +461,59 @@ async function fetchRemote(entry) {
   };
 }
 
+function extractSvgInner(svgText) {
+  const viewBox =
+    /viewBox=["']([^"']+)["']/i.exec(svgText)?.[1] ??
+    (() => {
+      const w = /width=["']([\d.]+)/i.exec(svgText)?.[1] ?? "100";
+      const h = /height=["']([\d.]+)/i.exec(svgText)?.[1] ?? "100";
+      return `0 0 ${w} ${h}`;
+    })();
+  const inner = svgText
+    .replace(/<\?xml[\s\S]*?\?>/i, "")
+    .replace(/<!DOCTYPE[\s\S]*?>/i, "")
+    .replace(/<svg\b[^>]*>/i, "")
+    .replace(/<\/svg>\s*$/i, "")
+    .trim();
+  return {viewBox, inner};
+}
+
+/** Build a 600×372 featured card: solid brand color + device illustration. */
+async function fetchBricklifeComposite(entry) {
+  const res = await fetch(entry.illustration);
+  if (!res.ok) {
+    console.warn(`[icons] HTTP ${res.status} ${entry.illustration}`);
+    return null;
+  }
+  const {viewBox, inner} = extractSvgInner(await res.text());
+  const featured = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="372" viewBox="0 0 600 372">
+  <rect width="600" height="372" fill="${entry.fill}"/>
+  <svg x="90" y="46" width="420" height="280" viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet">
+${inner}
+  </svg>
+</svg>
+`;
+  const iconName = `${entry.id}.svg`;
+  writeFileSync(join(outDir, iconName), featured);
+  // Drop the old solid-color PNG if present so deploys cannot serve it by mistake.
+  const stalePng = join(outDir, `${entry.id}.png`);
+  if (existsSync(stalePng)) unlinkSync(stalePng);
+
+  let insetPath = null;
+  if (entry.inset) {
+    const insetExt = extOf(entry.inset);
+    const insetName = `${entry.id}-small.${insetExt}`;
+    if (await download(entry.inset, join(outDir, insetName))) {
+      insetPath = `extensions/icons/${insetName}`;
+    }
+  }
+  return {
+    iconURL: `extensions/icons/${iconName}`,
+    insetIconURL: insetPath,
+  };
+}
+
 /** Simple loader glyph used when no upstream art exists. */
 function writeLoaderFallback() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="372" viewBox="0 0 600 372">
@@ -465,8 +547,13 @@ async function main() {
     };
   }
 
-  for (const entry of REMOTE_ICONS) {
+  for (const entry of [...REMOTE_ICONS, ...REMOTE_ICONS_CONTINUED]) {
     const result = await fetchRemote(entry);
+    if (result) map[entry.id] = result;
+  }
+
+  for (const entry of BRICKLIFE_COMPOSITE_ICONS) {
+    const result = await fetchBricklifeComposite(entry);
     if (result) map[entry.id] = result;
   }
 

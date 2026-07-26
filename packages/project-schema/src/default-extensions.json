@@ -637,7 +637,7 @@
       ],
       "kind": "external",
       "opcodePolicy": "prefix",
-      "iconURL": "extensions/icons/legoremote.png",
+      "iconURL": "extensions/icons/legoremote.svg",
       "insetIconURL": "extensions/icons/legoremote-small.svg"
     },
     {
@@ -651,7 +651,7 @@
       ],
       "kind": "external",
       "opcodePolicy": "prefix",
-      "iconURL": "extensions/icons/controlplus.png",
+      "iconURL": "extensions/icons/controlplus.svg",
       "insetIconURL": "extensions/icons/controlplus-small.svg"
     },
     {
@@ -693,7 +693,7 @@
       ],
       "kind": "external",
       "opcodePolicy": "prefix",
-      "iconURL": "extensions/icons/legopeach.png",
+      "iconURL": "extensions/icons/legopeach.svg",
       "insetIconURL": "extensions/icons/legopeach-small.svg"
     },
     {
@@ -707,7 +707,7 @@
       ],
       "kind": "external",
       "opcodePolicy": "prefix",
-      "iconURL": "extensions/icons/spikeessential.png",
+      "iconURL": "extensions/icons/spikeessential.svg",
       "insetIconURL": "extensions/icons/spikeessential-small.svg"
     },
     {
@@ -721,7 +721,7 @@
       ],
       "kind": "external",
       "opcodePolicy": "prefix",
-      "iconURL": "extensions/icons/legoble.png",
+      "iconURL": "extensions/icons/legoble.svg",
       "insetIconURL": "extensions/icons/legoble-small.svg"
     },
     {
