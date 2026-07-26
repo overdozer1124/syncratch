@@ -2764,8 +2764,29 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .exec-control {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.25rem;
   margin-left: 0.35rem;
+}
+
+/* The toolbar is a single nowrap row, so these three controls have to earn
+   their width: with every optional panel open (AI on) the full labels pushed
+   the row 53px past a 1280px window. Below that, drop to icons only — the
+   aria-label and title still carry the full wording. */
+.exec-control-button,
+.trace-panel > summary {
+  padding-inline: 0.5rem;
+  gap: 0.25rem;
+}
+
+.exec-icon {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+@media (max-width: 1399px) {
+  .exec-control .exec-label {
+    display: none;
+  }
 }
 
 .exec-control-button[aria-pressed="true"] {
@@ -2778,19 +2799,32 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   cursor: default;
 }
 
+/* The state is already visible on the button itself (一時停止 / 再開 plus
+   aria-pressed), so this stays for screen readers only. Rendering it as text
+   made the toolbar wide enough to overflow the window on smaller displays. */
 .exec-control-status {
-  font-size: 0.8rem;
-  color: var(--syncratch-chrome-dark);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  border: 0;
 }
 
-/* Paused: keep the glowing block readable against the stage. */
-.exec-control[data-state="paused"] .exec-control-status {
-  font-weight: 700;
-  color: #9a5b00;
+/* Execution trace panel.
+   It sits at the right end of the toolbar, so the shared .panel-content rule
+   (left: 0 with a width wider than the summary) would push it past the right
+   edge of the window and clip the sprite names. Anchor it to the right instead
+   so it grows inwards. */
+.trace-panel .panel-content {
+  left: auto;
+  right: 0;
+  width: min(360px, 92vw);
 }
 
-/* Execution trace panel */
 .trace-panel-actions {
   display: flex;
   justify-content: flex-end;

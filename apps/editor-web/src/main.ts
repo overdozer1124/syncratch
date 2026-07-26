@@ -429,6 +429,7 @@ const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
 const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
+const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
@@ -2235,7 +2236,11 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     const {state} = controller.getSnapshot();
     const paused = state === "paused";
     execControlGroup.dataset.state = state;
-    execPauseButton.textContent = paused ? "再開" : "一時停止";
+    const pauseLabel = paused ? "再開" : "一時停止";
+    execPauseLabel.textContent = pauseLabel;
+    // The label is hidden on narrow toolbars, so the state has to live here too.
+    execPauseButton.setAttribute("aria-label", pauseLabel);
+    execPauseButton.title = pauseLabel;
     execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
     execStatus.textContent = paused ? "止まっています" : "動いています";
     renderExecutionTrace(vmInstance);
