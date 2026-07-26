@@ -132,7 +132,9 @@ export function ensureCategoryColors<T extends CategoryColors>(
 /**
  * Prepare block JSON for stock ScratchBlocks:
  * - drop TurboWarp-only Blockly extensions such as `colours_looks`
- * - add legacy colour fields so blocks still render when theme styles are missing
+ * - never keep both `style` and `colour*` (Blockly throws and blocks become
+ *   0×0 husks that cannot be dragged onto the workspace)
+ * - when there is no `style`, add legacy colour fields as a fallback
  */
 export function prepareExtensionBlockJson(
   json: Record<string, unknown>,
@@ -143,6 +145,15 @@ export function prepareExtensionBlockJson(
     next.extensions = next.extensions.filter(
       entry => typeof entry === "string" && KNOWN_BLOCKLY_EXTENSIONS.has(entry),
     );
+  }
+  // Stock VM emits `style: extensionId`. Theme colours come from
+  // ensureExtensionBlockStyles — colour fields here would make initSvg throw
+  // "Must not have both a colour and a style".
+  if (typeof next.style === "string" && next.style.length > 0) {
+    delete next.colour;
+    delete next.colourSecondary;
+    delete next.colourTertiary;
+    return next;
   }
   const filled = ensureCategoryColors({...colors});
   const colourPrimary =

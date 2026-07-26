@@ -68,20 +68,39 @@ describe("extension toolbox helpers", () => {
     expect(category.color2).toBe("#9966FF");
   });
 
-  it("prepareExtensionBlockJson strips unknown Blockly extensions and adds colours", () => {
+  it("prepareExtensionBlockJson strips unknown extensions and keeps style without colours", () => {
     const prepared = prepareExtensionBlockJson(
       {
         type: "text_setText",
         style: "text",
+        colour: "#9966FF",
+        colourSecondary: "#774DCB",
+        colourTertiary: "#5484D7",
         extensions: ["scratch_extension", "colours_looks", "shape_hat"],
         message0: "%1 hello",
       },
       {color1: "#9966FF", color2: "#774DCB", color3: "#5484D7"},
     );
     expect(prepared.extensions).toEqual(["scratch_extension", "shape_hat"]);
-    expect(prepared.colour).toBe("#9966FF");
-    expect(prepared.colourSecondary).toBe("#774DCB");
-    expect(prepared.colourTertiary).toBe("#5484D7");
+    expect(prepared.style).toBe("text");
+    // Blockly forbids colour + style together ("Must not have both…").
+    expect(prepared.colour).toBeUndefined();
+    expect(prepared.colourSecondary).toBeUndefined();
+    expect(prepared.colourTertiary).toBeUndefined();
+  });
+
+  it("prepareExtensionBlockJson adds colours when style is absent", () => {
+    const prepared = prepareExtensionBlockJson(
+      {
+        type: "fetch_get",
+        extensions: ["scratch_extension"],
+        message0: "GET",
+      },
+      {color1: "#0FBD8C", color2: "#0DA57A", color3: "#0B8E69"},
+    );
+    expect(prepared.colour).toBe("#0FBD8C");
+    expect(prepared.colourSecondary).toBe("#0DA57A");
+    expect(prepared.colourTertiary).toBe("#0B8E69");
   });
 
   it("ensureExtensionInToolbox injects XML when GUI listener skips refresh", async () => {
