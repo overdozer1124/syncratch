@@ -168,7 +168,8 @@ export function installFlyoutLayout(options: {
   toggle.className = "syncratch-flyout-toggle";
   toggle.dataset.testid = "flyout-collapse-toggle";
   toggle.setAttribute("aria-controls", "syncratch-block-flyout");
-  host.append(toggle);
+  // Mount on body so fixed positioning is never clipped by Blockly overflow.
+  documentRef.body.append(toggle);
 
   function ensureHost(): void {
     const next =
@@ -185,7 +186,6 @@ export function installFlyoutLayout(options: {
     host.style.removeProperty("--syncratch-flyout-width");
     host = next;
     host.classList.add("syncratch-flyout-host");
-    host.append(toggle);
   }
 
   function syncToggleUi(): void {
@@ -258,7 +258,31 @@ export function installFlyoutLayout(options: {
     });
     host.style.setProperty("--syncratch-toolbox-width", `${toolboxWidth}px`);
     host.style.setProperty("--syncratch-flyout-width", `${displayWidth}px`);
-    toggle.style.left = `${toolboxWidth + displayWidth}px`;
+
+    // Fixed positioning avoids Blockly stacking contexts stealing clicks.
+    const toolboxRect = toolbox?.getBoundingClientRect();
+    const flyoutRect = flyoutSvg?.getBoundingClientRect();
+    const hostRect = host.getBoundingClientRect();
+    const hostVisible =
+      hostRect.width > 40 &&
+      hostRect.height > 40 &&
+      getComputedStyle(host).visibility !== "hidden" &&
+      getComputedStyle(host).display !== "none";
+    toggle.hidden = !hostVisible;
+    if (!hostVisible) {
+      syncToggleUi();
+      return;
+    }
+
+    const edgeX = collapsed
+      ? (toolboxRect?.right ?? hostRect.left + toolboxWidth)
+      : (flyoutRect?.right ??
+        hostRect.left + toolboxWidth + displayWidth);
+    // Vertical center against the blocks pane, not the toolbox chrome alone.
+    const midY = hostRect.top + hostRect.height / 2 - 32;
+    toggle.style.left = `${Math.round(edgeX)}px`;
+    toggle.style.top = `${Math.round(midY)}px`;
+    if (!toggle.isConnected) documentRef.body.append(toggle);
     syncToggleUi();
   }
 
@@ -335,20 +359,7 @@ export function installFlyoutLayout(options: {
       const flyout = resolveFlyout(options.getWorkspace());
       if (!flyout) return;
       // Re-bind if Blockly replaced the flyout instance; keep toggle aligned.
-      if (flyout !== patchedFlyout || !toggle.isConnected) {
-        if (!toggle.isConnected) host.append(toggle);
-        applyWidth();
-      } else {
-        // Cheap position sync when only chrome/layout shifted.
-        const toolbox = findToolboxDiv(options.root);
-        const toolboxWidth = toolbox?.getBoundingClientRect().width ?? 60;
-        const displayWidth = computeFlyoutDisplayWidth({
-          collapsed,
-          hoverExpanded,
-          contentWidthPx,
-        });
-        toggle.style.left = `${toolboxWidth + displayWidth}px`;
-      }
+      applyWidth();
     });
   };
 

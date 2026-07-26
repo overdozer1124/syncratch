@@ -2672,14 +2672,13 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 .syncratch-flyout-toggle {
-  position: absolute;
-  top: 50%;
-  z-index: 40;
+  position: fixed;
+  z-index: 1200;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 56px;
+  width: 22px;
+  height: 64px;
   margin: 0;
   padding: 0;
   border: 1px solid rgba(0, 0, 0, 0.18);
@@ -2688,8 +2687,10 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   background: linear-gradient(180deg, #f7f7f7 0%, #ebebeb 100%);
   color: #4c4c4c;
   box-shadow: 1px 0 2px rgba(0, 0, 0, 0.08);
-  transform: translate(-1px, -50%);
+  transform: translateX(-1px);
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 .syncratch-flyout-toggle:hover,

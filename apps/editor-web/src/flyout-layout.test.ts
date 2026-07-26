@@ -119,7 +119,7 @@ describe("installFlyoutLayout", () => {
 
     expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
 
-    const toggle = root.querySelector<HTMLButtonElement>(
+    const toggle = document.querySelector<HTMLButtonElement>(
       '[data-testid="flyout-collapse-toggle"]',
     );
     expect(toggle).toBeTruthy();
@@ -131,17 +131,6 @@ describe("installFlyoutLayout", () => {
     toggle?.click();
     expect(controller.isCollapsed()).toBe(false);
 
-    flyoutSvg.dispatchEvent(
-      new PointerEvent("pointerover", {bubbles: true, relatedTarget: null}),
-    );
-    // pointerover on root via bubbling from flyoutSvg — install listens on root
-    root.dispatchEvent(
-      new PointerEvent("pointerover", {
-        bubbles: true,
-        composed: true,
-      }),
-    );
-    // Manually exercise path: target must be flyout; synthesize with target
     const over = new PointerEvent("pointerover", {bubbles: true});
     Object.defineProperty(over, "target", {value: flyoutSvg});
     root.dispatchEvent(over);
@@ -154,9 +143,9 @@ describe("installFlyoutLayout", () => {
     expect(controller.isHoverExpanded()).toBe(false);
 
     controller.dispose();
-    expect(root.querySelector('[data-testid="flyout-collapse-toggle"]')).toBe(
-      null,
-    );
+    expect(
+      document.querySelector('[data-testid="flyout-collapse-toggle"]'),
+    ).toBe(null);
     root.remove();
   });
 });
