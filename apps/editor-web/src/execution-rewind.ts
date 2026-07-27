@@ -7,11 +7,16 @@
  * PR 3 wires the toolbar button; PR 4 invalidates history on project/code changes.
  * PR 5 journals loudness, ask/answer, video sensing, and extension reporter opcodes.
  * PR 6 journals broadcast-and-wait thread order via startHats capture.
+ * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
  */
 
 import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
+import {
+  flushPendingPromiseJournalEntries,
+  installPromiseResolveCapture,
+} from "./execution-rewind-promise-resolve.js";
 import {
   CloneOrderRegistry,
   installCloneOrderCapture,
@@ -170,6 +175,11 @@ export function installExecutionRewind(
     runtime,
     journal,
   });
+  const disposePromiseResolveCapture = installPromiseResolveCapture({
+    runtime: runtime as import("./execution-rewind-promise-resolve.js").PromiseCaptureRuntimeLike,
+    journal,
+    getExtensionIds: () => activeExtensionIds,
+  });
 
   const onProjectStart = () => {
     if (isReplaying) return;
@@ -203,6 +213,7 @@ export function installExecutionRewind(
     try {
       result = innerStep(...args);
     } finally {
+      flushPendingPromiseJournalEntries(journal);
       journal.endFrame();
     }
     const journalEnd = journal.size;
@@ -409,6 +420,7 @@ export function installExecutionRewind(
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
       disposeBroadcastOrderCapture();
+      disposePromiseResolveCapture();
       disposeCloneOrderCapture();
       disposeJournalCapture();
       bindCloneOrderRegistry(null);
