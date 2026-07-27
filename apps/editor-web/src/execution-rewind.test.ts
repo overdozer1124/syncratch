@@ -551,6 +551,34 @@ describe("installBroadcastOrderCapture", () => {
     expect(started).toEqual([threadB, threadA]);
     expect(runtime.threads).toEqual([threadB, threadA]);
   });
+
+  it("records backdrop-switch thread order during record", () => {
+    const journal = new RewindJournal();
+    const threadA = {
+      topBlock: "backdrop-hat",
+      target: {isStage: true, getName: () => "Stage"},
+    };
+    const runtime = {
+      threads: [] as unknown[],
+      startHats: () => {
+        runtime.threads.push(threadA);
+        return [threadA];
+      },
+    };
+    const dispose = installBroadcastOrderCapture({runtime, journal});
+    journal.beginRecord();
+    runtime.startHats("event_whenbackdropswitchesto", {BACKDROP: "Blue Sky"});
+    journal.endFrame();
+    dispose();
+
+    expect(journal.slice(0, journal.size)).toEqual([
+      {
+        kind: "broadcastOrder",
+        broadcast: "backdrop:BLUE SKY",
+        threadOrder: ["stage:Stage:backdrop-hat"],
+      },
+    ]);
+  });
 });
 
 describe("installPromiseResolveCapture", () => {
@@ -695,6 +723,34 @@ describe("unsupported non-deterministic opcode detection", () => {
     sim.runtime._step = () => {
       sim.runtime.startHats!("event_whenbroadcastreceived", {
         BROADCAST_OPTION: "msg1",
+      });
+    };
+    const handle = installRewindWithExtensions(sim);
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    expect(handle.getSnapshot().canRewind).toBe(true);
+    expect(handle.getSnapshot().unsupportedOpcodes).toEqual([]);
+    handle.dispose();
+  });
+
+  it("keeps canRewind=true when backdrop-switch-and-wait journals startHats order", () => {
+    const sim = makeSimulatedRuntime([1]);
+    const threadA = {
+      topBlock: "backdrop-hat",
+      target: sim.target,
+      peekStack: () => "backdrop-hat",
+    };
+    sim.runtime.startHats = (opcode: string, fields?: Record<string, unknown>) => {
+      if (opcode !== "event_whenbackdropswitchesto") return [];
+      expect(fields?.BACKDROP).toBe("Blue Sky");
+      sim.runtime.threads.push(threadA);
+      return [threadA];
+    };
+    sim.runtime._step = () => {
+      sim.runtime.startHats!("event_whenbackdropswitchesto", {
+        BACKDROP: "Blue Sky",
       });
     };
     const handle = installRewindWithExtensions(sim);

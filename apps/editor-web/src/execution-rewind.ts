@@ -8,6 +8,7 @@
  * PR 5 journals loudness, ask/answer, video sensing, and extension reporter opcodes.
  * PR 6 journals broadcast-and-wait thread order via startHats capture.
  * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
+ * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
  */
 
 import {

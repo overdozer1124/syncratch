@@ -32,6 +32,7 @@ export const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
   ["sensing_online", "extensionReporter"],
   ["sensing_username", "extensionReporter"],
   ["event_broadcastandwait", "broadcastOrder"],
+  ["looks_switchbackdroptoandwait", "broadcastOrder"],
   ["looks_sayforsecs", "promiseResolve"],
   ["looks_thinkforsecs", "promiseResolve"],
 ]);
