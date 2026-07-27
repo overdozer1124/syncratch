@@ -240,6 +240,7 @@ import {
   installExecutionControl,
   type ExecutionController,
 } from "./execution-control.js";
+import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
 import {
   installExecutionTrace,
   resolveTraceEntries,
@@ -303,6 +304,7 @@ interface VmBlocks {
   getBlock(id: string): unknown;
   /** Top-level script hat ids, when the live scratch-vm Blocks object is present. */
   getScripts?: () => string[];
+  deleteAllBlocks?: () => void;
 }
 
 interface ScratchVm {
@@ -330,6 +332,9 @@ interface ScratchVm {
       getName(): string;
       sprite: {name: string};
     } & RuntimeAssetTarget>;
+    stopForTarget?: (target: unknown) => void;
+    stopAll?: () => void;
+    threads?: unknown[];
   };
 }
 
@@ -2292,10 +2297,60 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     on?: (event: string, handler: (...args: unknown[]) => void) => void;
   };
   runtime.on?.("PROJECT_START", () => {
-    queueMicrotask(() => warnIfGreenFlagRunsOtherSprites(vmInstance));
+    queueMicrotask(() => {
+      enforceWorkspaceMatchesVm(vmInstance, {announce: true});
+      warnIfGreenFlagRunsOtherSprites(vmInstance);
+    });
   });
 
+  // Catch Blockly/VM desync even when the learner is not pressing the flag.
+  window.setInterval(() => {
+    enforceWorkspaceMatchesVm(vmInstance, {announce: true});
+  }, 500);
+
   render();
+}
+
+let emptyWorkspaceGuardToastAt = 0;
+
+/**
+ * If the Blockly workspace shows no scripts but the editing target still has
+ * VM scripts or running threads, stop and clear so the stage matches the empty
+ * workspace the learner is looking at.
+ */
+function enforceWorkspaceMatchesVm(
+  vmInstance: ScratchVm,
+  options: {announce?: boolean} = {},
+): void {
+  // While boot / project load is rewriting the VM, Blockly can briefly look
+  // empty even though scripts are about to be painted. Do not "heal" then.
+  if (suppressVmChanges || !diagnostic.ready) return;
+
+  const workspace = scratchWorkspace() as {
+    isDragging?: () => boolean;
+    getTopBlocks?: (ordered?: boolean) => Array<{
+      isShadow?: () => boolean;
+      type?: string;
+    }>;
+  } | null;
+  const editingId = vmInstance.editingTarget?.id;
+  const editingTarget =
+    typeof editingId === "string"
+      ? (vmInstance.runtime.targets.find(t => t.id === editingId) ?? null)
+      : null;
+  const result = reconcileEmptyWorkspaceWithVm({
+    workspace,
+    runtime: vmInstance.runtime as import("./workspace-run-guard.js").GuardRuntimeLike,
+    editingTarget,
+  });
+  if (!result || (!result.stopped && !result.clearedVmScripts)) return;
+  if (!options.announce) return;
+  const now = Date.now();
+  if (now - emptyWorkspaceGuardToastAt < 4000) return;
+  emptyWorkspaceGuardToastAt = now;
+  appToast.show(
+    "画面上にブロックが無いので実行を止めました（中に残っていたスクリプトを消しました）",
+  );
 }
 
 /** True when `target` still has a when-green-flag-clicked hat. */

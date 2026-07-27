@@ -86,11 +86,17 @@ describe("retireOrphanThreads", () => {
     const stop = vi.fn();
     const alive = {
       topBlock: "hat",
-      target: {blocks: {getBlock: (id: string) => (id === "hat" ? {opcode: "event_whenflagclicked"} : null)}},
+      target: {
+        blocks: {
+          getScripts: () => ["hat"],
+          getBlock: (id: string) =>
+            id === "hat" ? {opcode: "event_whenflagclicked"} : null,
+        },
+      },
     };
     const orphan = {
       topBlock: "gone",
-      target: {blocks: {getBlock: () => undefined}},
+      target: {blocks: {getScripts: () => [], getBlock: () => undefined}},
     };
     const runtime: ExecutionRuntimeLike = {
       threads: [alive, orphan],
@@ -102,17 +108,40 @@ describe("retireOrphanThreads", () => {
     expect(stop).toHaveBeenCalledWith(orphan);
   });
 
+  it("kills threads whose current stack block was deleted", () => {
+    const orphan = {
+      topBlock: "hat",
+      peekStack: () => "loop",
+      target: {
+        blocks: {
+          getScripts: () => ["hat"],
+          getBlock: (id: string) =>
+            id === "hat" ? {opcode: "event_whenflagclicked"} : undefined,
+        },
+      },
+    };
+    const runtime: ExecutionRuntimeLike = {threads: [orphan]};
+    expect(retireOrphanThreads(runtime)).toBe(1);
+    expect(runtime.threads).toEqual([]);
+  });
+
   it("leaves monitor threads and intact scripts alone", () => {
     const runtime: ExecutionRuntimeLike = {
       threads: [
         {
           topBlock: "hat",
           updateMonitor: true,
-          target: {blocks: {getBlock: () => undefined}},
+          target: {blocks: {getScripts: () => [], getBlock: () => undefined}},
         },
         {
           topBlock: "hat",
-          target: {blocks: {getBlock: () => ({opcode: "event_whenflagclicked"})}},
+          peekStack: () => "hat",
+          target: {
+            blocks: {
+              getScripts: () => ["hat"],
+              getBlock: () => ({opcode: "event_whenflagclicked"}),
+            },
+          },
         },
       ],
     };
