@@ -7,6 +7,8 @@ export type LocalSaveState =
 
 export interface SaveCoordinator {
   getState(): LocalSaveState;
+  /** Monotonic counter bumped on each markDirty; for diagnostics only. */
+  getDirtyGeneration(): number;
   markDirty(): void;
   flush(): Promise<void>;
   dispose(): void;
@@ -81,6 +83,7 @@ export function createSaveCoordinator(
 
   return {
     getState: () => state,
+    getDirtyGeneration: () => generation,
     markDirty() {
       if (disposed) return;
       generation += 1;
