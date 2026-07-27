@@ -3,14 +3,28 @@ import {expect, test, type Page} from "@playwright/test";
 declare global {
   interface Window {
     __blocksyncTask3?: {
+      ready?: boolean;
+      error?: string | null;
       workspaceUpdateLog?: () => Array<{
         phase: string;
+        loadEpoch?: number;
         partialFailureLikely?: boolean;
         vmBlockCount?: number;
         blocklyTopBlocks?: number | null;
         saveDirtyGeneration?: number;
       }>;
+      loadBoundaryLog?: () => Array<{
+        loadEpoch: number;
+        kind: string;
+        suppressed: boolean;
+      }>;
       suppressedDirtyLog?: () => unknown[];
+      resetE2eSideEffectCounters?: () => void;
+      getE2eSideEffectCounters?: () => {
+        persistAttempts: number;
+        collabOutboundAttempts: number;
+      };
+      reloadCurrentProject?: () => Promise<number>;
     };
   }
 }
@@ -40,6 +54,7 @@ const FIBER_HELPERS = `
     const candidate = props && props.vm;
     return candidate && candidate.runtime ? candidate : null;
   });
+  const resolveScratchBlocks = () => walkFibers(fiber => fiber.stateNode && fiber.stateNode.ScratchBlocks);
 `;
 
 async function bootEditor(page: Page): Promise<void> {
@@ -77,30 +92,41 @@ async function startForeverScript(page: Page): Promise<void> {
       inputs: {}, fields: {NUM: {name: 'NUM', value: '1'}}, shadow: true, topLevel: false,
     });
     vm.emitWorkspaceUpdate();
-    vm.greenFlag();
   })()`);
+  await page.waitForTimeout(750);
 }
 
-test("partial clearWorkspaceAndLoadFromXml failure is recorded without autosave side effects", async ({
+test("synced workspace with numeric shadow is not flagged as partial failure", async ({
   page,
 }) => {
   await bootEditor(page);
   await startForeverScript(page);
-  await page.waitForTimeout(400);
 
-  const before = await page.evaluate(`(() => { ${FIBER_HELPERS}
-    const vm = resolveVm();
+  const result = await page.evaluate(`(() => {
     const log = window.__blocksyncTask3?.workspaceUpdateLog?.() ?? [];
-    const startGen = log.at(-1)?.saveDirtyGeneration ?? 0;
+    const settled = log.filter(entry => entry.phase === 'settled').at(-1);
     return {
-      vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
-      startGen,
+      partialFailureLikely: settled?.partialFailureLikely,
+      vmBlockCount: settled?.vmBlockCount,
+      blocklyTopBlocks: settled?.blocklyTopBlocks,
     };
   })()`);
 
+  expect(result.partialFailureLikely).toBe(false);
+  expect(result.vmBlockCount).toBeGreaterThan(0);
+  expect(result.blocklyTopBlocks).toBeGreaterThan(0);
+});
+
+test("load-path partial reload failure suppresses save/collab and records load epoch", async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+
   await page.evaluate(`(() => { ${FIBER_HELPERS}
-    const ScratchBlocks = walkFibers(fiber => fiber.stateNode && fiber.stateNode.ScratchBlocks);
-    if (!ScratchBlocks || !ScratchBlocks.clearWorkspaceAndLoadFromXml) {
+    window.__blocksyncTask3?.resetE2eSideEffectCounters?.();
+    const ScratchBlocks = resolveScratchBlocks();
+    if (!ScratchBlocks?.clearWorkspaceAndLoadFromXml) {
       throw new Error('ScratchBlocks API missing');
     }
     const original = ScratchBlocks.clearWorkspaceAndLoadFromXml;
@@ -108,34 +134,59 @@ test("partial clearWorkspaceAndLoadFromXml failure is recorded without autosave 
       workspace.clear();
       throw new Error('simulated partial workspace reload failure');
     };
-    try {
-      resolveVm().emitWorkspaceUpdate();
-    } finally {
-      ScratchBlocks.clearWorkspaceAndLoadFromXml = original;
-    }
+    window.__syncratchTestPatch = { ScratchBlocks, original };
   })()`);
 
-  await page.waitForTimeout(750);
+  const before = await page.evaluate(`(async () => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    const log = window.__blocksyncTask3?.workspaceUpdateLog?.() ?? [];
+    const dirtyGen = log.at(-1)?.saveDirtyGeneration ?? 0;
+    const vmBlocks = Object.keys(vm.editingTarget.blocks._blocks).length;
+    const epochBefore = await window.__blocksyncTask3?.reloadCurrentProject?.();
+    return { vmBlocks, dirtyGen, epochBefore };
+  })()`);
+
+  await page.waitForTimeout(900);
 
   const after = await page.evaluate(`(() => { ${FIBER_HELPERS}
     const vm = resolveVm();
-    const log = window.__blocksyncTask3?.workspaceUpdateLog?.() ?? [];
-    const settled = log.filter(entry => entry.phase === 'settled').at(-1);
-    const start = log.filter(entry => entry.phase === 'start').at(-1);
+    const patch = window.__syncratchTestPatch;
+    if (patch) {
+      patch.ScratchBlocks.clearWorkspaceAndLoadFromXml = patch.original;
+      delete window.__syncratchTestPatch;
+    }
+    const updateLog = window.__blocksyncTask3?.workspaceUpdateLog?.() ?? [];
+    const boundaryLog = window.__blocksyncTask3?.loadBoundaryLog?.() ?? [];
+    const settled = updateLog.filter(entry => entry.phase === 'settled').at(-1);
+    const loadEpoch = settled?.loadEpoch;
+    const boundaries = boundaryLog.filter(entry => entry.loadEpoch === loadEpoch);
     return {
       vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
       settled,
-      startGen: start?.saveDirtyGeneration,
-      settledGen: settled?.saveDirtyGeneration,
+      boundaries,
+      sideEffects: window.__blocksyncTask3?.getE2eSideEffectCounters?.(),
       suppressedDirty: window.__blocksyncTask3?.suppressedDirtyLog?.() ?? [],
+      dirtyGen: settled?.saveDirtyGeneration,
     };
   })()`);
 
-  expect(after.vmBlocks, "VM blocks must survive partial Blockly reload").toBe(
-    before.vmBlocks,
-  );
+  expect(after.vmBlocks).toBe(before.vmBlocks);
   expect(after.settled?.partialFailureLikely).toBe(true);
   expect(after.settled?.blocklyTopBlocks).toBe(0);
-  expect(after.settledGen).toBe(before.startGen);
-  expect(after.suppressedDirty).toHaveLength(0);
+  expect(after.dirtyGen).toBe(before.dirtyGen);
+  expect(after.sideEffects?.persistAttempts).toBe(0);
+  expect(after.sideEffects?.collabOutboundAttempts).toBe(0);
+  expect(after.suppressedDirty.length).toBeGreaterThan(0);
+  expect(after.boundaries.some(entry => entry.suppressed === true)).toBe(true);
+  expect(after.boundaries.some(entry => entry.suppressed === false)).toBe(true);
+  expect(after.boundaries.every(entry => entry.kind === "load")).toBe(true);
 });
+
+declare global {
+  interface Window {
+    __syncratchTestPatch?: {
+      ScratchBlocks: {clearWorkspaceAndLoadFromXml: (...args: unknown[]) => unknown};
+      original: (...args: unknown[]) => unknown;
+    };
+  }
+}

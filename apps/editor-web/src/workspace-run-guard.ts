@@ -11,8 +11,8 @@
  */
 
 import {
-  hashBlockGraphEdges,
   hashBlocklyWorkspaceEdges,
+  hashVmVisibleBlockGraph,
   recordWorkspaceVmDesync,
   type WorkspaceVmDesyncEntry,
 } from "./workspace-desync-diagnostics.js";
@@ -49,6 +49,7 @@ export type GuardTargetLike = {
       {
         parent?: string | null;
         next?: string | null;
+        shadow?: boolean;
         inputs?: Record<
           string,
           {block?: string | null; shadow?: string | null} | null | undefined
@@ -198,7 +199,7 @@ function recordDesync(options: {
     workspaceTopBlocks: visible,
     vmScriptCount: vmScripts,
     vmBlockIds: vmIds,
-    vmEdgeHash: hashBlockGraphEdges(vmBlocks, vmIds),
+    vmEdgeHash: hashVmVisibleBlockGraph(vmBlocks),
     blocklyTopBlockIds: blocklyTopIds,
     blocklyEdgeHash: hashBlocklyWorkspaceEdges(workspace),
     threads: snapshotThreads(runtime, editingTarget),

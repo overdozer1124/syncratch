@@ -243,6 +243,12 @@ import {
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
 import {getWorkspaceVmDesyncLog} from "./workspace-desync-diagnostics.js";
 import {
+  getE2eSideEffectCounters,
+  recordE2eCollabOutbound,
+  recordE2ePersistAttempt,
+  resetE2eSideEffectCounters,
+} from "./e2e-side-effect-counters.js";
+import {
   getActiveLoadKind,
   getLoadBoundaryLog,
   getLoadEpoch,
@@ -929,6 +935,27 @@ const diagnostic = {
   suppressedDirtyLog() {
     return getSuppressedDirtyLog();
   },
+  resetE2eSideEffectCounters() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("E2E side-effect counters are available only in E2E mode");
+    }
+    resetE2eSideEffectCounters();
+  },
+  getE2eSideEffectCounters() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("E2E side-effect counters are available only in E2E mode");
+    }
+    return getE2eSideEffectCounters();
+  },
+  async reloadCurrentProject(): Promise<number> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("reloadCurrentProject is available only in E2E mode");
+    }
+    if (!hasCurrent) throw new Error("No current project");
+    const epochBefore = getLoadEpoch();
+    await loadRecord(structuredClone(current));
+    return epochBefore;
+  },
 };
 
 declare global {
@@ -1047,6 +1074,9 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
         saveState: "clean",
       };
       const saved = await store.createOrReplace(next, source.revision);
+      if (import.meta.env.MODE === "e2e") {
+        recordE2ePersistAttempt();
+      }
       if (!isActive()) return;
       current = saved;
       recoveryAssetOverlay.clear();
@@ -1516,6 +1546,8 @@ async function startCollaboration(
       }
     },
     onState: renderCollabState,
+    onLocalPush:
+      import.meta.env.MODE === "e2e" ? recordE2eCollabOutbound : undefined,
   });
   collabSession = session;
   activeInvite = invite;

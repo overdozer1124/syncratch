@@ -139,6 +139,8 @@ export interface CollabSessionOptions {
   /** Kept for diagnostics/compat; never authorizes Drive writes. */
   eligible?: boolean;
   reobserveDriveBeforeLeadership?: () => void | Promise<void>;
+  /** Optional passive hook for E2E side-effect counting. */
+  onLocalPush?: () => void;
   debounceMs?: number;
   stallInactivityMs?: number;
   projectTitle?: () => string;
@@ -430,6 +432,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
   const pushPendingLocalChanges = (): void => {
     if (suppressLocal) return;
     if (!createdThisRoom && !guestReady) return;
+    options.onLocalPush?.();
     const {assets} = options.materializeLocal();
     if (!isSeeded()) {
       if (!maySeed) return;

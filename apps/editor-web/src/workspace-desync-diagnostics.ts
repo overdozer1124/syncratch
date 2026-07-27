@@ -12,6 +12,16 @@ export type BlockEdgeRecord = {
   >;
 };
 
+export type VmBlockLike = {
+  parent?: string | null;
+  next?: string | null;
+  shadow?: boolean;
+  inputs?: Record<
+    string,
+    {block?: string | null; shadow?: string | null} | null | undefined
+  >;
+};
+
 export type WorkspaceVmDesyncEntry = {
   seq: number;
   at: number;
@@ -68,6 +78,54 @@ function normalizeInputEdges(
     .join(",");
 }
 
+/** Visible graph inputs: real block connections only (no shadow-only slots). */
+function normalizeVisibleInputEdges(
+  inputs: BlockEdgeRecord["inputs"],
+): string {
+  if (!inputs) return "";
+  return Object.keys(inputs)
+    .sort()
+    .map(name => {
+      const input = inputs[name];
+      if (!input?.block) return "";
+      return `${name}:${input.block}`;
+    })
+    .filter(Boolean)
+    .join(",");
+}
+
+export function collectVmShadowBlockIds(
+  blocks: Record<string, VmBlockLike> | undefined,
+): string[] {
+  if (!blocks) return [];
+  return Object.keys(blocks)
+    .filter(id => blocks[id]?.shadow === true)
+    .sort();
+}
+
+export function vmBlocksToVisibleEdgeRecords(
+  blocks: Record<string, VmBlockLike> | undefined,
+): {blocks: Record<string, BlockEdgeRecord>; ids: string[]} {
+  if (!blocks) return {blocks: {}, ids: []};
+  const shadowIds = new Set(collectVmShadowBlockIds(blocks));
+  const ids = Object.keys(blocks).filter(id => !shadowIds.has(id));
+  const normalized: Record<string, BlockEdgeRecord> = {};
+  for (const id of ids) {
+    const block = blocks[id];
+    if (!block) continue;
+    const parent =
+      block.parent && !shadowIds.has(block.parent) ? block.parent : null;
+    const next = block.next && !shadowIds.has(block.next) ? block.next : null;
+    const inputs: BlockEdgeRecord["inputs"] = {};
+    for (const [name, input] of Object.entries(block.inputs ?? {})) {
+      if (!input?.block || shadowIds.has(input.block)) continue;
+      inputs[name] = {block: input.block, shadow: null};
+    }
+    normalized[id] = {parent, next, inputs};
+  }
+  return {blocks: normalized, ids};
+}
+
 /**
  * Stable hash of block parent/next/input edges for quick graph comparison.
  */
@@ -85,6 +143,30 @@ export function hashBlockGraphEdges(
       return `${id}:${block.parent ?? ""}:${block.next ?? ""}:${normalizeInputEdges(block.inputs)}`;
     });
   return parts.join("|");
+}
+
+/** Hash non-shadow visible connections (matches Blockly workspace graph). */
+export function hashVisibleBlockGraphEdges(
+  blocks: Record<string, BlockEdgeRecord> | undefined,
+  ids: string[],
+): string {
+  if (!blocks || ids.length === 0) return "0";
+  const parts = ids
+    .slice()
+    .sort()
+    .map(id => {
+      const block = blocks[id];
+      if (!block) return `${id}:?`;
+      return `${id}:${block.parent ?? ""}:${block.next ?? ""}:${normalizeVisibleInputEdges(block.inputs)}`;
+    });
+  return parts.join("|");
+}
+
+export function hashVmVisibleBlockGraph(
+  blocks: Record<string, VmBlockLike> | undefined,
+): string {
+  const {blocks: normalized, ids} = vmBlocksToVisibleEdgeRecords(blocks);
+  return hashVisibleBlockGraphEdges(normalized, ids);
 }
 
 /** @deprecated Use hashBlockGraphEdges — kept for existing imports/tests. */
@@ -108,8 +190,16 @@ function blocklyBlocksToEdgeRecords(
     for (const input of block.inputList ?? []) {
       if (!input.name) continue;
       const target = input.connection?.targetBlock?.();
+      if (target) {
+        try {
+          if (target.isShadow?.()) continue;
+        } catch {
+          // treat as a real block
+        }
+      }
+      if (!target?.id) continue;
       inputs[input.name] = {
-        block: target?.id ?? null,
+        block: target.id,
         shadow: null,
       };
     }
@@ -129,7 +219,7 @@ export function hashBlocklyWorkspaceEdges(
   if (!workspace?.getAllBlocks) return "0";
   try {
     const {blocks, ids} = blocklyBlocksToEdgeRecords(workspace);
-    return hashBlockGraphEdges(blocks, ids);
+    return hashVisibleBlockGraphEdges(blocks, ids);
   } catch {
     return "?";
   }
