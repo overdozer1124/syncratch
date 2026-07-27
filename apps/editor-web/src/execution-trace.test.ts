@@ -64,6 +64,21 @@ describe("createExecutionTrace", () => {
     expect(trace.getEntries().map(e => e.blockId)).toEqual(["c", "d", "e"]);
   });
 
+  it("truncateTo drops newest entries beyond the requested size", () => {
+    const trace = createExecutionTrace({now: () => 0});
+    for (const id of ["a", "b", "c", "d"]) {
+      trace.record({
+        blockId: id,
+        targetId: null,
+        targetName: null,
+        snapshot: {opcode: "motion_movesteps", args: {STEPS: 1}},
+      });
+    }
+    trace.truncateTo(2);
+    expect(trace.size()).toBe(2);
+    expect(trace.getEntries().map(entry => entry.blockId)).toEqual(["a", "b"]);
+  });
+
   it("stores semantic snapshots independently from later edits", () => {
     const trace = createExecutionTrace({now: () => 0});
     trace.record({

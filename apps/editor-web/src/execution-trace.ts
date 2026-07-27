@@ -21,6 +21,8 @@ export interface ExecutionTrace {
   /** Oldest first. */
   getEntries(): TraceEntry[];
   clear(): void;
+  /** Drop newest entries so {@link size} is at most `maxSize`. */
+  truncateTo(maxSize: number): void;
   size(): number;
 }
 
@@ -62,6 +64,12 @@ export function createExecutionTrace(
       })),
     clear() {
       entries = [];
+    },
+    truncateTo(maxSize: number) {
+      const limitSize = Math.max(0, Math.floor(maxSize));
+      if (entries.length > limitSize) {
+        entries = entries.slice(0, limitSize);
+      }
     },
     size: () => entries.length,
   };

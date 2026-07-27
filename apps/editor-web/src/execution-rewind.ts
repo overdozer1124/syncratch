@@ -2,8 +2,8 @@
  * Deterministic rewind foundation: origin snapshot, per-frame journal, and
  * fingerprint recording for scheduler-frame replay.
  *
- * PR 1 exposes recording + replayToFrame() for tests. UI and rewindFrame() land
- * in later PRs.
+ * PR 1 exposes recording + replayToFrame() for tests. PR 2 adds rewindFrame(),
+ * trace truncation, and replay lifecycle hooks for side-effect suppression.
  */
 
 import {
@@ -22,13 +22,14 @@ import {
 import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
-import {replayToFrame} from "./execution-rewind-replay.js";
+import {replayToFrame, truncateFramesAfter} from "./execution-rewind-replay.js";
 import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import {
   REWIND_MAX_FRAMES,
   type ReplayResult,
   type RewindClearReason,
   type RewindFrame,
+  type RewindFrameResult,
   type RewindOrigin,
   type RewindSnapshot,
 } from "./execution-rewind-types.js";
@@ -41,6 +42,7 @@ export type {
   ReplayResult,
   RewindClearReason,
   RewindFrame,
+  RewindFrameResult,
   RewindOrigin,
   RewindSnapshot,
 } from "./execution-rewind-types.js";
@@ -54,6 +56,10 @@ export interface ExecutionRewindOptions {
   restoreOrigin?: (origin: RewindOrigin) => Promise<void>;
   getTraceSize?: () => number;
   onHistoryCleared?: (reason: RewindClearReason) => void;
+  /** Called around deterministic replay (load + scheduler steps). */
+  onReplayLifecycle?: (phase: "start" | "end") => void;
+  /** Truncate execution trace to a recorded scheduler frame boundary. */
+  onTraceTruncate?: (traceSize: number) => void;
   maxFrames?: number;
   /** Inject a shared journal (used by unit tests). */
   journal?: RewindJournal;
@@ -64,8 +70,10 @@ export interface ExecutionRewindOptions {
 export interface ExecutionRewindHandle {
   getSnapshot(): RewindSnapshot;
   clearRewindHistory(reason: RewindClearReason): void;
-  /** Test / PR2 API: replay to a recorded scheduler frame index. */
+  /** Test API: replay to a recorded scheduler frame index. */
   replayToFrame(targetFrameIndex: number): Promise<ReplayResult>;
+  /** Rewind one scheduler frame and discard future history. */
+  rewindFrame(): Promise<RewindFrameResult>;
   getFrames(): RewindFrame[];
   getOrigin(): RewindOrigin | null;
   dispose(): void;
@@ -227,6 +235,77 @@ export function installExecutionRewind(
   };
   runtime[REWIND_FLAG] = true;
 
+  const recoverOriginBaseline = async () => {
+    if (!origin || !options.restoreOrigin) return;
+    try {
+      await options.restoreOrigin(origin);
+      cloneOrderRegistry.reset();
+      cloneOrderRegistry.seedOriginalTargets(runtime.targets);
+      bindCloneOrderRegistry(cloneOrderRegistry);
+      restartGreenFlagHatThreads(
+        runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
+      );
+    } catch {
+      // Recovery is best-effort; callers should treat failed replay as terminal.
+    }
+  };
+
+  const runDeterministicReplay = async (
+    targetFrameIndex: number,
+  ): Promise<ReplayResult> => {
+    if (!origin) {
+      return {
+        ok: false,
+        targetFrameIndex,
+        expectedFingerprint: null,
+        actualFingerprint: null,
+        error: "Rewind origin is unavailable",
+      };
+    }
+    if (!options.restoreOrigin) {
+      return {
+        ok: false,
+        targetFrameIndex,
+        expectedFingerprint: null,
+        actualFingerprint: null,
+        error: "restoreOrigin is not configured",
+      };
+    }
+    if (rewindError) {
+      return {
+        ok: false,
+        targetFrameIndex,
+        expectedFingerprint: null,
+        actualFingerprint: null,
+        error: rewindError,
+      };
+    }
+
+    options.onReplayLifecycle?.("start");
+    isReplaying = true;
+    try {
+      const result = await replayToFrame({
+        origin,
+        frames,
+        journal,
+        targetFrameIndex,
+        runtime,
+        cloneOrderRegistry,
+        step: () => innerStep(),
+        restoreOrigin: options.restoreOrigin,
+        getTraceSize: options.getTraceSize,
+      });
+      if (!result.ok) {
+        markUnsupported();
+        await recoverOriginBaseline();
+      }
+      return result;
+    } finally {
+      isReplaying = false;
+      options.onReplayLifecycle?.("end");
+    }
+  };
+
   const handle: ExecutionRewindHandle = {
     getSnapshot(): RewindSnapshot {
       const rewindDepth = frames.length > 0 ? frames.length - 1 : 0;
@@ -242,65 +321,63 @@ export function installExecutionRewind(
       clearRewindHistory(reason);
     },
     async replayToFrame(targetFrameIndex: number): Promise<ReplayResult> {
-      if (!origin) {
+      return runDeterministicReplay(targetFrameIndex);
+    },
+    async rewindFrame(): Promise<RewindFrameResult> {
+      const rewindDepth = frames.length > 0 ? frames.length - 1 : 0;
+      const canRewind = rewindDepth > 0 && rewindError === null && !isReplaying;
+      if (!canRewind) {
         return {
           ok: false,
-          targetFrameIndex,
-          expectedFingerprint: null,
-          actualFingerprint: null,
-          error: "Rewind origin is unavailable",
+          targetFrameIndex: -1,
+          error: rewindError ?? "Rewind is unavailable",
         };
       }
-      if (!options.restoreOrigin) {
+      if (frames.length < 2) {
         return {
           ok: false,
-          targetFrameIndex,
-          expectedFingerprint: null,
-          actualFingerprint: null,
-          error: "restoreOrigin is not configured",
-        };
-      }
-      if (rewindError) {
-        return {
-          ok: false,
-          targetFrameIndex,
-          expectedFingerprint: null,
-          actualFingerprint: null,
-          error: rewindError,
+          targetFrameIndex: -1,
+          error: "Rewind history is too shallow",
         };
       }
 
-      isReplaying = true;
-      try {
-        const result = await replayToFrame({
-          origin,
-          frames,
-          journal,
+      const currentFrameIndex = frames[frames.length - 1]!.frameIndex;
+      const targetFrameIndex = currentFrameIndex - 1;
+      if (targetFrameIndex < 0) {
+        return {
+          ok: false,
           targetFrameIndex,
-          runtime,
-          cloneOrderRegistry,
-          step: () => innerStep(),
-          restoreOrigin: options.restoreOrigin,
-          getTraceSize: options.getTraceSize,
-        });
-        if (!result.ok) {
-          markUnsupported();
-          try {
-            await options.restoreOrigin(origin);
-            cloneOrderRegistry.reset();
-            cloneOrderRegistry.seedOriginalTargets(runtime.targets);
-            bindCloneOrderRegistry(cloneOrderRegistry);
-            restartGreenFlagHatThreads(
-              runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
-            );
-          } catch {
-            // Recovery is best-effort; callers should treat failed replay as terminal.
-          }
-        }
-        return result;
-      } finally {
-        isReplaying = false;
+          error: "Already at the origin scheduler frame",
+        };
       }
+
+      const targetFrame = frames.find(frame => frame.frameIndex === targetFrameIndex);
+      if (!targetFrame) {
+        return {
+          ok: false,
+          targetFrameIndex,
+          error: `Frame ${targetFrameIndex} was not recorded`,
+        };
+      }
+
+      const result = await runDeterministicReplay(targetFrameIndex);
+      if (!result.ok) {
+        return {
+          ok: false,
+          targetFrameIndex,
+          error: result.error,
+        };
+      }
+
+      frames = truncateFramesAfter(frames, targetFrameIndex);
+      nextFrameIndex = targetFrameIndex + 1;
+      options.onTraceTruncate?.(targetFrame.traceSize);
+
+      return {
+        ok: true,
+        targetFrameIndex,
+        error: null,
+      };
     },
     getFrames(): RewindFrame[] {
       return frames.map(frame => ({...frame}));

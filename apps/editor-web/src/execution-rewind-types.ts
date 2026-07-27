@@ -81,3 +81,9 @@ export interface ReplayResult {
   actualFingerprint: string | null;
   error: string | null;
 }
+
+export interface RewindFrameResult {
+  ok: boolean;
+  targetFrameIndex: number;
+  error: string | null;
+}

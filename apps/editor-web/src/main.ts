@@ -1187,17 +1187,12 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
   );
 }
 
-/** Restore execution rewind origin without autosave / collab side effects. */
+/** Restore execution rewind origin. Side-effect suppression is handled by replay lifecycle hooks. */
 async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
-  setSuppressedVmChanges("rewind", true);
-  try {
-    if (origin.vmProjectJson !== undefined) {
-      await vm.loadProject(structuredClone(origin.vmProjectJson));
-    } else {
-      await vm.loadProject(documentToProjectJson(origin.document));
-    }
-  } finally {
-    setSuppressedVmChanges("rewind", false);
+  if (origin.vmProjectJson !== undefined) {
+    await vm.loadProject(structuredClone(origin.vmProjectJson));
+  } else {
+    await vm.loadProject(documentToProjectJson(origin.document));
   }
 }
 
@@ -2547,6 +2542,12 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       },
       restoreOrigin: restoreRewindOrigin,
       getTraceSize: () => executionTrace?.trace.size() ?? 0,
+      onReplayLifecycle: phase => {
+        setSuppressedVmChanges("rewind", phase === "start");
+      },
+      onTraceTruncate: traceSize => {
+        executionTrace?.trace.truncateTo(traceSize);
+      },
     },
   );
 

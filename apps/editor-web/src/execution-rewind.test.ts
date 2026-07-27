@@ -828,6 +828,85 @@ describe("replayToFrame", () => {
   });
 });
 
+describe("rewindFrame", () => {
+  it("rewinds one scheduler frame and discards future history", async () => {
+    const sim = makeSimulatedRuntime([3, 5, 2]);
+    const origin = makeOrigin(sim.runtime);
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        captureOrigin: () => origin,
+        restoreOrigin: async () => sim.resetToOrigin(),
+        cloneOrderRegistry: sim.registry,
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+    sim.runtime._step!();
+    expect(sim.target.x).toBe(10);
+    expect(handle.getFrames()).toHaveLength(3);
+
+    const result = await handle.rewindFrame();
+    expect(result.ok).toBe(true);
+    expect(result.targetFrameIndex).toBe(1);
+    expect(sim.target.x).toBe(8);
+    expect(handle.getFrames()).toHaveLength(2);
+    expect(handle.getSnapshot().rewindDepth).toBe(1);
+
+    handle.dispose();
+  });
+
+  it("truncates trace and wraps replay in lifecycle hooks", async () => {
+    const sim = makeSimulatedRuntime([2, 4, 6]);
+    const lifecycle: Array<"start" | "end"> = [];
+    let truncatedTo = -1;
+    let traceSize = 0;
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => sim.resetToOrigin(),
+        cloneOrderRegistry: sim.registry,
+        getTraceSize: () => {
+          traceSize += 3;
+          return traceSize;
+        },
+        onReplayLifecycle: phase => lifecycle.push(phase),
+        onTraceTruncate: size => {
+          truncatedTo = size;
+        },
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    const result = await handle.rewindFrame();
+    expect(result.ok).toBe(true);
+    expect(lifecycle).toEqual(["start", "end"]);
+    expect(truncatedTo).toBe(6);
+    handle.dispose();
+  });
+
+  it("returns an error when rewind is unavailable", async () => {
+    const sim = makeSimulatedRuntime([]);
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {captureOrigin: () => makeOrigin(sim.runtime)},
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    const result = await handle.rewindFrame();
+    expect(result.ok).toBe(false);
+    handle.dispose();
+  });
+});
+
 describe("wrapper order with execution trace and control", () => {
   it("records frames only when _step actually runs", () => {
     const sim = makeSimulatedRuntime([1, 2]);
