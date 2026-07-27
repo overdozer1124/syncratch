@@ -60,6 +60,43 @@ function readCatProjectJson(): Record<string, unknown> {
   >;
 }
 
+function attachForeverMoveScript(project: Record<string, unknown>, stepSize = 1): void {
+  const targets = project.targets as Array<Record<string, unknown>>;
+  const sprite = targets.find(target => target.isStage === false);
+  if (!sprite) throw new Error("Sprite target missing in cat-project fixture");
+  sprite.blocks = {
+    hat: {
+      opcode: "event_whenflagclicked",
+      next: "loop",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 0,
+    },
+    loop: {
+      opcode: "control_forever",
+      next: null,
+      parent: "hat",
+      inputs: {SUBSTACK: [2, "move"]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    move: {
+      opcode: "motion_movesteps",
+      next: null,
+      parent: "loop",
+      inputs: {STEPS: [1, [4, String(stepSize)]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+  };
+}
+
 function attachMoveScript(project: Record<string, unknown>, options: MoveScriptOptions): void {
   const targets = project.targets as Array<Record<string, unknown>>;
   const sprite = targets.find(target => target.isStage === false);
@@ -261,7 +298,12 @@ export type RewindVmHarness = {
 };
 
 export async function createRewindVmHarness(
-  options: MoveScriptOptions & {clones?: boolean; cloneMoves?: number[]} = {},
+  options: MoveScriptOptions & {
+    clones?: boolean;
+    cloneMoves?: number[];
+    forever?: boolean;
+    foreverStep?: number;
+  } = {},
 ): Promise<RewindVmHarness> {
   const VirtualMachine = loadScratchVm();
   const vm = new VirtualMachine();
@@ -270,6 +312,8 @@ export async function createRewindVmHarness(
   const project = readCatProjectJson();
   if (options.clones) {
     attachCloneScript(project, {cloneMoves: options.cloneMoves});
+  } else if (options.forever) {
+    attachForeverMoveScript(project, options.foreverStep ?? 1);
   } else {
     attachMoveScript(project, options);
   }
@@ -345,4 +389,11 @@ function documentToVmJson(document: ProjectDocument): Record<string, unknown> {
   };
 }
 
-export {attachCloneScript, attachMoveScript, documentToVmJson, findSpriteTarget, readCatProjectJson};
+export {
+  attachCloneScript,
+  attachForeverMoveScript,
+  attachMoveScript,
+  documentToVmJson,
+  findSpriteTarget,
+  readCatProjectJson,
+};

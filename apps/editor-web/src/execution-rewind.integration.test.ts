@@ -200,6 +200,24 @@ describe("execution rewind scratch-vm integration", () => {
     harness.control.dispose();
   });
 
+  it("rewinds stepped forever-loop frames while paused", async () => {
+    const harness = await createRewindVmHarness({forever: true, foreverStep: 1});
+    harness.vm.greenFlag();
+    harness.control.pause();
+    for (let i = 0; i < 5; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+    }
+    expect(harness.rewind.getFrames().length).toBeGreaterThanOrEqual(4);
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 15_000);
+
   it("does not stack wrappers when controllers are reinstalled", async () => {
     const harness = await createRewindVmHarness({steps: [10]});
     const runtime = harness.vm.runtime;

@@ -10,11 +10,15 @@
  * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
  * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
  * PR 12 journals random backdrop resolution and async extension promises.
+ * PR 13 journals sequencer work-loop counts for deterministic forever/turbo frames.
  */
 
 import {
   installBackdropResolveCapture,
 } from "./execution-rewind-backdrop-resolve.js";
+import {
+  installSequencerWorkCapture,
+} from "./execution-rewind-sequencer-work.js";
 import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
@@ -69,6 +73,9 @@ export type RewindVmLike = {
 export interface ExecutionRewindOptions {
   captureOrigin?: () => RewindOrigin | null;
   restoreOrigin?: (origin: RewindOrigin) => Promise<void>;
+  /** Snapshot live VM state before replay; used to recover after replay failure. */
+  captureExecutionCheckpoint?: () => unknown;
+  restoreExecutionCheckpoint?: (checkpoint: unknown) => Promise<void>;
   getTraceSize?: () => number;
   onHistoryCleared?: (reason: RewindClearReason) => void;
   /** Called around deterministic replay (load + scheduler steps). */
@@ -184,6 +191,10 @@ export function installExecutionRewind(
     runtime: runtime as import("./execution-rewind-backdrop-resolve.js").BackdropCaptureRuntimeLike,
     journal,
   });
+  const disposeSequencerWorkCapture = installSequencerWorkCapture({
+    runtime: runtime as import("./execution-rewind-sequencer-work.js").SequencerWorkRuntimeLike,
+    journal,
+  });
   const disposePromiseResolveCapture = installPromiseResolveCapture({
     runtime: runtime as import("./execution-rewind-promise-resolve.js").PromiseCaptureRuntimeLike,
     journal,
@@ -276,6 +287,21 @@ export function installExecutionRewind(
     }
   };
 
+  const recoverExecutionBaseline = async (checkpoint: unknown) => {
+    if (options.restoreExecutionCheckpoint) {
+      try {
+        await options.restoreExecutionCheckpoint(checkpoint);
+        cloneOrderRegistry.reset();
+        cloneOrderRegistry.seedOriginalTargets(runtime.targets);
+        bindCloneOrderRegistry(cloneOrderRegistry);
+        return;
+      } catch {
+        // Fall back to green-flag origin when checkpoint restore fails.
+      }
+    }
+    await recoverOriginBaseline();
+  };
+
   const invalidateHistoryAfterReplayFailure = () => {
     frames = [];
     nextFrameIndex = 0;
@@ -318,6 +344,7 @@ export function installExecutionRewind(
 
     options.onReplayLifecycle?.("start");
     isReplaying = true;
+    const executionCheckpoint = options.captureExecutionCheckpoint?.();
     try {
       const result = await replayToFrame({
         origin,
@@ -332,7 +359,11 @@ export function installExecutionRewind(
       });
       if (!result.ok) {
         markUnsupported();
-        await recoverOriginBaseline();
+        if (executionCheckpoint !== undefined) {
+          await recoverExecutionBaseline(executionCheckpoint);
+        } else {
+          await recoverOriginBaseline();
+        }
         invalidateHistoryAfterReplayFailure();
       }
       return result;
@@ -429,6 +460,7 @@ export function installExecutionRewind(
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
       disposeBackdropResolveCapture();
+      disposeSequencerWorkCapture();
       disposeBroadcastOrderCapture();
       disposePromiseResolveCapture();
       disposeCloneOrderCapture();

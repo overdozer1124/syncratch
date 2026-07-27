@@ -1204,12 +1204,65 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
 }
 
 /** Restore execution rewind origin. Side-effect suppression is handled by replay lifecycle hooks. */
+function localUiRestoreHooksForProjectLoad():
+  | import("./load-project-preserving-editing-target.js").LocalUiRestoreHooks
+  | undefined {
+  if (!editorGuiState) return undefined;
+  return {
+    store: guiStoreTrackingInternalMetrics(editorGuiState.store),
+    readToolboxCategoryId,
+    restoreToolboxCategory,
+    rememberedViewportForSelection: selection =>
+      hasCurrent
+        ? viewportMemory.get(
+            current.localProjectId,
+            selection?.documentId ?? null,
+          )
+        : null,
+    rememberViewportForSelection,
+    preferRememberedViewport: () => suppressViewportMemoryCapture,
+    applyViewport: viewport => {
+      if (isScratchBlockInteractionActive(scratchWorkspace())) return;
+      applyWorkspaceViewport(viewport);
+    },
+    beginRestoreEpoch: bumpUiRestoreEpoch,
+    isRestoreEpochCurrent: epoch => epoch === uiRestoreEpoch,
+    currentRuntimeEditingTargetId: () => vm.editingTarget?.id,
+  };
+}
+
+async function loadVmProjectJson(
+  projectJson: Record<string, unknown>,
+): Promise<void> {
+  const assets = runtimeAssetMap();
+  const beforeDocument = documentFromVm(assets);
+  const afterDocument = projectJsonToDocument(
+    projectJson,
+    assetHashCache.hashesFor(assets),
+  );
+  await loadProjectPreservingEditingTarget(vm, structuredClone(projectJson), {
+    beforeDocument,
+    afterDocument,
+    localUi: localUiRestoreHooksForProjectLoad(),
+  });
+}
+
 async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
   if (origin.vmProjectJson !== undefined) {
-    await vm.loadProject(structuredClone(origin.vmProjectJson));
-  } else {
-    await vm.loadProject(documentToProjectJson(origin.document));
+    await loadVmProjectJson(
+      structuredClone(origin.vmProjectJson) as Record<string, unknown>,
+    );
+    return;
   }
+  await loadVmProjectJson(documentToProjectJson(origin.document));
+}
+
+async function restoreRewindExecutionCheckpoint(
+  checkpoint: unknown,
+): Promise<void> {
+  if (!checkpoint || typeof checkpoint !== "object") return;
+  vm.runtime.stopAll?.();
+  await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
@@ -2588,6 +2641,11 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         });
       },
       restoreOrigin: restoreRewindOrigin,
+      captureExecutionCheckpoint: () => {
+        if (!hasCurrent) return null;
+        return JSON.parse(vm.toJSON()) as Record<string, unknown>;
+      },
+      restoreExecutionCheckpoint: restoreRewindExecutionCheckpoint,
       getTraceSize: () => executionTrace?.trace.size() ?? 0,
       onReplayLifecycle: phase => {
         setSuppressedVmChanges("rewind", phase === "start");
