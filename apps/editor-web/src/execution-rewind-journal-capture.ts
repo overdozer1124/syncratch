@@ -1,4 +1,4 @@
-import type {JournalEntry} from "./execution-rewind-types.js";
+import type {JournalEntry, JournalEntryKind} from "./execution-rewind-types.js";
 import type {RewindJournal} from "./execution-rewind-journal.js";
 import {RewindJournalMismatchError} from "./execution-rewind-journal.js";
 import {
@@ -207,6 +207,116 @@ function patchKeyboard(
   };
 }
 
+type LoudnessJournalEntry = Extract<JournalEntry, {kind: "loudness"}>;
+type AskAnswerJournalEntry = Extract<JournalEntry, {kind: "askAnswer"}>;
+type VideoSensingJournalEntry = Extract<JournalEntry, {kind: "videoSensing"}>;
+type ExtensionReporterJournalEntry = Extract<
+  JournalEntry,
+  {kind: "extensionReporter"}
+>;
+
+function stableVideoSensingAttribute(args: unknown): string {
+  if (!args || typeof args !== "object") return "";
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return String(args);
+  }
+}
+
+function replayJournalValue(
+  journal: RewindJournal,
+  kind: JournalEntryKind,
+  opcode: string,
+  args: unknown,
+): unknown {
+  const entry = journal.consume(kind);
+  if (!entry || entry.kind !== kind) {
+    throw new RewindJournalMismatchError(`Expected ${kind} journal entry`);
+  }
+  switch (kind) {
+    case "loudness":
+      return (entry as LoudnessJournalEntry).value;
+    case "askAnswer":
+      return (entry as AskAnswerJournalEntry).answer;
+    case "videoSensing": {
+      const videoEntry = entry as VideoSensingJournalEntry;
+      if (videoEntry.attribute !== stableVideoSensingAttribute(args)) {
+        throw new RewindJournalMismatchError(
+          `Expected videoSensing attribute ${stableVideoSensingAttribute(args)}, got ${videoEntry.attribute}`,
+        );
+      }
+      return videoEntry.value;
+    }
+    case "extensionReporter": {
+      const reporterEntry = entry as ExtensionReporterJournalEntry;
+      if (reporterEntry.opcode !== opcode) {
+        throw new RewindJournalMismatchError(
+          `Expected extensionReporter for ${opcode}, got ${reporterEntry.opcode}`,
+        );
+      }
+      return reporterEntry.value;
+    }
+    default:
+      throw new RewindJournalMismatchError(`Unsupported replay kind ${kind}`);
+  }
+}
+
+function recordJournalValue(
+  journal: RewindJournal,
+  kind: JournalEntryKind,
+  opcode: string,
+  args: unknown,
+  result: unknown,
+): void {
+  switch (kind) {
+    case "loudness":
+      journal.append({
+        kind: "loudness",
+        value:
+          typeof result === "number" && Number.isFinite(result) ? result : 0,
+      });
+      return;
+    case "askAnswer":
+      journal.append({
+        kind: "askAnswer",
+        answer: typeof result === "string" ? result : String(result ?? ""),
+      });
+      return;
+    case "videoSensing":
+      journal.append({
+        kind: "videoSensing",
+        attribute: stableVideoSensingAttribute(args),
+        value: result,
+      });
+      return;
+    case "extensionReporter":
+      journal.append({kind: "extensionReporter", opcode, value: result});
+      return;
+    default:
+      return;
+  }
+}
+
+function wrapJournaledOpcode(
+  opcode: string,
+  kind: JournalEntryKind,
+  original: (...args: unknown[]) => unknown,
+  journal: RewindJournal,
+): (...args: unknown[]) => unknown {
+  return (...args: unknown[]) => {
+    const mode = journal.getMode();
+    if (mode === "replay") {
+      return replayJournalValue(journal, kind, opcode, args[0]);
+    }
+    const result = original(...args);
+    if (mode === "record") {
+      recordJournalValue(journal, kind, opcode, args[0], result);
+    }
+    return result;
+  };
+}
+
 export function installJournalCapture(
   runtime: JournalCaptureRuntimeLike,
   journal: RewindJournal,
@@ -235,13 +345,29 @@ export function installJournalCapture(
         options.onUnsupportedInput?.({opcode, journalKind});
       }
 
-      if (opcode !== "operator_random") return original;
+      const captureKind =
+        journalKind && IMPLEMENTED_JOURNAL_KINDS.has(journalKind)
+          ? journalKind
+          : opcode === "operator_random"
+            ? ("random" as const)
+            : null;
+
+      if (!captureKind) return original;
+
       let wrapped = wrappedByOpcode.get(opcode);
       if (!wrapped) {
-        wrapped = wrapRandomPrimitive(
-          original as (...args: unknown[]) => unknown,
-          journal,
-        );
+        wrapped =
+          captureKind === "random"
+            ? wrapRandomPrimitive(
+                original as (...args: unknown[]) => unknown,
+                journal,
+              )
+            : wrapJournaledOpcode(
+                opcode,
+                captureKind,
+                original as (...args: unknown[]) => unknown,
+                journal,
+              );
         wrappedByOpcode.set(opcode, wrapped);
       }
       return wrapped;

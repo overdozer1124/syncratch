@@ -8,6 +8,10 @@ export const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
   "mouse",
   "key",
   "cloneOrder",
+  "loudness",
+  "askAnswer",
+  "videoSensing",
+  "extensionReporter",
 ]);
 
 /** Explicit opcode → journal kind mapping for unjournaled non-deterministic inputs. */
