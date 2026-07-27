@@ -1,39 +1,23 @@
 /**
- * Records which blocks the VM actually executed, so learners (and the AI) can
- * look at what happened instead of guessing from the static project.
- *
- * How the events are captured: `Sequencer.stepThread` assigns
- * `thread.blockGlowInFrame = currentBlockId` immediately after running each
- * block. Redefining that property on each live thread turns those assignments
- * into a complete, per-block trace — reading `blockGlowInFrame` once per frame
- * would only sample the last block of each frame and miss everything a loop did
- * in between. `vendor/scratch-editor` is a pinned submodule (ADR-0001), so this
- * stays on the app side.
- *
- * Hot path discipline: a tight `forever` loop runs thousands of blocks a
- * second, so recording stores ids only — no block lookups, no string building.
- * Opcodes and sprite names are resolved later, when something actually renders
- * the trace. Consecutive runs of the same block are coalesced into one entry
- * with a count, otherwise a single loop would flush the whole buffer.
+ * Records what the VM actually executed with semantic snapshots captured at
+ * primitive boundaries (evaluated args, before/after state, control flow).
  */
+
+import {
+  installPrimitiveTraceCapture,
+  recordHatBlockStart,
+} from "./execution-trace-capture.js";
+import type {TraceEntry, TraceSemanticSnapshot} from "./execution-trace-types.js";
 
 const TRACE_FLAG = "_syncratchExecutionTraceInstalled";
 const THREAD_FLAG = "__syncratchTraced";
+const HAT_FLAG = "__syncratchHatRecorded";
 const DEFAULT_LIMIT = 500;
 
-export interface TraceEntry {
-  blockId: string;
-  targetId: string | null;
-  /** Timestamp of the first execution in this run. */
-  firstTime: number;
-  /** Timestamp of the most recent execution in this run. */
-  lastTime: number;
-  /** Consecutive executions coalesced into this entry. */
-  count: number;
-}
+export type {TraceEntry, TraceSemanticSnapshot};
 
 export interface ExecutionTrace {
-  record(blockId: string, targetId: string | null, time?: number): void;
+  record(entry: Omit<TraceEntry, "time"> & {time?: number}): void;
   /** Oldest first. */
   getEntries(): TraceEntry[];
   clear(): void;
@@ -41,9 +25,12 @@ export interface ExecutionTrace {
 }
 
 export interface ExecutionTraceOptions {
-  /** Maximum coalesced entries kept. Oldest are dropped first. */
   limit?: number;
   now?: () => number;
+}
+
+function cloneSnapshot(snapshot: TraceSemanticSnapshot): TraceSemanticSnapshot {
+  return structuredClone(snapshot);
 }
 
 export function createExecutionTrace(
@@ -54,27 +41,25 @@ export function createExecutionTrace(
   let entries: TraceEntry[] = [];
 
   return {
-    record(blockId, targetId, time) {
-      if (typeof blockId !== "string" || !blockId) return;
-      const at = typeof time === "number" ? time : now();
-      const last = entries[entries.length - 1];
-      if (last && last.blockId === blockId && last.targetId === targetId) {
-        last.count += 1;
-        last.lastTime = at;
-        return;
-      }
+    record(entry) {
+      if (typeof entry.blockId !== "string" || !entry.blockId) return;
+      const at = typeof entry.time === "number" ? entry.time : now();
       entries.push({
-        blockId,
-        targetId,
-        firstTime: at,
-        lastTime: at,
-        count: 1,
+        blockId: entry.blockId,
+        targetId: entry.targetId,
+        targetName: entry.targetName,
+        time: at,
+        snapshot: cloneSnapshot(entry.snapshot),
       });
       if (entries.length > limit) {
         entries = entries.slice(entries.length - limit);
       }
     },
-    getEntries: () => entries.map(entry => ({...entry})),
+    getEntries: () =>
+      entries.map(entry => ({
+        ...entry,
+        snapshot: cloneSnapshot(entry.snapshot),
+      })),
     clear() {
       entries = [];
     },
@@ -84,16 +69,27 @@ export function createExecutionTrace(
 
 export type TraceThreadLike = {
   blockGlowInFrame?: string | null;
-  /** Hat (or top) block the script was started from. */
   topBlock?: string | null;
-  target?: {id?: string} | null;
+  target?: {
+    id?: string;
+    getName?: () => string;
+    blocks?: {getBlock?: (id: string) => {opcode?: string} | null};
+  } | null;
   updateMonitor?: boolean;
   [THREAD_FLAG]?: boolean;
+  [HAT_FLAG]?: boolean;
 };
 
 export type TraceRuntimeLike = {
   threads?: TraceThreadLike[];
   _step?: (...args: unknown[]) => unknown;
+  getOpcodeFunction?: (opcode: string) => unknown;
+  getBlocksJSON?: () => Array<{
+    type?: string;
+    message0?: string;
+    message1?: string;
+    message2?: string;
+  }>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   off?: (event: string, handler: (...args: unknown[]) => void) => void;
   [TRACE_FLAG]?: boolean;
@@ -104,9 +100,9 @@ export type TraceVmLike = {
 };
 
 /**
- * Redefine `blockGlowInFrame` on one thread so writes are also recorded.
- * Idempotent, and leaves monitor threads alone — those re-run every frame and
- * would drown out the project's own execution.
+ * Mark threads so hat blocks are recorded once per script run.
+ * Command blocks are recorded via the primitive wrapper instead of
+ * blockGlowInFrame to avoid duplicate entries.
  */
 export function instrumentThread(
   thread: TraceThreadLike,
@@ -114,30 +110,11 @@ export function instrumentThread(
 ): boolean {
   if (!thread || thread[THREAD_FLAG] || thread.updateMonitor) return false;
 
-  // The sequencer never "runs" a hat block — it is where the thread starts, so
-  // it never lands in blockGlowInFrame. Record it here, otherwise the timeline
-  // cannot answer "did my green-flag script start at all?".
-  if (typeof thread.topBlock === "string" && thread.topBlock) {
-    trace.record(thread.topBlock, thread.target?.id ?? null);
+  if (!thread[HAT_FLAG] && typeof thread.topBlock === "string" && thread.topBlock) {
+    recordHatBlockStart(trace, thread);
+    thread[HAT_FLAG] = true;
   }
 
-  let value: string | null | undefined = thread.blockGlowInFrame;
-  try {
-    Object.defineProperty(thread, "blockGlowInFrame", {
-      configurable: true,
-      enumerable: true,
-      get: () => value,
-      set: (next: string | null) => {
-        value = next;
-        if (typeof next === "string" && next) {
-          trace.record(next, thread.target?.id ?? null);
-        }
-      },
-    });
-  } catch {
-    // Sealed or non-configurable thread: skip rather than break execution.
-    return false;
-  }
   thread[THREAD_FLAG] = true;
   return true;
 }
@@ -147,13 +124,6 @@ export interface ExecutionTraceHandle {
   dispose(): void;
 }
 
-/**
- * Start tracing `vm`. Threads are (re)instrumented at the start of every frame,
- * because scratch-vm creates a fresh Thread for each script run.
- *
- * Wraps `_step` independently of installExecutionControl: order does not
- * matter, since instrumenting threads while execution is paused is a no-op.
- */
 export function installExecutionTrace(
   vm: TraceVmLike,
   options: ExecutionTraceOptions & {trace?: ExecutionTrace} = {},
@@ -169,6 +139,8 @@ export function installExecutionTrace(
   const originalStep = rawStep.bind(runtime);
   let disposed = false;
 
+  const disposePrimitiveCapture = installPrimitiveTraceCapture(runtime, trace);
+
   const instrumentAll = () => {
     const threads = runtime.threads;
     if (!Array.isArray(threads)) return;
@@ -177,11 +149,14 @@ export function installExecutionTrace(
     }
   };
 
-  // The green flag starts a fresh run, so the log starts fresh too. Without
-  // this the panel keeps showing blocks from an earlier version of the program,
-  // which reads as "this history has nothing to do with my code".
   const onProjectStart = () => {
     trace.clear();
+    const threads = runtime.threads;
+    if (Array.isArray(threads)) {
+      for (const thread of threads) {
+        delete thread[HAT_FLAG];
+      }
+    }
   };
   runtime.on?.("PROJECT_START", onProjectStart);
 
@@ -199,28 +174,19 @@ export function installExecutionTrace(
       runtime.off?.("PROJECT_START", onProjectStart);
       runtime._step = rawStep;
       runtime[TRACE_FLAG] = false;
+      disposePrimitiveCapture();
     },
   };
 }
 
-export interface ResolvedTraceEntry extends TraceEntry {
-  /** Block opcode, or null when the block no longer exists. */
-  opcode: string | null;
-  /** Sprite / stage name, or null when the target is gone. */
-  targetName: string | null;
-}
+/** @deprecated Entries now carry frozen snapshot labels; resolves live target names only when missing. */
+export interface ResolvedTraceEntry extends TraceEntry {}
 
 export type TraceResolveTarget = {
   id?: string;
   getName?: () => string;
-  blocks?: {getBlock?: (id: string) => {opcode?: string} | null | undefined};
 };
 
-/**
- * Attach opcodes and sprite names for display. Entries whose block or target
- * has since been deleted keep their ids and report nulls rather than vanishing —
- * "this ran, then you deleted it" is useful information when debugging.
- */
 export function resolveTraceEntries(
   entries: TraceEntry[],
   targets: TraceResolveTarget[] | null | undefined,
@@ -230,19 +196,14 @@ export function resolveTraceEntries(
     if (target?.id) byId.set(target.id, target);
   }
   return entries.map(entry => {
+    if (entry.targetName) return {...entry};
     const target = entry.targetId ? byId.get(entry.targetId) : undefined;
-    let opcode: string | null = null;
-    try {
-      opcode = target?.blocks?.getBlock?.(entry.blockId)?.opcode ?? null;
-    } catch {
-      opcode = null;
-    }
     let targetName: string | null = null;
     try {
       targetName = target?.getName?.() ?? null;
     } catch {
       targetName = null;
     }
-    return {...entry, opcode, targetName};
+    return {...entry, targetName};
   });
 }

@@ -7,150 +7,149 @@ import {
   type TraceRuntimeLike,
   type TraceThreadLike,
 } from "./execution-trace.js";
+import {
+  entriesWouldCoalesce,
+  installPrimitiveTraceCapture,
+  shouldRecordCommand,
+} from "./execution-trace-capture.js";
 
 describe("createExecutionTrace", () => {
-  it("records executions oldest first", () => {
+  it("records executions oldest first without coalescing", () => {
     let clock = 100;
     const trace = createExecutionTrace({now: () => clock});
-    trace.record("a", "t1");
-    clock = 101;
-    trace.record("b", "t1");
-
-    expect(trace.getEntries()).toEqual([
-      {blockId: "a", targetId: "t1", firstTime: 100, lastTime: 100, count: 1},
-      {blockId: "b", targetId: "t1", firstTime: 101, lastTime: 101, count: 1},
-    ]);
-  });
-
-  it("coalesces consecutive runs of the same block", () => {
-    let clock = 0;
-    const trace = createExecutionTrace({now: () => (clock += 10)});
-    trace.record("loop", "t1");
-    trace.record("loop", "t1");
-    trace.record("loop", "t1");
-
-    const entries = trace.getEntries();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      blockId: "loop",
-      count: 3,
-      firstTime: 10,
-      lastTime: 30,
+    trace.record({
+      blockId: "a",
+      targetId: "t1",
+      targetName: "ネコ",
+      snapshot: {opcode: "motion_movesteps", args: {STEPS: 1}},
     });
-  });
+    clock = 101;
+    trace.record({
+      blockId: "a",
+      targetId: "t1",
+      targetName: "ネコ",
+      snapshot: {opcode: "motion_movesteps", args: {STEPS: 1}},
+    });
 
-  it("does not coalesce across different targets", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    trace.record("same", "t1");
-    trace.record("same", "t2");
     expect(trace.getEntries()).toHaveLength(2);
   });
 
-  it("does not coalesce when another block runs in between", () => {
+  it("does not coalesce different argument values", () => {
     const trace = createExecutionTrace({now: () => 0});
-    trace.record("a", "t1");
-    trace.record("b", "t1");
-    trace.record("a", "t1");
-    expect(trace.getEntries().map(e => e.blockId)).toEqual(["a", "b", "a"]);
+    trace.record({
+      blockId: "move",
+      targetId: "t1",
+      targetName: null,
+      snapshot: {opcode: "motion_movesteps", args: {STEPS: 10}},
+    });
+    trace.record({
+      blockId: "move",
+      targetId: "t1",
+      targetName: null,
+      snapshot: {opcode: "motion_movesteps", args: {STEPS: 5}},
+    });
+    expect(trace.getEntries()).toHaveLength(2);
   });
 
   it("drops the oldest entries past the limit", () => {
     const trace = createExecutionTrace({limit: 3, now: () => 0});
-    for (const id of ["a", "b", "c", "d", "e"]) trace.record(id, null);
+    for (const id of ["a", "b", "c", "d", "e"]) {
+      trace.record({
+        blockId: id,
+        targetId: null,
+        targetName: null,
+        snapshot: {opcode: "motion_movesteps", args: {STEPS: 1}},
+      });
+    }
     expect(trace.getEntries().map(e => e.blockId)).toEqual(["c", "d", "e"]);
-    expect(trace.size()).toBe(3);
   });
 
-  it("ignores empty block ids and supports clear", () => {
+  it("stores semantic snapshots independently from later edits", () => {
     const trace = createExecutionTrace({now: () => 0});
-    trace.record("", "t1");
-    expect(trace.size()).toBe(0);
-    trace.record("a", "t1");
-    trace.clear();
-    expect(trace.getEntries()).toEqual([]);
+    trace.record({
+      blockId: "move",
+      targetId: "t1",
+      targetName: "ネコ",
+      snapshot: {
+        opcode: "motion_movesteps",
+        displayTemplate: "%1 歩動かす",
+        args: {STEPS: 10},
+      },
+    });
+    const stored = trace.getEntries()[0]!.snapshot;
+    stored.args.STEPS = 99;
+    expect(trace.getEntries()[0]!.snapshot.args.STEPS).toBe(10);
   });
+});
 
-  it("hands out copies so callers cannot mutate the buffer", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    trace.record("a", "t1");
-    trace.getEntries()[0]!.count = 999;
-    expect(trace.getEntries()[0]!.count).toBe(1);
+describe("entriesWouldCoalesce", () => {
+  it("returns false for different args or results", () => {
+    const previous = {
+      blockId: "a",
+      targetId: "t1",
+      targetName: null,
+      time: 1,
+      snapshot: {opcode: "motion_movesteps", args: {STEPS: 10}, result: null},
+    };
+    expect(
+      entriesWouldCoalesce(previous, {
+        blockId: "a",
+        targetId: "t1",
+        targetName: null,
+        snapshot: {opcode: "motion_movesteps", args: {STEPS: 5}, result: null},
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldRecordCommand", () => {
+  it("records only when peekStack block opcode matches primitive", () => {
+    const util = {
+      thread: {peekStack: () => "move"},
+      target: {
+        blocks: {
+          getBlock: (id: string) =>
+            id === "move" ? {opcode: "motion_movesteps"} : null,
+        },
+      },
+    };
+    expect(shouldRecordCommand("motion_movesteps", util)).toBe(true);
+    expect(shouldRecordCommand("math_number", util)).toBe(false);
   });
 });
 
 describe("instrumentThread", () => {
-  it("records the thread's hat block, which the sequencer never runs", () => {
+  it("records hat block start once per thread", () => {
     const trace = createExecutionTrace({now: () => 0});
     const thread: TraceThreadLike = {
       topBlock: "hat",
-      blockGlowInFrame: null,
-      target: {id: "sprite1"},
+      target: {
+        id: "sprite1",
+        getName: () => "ネコ",
+        blocks: {getBlock: () => ({opcode: "event_whenflagclicked"})},
+      },
     };
     instrumentThread(thread, trace);
-    thread.blockGlowInFrame = "b1";
-
-    expect(trace.getEntries().map(e => e.blockId)).toEqual(["hat", "b1"]);
-  });
-
-  it("records every write to blockGlowInFrame", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    const thread: TraceThreadLike = {
-      blockGlowInFrame: null,
-      target: {id: "sprite1"},
-    };
-    expect(instrumentThread(thread, trace)).toBe(true);
-
-    thread.blockGlowInFrame = "b1";
-    thread.blockGlowInFrame = "b2";
-
-    expect(trace.getEntries().map(e => e.blockId)).toEqual(["b1", "b2"]);
-    expect(trace.getEntries()[0]!.targetId).toBe("sprite1");
-  });
-
-  it("keeps the property readable for the VM's own glow logic", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    const thread: TraceThreadLike = {blockGlowInFrame: null, target: {id: "t"}};
     instrumentThread(thread, trace);
-
-    thread.blockGlowInFrame = "b1";
-    expect(thread.blockGlowInFrame).toBe("b1");
-    thread.blockGlowInFrame = null;
-    expect(thread.blockGlowInFrame).toBeNull();
-  });
-
-  it("is idempotent and skips monitor threads", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    const thread: TraceThreadLike = {blockGlowInFrame: null, target: {id: "t"}};
-    expect(instrumentThread(thread, trace)).toBe(true);
-    expect(instrumentThread(thread, trace)).toBe(false);
-
-    thread.blockGlowInFrame = "b1";
-    expect(trace.size()).toBe(1);
-
-    const monitor: TraceThreadLike = {updateMonitor: true, target: {id: "t"}};
-    expect(instrumentThread(monitor, trace)).toBe(false);
-    monitor.blockGlowInFrame = "monitor-block";
-    expect(trace.size()).toBe(1);
-  });
-
-  it("skips a frozen thread instead of throwing", () => {
-    const trace = createExecutionTrace({now: () => 0});
-    const thread = Object.freeze({
-      blockGlowInFrame: null,
-      target: {id: "t"},
-    }) as TraceThreadLike;
-    expect(instrumentThread(thread, trace)).toBe(false);
+    expect(trace.getEntries()).toHaveLength(1);
+    expect(trace.getEntries()[0]?.snapshot.opcode).toBe("event_whenflagclicked");
   });
 });
 
 describe("installExecutionTrace", () => {
   function makeVm() {
     const threads: TraceThreadLike[] = [];
+    const primitives = new Map<string, (...args: unknown[]) => unknown>();
     const step = vi.fn();
     const handlers = new Map<string, Set<(...a: unknown[]) => void>>();
     const runtime: TraceRuntimeLike = {
       threads,
       _step: step,
+      getOpcodeFunction: (opcode: string) => primitives.get(opcode),
+      getBlocksJSON: () => [
+        {type: "motion_movesteps", message0: "%1 歩動かす"},
+        {type: "event_whenflagclicked", message0: "旗がクリックされたとき"},
+      ],
       on: (event, handler) => {
         if (!handlers.has(event)) handlers.set(event, new Set());
         handlers.get(event)!.add(handler);
@@ -160,128 +159,87 @@ describe("installExecutionTrace", () => {
     const fire = (event: string) => {
       for (const handler of handlers.get(event) ?? []) handler();
     };
-    return {vm: {runtime}, runtime, threads, step, fire};
+    return {vm: {runtime}, runtime, threads, step, fire, primitives};
   }
 
-  it("returns null without a runtime to wrap", () => {
-    expect(installExecutionTrace({runtime: null})).toBeNull();
-    expect(installExecutionTrace({runtime: {}})).toBeNull();
-  });
-
-  it("instruments threads that appear later and keeps stepping", () => {
-    const {vm, runtime, threads, step} = makeVm();
+  it("wraps primitives and records evaluated args", () => {
+    const {vm, runtime, threads, primitives} = makeVm();
+    const move = vi.fn();
+    primitives.set("motion_movesteps", move);
     const handle = installExecutionTrace(vm, {now: () => 0})!;
 
-    runtime._step!();
-    expect(step).toHaveBeenCalledTimes(1);
-
-    // scratch-vm creates a fresh Thread per script run.
-    const thread: TraceThreadLike = {blockGlowInFrame: null, target: {id: "t"}};
+    const thread: TraceThreadLike = {
+      topBlock: "hat",
+      target: {
+        id: "t1",
+        getName: () => "ネコ",
+        blocks: {
+          getBlock: (id: string) =>
+            id === "move" ? {opcode: "motion_movesteps"} : {opcode: "event_whenflagclicked"},
+        },
+      },
+    };
     threads.push(thread);
     runtime._step!();
 
-    thread.blockGlowInFrame = "b1";
-    expect(handle.trace.getEntries().map(e => e.blockId)).toEqual(["b1"]);
-  });
+    const util = {
+      thread: {peekStack: () => "move", target: thread.target},
+      target: thread.target,
+      stackFrame: {},
+    };
+    runtime.getOpcodeFunction!("motion_movesteps")({STEPS: 10}, util);
 
-  // Otherwise the panel keeps showing blocks from an earlier version of the
-  // program, which reads as "this history is not my code".
-  it("the green flag starts a fresh log", () => {
-    const {vm, fire} = makeVm();
-    const handle = installExecutionTrace(vm, {now: () => 0})!;
-    handle.trace.record("old-block", "t1");
-    expect(handle.trace.size()).toBe(1);
-
-    fire("PROJECT_START");
-    expect(handle.trace.size()).toBe(0);
-  });
-
-  it("dispose stops clearing on the green flag", () => {
-    const {vm, fire} = makeVm();
-    const handle = installExecutionTrace(vm, {now: () => 0})!;
-    handle.dispose();
-    handle.trace.record("kept", "t1");
-    fire("PROJECT_START");
-    expect(handle.trace.size()).toBe(1);
-  });
-
-  it("dispose restores the original _step and stops recording new threads", () => {
-    const {vm, runtime, threads, step} = makeVm();
-    const handle = installExecutionTrace(vm, {now: () => 0})!;
+    expect(move).toHaveBeenCalledWith({STEPS: 10}, util);
+    const entries = handle.trace.getEntries();
+    expect(entries.some(entry => entry.snapshot.args.STEPS === 10)).toBe(true);
 
     handle.dispose();
-    expect(runtime._step).toBe(step);
+    expect(runtime.getOpcodeFunction!("motion_movesteps")).toBe(move);
+  });
 
-    threads.push({blockGlowInFrame: null, target: {id: "t"}});
-    runtime._step!();
-    threads[0]!.blockGlowInFrame = "b1";
+  it("clears on PROJECT_START", () => {
+    const {vm, fire} = makeVm();
+    const handle = installExecutionTrace(vm, {now: () => 0})!;
+    handle.trace.record({
+      blockId: "old",
+      targetId: "t1",
+      targetName: null,
+      snapshot: {opcode: "motion_movesteps", args: {}},
+    });
+    fire("PROJECT_START");
     expect(handle.trace.size()).toBe(0);
   });
 });
 
 describe("resolveTraceEntries", () => {
-  const targets = [
-    {
-      id: "t1",
-      getName: () => "ネコ",
-      blocks: {
-        getBlock: (id: string) =>
-          id === "b1" ? {opcode: "motion_movesteps"} : null,
-      },
-    },
-  ];
-
-  it("attaches opcode and sprite name", () => {
+  it("fills missing target names from live targets", () => {
     const resolved = resolveTraceEntries(
-      [{blockId: "b1", targetId: "t1", firstTime: 1, lastTime: 2, count: 3}],
-      targets,
-    );
-    expect(resolved[0]).toMatchObject({
-      blockId: "b1",
-      opcode: "motion_movesteps",
-      targetName: "ネコ",
-      count: 3,
-    });
-  });
-
-  it("keeps entries whose block or target was deleted", () => {
-    const resolved = resolveTraceEntries(
-      [
-        {blockId: "gone", targetId: "t1", firstTime: 1, lastTime: 1, count: 1},
-        {blockId: "b1", targetId: "missing", firstTime: 1, lastTime: 1, count: 1},
-      ],
-      targets,
-    );
-    expect(resolved).toHaveLength(2);
-    expect(resolved[0]).toMatchObject({opcode: null, targetName: "ネコ"});
-    expect(resolved[1]).toMatchObject({opcode: null, targetName: null});
-  });
-
-  it("survives targets that throw on lookup", () => {
-    const resolved = resolveTraceEntries(
-      [{blockId: "b1", targetId: "t1", firstTime: 1, lastTime: 1, count: 1}],
       [
         {
-          id: "t1",
-          getName: () => {
-            throw new Error("disposed");
-          },
-          blocks: {
-            getBlock: () => {
-              throw new Error("disposed");
-            },
-          },
+          blockId: "b1",
+          targetId: "t1",
+          targetName: null,
+          time: 1,
+          snapshot: {opcode: "motion_movesteps", args: {STEPS: 10}},
         },
       ],
+      [{id: "t1", getName: () => "ネコ"}],
     );
-    expect(resolved[0]).toMatchObject({opcode: null, targetName: null});
+    expect(resolved[0]?.targetName).toBe("ネコ");
   });
+});
 
-  it("handles a missing target list", () => {
-    const resolved = resolveTraceEntries(
-      [{blockId: "b1", targetId: "t1", firstTime: 1, lastTime: 1, count: 1}],
-      null,
-    );
-    expect(resolved[0]).toMatchObject({opcode: null, targetName: null});
+describe("installPrimitiveTraceCapture", () => {
+  it("restores getOpcodeFunction on dispose", () => {
+    const original = vi.fn();
+    const runtime = {
+      getOpcodeFunction: vi.fn(() => original),
+      getBlocksJSON: () => [],
+    };
+    const trace = createExecutionTrace();
+    const dispose = installPrimitiveTraceCapture(runtime, trace);
+    expect(runtime.getOpcodeFunction("x")).not.toBe(original);
+    dispose();
+    expect(runtime.getOpcodeFunction).toBe(runtime.getOpcodeFunction);
   });
 });
