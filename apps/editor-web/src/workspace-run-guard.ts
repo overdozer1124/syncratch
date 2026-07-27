@@ -11,7 +11,8 @@
  */
 
 import {
-  hashBlockEdges,
+  hashBlockGraphEdges,
+  hashBlocklyWorkspaceEdges,
   recordWorkspaceVmDesync,
   type WorkspaceVmDesyncEntry,
 } from "./workspace-desync-diagnostics.js";
@@ -25,6 +26,16 @@ export type GuardWorkspaceLike = {
     isShadow?: () => boolean;
     type?: string;
   }>;
+  getAllBlocks?: (ordered?: boolean) => Array<{
+    id?: string;
+    isShadow?: () => boolean;
+    getParent?: () => {id?: string} | null;
+    getNextBlock?: () => {id?: string} | null;
+    inputList?: Array<{
+      name?: string;
+      connection?: {targetBlock?: () => {id?: string} | null};
+    }>;
+  }>;
 };
 
 export type GuardTargetLike = {
@@ -33,7 +44,17 @@ export type GuardTargetLike = {
   blocks?: {
     getScripts?: () => string[];
     getBlock?: (id: string) => unknown;
-    _blocks?: Record<string, {parent?: string | null; next?: string | null}>;
+    _blocks?: Record<
+      string,
+      {
+        parent?: string | null;
+        next?: string | null;
+        inputs?: Record<
+          string,
+          {block?: string | null; shadow?: string | null} | null | undefined
+        >;
+      }
+    >;
   };
 };
 
@@ -177,9 +198,9 @@ function recordDesync(options: {
     workspaceTopBlocks: visible,
     vmScriptCount: vmScripts,
     vmBlockIds: vmIds,
-    vmEdgeHash: hashBlockEdges(vmBlocks, vmIds),
+    vmEdgeHash: hashBlockGraphEdges(vmBlocks, vmIds),
     blocklyTopBlockIds: blocklyTopIds,
-    blocklyEdgeHash: blocklyTopIds.join("|"),
+    blocklyEdgeHash: hashBlocklyWorkspaceEdges(workspace),
     threads: snapshotThreads(runtime, editingTarget),
     action,
   });
