@@ -242,7 +242,11 @@ import {
   type ExecutionController,
 } from "./execution-control.js";
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
-import {getWorkspaceVmDesyncLog} from "./workspace-desync-diagnostics.js";
+import {
+  getWorkspaceVmDesyncLog,
+  type BlocklyWorkspaceLike,
+  type VmBlockLike,
+} from "./workspace-desync-diagnostics.js";
 import {
   getE2eSideEffectCounters,
   recordE2eCollabOutbound,
@@ -727,7 +731,7 @@ function readBlocklyVmEditingTarget():
   | {
       blocks?: {
         getScripts?: () => string[];
-        _blocks?: Record<string, unknown>;
+        _blocks?: Record<string, VmBlockLike>;
       };
     }
   | null
@@ -735,7 +739,7 @@ function readBlocklyVmEditingTarget():
   return vm?.editingTarget as ScratchVm["editingTarget"] & {
     blocks?: {
       getScripts?: () => string[];
-      _blocks?: Record<string, unknown>;
+      _blocks?: Record<string, VmBlockLike>;
     };
   };
 }
@@ -746,14 +750,14 @@ function ensureBlocklyVmEventPipeline(): void {
     installBlocklyVmEventPipeline(
       vm,
       readBlocklyVmEventContext,
-      scratchWorkspace,
+      blocklyWorkspace,
       readBlocklyVmEditingTarget,
       import.meta.env.MODE === "e2e"
         ? {readDropDecision: readE2eBlockEventDropDecision}
         : undefined,
     );
   }
-  rebindWorkspaceBlockListener(scratchWorkspace());
+  rebindWorkspaceBlockListener(blocklyWorkspace());
 }
 
 function setSuppressedVmChanges(kind: LoadBoundaryKind, value: boolean): void {
@@ -1187,17 +1191,12 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
   );
 }
 
-/** Restore execution rewind origin without autosave / collab side effects. */
+/** Restore execution rewind origin. Side-effect suppression is handled by replay lifecycle hooks. */
 async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
-  setSuppressedVmChanges("rewind", true);
-  try {
-    if (origin.vmProjectJson !== undefined) {
-      await vm.loadProject(structuredClone(origin.vmProjectJson));
-    } else {
-      await vm.loadProject(documentToProjectJson(origin.document));
-    }
-  } finally {
-    setSuppressedVmChanges("rewind", false);
+  if (origin.vmProjectJson !== undefined) {
+    await vm.loadProject(structuredClone(origin.vmProjectJson));
+  } else {
+    await vm.loadProject(documentToProjectJson(origin.document));
   }
 }
 
@@ -2220,6 +2219,10 @@ function scratchWorkspace() {
   return resolveScratchWorkspace(guiHost, blocksApi ?? null);
 }
 
+function blocklyWorkspace(): BlocklyWorkspaceLike | null {
+  return scratchWorkspace() as BlocklyWorkspaceLike | null;
+}
+
 function readToolboxCategoryId(): string | null {
   try {
     const selected = scratchWorkspace()?.getToolbox?.()?.getSelectedItem?.();
@@ -2348,7 +2351,7 @@ async function getVm(): Promise<ScratchVm> {
         installBlocklyVmEventPipeline(
           vmInstance,
           readBlocklyVmEventContext,
-          scratchWorkspace,
+          blocklyWorkspace,
           readBlocklyVmEditingTarget,
           import.meta.env.MODE === "e2e"
             ? {readDropDecision: readE2eBlockEventDropDecision}
@@ -2547,6 +2550,17 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       },
       restoreOrigin: restoreRewindOrigin,
       getTraceSize: () => executionTrace?.trace.size() ?? 0,
+      onReplayLifecycle: phase => {
+        setSuppressedVmChanges("rewind", phase === "start");
+      },
+      onTraceTruncate: traceSize => {
+        executionTrace?.trace.truncateTo(traceSize);
+      },
+      onHistoryCleared: reason => {
+        if (reason === "replay-failure") {
+          executionTrace?.trace.clear();
+        }
+      },
     },
   );
 
@@ -3036,9 +3050,9 @@ async function boot(): Promise<void> {
   vm = await guiReady;
   ensureBlocklyVmEventPipeline();
   installWorkspaceUpdateListener(
-    vm,
+    vm as import("./workspace-update-instrumentation.js").WorkspaceUpdateListenerVm,
     readWorkspaceUpdateInstrumentationContextFull,
-    scratchWorkspace,
+    blocklyWorkspace,
   );
   vm.on("PROJECT_CHANGED", markDirty);
   vm.on("targetsUpdate", () => {

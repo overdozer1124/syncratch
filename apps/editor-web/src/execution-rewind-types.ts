@@ -19,6 +19,7 @@ export type RewindClearReason =
   | "fingerprint-mismatch"
   | "journal-limit"
   | "frame-limit"
+  | "replay-failure"
   | "manual";
 
 export interface RewindOrigin {
@@ -79,5 +80,11 @@ export interface ReplayResult {
   targetFrameIndex: number;
   expectedFingerprint: string | null;
   actualFingerprint: string | null;
+  error: string | null;
+}
+
+export interface RewindFrameResult {
+  ok: boolean;
+  targetFrameIndex: number;
   error: string | null;
 }

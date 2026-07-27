@@ -56,8 +56,24 @@ export type BlocklyBlockLike = {
   }>;
 };
 
+export type BlocklyChangeEventLike = {
+  type?: string;
+  blockId?: string;
+  element?: string;
+  name?: string;
+  oldParentId?: string | null;
+  newParentId?: string | null;
+  oldInputName?: string | null;
+  newInputName?: string | null;
+  newCoordinate?: unknown;
+  recordUndo?: boolean;
+};
+
 export type BlocklyWorkspaceLike = {
   getAllBlocks?: (ordered?: boolean) => BlocklyBlockLike[];
+  getTopBlocks?: (ordered?: boolean) => BlocklyBlockLike[];
+  addChangeListener?: (listener: (event: BlocklyChangeEventLike) => void) => void;
+  removeChangeListener?: (listener: (event: BlocklyChangeEventLike) => void) => void;
 };
 
 const MAX_ENTRIES = 50;

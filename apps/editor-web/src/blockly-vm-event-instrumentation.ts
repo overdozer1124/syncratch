@@ -8,6 +8,8 @@
 import {
   hashBlocklyWorkspaceEdges,
   hashVmVisibleBlockGraph,
+  type BlocklyBlockLike,
+  type BlocklyChangeEventLike,
   type BlocklyWorkspaceLike,
   type VmBlockLike,
 } from "./workspace-desync-diagnostics.js";
@@ -35,18 +37,7 @@ let pipelineVm: VmBlockListenerHost | null = null;
 let originalBlockListener: ((event: BlocklyEventLike) => void) | null = null;
 let readDropDecision: (() => BlockEventDropDecision) | null = null;
 
-export type BlocklyEventLike = {
-  type?: string;
-  blockId?: string;
-  element?: string;
-  name?: string;
-  oldParentId?: string | null;
-  newParentId?: string | null;
-  oldInputName?: string | null;
-  newInputName?: string | null;
-  newCoordinate?: unknown;
-  recordUndo?: boolean;
-};
+export type BlocklyEventLike = BlocklyChangeEventLike;
 
 export type BlocklyVmEventContext = {
   loadEpoch: number;
@@ -167,7 +158,7 @@ function pushBounded<T>(buffer: T[], item: T, max: number): void {
 function blocklyTopCount(workspace: BlocklyWorkspaceLike | null | undefined): number | null {
   if (!workspace?.getTopBlocks) return null;
   try {
-    return (workspace.getTopBlocks(false) ?? []).filter(block => {
+    return (workspace.getTopBlocks(false) ?? []).filter((block: BlocklyBlockLike) => {
       try {
         return !block.isShadow?.();
       } catch {
@@ -388,7 +379,7 @@ export function installBlocklyVmEventPipeline(
       return;
     }
 
-    originalBlockListener.call(vm, event);
+    originalBlockListener?.call(vm, event);
     if (recorded) {
       scheduleBlocklyVmGraphDiff(
         recorded,
