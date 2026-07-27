@@ -261,6 +261,23 @@ import {
   type LoadBoundaryKind,
 } from "./workspace-update-instrumentation.js";
 import {
+  getBlocklyEventLog,
+  getBlocklyVmGraphDiffLog,
+  getSyncGeneration as readSyncGeneration,
+  installBlocklyVmEventPipeline,
+  isBlocklyVmEventPipelineInstalled,
+  rebindWorkspaceBlockListener,
+  type BlockEventDropKind,
+} from "./blockly-vm-event-instrumentation.js";
+import {
+  armBlockEventDropNext,
+  armBlockEventDropAll,
+  disarmBlockEventDrop,
+  getBlockEventDropLog,
+  logBlockEventDrop,
+  peekArmedBlockEventDrop,
+} from "./blockly-event-drop-harness.js";
+import {
   installExecutionTrace,
   resolveTraceEntries,
   type ExecutionTraceHandle,
@@ -331,6 +348,7 @@ interface ScratchVm {
   loadProject(project: unknown): Promise<void>;
   setEditingTarget(targetId: string): void;
   setTurboMode(enabled: boolean): void;
+  blockListener: (event: unknown) => void;
   editingTarget?: {
     id?: string;
     isStage?: boolean;
@@ -675,6 +693,62 @@ function readWorkspaceUpdateInstrumentationContextFull(): import("./workspace-up
   };
 }
 
+function readBlocklyVmEventContext(): import("./blockly-vm-event-instrumentation.js").BlocklyVmEventContext {
+  return {
+    loadEpoch: getLoadEpoch(),
+    ...readWorkspaceUpdateInstrumentationContext(),
+    editingTargetId: vm?.editingTarget?.id,
+  };
+}
+
+function readE2eBlockEventDropDecision(): import("./blockly-vm-event-instrumentation.js").BlockEventDropDecision {
+  const kind = peekArmedBlockEventDrop();
+  if (!kind) return null;
+  return {
+    kind,
+    logDrop: entry =>
+      logBlockEventDrop({
+        at: Date.now(),
+        kind: entry.kind,
+        event: entry.event,
+        syncGeneration: entry.syncGeneration,
+      }),
+  };
+}
+
+function readBlocklyVmEditingTarget():
+  | {
+      blocks?: {
+        getScripts?: () => string[];
+        _blocks?: Record<string, unknown>;
+      };
+    }
+  | null
+  | undefined {
+  return vm?.editingTarget as ScratchVm["editingTarget"] & {
+    blocks?: {
+      getScripts?: () => string[];
+      _blocks?: Record<string, unknown>;
+    };
+  };
+}
+
+function ensureBlocklyVmEventPipeline(): void {
+  if (!vm) return;
+  if (!isBlocklyVmEventPipelineInstalled(vm)) {
+    installBlocklyVmEventPipeline(
+      vm,
+      readBlocklyVmEventContext,
+      scratchWorkspace,
+      readBlocklyVmEditingTarget,
+      import.meta.env.MODE === "e2e"
+        ? {readDropDecision: readE2eBlockEventDropDecision}
+        : undefined,
+    );
+  }
+  rebindWorkspaceBlockListener(scratchWorkspace());
+}
+
 function setSuppressedVmChanges(kind: LoadBoundaryKind, value: boolean): void {
   recordLoadBoundaryTransition(
     kind,
@@ -935,6 +1009,37 @@ const diagnostic = {
   },
   suppressedDirtyLog() {
     return getSuppressedDirtyLog();
+  },
+  blocklyEventLog() {
+    return getBlocklyEventLog();
+  },
+  blocklyVmGraphDiffLog() {
+    return getBlocklyVmGraphDiffLog();
+  },
+  getSyncGeneration() {
+    return readSyncGeneration();
+  },
+  blockEventDropLog() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("blockEventDropLog is available only in E2E mode");
+    }
+    return getBlockEventDropLog();
+  },
+  armDropNext(kind: BlockEventDropKind, count: number | "all" = 1) {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("armDropNext is available only in E2E mode");
+    }
+    if (count === "all") {
+      armBlockEventDropAll(kind);
+      return;
+    }
+    armBlockEventDropNext(kind, count);
+  },
+  disarmDrop() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("disarmDrop is available only in E2E mode");
+    }
+    disarmBlockEventDrop();
   },
   resetE2eSideEffectCounters() {
     if (import.meta.env.MODE !== "e2e") {
@@ -1911,6 +2016,7 @@ function ensureBlockUndoKeepAlive(): void {
 
 function noteEditingTargetMaybeChanged(): void {
   const editingId = vm?.editingTarget?.id ?? null;
+  ensureBlocklyVmEventPipeline();
   ensureBlockUndoKeepAlive();
   // Best-effort capture if the previous sprite's stack is still present.
   lastUndoTargetId = captureUndoBeforeTargetSwitch({
@@ -2212,6 +2318,15 @@ async function getVm(): Promise<ScratchVm> {
       canChangeTheme: false,
       onVmInit: vmInstance => {
         // Warm TurboWarp compat while the default sprite/skins still exist.
+        installBlocklyVmEventPipeline(
+          vmInstance,
+          readBlocklyVmEventContext,
+          scratchWorkspace,
+          readBlocklyVmEditingTarget,
+          import.meta.env.MODE === "e2e"
+            ? {readDropDecision: readE2eBlockEventDropDecision}
+            : undefined,
+        );
         // loadProject() clears targets before reloading extensions, so Animated
         // Text needs cached Skin/RenderedTarget from this moment.
         ensureTurbowarpVmCompat(vmInstance);
@@ -2871,6 +2986,7 @@ async function boot(): Promise<void> {
   const guiReady = getVm();
   store = await openProjectStore();
   vm = await guiReady;
+  ensureBlocklyVmEventPipeline();
   installWorkspaceUpdateListener(
     vm,
     readWorkspaceUpdateInstrumentationContextFull,
