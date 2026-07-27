@@ -431,6 +431,41 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
+  it("ignores wrapped _step calls while replaying", async () => {
+    const sim = makeSimulatedRuntime([3, 5]);
+    let releaseRestore: (() => void) | undefined;
+    const restoreGate = new Promise<void>(resolve => {
+      releaseRestore = resolve;
+    });
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => {
+          sim.resetToOrigin();
+          await restoreGate;
+        },
+        cloneOrderRegistry: sim.registry,
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    const replayPromise = handle.replayToFrame(1);
+    await Promise.resolve();
+    expect(handle.getSnapshot().isReplaying).toBe(true);
+    expect(sim.target.x).toBe(0);
+    sim.runtime._step!();
+    expect(sim.target.x).toBe(0);
+
+    releaseRestore?.();
+    await replayPromise;
+    expect(sim.target.x).toBe(8);
+    handle.dispose();
+  });
+
   it("does not clear history on PROJECT_START while replaying", async () => {
     const {runtime, resetToOrigin, registry} = makeSimulatedRuntime([2, 4]);
     const journal = new RewindJournal();

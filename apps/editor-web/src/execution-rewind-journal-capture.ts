@@ -53,7 +53,7 @@ const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
   ["event_broadcastandwait", "broadcastOrder"],
 ]);
 
-const NON_DETERMINISTIC_OPCODE_PREFIXES = ["extension_", "argument_reporter_"];
+const NON_DETERMINISTIC_OPCODE_PREFIXES = ["extension_"];
 
 export type JournalCaptureOptions = {
   onUnsupportedInput?: (detail: {opcode: string; journalKind: JournalEntryKind}) => void;

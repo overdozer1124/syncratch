@@ -158,7 +158,11 @@ export function installExecutionRewind(
   runtime._step = (...args: unknown[]) => {
     if (disposed) return innerStep(...args);
 
-    if (isReplaying || journal.getMode() === "replay") {
+    if (isReplaying) {
+      return undefined;
+    }
+
+    if (journal.getMode() === "replay") {
       return innerStep(...args);
     }
 
