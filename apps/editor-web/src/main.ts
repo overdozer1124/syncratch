@@ -296,6 +296,13 @@ import {
   type RewindOrigin,
   type RewindSnapshot,
 } from "./execution-rewind.js";
+import {
+  formatRewindButtonLabel,
+  formatRewindButtonTitle,
+  isExecutionControlShortcutTarget,
+  resolveExecutionControlShortcut,
+  shouldNotifyRewindUnavailable,
+} from "./execution-rewind-ui.js";
 import {createTraceListView} from "./execution-trace-ui.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
@@ -487,6 +494,7 @@ const tracePanelList = requiredElement<HTMLElement>("trace-list");
 const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
 const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
 const execRewindButton = requiredElement<HTMLButtonElement>("exec-rewind");
+const execRewindLabel = requiredElement<HTMLElement>("exec-rewind-label");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
 const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
@@ -2468,6 +2476,7 @@ function installScratchNativeMenus(
 let executionController: ExecutionController | null = null;
 let executionTrace: ExecutionTraceHandle | null = null;
 let executionRewind: ExecutionRewindHandle | null = null;
+let disposeExecutionControlShortcuts: (() => void) | null = null;
 let rewindInvalidationInstalled = false;
 const traceListView = createTraceListView(tracePanelList);
 
@@ -2550,6 +2559,8 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
   executionRewind?.dispose();
   executionTrace?.dispose();
+  disposeExecutionControlShortcuts?.();
+  disposeExecutionControlShortcuts = null;
 
   // Order matters. Both wrap Runtime._step, and the pause gate has to sit
   // OUTSIDE the recorder: gate -> recorder -> rewind -> real step. Installed
@@ -2618,17 +2629,22 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController = controller;
   execControlGroup.hidden = false;
 
+  let lastRewindSnapshot: RewindSnapshot | null = null;
+
   const renderRewindControl = (): void => {
-    const snapshot = executionRewind?.getSnapshot();
+    const snapshot = executionRewind?.getSnapshot() ?? null;
     const canRewind = snapshot?.canRewind ?? false;
     const isReplaying = snapshot?.isReplaying ?? false;
     execRewindButton.disabled = !canRewind || isReplaying;
-    const title =
-      snapshot?.rewindError && !canRewind
-        ? snapshot.rewindError
-        : "1コマ戻る";
+    const title = formatRewindButtonTitle(snapshot);
     execRewindButton.title = title;
     execRewindButton.setAttribute("aria-label", title);
+    execRewindLabel.textContent = formatRewindButtonLabel(snapshot);
+
+    if (shouldNotifyRewindUnavailable(lastRewindSnapshot, snapshot)) {
+      appToast.show(title);
+    }
+    lastRewindSnapshot = snapshot;
   };
 
   const tracePanel = tracePanelList.closest("details");
@@ -2687,6 +2703,35 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   execStepButton.addEventListener("click", () => {
     controller.stepFrame();
   });
+
+  const handleExecutionControlShortcut = (event: KeyboardEvent): void => {
+    if (execControlGroup.hidden) return;
+    if (!isExecutionControlShortcutTarget(event.target)) return;
+    const action = resolveExecutionControlShortcut(event.key, event.shiftKey);
+    if (!action) return;
+    event.preventDefault();
+
+    if (action === "pause") {
+      const {state} = controller.getSnapshot();
+      if (state === "paused") controller.resume();
+      else controller.pause();
+      return;
+    }
+
+    if (action === "step") {
+      controller.stepFrame();
+      return;
+    }
+
+    if (action === "rewind") {
+      execRewindButton.click();
+    }
+  };
+
+  document.addEventListener("keydown", handleExecutionControlShortcut);
+  disposeExecutionControlShortcuts = () => {
+    document.removeEventListener("keydown", handleExecutionControlShortcut);
+  };
 
   // Green flag runs every sprite. Learners often stare at an empty workspace
   // on the selected sprite and think the editor is moving "with no blocks".
