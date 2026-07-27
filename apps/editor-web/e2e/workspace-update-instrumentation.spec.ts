@@ -25,6 +25,14 @@ declare global {
         collabOutboundAttempts: number;
       };
       reloadCurrentProject?: () => Promise<number>;
+      installE2ePublishableCollabSession?: () => Promise<void>;
+      publishE2eCollabLocalChange?: () => Promise<void>;
+      flushE2eLocalSave?: () => Promise<void>;
+      createTestBlock?: (id: string) => void;
+    };
+    __syncratchTestPatch?: {
+      ScratchBlocks: {clearWorkspaceAndLoadFromXml: (...args: unknown[]) => unknown};
+      original: (...args: unknown[]) => unknown;
     };
   }
 }
@@ -96,6 +104,21 @@ async function startForeverScript(page: Page): Promise<void> {
   await page.waitForTimeout(750);
 }
 
+function installPartialReloadFailurePatch(page: Page): Promise<void> {
+  return page.evaluate(`(() => { ${FIBER_HELPERS}
+    const ScratchBlocks = resolveScratchBlocks();
+    if (!ScratchBlocks?.clearWorkspaceAndLoadFromXml) {
+      throw new Error('ScratchBlocks API missing');
+    }
+    const original = ScratchBlocks.clearWorkspaceAndLoadFromXml;
+    ScratchBlocks.clearWorkspaceAndLoadFromXml = function(dom, workspace) {
+      workspace.clear();
+      throw new Error('simulated partial workspace reload failure');
+    };
+    window.__syncratchTestPatch = { ScratchBlocks, original };
+  })()`);
+}
+
 test("synced workspace with numeric shadow is not flagged as partial failure", async ({
   page,
 }) => {
@@ -122,20 +145,24 @@ test("load-path partial reload failure suppresses save/collab and records load e
 }) => {
   await bootEditor(page);
   await startForeverScript(page);
+  await page.evaluate(async () => {
+    await window.__blocksyncTask3?.installE2ePublishableCollabSession?.();
+  });
 
-  await page.evaluate(`(() => { ${FIBER_HELPERS}
+  const control = await page.evaluate(async () => {
     window.__blocksyncTask3?.resetE2eSideEffectCounters?.();
-    const ScratchBlocks = resolveScratchBlocks();
-    if (!ScratchBlocks?.clearWorkspaceAndLoadFromXml) {
-      throw new Error('ScratchBlocks API missing');
-    }
-    const original = ScratchBlocks.clearWorkspaceAndLoadFromXml;
-    ScratchBlocks.clearWorkspaceAndLoadFromXml = function(dom, workspace) {
-      workspace.clear();
-      throw new Error('simulated partial workspace reload failure');
-    };
-    window.__syncratchTestPatch = { ScratchBlocks, original };
-  })()`);
+    await window.__blocksyncTask3?.publishE2eCollabLocalChange?.();
+    const afterPublish = window.__blocksyncTask3?.getE2eSideEffectCounters?.();
+    window.__blocksyncTask3?.createTestBlock?.("collab-control-block");
+    await window.__blocksyncTask3?.flushE2eLocalSave?.();
+    const afterPersist = window.__blocksyncTask3?.getE2eSideEffectCounters?.();
+    return {afterPublish, afterPersist};
+  });
+  expect(control.afterPublish?.collabOutboundAttempts).toBeGreaterThan(0);
+  expect(control.afterPersist?.persistAttempts).toBeGreaterThan(0);
+
+  await page.evaluate(() => window.__blocksyncTask3?.resetE2eSideEffectCounters?.());
+  await installPartialReloadFailurePatch(page);
 
   const before = await page.evaluate(`(async () => { ${FIBER_HELPERS}
     const vm = resolveVm();
@@ -181,12 +208,3 @@ test("load-path partial reload failure suppresses save/collab and records load e
   expect(after.boundaries.some(entry => entry.suppressed === false)).toBe(true);
   expect(after.boundaries.every(entry => entry.kind === "load")).toBe(true);
 });
-
-declare global {
-  interface Window {
-    __syncratchTestPatch?: {
-      ScratchBlocks: {clearWorkspaceAndLoadFromXml: (...args: unknown[]) => unknown};
-      original: (...args: unknown[]) => unknown;
-    };
-  }
-}
