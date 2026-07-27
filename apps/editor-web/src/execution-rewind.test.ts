@@ -6,6 +6,11 @@ import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
 import {
+  flushPendingPromiseJournalEntries,
+  flushReplayPromiseDeferreds,
+  installPromiseResolveCapture,
+} from "./execution-rewind-promise-resolve.js";
+import {
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
   normalizeStackFrame,
@@ -545,6 +550,58 @@ describe("installBroadcastOrderCapture", () => {
 
     expect(started).toEqual([threadB, threadA]);
     expect(runtime.threads).toEqual([threadB, threadA]);
+  });
+});
+
+describe("installPromiseResolveCapture", () => {
+  it("records promise resolutions during record", async () => {
+    const journal = new RewindJournal();
+    const {runtime} = makeSimulatedRuntime([]);
+    runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === "sensing_askandwait") {
+        return () => Promise.resolve("hello");
+      }
+      return undefined;
+    };
+    const dispose = installPromiseResolveCapture({runtime, journal});
+    journal.beginRecord();
+    const fn = runtime.getOpcodeFunction("sensing_askandwait") as
+      | (() => Promise<string>)
+      | undefined;
+    await fn?.();
+    flushPendingPromiseJournalEntries(journal);
+    journal.endFrame();
+    dispose();
+
+    expect(journal.slice(0, journal.size)).toEqual([
+      {kind: "promiseResolve", token: 0, value: "hello"},
+    ]);
+  });
+
+  it("replays promise resolutions without calling the original opcode", async () => {
+    const journal = new RewindJournal();
+    journal.beginRecord();
+    journal.append({kind: "promiseResolve", token: 0, value: "replayed"});
+    journal.endFrame();
+
+    const original = vi.fn(() => Promise.resolve("live"));
+    const {runtime} = makeSimulatedRuntime([]);
+    runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === "sensing_askandwait") return original;
+      return undefined;
+    };
+    const dispose = installPromiseResolveCapture({runtime, journal});
+    journal.beginReplay(0, 1);
+    const fn = runtime.getOpcodeFunction("sensing_askandwait") as
+      | (() => Promise<string>)
+      | undefined;
+    const pending = fn?.();
+    flushReplayPromiseDeferreds(journal);
+    journal.endFrame();
+    dispose();
+
+    expect(await pending).toBe("replayed");
+    expect(original).not.toHaveBeenCalled();
   });
 });
 

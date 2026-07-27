@@ -13,12 +13,13 @@ export const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
   "videoSensing",
   "extensionReporter",
   "broadcastOrder",
+  "promiseResolve",
 ]);
 
 /** Explicit opcode → journal kind mapping for unjournaled non-deterministic inputs. */
 export const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
   ["operator_random", "random"],
-  ["sensing_askandwait", "askAnswer"],
+  ["sensing_askandwait", "promiseResolve"],
   ["sensing_answer", "askAnswer"],
   ["sensing_loudness", "loudness"],
   ["sensing_loud", "loudness"],
@@ -31,6 +32,8 @@ export const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
   ["sensing_online", "extensionReporter"],
   ["sensing_username", "extensionReporter"],
   ["event_broadcastandwait", "broadcastOrder"],
+  ["looks_sayforsecs", "promiseResolve"],
+  ["looks_thinkforsecs", "promiseResolve"],
 ]);
 
 /**

@@ -4,6 +4,9 @@ import {
 } from "./execution-rewind-fingerprint.js";
 import type {CloneOrderRegistry} from "./execution-rewind-clone-order.js";
 import {
+  flushReplayPromiseDeferreds,
+} from "./execution-rewind-promise-resolve.js";
+import {
   RewindJournal,
   RewindJournalMismatchError,
   RewindJournalUnconsumedError,
@@ -127,6 +130,7 @@ export async function replayToFrame(
       journal.beginReplay(frame.journalStart, frame.journalEnd);
       try {
         step();
+        flushReplayPromiseDeferreds(journal);
       } finally {
         journal.endFrame();
       }
