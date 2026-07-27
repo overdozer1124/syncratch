@@ -1260,7 +1260,9 @@ async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
 async function restoreRewindExecutionCheckpoint(
   checkpoint: unknown,
 ): Promise<void> {
-  if (!checkpoint || typeof checkpoint !== "object") return;
+  if (!checkpoint || typeof checkpoint !== "object") {
+    throw new Error("Execution checkpoint is unavailable");
+  }
   vm.runtime.stopAll?.();
   await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
 }

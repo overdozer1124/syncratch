@@ -11,6 +11,7 @@
  * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
  * PR 12 journals random backdrop resolution and async extension promises.
  * PR 13 journals sequencer work-loop counts for deterministic forever/turbo frames.
+ * PR 14 journals edge-bounce outcomes so replay does not depend on renderer bounds.
  */
 
 import {
@@ -19,6 +20,9 @@ import {
 import {
   installSequencerWorkCapture,
 } from "./execution-rewind-sequencer-work.js";
+import {
+  installEdgeBounceCapture,
+} from "./execution-rewind-edge-bounce.js";
 import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
@@ -195,6 +199,10 @@ export function installExecutionRewind(
     runtime: runtime as import("./execution-rewind-sequencer-work.js").SequencerWorkRuntimeLike,
     journal,
   });
+  const disposeEdgeBounceCapture = installEdgeBounceCapture({
+    runtime: runtime as import("./execution-rewind-edge-bounce.js").EdgeBounceRuntimeLike,
+    journal,
+  });
   const disposePromiseResolveCapture = installPromiseResolveCapture({
     runtime: runtime as import("./execution-rewind-promise-resolve.js").PromiseCaptureRuntimeLike,
     journal,
@@ -359,7 +367,7 @@ export function installExecutionRewind(
       });
       if (!result.ok) {
         markUnsupported();
-        if (executionCheckpoint !== undefined) {
+        if (executionCheckpoint != null) {
           await recoverExecutionBaseline(executionCheckpoint);
         } else {
           await recoverOriginBaseline();
@@ -461,6 +469,7 @@ export function installExecutionRewind(
       delete runtime[REWIND_HANDLE];
       disposeBackdropResolveCapture();
       disposeSequencerWorkCapture();
+      disposeEdgeBounceCapture();
       disposeBroadcastOrderCapture();
       disposePromiseResolveCapture();
       disposeCloneOrderCapture();

@@ -60,6 +60,55 @@ function readCatProjectJson(): Record<string, unknown> {
   >;
 }
 
+function attachForeverMoveBounceScript(
+  project: Record<string, unknown>,
+  stepSize = 10,
+): void {
+  const targets = project.targets as Array<Record<string, unknown>>;
+  const sprite = targets.find(target => target.isStage === false);
+  if (!sprite) throw new Error("Sprite target missing in cat-project fixture");
+  sprite.blocks = {
+    hat: {
+      opcode: "event_whenflagclicked",
+      next: "loop",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 0,
+    },
+    loop: {
+      opcode: "control_forever",
+      next: null,
+      parent: "hat",
+      inputs: {SUBSTACK: [2, "move"]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    move: {
+      opcode: "motion_movesteps",
+      next: "bounce",
+      parent: "loop",
+      inputs: {STEPS: [1, [4, String(stepSize)]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    bounce: {
+      opcode: "motion_ifonedgebounce",
+      next: null,
+      parent: "move",
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+  };
+}
+
 function attachForeverMoveScript(project: Record<string, unknown>, stepSize = 1): void {
   const targets = project.targets as Array<Record<string, unknown>>;
   const sprite = targets.find(target => target.isStage === false);
@@ -303,6 +352,8 @@ export async function createRewindVmHarness(
     cloneMoves?: number[];
     forever?: boolean;
     foreverStep?: number;
+    foreverBounce?: boolean;
+    foreverBounceStep?: number;
   } = {},
 ): Promise<RewindVmHarness> {
   const VirtualMachine = loadScratchVm();
@@ -312,6 +363,8 @@ export async function createRewindVmHarness(
   const project = readCatProjectJson();
   if (options.clones) {
     attachCloneScript(project, {cloneMoves: options.cloneMoves});
+  } else if (options.foreverBounce) {
+    attachForeverMoveBounceScript(project, options.foreverBounceStep ?? 10);
   } else if (options.forever) {
     attachForeverMoveScript(project, options.foreverStep ?? 1);
   } else {
