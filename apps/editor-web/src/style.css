@@ -2757,7 +2757,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   }
 }
 
-/* Execution controls (pause / single-frame step) */
+/* Execution controls (pause / rewind / single-frame step) */
 .exec-control {
   display: inline-flex;
   align-items: center;
@@ -2765,7 +2765,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   margin-left: 0.35rem;
 }
 
-/* The toolbar is a single nowrap row, so these three controls have to earn
+/* The toolbar is a single nowrap row, so these four controls have to earn
    their width: with every optional panel open (AI on) the full labels pushed
    the row 53px past a 1280px window. Below that, drop to icons only — the
    aria-label and title still carry the full wording. */
