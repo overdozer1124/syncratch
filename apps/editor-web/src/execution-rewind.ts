@@ -10,11 +10,15 @@
  * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
  * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
  * PR 12 journals random backdrop resolution and async extension promises.
+ * PR 13 journals sequencer work-loop counts for deterministic forever/turbo frames.
  */
 
 import {
   installBackdropResolveCapture,
 } from "./execution-rewind-backdrop-resolve.js";
+import {
+  installSequencerWorkCapture,
+} from "./execution-rewind-sequencer-work.js";
 import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
@@ -182,6 +186,10 @@ export function installExecutionRewind(
   });
   const disposeBackdropResolveCapture = installBackdropResolveCapture({
     runtime: runtime as import("./execution-rewind-backdrop-resolve.js").BackdropCaptureRuntimeLike,
+    journal,
+  });
+  const disposeSequencerWorkCapture = installSequencerWorkCapture({
+    runtime: runtime as import("./execution-rewind-sequencer-work.js").SequencerWorkRuntimeLike,
     journal,
   });
   const disposePromiseResolveCapture = installPromiseResolveCapture({
@@ -429,6 +437,7 @@ export function installExecutionRewind(
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
       disposeBackdropResolveCapture();
+      disposeSequencerWorkCapture();
       disposeBroadcastOrderCapture();
       disposePromiseResolveCapture();
       disposeCloneOrderCapture();
