@@ -1261,7 +1261,7 @@ async function restoreRewindExecutionCheckpoint(
   checkpoint: unknown,
 ): Promise<void> {
   if (!checkpoint || typeof checkpoint !== "object") return;
-  vm.stopAll?.();
+  vm.runtime.stopAll?.();
   await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
 }
 
