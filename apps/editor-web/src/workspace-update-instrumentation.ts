@@ -12,7 +12,7 @@ import {
   type BlocklyWorkspaceLike,
 } from "./workspace-desync-diagnostics.js";
 
-export type LoadBoundaryKind = "boot" | "load" | "remote" | "guest";
+export type LoadBoundaryKind = "boot" | "load" | "remote" | "guest" | "rewind";
 
 export type WorkspaceUpdateLogEntry = {
   seq: number;
