@@ -73,6 +73,9 @@ export type RewindVmLike = {
 export interface ExecutionRewindOptions {
   captureOrigin?: () => RewindOrigin | null;
   restoreOrigin?: (origin: RewindOrigin) => Promise<void>;
+  /** Snapshot live VM state before replay; used to recover after replay failure. */
+  captureExecutionCheckpoint?: () => unknown;
+  restoreExecutionCheckpoint?: (checkpoint: unknown) => Promise<void>;
   getTraceSize?: () => number;
   onHistoryCleared?: (reason: RewindClearReason) => void;
   /** Called around deterministic replay (load + scheduler steps). */
@@ -284,6 +287,21 @@ export function installExecutionRewind(
     }
   };
 
+  const recoverExecutionBaseline = async (checkpoint: unknown) => {
+    if (options.restoreExecutionCheckpoint) {
+      try {
+        await options.restoreExecutionCheckpoint(checkpoint);
+        cloneOrderRegistry.reset();
+        cloneOrderRegistry.seedOriginalTargets(runtime.targets);
+        bindCloneOrderRegistry(cloneOrderRegistry);
+        return;
+      } catch {
+        // Fall back to green-flag origin when checkpoint restore fails.
+      }
+    }
+    await recoverOriginBaseline();
+  };
+
   const invalidateHistoryAfterReplayFailure = () => {
     frames = [];
     nextFrameIndex = 0;
@@ -326,6 +344,7 @@ export function installExecutionRewind(
 
     options.onReplayLifecycle?.("start");
     isReplaying = true;
+    const executionCheckpoint = options.captureExecutionCheckpoint?.();
     try {
       const result = await replayToFrame({
         origin,
@@ -340,7 +359,11 @@ export function installExecutionRewind(
       });
       if (!result.ok) {
         markUnsupported();
-        await recoverOriginBaseline();
+        if (executionCheckpoint !== undefined) {
+          await recoverExecutionBaseline(executionCheckpoint);
+        } else {
+          await recoverOriginBaseline();
+        }
         invalidateHistoryAfterReplayFailure();
       }
       return result;

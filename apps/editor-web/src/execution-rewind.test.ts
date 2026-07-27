@@ -978,6 +978,51 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
+  it("restores the execution checkpoint when replay fails", async () => {
+    const sim = makeSimulatedRuntime([2, 4]);
+    const journal = new RewindJournal();
+    let checkpointX = 0;
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        journal,
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => sim.resetToOrigin(),
+        captureExecutionCheckpoint: () => {
+          checkpointX = sim.target.x;
+          return checkpointX;
+        },
+        restoreExecutionCheckpoint: async value => {
+          sim.target.x = Number(value);
+        },
+        cloneOrderRegistry: sim.registry,
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+    expect(sim.target.x).toBe(6);
+
+    const corrupted = journal.cloneEntries();
+    const randomIndex = corrupted.findIndex(entry => entry.kind === "random");
+    if (randomIndex >= 0) {
+      corrupted[randomIndex] = {
+        kind: "random",
+        from: 1,
+        to: 10,
+        value: 999,
+      };
+    }
+    journal.restoreEntries(corrupted);
+
+    const result = await handle.replayToFrame(1);
+    expect(result.ok).toBe(false);
+    expect(checkpointX).toBe(6);
+    expect(sim.target.x).toBe(6);
+    handle.dispose();
+  });
+
   it("invalidates trace and frame history on replay failure without restarting green flag", async () => {
     const sim = makeSimulatedRuntime([2, 4]);
     const journal = new RewindJournal();
