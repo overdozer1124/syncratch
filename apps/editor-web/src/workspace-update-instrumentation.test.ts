@@ -67,6 +67,89 @@ describe("workspace-update-instrumentation", () => {
     expect(getSuppressedDirtyLog()[0]?.repeatCount).toBe(2);
   });
 
+  it("does not flag partial failure for synced VM/Blockly with numeric shadow", () => {
+    const vmBlocks = {
+      hat: {parent: null, next: "loop", shadow: false, inputs: {}},
+      loop: {
+        parent: "hat",
+        next: null,
+        shadow: false,
+        inputs: {SUBSTACK: {block: "move", shadow: null}},
+      },
+      move: {
+        parent: "loop",
+        next: null,
+        shadow: false,
+        inputs: {STEPS: {block: "steps", shadow: "steps"}},
+      },
+      steps: {parent: "move", next: null, shadow: true, inputs: {}},
+    };
+    const context = {
+      ...baseContext,
+      editingTarget: {
+        id: "t1",
+        getName: () => "Sprite1",
+        blocks: {
+          getScripts: () => ["hat"],
+          _blocks: vmBlocks,
+        },
+      },
+    };
+    const workspace = {
+      getTopBlocks: () => [{id: "hat", isShadow: () => false}],
+      getAllBlocks: () => [
+        {
+          id: "hat",
+          isShadow: () => false,
+          getParent: () => null,
+          getNextBlock: () => ({id: "loop"}),
+          inputList: [],
+        },
+        {
+          id: "loop",
+          isShadow: () => false,
+          getParent: () => ({id: "hat"}),
+          getNextBlock: () => null,
+          inputList: [
+            {
+              name: "SUBSTACK",
+              connection: {targetBlock: () => ({id: "move"})},
+            },
+          ],
+        },
+        {
+          id: "move",
+          isShadow: () => false,
+          getParent: () => ({id: "loop"}),
+          getNextBlock: () => null,
+          inputList: [
+            {
+              name: "STEPS",
+              connection: {
+                targetBlock: () => ({id: "steps", isShadow: () => true}),
+              },
+            },
+          ],
+        },
+        {
+          id: "steps",
+          isShadow: () => true,
+          getParent: () => ({id: "move"}),
+          getNextBlock: () => null,
+          inputList: [],
+        },
+      ],
+    };
+    const start = recordWorkspaceUpdateStart(context, 256);
+    const settled = recordWorkspaceUpdateSettled(
+      start.seq,
+      context,
+      workspace,
+    );
+    expect(settled?.partialFailureLikely).toBe(false);
+    expect(settled?.vmEdgeHash).toBe(settled?.blocklyEdgeHash);
+  });
+
   it("installWorkspaceUpdateListener observes without altering emit order", async () => {
     const raf = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = (cb: FrameRequestCallback) => {

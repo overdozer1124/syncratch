@@ -6,8 +6,9 @@
  */
 
 import {
-  hashBlockGraphEdges,
+  collectVmShadowBlockIds,
   hashBlocklyWorkspaceEdges,
+  hashVmVisibleBlockGraph,
   type BlocklyWorkspaceLike,
 } from "./workspace-desync-diagnostics.js";
 
@@ -31,6 +32,7 @@ export type WorkspaceUpdateLogEntry = {
   vmScriptCount: number;
   vmBlockCount: number;
   vmEdgeHash: string;
+  vmShadowBlockIds?: string[];
   blocklyTopBlocks?: number | null;
   blocklyEdgeHash?: string;
   /** VM scripts remain but Blockly graph does not match — partial reload likely. */
@@ -79,6 +81,7 @@ export type WorkspaceUpdateInstrumentationContext = {
         {
           parent?: string | null;
           next?: string | null;
+          shadow?: boolean;
           inputs?: Record<
             string,
             {block?: string | null; shadow?: string | null} | null | undefined
@@ -107,24 +110,22 @@ const pendingSettles = new Map<
   {startedAt: number; startEntry: WorkspaceUpdateLogEntry}
 >();
 
-function vmBlockIds(
-  target: WorkspaceUpdateInstrumentationContext["editingTarget"],
-): string[] {
-  const raw = target?.blocks?._blocks;
-  if (!raw || typeof raw !== "object") return [];
-  return Object.keys(raw);
-}
-
 function readVmGraph(
   target: WorkspaceUpdateInstrumentationContext["editingTarget"],
-): {vmScriptCount: number; vmBlockCount: number; vmEdgeHash: string} {
-  const ids = vmBlockIds(target);
-  const blocks = target?.blocks?._blocks;
+): {
+  vmScriptCount: number;
+  vmBlockCount: number;
+  vmEdgeHash: string;
+  vmShadowBlockIds: string[];
+} {
+  const raw = target?.blocks?._blocks;
+  const ids = raw && typeof raw === "object" ? Object.keys(raw) : [];
   const scripts = target?.blocks?.getScripts?.();
   return {
     vmScriptCount: Array.isArray(scripts) ? scripts.length : 0,
     vmBlockCount: ids.length,
-    vmEdgeHash: hashBlockGraphEdges(blocks, ids),
+    vmEdgeHash: hashVmVisibleBlockGraph(raw),
+    vmShadowBlockIds: collectVmShadowBlockIds(raw),
   };
 }
 

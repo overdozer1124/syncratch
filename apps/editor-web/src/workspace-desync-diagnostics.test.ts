@@ -4,6 +4,7 @@ import {
   getWorkspaceVmDesyncLog,
   hashBlockGraphEdges,
   hashBlocklyWorkspaceEdges,
+  hashVmVisibleBlockGraph,
   recordWorkspaceVmDesync,
 } from "./workspace-desync-diagnostics.js";
 
@@ -90,6 +91,52 @@ describe("workspace-desync-diagnostics", () => {
     });
 
     expect(connected).not.toBe(disconnected);
+  });
+
+  it("visible VM graph ignores shadow blocks and shadow-only inputs", () => {
+    const vmBlocks = {
+      hat: {parent: null, next: "move", shadow: false, inputs: {}},
+      move: {
+        parent: "hat",
+        next: null,
+        shadow: false,
+        inputs: {STEPS: {block: "steps", shadow: "steps"}},
+      },
+      steps: {parent: "move", next: null, shadow: true, inputs: {}},
+    };
+    const blockly = hashBlocklyWorkspaceEdges({
+      getAllBlocks: () => [
+        {
+          id: "hat",
+          isShadow: () => false,
+          getParent: () => null,
+          getNextBlock: () => ({id: "move"}),
+          inputList: [],
+        },
+        {
+          id: "move",
+          isShadow: () => false,
+          getParent: () => ({id: "hat"}),
+          getNextBlock: () => null,
+          inputList: [
+            {
+              name: "STEPS",
+              connection: {
+                targetBlock: () => ({id: "steps", isShadow: () => true}),
+              },
+            },
+          ],
+        },
+        {
+          id: "steps",
+          isShadow: () => true,
+          getParent: () => ({id: "move"}),
+          getNextBlock: () => null,
+          inputList: [],
+        },
+      ],
+    });
+    expect(hashVmVisibleBlockGraph(vmBlocks)).toBe(blockly);
   });
 
   it("suppresses duplicate signatures and increments repeatCount", () => {
