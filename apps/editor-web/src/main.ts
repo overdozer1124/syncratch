@@ -483,6 +483,7 @@ const execControlGroup = requiredElement<HTMLElement>("exec-control");
 const tracePanelList = requiredElement<HTMLElement>("trace-list");
 const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
 const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
+const execRewindButton = requiredElement<HTMLButtonElement>("exec-rewind");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
 const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
@@ -2534,6 +2535,8 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     vmInstance as unknown as {runtime?: unknown},
   );
 
+  let refreshExecUi: (() => void) | null = null;
+
   executionRewind = installExecutionRewind(
     vmInstance as unknown as {runtime?: unknown},
     {
@@ -2555,11 +2558,13 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       },
       onTraceTruncate: traceSize => {
         executionTrace?.trace.truncateTo(traceSize);
+        refreshExecUi?.();
       },
       onHistoryCleared: reason => {
         if (reason === "replay-failure") {
           executionTrace?.trace.clear();
         }
+        refreshExecUi?.();
       },
     },
   );
@@ -2588,6 +2593,19 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController = controller;
   execControlGroup.hidden = false;
 
+  const renderRewindControl = (): void => {
+    const snapshot = executionRewind?.getSnapshot();
+    const canRewind = snapshot?.canRewind ?? false;
+    const isReplaying = snapshot?.isReplaying ?? false;
+    execRewindButton.disabled = !canRewind || isReplaying;
+    const title =
+      snapshot?.rewindError && !canRewind
+        ? snapshot.rewindError
+        : "1コマ戻る";
+    execRewindButton.title = title;
+    execRewindButton.setAttribute("aria-label", title);
+  };
+
   const tracePanel = tracePanelList.closest("details");
   tracePanel?.addEventListener("toggle", () => {
     renderExecutionTrace(vmInstance);
@@ -2596,8 +2614,11 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     executionTrace?.trace.clear();
     renderExecutionTrace(vmInstance);
   });
-  // While running, refresh on a timer rather than per frame.
-  window.setInterval(() => renderExecutionTrace(vmInstance), 700);
+  // While running, refresh trace (when open) and rewind availability on a timer.
+  window.setInterval(() => {
+    renderExecutionTrace(vmInstance);
+    renderRewindControl();
+  }, 700);
 
   const render = () => {
     const {state} = controller.getSnapshot();
@@ -2611,13 +2632,32 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
     execStatus.textContent = paused ? "止まっています" : "動いています";
     renderExecutionTrace(vmInstance);
+    renderRewindControl();
   };
+
+  refreshExecUi = render;
 
   controller.subscribe(render);
   execPauseButton.addEventListener("click", () => {
     const {state} = controller.getSnapshot();
     if (state === "paused") controller.resume();
     else controller.pause();
+  });
+  execRewindButton.addEventListener("click", () => {
+    void (async () => {
+      if (!executionRewind) return;
+      const {state} = controller.getSnapshot();
+      if (state === "running") controller.pause();
+      execRewindButton.disabled = true;
+      try {
+        const result = await executionRewind.rewindFrame();
+        if (!result.ok && result.error) {
+          appToast.show(result.error);
+        }
+      } finally {
+        render();
+      }
+    })();
   });
   execStepButton.addEventListener("click", () => {
     controller.stepFrame();
