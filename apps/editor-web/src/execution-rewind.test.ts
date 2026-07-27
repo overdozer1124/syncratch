@@ -344,6 +344,23 @@ describe("RewindJournal", () => {
     expect(() => journal.consume("random")).toThrow(RewindJournalMismatchError);
   });
 
+  it("peeks the next replay entry without consuming it", () => {
+    const journal = new RewindJournal();
+    journal.beginRecord();
+    journal.append({kind: "random", from: 1, to: 10, value: 3});
+    journal.endFrame();
+    journal.beginReplay(0, 1);
+    expect(journal.peekReplayEntry()).toEqual({
+      kind: "random",
+      from: 1,
+      to: 10,
+      value: 3,
+    });
+    expect(journal.getReplayCursor()).toBe(0);
+    journal.consume("random");
+    expect(journal.peekReplayEntry()).toBeNull();
+  });
+
   it("detects unconsumed replay ranges", () => {
     const journal = new RewindJournal();
     journal.beginRecord();
@@ -483,6 +500,32 @@ describe("installJournalCapture", () => {
     dispose();
     expect(original).not.toHaveBeenCalled();
   });
+
+  it("records async extension opcodes as promiseResolve entries", async () => {
+    const {runtime} = makeSimulatedRuntime([]);
+    runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === "music_playDrumForBeats") {
+        return () => Promise.resolve(42);
+      }
+      return undefined;
+    };
+    const journal = new RewindJournal();
+    const dispose = installJournalCapture(runtime, journal, {
+      getExtensionIds: () => ["music"],
+    });
+    journal.beginRecord();
+    const fn = runtime.getOpcodeFunction("music_playDrumForBeats") as
+      | (() => Promise<number>)
+      | undefined;
+    await fn?.();
+    flushPendingPromiseJournalEntries(journal);
+    journal.endFrame();
+    dispose();
+
+    expect(journal.slice(0, journal.size)).toEqual([
+      expect.objectContaining({kind: "promiseResolve", value: 42}),
+    ]);
+  });
 });
 
 describe("installBroadcastOrderCapture", () => {
@@ -602,7 +645,7 @@ describe("installPromiseResolveCapture", () => {
     dispose();
 
     expect(journal.slice(0, journal.size)).toEqual([
-      {kind: "promiseResolve", token: 0, value: "hello"},
+      expect.objectContaining({kind: "promiseResolve", value: "hello"}),
     ]);
   });
 

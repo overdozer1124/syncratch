@@ -9,8 +9,12 @@
  * PR 6 journals broadcast-and-wait thread order via startHats capture.
  * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
  * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
+ * PR 12 journals random backdrop resolution and async extension promises.
  */
 
+import {
+  installBackdropResolveCapture,
+} from "./execution-rewind-backdrop-resolve.js";
 import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
@@ -174,6 +178,10 @@ export function installExecutionRewind(
   });
   const disposeBroadcastOrderCapture = installBroadcastOrderCapture({
     runtime,
+    journal,
+  });
+  const disposeBackdropResolveCapture = installBackdropResolveCapture({
+    runtime: runtime as import("./execution-rewind-backdrop-resolve.js").BackdropCaptureRuntimeLike,
     journal,
   });
   const disposePromiseResolveCapture = installPromiseResolveCapture({
@@ -420,6 +428,7 @@ export function installExecutionRewind(
       runtime._step = rawStep;
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
+      disposeBackdropResolveCapture();
       disposeBroadcastOrderCapture();
       disposePromiseResolveCapture();
       disposeCloneOrderCapture();
