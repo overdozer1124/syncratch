@@ -3,6 +3,7 @@ import {
   guardGlowUpdates,
   installExecutionControl,
   readActiveBlockIds,
+  retireOrphanThreads,
   type ExecutionRuntimeLike,
   type ExecutionVmLike,
 } from "./execution-control.js";
@@ -77,6 +78,46 @@ describe("readActiveBlockIds", () => {
     ).toEqual([]);
     expect(readActiveBlockIds(null)).toEqual([]);
     expect(readActiveBlockIds({})).toEqual([]);
+  });
+});
+
+describe("retireOrphanThreads", () => {
+  it("kills threads whose hat block was deleted", () => {
+    const stop = vi.fn();
+    const alive = {
+      topBlock: "hat",
+      target: {blocks: {getBlock: (id: string) => (id === "hat" ? {opcode: "event_whenflagclicked"} : null)}},
+    };
+    const orphan = {
+      topBlock: "gone",
+      target: {blocks: {getBlock: () => undefined}},
+    };
+    const runtime: ExecutionRuntimeLike = {
+      threads: [alive, orphan],
+      _stopThread: stop,
+    };
+
+    expect(retireOrphanThreads(runtime)).toBe(1);
+    expect(runtime.threads).toEqual([alive]);
+    expect(stop).toHaveBeenCalledWith(orphan);
+  });
+
+  it("leaves monitor threads and intact scripts alone", () => {
+    const runtime: ExecutionRuntimeLike = {
+      threads: [
+        {
+          topBlock: "hat",
+          updateMonitor: true,
+          target: {blocks: {getBlock: () => undefined}},
+        },
+        {
+          topBlock: "hat",
+          target: {blocks: {getBlock: () => ({opcode: "event_whenflagclicked"})}},
+        },
+      ],
+    };
+    expect(retireOrphanThreads(runtime)).toBe(0);
+    expect(runtime.threads).toHaveLength(2);
   });
 });
 
@@ -301,6 +342,26 @@ describe("installExecutionControl", () => {
     control.pause();
     control.dispose();
     expect(() => fire("PROJECT_START")).not.toThrow();
+  });
+
+  // Deleting a forever loop while paused used to leave the thread alive. The
+  // workspace looked empty, then resume / green flag could still advance it.
+  it("retires orphan threads when blocks are deleted while paused", () => {
+    const orphan = {
+      topBlock: "hat",
+      target: {blocks: {getBlock: () => undefined}},
+    };
+    const {vm, runtime, fire, step} = makeVm({threads: [orphan]});
+    const control = installExecutionControl(vm)!;
+    control.pause();
+
+    fire("PROJECT_CHANGED");
+    expect(runtime.threads).toEqual([]);
+
+    // A later step must not revive motion from the deleted script.
+    control.resume();
+    runtime._step!();
+    expect(step).toHaveBeenCalledTimes(1);
   });
 
   it("dispose restores the original _step and clears the highlight", () => {

@@ -348,3 +348,72 @@ test("deleting a running script does not freeze the stage", async ({page}) => {
   const after = await page.evaluate(() => window.__syncratchDraws ?? 0);
   expect(after - before, "the stage must keep repainting").toBeGreaterThan(5);
 });
+
+/**
+ * Reported after #121/#123: pressing the green flag with an empty workspace
+ * still makes the sprite move — leftover threads or hats must not survive.
+ */
+async function deleteAllScripts(page: Page): Promise<void> {
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    for (const id of ['steps', 'move', 'loop', 'hat']) {
+      vm.editingTarget.blocks.deleteBlock(id);
+    }
+    // Also wipe anything else so the workspace is truly empty.
+    vm.editingTarget.blocks.deleteAllBlocks();
+    vm.emitWorkspaceUpdate();
+  })()`);
+}
+
+test("green flag with no blocks must not move the sprite", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(400);
+
+  // Pause mid-run (the path that previously left stale execution state).
+  await page.getByTestId("exec-pause").click();
+  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
+  await page.getByTestId("exec-step").click();
+  await page.waitForTimeout(200);
+
+  await deleteAllScripts(page);
+  const blockCount = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    return Object.keys(resolveVm().editingTarget.blocks._blocks).length;
+  })()`);
+  expect(blockCount, "workspace scripts must be gone").toBe(0);
+
+  await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+
+  const atFlag = await readSpriteX(page);
+  await page.waitForTimeout(800);
+  expect(
+    await readSpriteX(page),
+    "an empty project must not move after the green flag",
+  ).toBe(atFlag);
+
+  const threads = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    return resolveVm().runtime.threads.filter(t => !t.updateMonitor).length;
+  })()`);
+  expect(threads, "no script threads should remain").toBe(0);
+});
+
+test("green flag after deleting a running script must not move the sprite", async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(400);
+
+  // Delete while still running (glow-guard path).
+  await deleteAllScripts(page);
+  await page.waitForTimeout(400);
+
+  await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
+  const atFlag = await readSpriteX(page);
+  await page.waitForTimeout(800);
+  expect(
+    await readSpriteX(page),
+    "deleting scripts then green-flagging must not revive motion",
+  ).toBe(atFlag);
+});

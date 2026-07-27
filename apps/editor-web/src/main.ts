@@ -301,6 +301,8 @@ interface EditorGuiState {
 interface VmBlocks {
   createBlock(block: Record<string, unknown>): void;
   getBlock(id: string): unknown;
+  /** Top-level script hat ids, when the live scratch-vm Blocks object is present. */
+  getScripts?: () => string[];
 }
 
 interface ScratchVm {
@@ -2283,7 +2285,50 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   execStepButton.addEventListener("click", () => {
     controller.stepFrame();
   });
+
+  // Green flag runs every sprite. Learners often stare at an empty workspace
+  // on the selected sprite and think the editor is moving "with no blocks".
+  const runtime = vmInstance.runtime as ScratchVm["runtime"] & {
+    on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  };
+  runtime.on?.("PROJECT_START", () => {
+    queueMicrotask(() => warnIfGreenFlagRunsOtherSprites(vmInstance));
+  });
+
   render();
+}
+
+/** True when `target` still has a when-green-flag-clicked hat. */
+function targetHasGreenFlagHat(target: {blocks: VmBlocks}): boolean {
+  const scripts = target.blocks.getScripts?.();
+  if (!Array.isArray(scripts)) return false;
+  for (const id of scripts) {
+    const block = target.blocks.getBlock(id) as {opcode?: string} | null;
+    if (block?.opcode === "event_whenflagclicked") return true;
+  }
+  return false;
+}
+
+/**
+ * Tell the learner when the flag will move a *different* sprite than the one
+ * whose empty workspace they are looking at.
+ */
+function warnIfGreenFlagRunsOtherSprites(vmInstance: ScratchVm): void {
+  const editing = vmInstance.editingTarget;
+  if (!editing) return;
+  const targets = vmInstance.runtime.targets;
+  const editingTarget = targets.find(t => t.id === editing.id);
+  if (!editingTarget || targetHasGreenFlagHat(editingTarget)) return;
+  const others = targets.filter(
+    t => t.id !== editingTarget.id && targetHasGreenFlagHat(t),
+  );
+  if (others.length === 0) return;
+  const names = others.map(t => t.getName()).slice(0, 2).join("・");
+  appToast.show(
+    others.length === 1
+      ? `いまのスプライトにはブロックがありません。「${names}」のスクリプトが動きます`
+      : `いまのスプライトにはブロックがありません。「${names}」など別のスプライトが動きます`,
+  );
 }
 
 function installDefaultExtensionGallery(
