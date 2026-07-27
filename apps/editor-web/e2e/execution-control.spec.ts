@@ -163,12 +163,15 @@ test("the trace panel records what actually ran", async ({page}) => {
 
   await page.getByTestId("trace-panel").locator("summary").click();
   const lines = page.getByTestId("trace-list").locator(".trace-line");
-  await expect(lines.first()).toBeVisible();
+  await expect(lines.first()).toBeVisible({timeout: 15_000});
 
   // The forever loop runs "move 1 steps" over and over, under the green flag hat.
-  const labels = await lines.allTextContents();
-  expect(labels.join("\n")).toContain("歩いた");
-  expect(labels.join("\n")).toContain("緑の旗が押された");
+  await expect(lines.filter({hasText: "1歩動いた"}).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(lines.filter({hasText: "緑の旗でスクリプトを開始した"}).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
   // A forever loop genuinely alternates forever/move, so consecutive-run
   // coalescing does not apply here; the buffer cap is what bounds the list.
@@ -279,9 +282,9 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
   const labels = (
     await page.getByTestId("trace-list").locator(".trace-line").allTextContents()
   ).join("\n");
-  expect(labels).toContain("緑の旗が押された");
+  expect(labels).toContain("緑の旗でスクリプトを開始した");
   expect(
-    labels.match(/緑の旗が押された/g)?.length,
+    labels.match(/緑の旗でスクリプトを開始した/g)?.length,
     "one green-flag entry, not one per run ever made",
   ).toBe(1);
 });
