@@ -14,11 +14,12 @@
  * light nothing up. The caller supplies a highlighter that talks to the live
  * ScratchBlocks workspace instead, which also keeps this module DOM-free.
  *
- * Known limitation: `wait` blocks and timers read the wall clock, so time keeps
- * passing while execution is paused. A long pause therefore makes pending waits
- * expire immediately on resume. Fixing that needs a virtual clock across the
- * runtime and is deliberately out of scope here.
+ * Known limitation: `looks_sayforsecs` / `thinkforsecs` use `setTimeout`, not the
+ * stack timer, so they can still expire while paused until those blocks are
+ * journaled separately during rewind.
  */
+
+import {installVirtualClock} from "./execution-virtual-clock.js";
 
 const PATCH_FLAG = "_syncratchExecutionControlPatched";
 
@@ -254,6 +255,9 @@ export function installExecutionControl(
   // other patchers (turbowarp-vm-compat) wrap this same method.
   const rawStep = runtime._step;
   const originalStep = rawStep.bind(runtime);
+  const virtualClock = installVirtualClock(
+    runtime as import("./execution-virtual-clock.js").VirtualClockRuntimeLike,
+  );
 
   const snapshot = (): ExecutionSnapshot => ({
     state,
@@ -339,6 +343,7 @@ export function installExecutionControl(
       if (disposed || state === "paused") return;
       state = "paused";
       framesToRun = 0;
+      virtualClock?.freeze();
       setHighlight(readActiveBlockIds(runtime));
       notify();
     },
@@ -346,6 +351,7 @@ export function installExecutionControl(
       if (disposed || state === "running") return;
       state = "running";
       framesToRun = 0;
+      virtualClock?.unfreeze();
       setHighlight([]);
       notify();
     },
@@ -371,6 +377,7 @@ export function installExecutionControl(
       runtime.off?.("PROJECT_CHANGED", onProjectChanged);
       setHighlight([]);
       listeners.clear();
+      virtualClock?.dispose();
       runtime._step = rawStep;
       runtime[PATCH_FLAG] = false;
     },
