@@ -1,15 +1,25 @@
 import {describe, expect, it, vi} from "vitest";
 import {
+  CloneOrderRegistry,
+} from "./execution-rewind-clone-order.js";
+import {
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
+  normalizeStackFrame,
 } from "./execution-rewind-fingerprint.js";
 import {
   RewindJournal,
   RewindJournalMismatchError,
 } from "./execution-rewind-journal.js";
-import {installJournalCapture} from "./execution-rewind-journal-capture.js";
+import {
+  installJournalCapture,
+  isNonDeterministicOpcode,
+} from "./execution-rewind-journal-capture.js";
 import {replayToFrame} from "./execution-rewind-replay.js";
-import {stableTargetIdentity} from "./execution-rewind-target-identity.js";
+import {
+  bindCloneOrderRegistry,
+  stableTargetIdentity,
+} from "./execution-rewind-target-identity.js";
 import {
   createRewindOrigin,
   installExecutionRewind,
@@ -30,7 +40,7 @@ function emptyDocument(): ProjectDocument {
 type SimTarget = {
   id: string;
   isStage?: boolean;
-  layerOrder?: number;
+  isOriginal?: boolean;
   getName: () => string;
   x: number;
   y: number;
@@ -45,9 +55,12 @@ type SimTarget = {
 function makeSimulatedRuntime(seedValues: number[]) {
   let seedIndex = 0;
   let currentMSecs = 1_000;
+  const registry = new CloneOrderRegistry();
+  bindCloneOrderRegistry(registry);
+
   const target: SimTarget = {
     id: "sprite1",
-    layerOrder: 1,
+    isOriginal: true,
     getName: () => "ネコ",
     x: 0,
     y: 0,
@@ -58,12 +71,22 @@ function makeSimulatedRuntime(seedValues: number[]) {
     variables: {},
     blocks: {_blocks: {}},
   };
+  registry.seedOriginalTargets([target]);
+
   const thread = {
     topBlock: "hat",
     blockGlowInFrame: "move",
     status: 0,
     stack: ["move"],
-    stackFrames: [{warpMode: false, loop: false, params: null}],
+    stackFrames: [{
+      warpMode: false,
+      isLoop: false,
+      params: null,
+      executionContext: {loopCounter: 2},
+      waitingReporter: null,
+      justReported: null,
+      reported: null,
+    }],
     target,
     peekStack: () => "move",
   };
@@ -131,9 +154,12 @@ function makeSimulatedRuntime(seedValues: number[]) {
     target.variables = {};
     thread.blockGlowInFrame = "move";
     thread.stack = ["move"];
+    registry.reset();
+    registry.seedOriginalTargets([target]);
+    bindCloneOrderRegistry(registry);
   };
 
-  return {runtime, target, thread, resetToOrigin, operatorRandom};
+  return {runtime, target, thread, resetToOrigin, operatorRandom, registry};
 }
 
 function makeOrigin(runtime: ReturnType<typeof makeSimulatedRuntime>["runtime"]): RewindOrigin {
@@ -147,17 +173,76 @@ function makeOrigin(runtime: ReturnType<typeof makeSimulatedRuntime>["runtime"])
 
 describe("stableTargetIdentity", () => {
   it("ignores runtime target id", () => {
-    const a = stableTargetIdentity({
+    const registry = new CloneOrderRegistry();
+    bindCloneOrderRegistry(registry);
+    const target = {
       id: "aaa",
       getName: () => "ネコ",
-      layerOrder: 1,
-    });
-    const b = stableTargetIdentity({
-      id: "bbb",
-      getName: () => "ネコ",
-      layerOrder: 1,
-    });
+      isOriginal: true,
+    };
+    registry.seedOriginalTargets([target]);
+    const a = stableTargetIdentity({...target, id: "aaa"});
+    const b = stableTargetIdentity({...target, id: "bbb"});
+    expect(a).toBe("sprite:ネコ:orig");
     expect(a).toBe(b);
+  });
+
+  it("distinguishes clones by creation order", () => {
+    const registry = new CloneOrderRegistry();
+    bindCloneOrderRegistry(registry);
+    const original = {getName: () => "ネコ", isOriginal: true};
+    registry.seedOriginalTargets([original]);
+    const clone1 = {getName: () => "ネコ", isOriginal: false};
+    const clone2 = {getName: () => "ネコ", isOriginal: false};
+    registry.assignCloneOrder(clone1, original);
+    registry.assignCloneOrder(clone2, original);
+    expect(stableTargetIdentity(original)).toBe("sprite:ネコ:orig");
+    expect(stableTargetIdentity(clone1)).toBe("sprite:ネコ:clone:1");
+    expect(stableTargetIdentity(clone2)).toBe("sprite:ネコ:clone:2");
+  });
+});
+
+describe("normalizeStackFrame", () => {
+  it("uses isLoop and normalizes executionContext fields", () => {
+    expect(
+      normalizeStackFrame({
+        warpMode: true,
+        isLoop: true,
+        params: {count: 1},
+        executionContext: {loopCounter: 2},
+        waitingReporter: "block-a",
+        justReported: 5,
+        reported: [{opCached: "block-a", inputValue: 5}],
+      }),
+    ).toEqual({
+      warpMode: true,
+      isLoop: true,
+      params: {count: 1},
+      executionContext: {loopCounter: 2},
+      waitingReporter: "block-a",
+      justReported: 5,
+      reported: [{opCached: "block-a", inputValue: 5}],
+    });
+  });
+
+  it("returns null for non-normalizable executionContext", () => {
+    expect(
+      normalizeStackFrame({
+        executionContext: {callback: () => undefined},
+      }),
+    ).toBeNull();
+  });
+
+  it("normalizes wait timer executionContext without the Timer object", () => {
+    const normalized = normalizeStackFrame({
+      executionContext: {
+        duration: 10,
+        timer: {timeElapsed: () => 4},
+      },
+    });
+    expect(normalized?.executionContext).toEqual({
+      __waitTimer: {duration: 10, pending: true},
+    });
   });
 });
 
@@ -223,7 +308,7 @@ describe("computeFrameFingerprint", () => {
       runtime,
       blockGraphHash: origin.blockGraphHash,
     });
-    expect(before).not.toEqual(after);
+    expect(before.fingerprint).not.toEqual(after.fingerprint);
   });
 
   it("includes stack and stackFrames", () => {
@@ -240,12 +325,25 @@ describe("computeFrameFingerprint", () => {
       runtime,
       blockGraphHash: origin.blockGraphHash,
     });
-    expect(before).not.toEqual(after);
+    expect(before.fingerprint).not.toEqual(after.fingerprint);
+  });
+
+  it("marks unsupported frames when stack frames cannot be normalized", () => {
+    const {runtime} = makeSimulatedRuntime([]);
+    runtime.threads![0]!.stackFrames = [{
+      executionContext: {fn: () => undefined},
+    }];
+    const result = computeFrameFingerprint({
+      frameIndex: 0,
+      runtime,
+      blockGraphHash: "0",
+    });
+    expect(result.supported).toBe(false);
   });
 
   it("hashes visible block graphs with stable target identity", () => {
     const {runtime} = makeSimulatedRuntime([]);
-    expect(computeProjectBlockGraphHash(runtime)).toBe("sprite:ネコ:1:orig=0");
+    expect(computeProjectBlockGraphHash(runtime)).toBe("sprite:ネコ:orig=0");
   });
 });
 
@@ -281,6 +379,32 @@ describe("installJournalCapture", () => {
       true,
     );
   });
+
+  it("flags unsupported non-deterministic opcodes", () => {
+    const journal = new RewindJournal();
+    const {runtime} = makeSimulatedRuntime([]);
+    const unsupported = vi.fn();
+    runtime.getOpcodeFunction = (opcode: string) => {
+      if (opcode === "sensing_loudness") return () => 50;
+      if (opcode === "operator_random") {
+        return () => 1;
+      }
+      return undefined;
+    };
+    const dispose = installJournalCapture(runtime, journal, {
+      onUnsupportedInput: unsupported,
+    });
+    journal.beginRecord();
+    const loudness = runtime.getOpcodeFunction("sensing_loudness") as () => number;
+    loudness();
+    journal.endFrame();
+    dispose();
+    expect(isNonDeterministicOpcode("sensing_loudness")).toBe("loudness");
+    expect(unsupported).toHaveBeenCalledWith({
+      opcode: "sensing_loudness",
+      journalKind: "loudness",
+    });
+  });
 });
 
 describe("installExecutionRewind", () => {
@@ -308,12 +432,13 @@ describe("installExecutionRewind", () => {
   });
 
   it("does not clear history on PROJECT_START while replaying", async () => {
-    const {runtime, resetToOrigin} = makeSimulatedRuntime([2, 4]);
+    const {runtime, resetToOrigin, registry} = makeSimulatedRuntime([2, 4]);
     const journal = new RewindJournal();
     const handle = installExecutionRewind(
       {runtime},
       {
         journal,
+        cloneOrderRegistry: registry,
         captureOrigin: () => makeOrigin(runtime),
         restoreOrigin: async () => {
           resetToOrigin();
@@ -328,6 +453,24 @@ describe("installExecutionRewind", () => {
 
     await handle.replayToFrame(1);
     expect(handle.getFrames()).toHaveLength(2);
+    handle.dispose();
+  });
+
+  it("sets canRewind=false when unsupported stack frames are recorded", () => {
+    const {runtime} = makeSimulatedRuntime([]);
+    const handle = installExecutionRewind(
+      {runtime},
+      {captureOrigin: () => makeOrigin(runtime)},
+    )!;
+
+    runtime.fire("PROJECT_START");
+    runtime.threads![0]!.stackFrames = [{
+      executionContext: {fn: () => undefined},
+    }];
+    runtime._step!();
+
+    expect(handle.getSnapshot().canRewind).toBe(false);
+    expect(handle.getSnapshot().rewindError).toMatch(/巻き戻せません/);
     handle.dispose();
   });
 
@@ -354,6 +497,7 @@ describe("replayToFrame", () => {
           sim.resetToOrigin();
         },
         journal,
+        cloneOrderRegistry: sim.registry,
       },
     )!;
 
@@ -383,6 +527,7 @@ describe("replayToFrame", () => {
           sim.resetToOrigin();
         },
         journal,
+        cloneOrderRegistry: sim.registry,
       },
     )!;
 
@@ -409,6 +554,7 @@ describe("replayToFrame", () => {
       journal,
       targetFrameIndex: 1,
       runtime: sim.runtime,
+      cloneOrderRegistry: sim.registry,
       step: () => sim.runtime._step!(),
       restoreOrigin: async () => {
         sim.resetToOrigin();
@@ -430,6 +576,7 @@ describe("replayToFrame", () => {
         captureOrigin: () => origin,
         restoreOrigin: async () => sim.resetToOrigin(),
         journal,
+        cloneOrderRegistry: sim.registry,
       },
     )!;
 
@@ -446,6 +593,7 @@ describe("replayToFrame", () => {
       journal,
       targetFrameIndex: 0,
       runtime: sim.runtime,
+      cloneOrderRegistry: sim.registry,
       step: () => sim.runtime._step!(),
       restoreOrigin: async () => sim.resetToOrigin(),
     });
@@ -466,6 +614,7 @@ describe("replayToFrame", () => {
         captureOrigin: () => origin,
         restoreOrigin: async () => sim.resetToOrigin(),
         journal,
+        cloneOrderRegistry: sim.registry,
       },
     )!;
 
@@ -482,6 +631,7 @@ describe("replayToFrame", () => {
       journal,
       targetFrameIndex: 0,
       runtime: sim.runtime,
+      cloneOrderRegistry: sim.registry,
       step: () => sim.runtime._step!(),
       restoreOrigin: async () => sim.resetToOrigin(),
     });
@@ -498,7 +648,10 @@ describe("wrapper order with execution trace and control", () => {
 
     const rewind = installExecutionRewind(
       {runtime: sim.runtime},
-      {captureOrigin: () => makeOrigin(sim.runtime)},
+      {
+        captureOrigin: () => makeOrigin(sim.runtime),
+        cloneOrderRegistry: sim.registry,
+      },
     )!;
 
     let paused = false;

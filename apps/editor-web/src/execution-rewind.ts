@@ -7,6 +7,10 @@
  */
 
 import {
+  CloneOrderRegistry,
+  installCloneOrderCapture,
+} from "./execution-rewind-clone-order.js";
+import {
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
   type RewindRuntimeLike,
@@ -14,6 +18,7 @@ import {
 import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {replayToFrame} from "./execution-rewind-replay.js";
+import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import {
   REWIND_MAX_FRAMES,
   type ReplayResult,
@@ -25,6 +30,7 @@ import {
 
 const REWIND_FLAG = "_syncratchExecutionRewindInstalled";
 const REWIND_HANDLE = "_syncratchExecutionRewindHandle";
+const REWIND_UNSUPPORTED_ERROR = "この実行は正確に巻き戻せません";
 
 export type {
   ReplayResult,
@@ -46,6 +52,8 @@ export interface ExecutionRewindOptions {
   maxFrames?: number;
   /** Inject a shared journal (used by unit tests). */
   journal?: RewindJournal;
+  /** Inject a shared clone-order registry (used by unit tests). */
+  cloneOrderRegistry?: CloneOrderRegistry;
 }
 
 export interface ExecutionRewindHandle {
@@ -91,12 +99,19 @@ export function installExecutionRewind(
 
   const maxFrames = Math.max(1, options.maxFrames ?? REWIND_MAX_FRAMES);
   const journal = options.journal ?? new RewindJournal();
+  const cloneOrderRegistry = options.cloneOrderRegistry ?? new CloneOrderRegistry();
+  bindCloneOrderRegistry(cloneOrderRegistry);
+
   let origin: RewindOrigin | null = null;
   let frames: RewindFrame[] = [];
   let nextFrameIndex = 0;
   let isReplaying = false;
   let rewindError: string | null = null;
   let disposed = false;
+
+  const markUnsupported = () => {
+    rewindError = REWIND_UNSUPPORTED_ERROR;
+  };
 
   const rawStep = runtime._step;
   const innerStep = rawStep.bind(runtime);
@@ -107,17 +122,31 @@ export function installExecutionRewind(
     nextFrameIndex = 0;
     rewindError = null;
     journal.clear();
+    cloneOrderRegistry.reset();
     options.onHistoryCleared?.(reason);
   };
 
   const disposeJournalCapture = installJournalCapture(
     runtime as import("./execution-rewind-journal-capture.js").JournalCaptureRuntimeLike,
     journal,
+    {
+      onUnsupportedInput: () => {
+        markUnsupported();
+      },
+    },
   );
+  const disposeCloneOrderCapture = installCloneOrderCapture({
+    runtime,
+    registry: cloneOrderRegistry,
+    journal,
+  });
 
   const onProjectStart = () => {
     if (isReplaying) return;
     clearRewindHistory("green-flag");
+    cloneOrderRegistry.reset();
+    cloneOrderRegistry.seedOriginalTargets(runtime.targets);
+    bindCloneOrderRegistry(cloneOrderRegistry);
     const captured = options.captureOrigin?.() ?? null;
     if (captured) {
       origin = cloneOrigin(captured);
@@ -149,28 +178,31 @@ export function installExecutionRewind(
 
     if (journal.exceedsByteLimit()) {
       clearRewindHistory("journal-limit");
-      rewindError = "この実行は正確に巻き戻せません";
+      markUnsupported();
       return result;
     }
 
     const frameIndex = nextFrameIndex;
     nextFrameIndex += 1;
-    const fingerprint = computeFrameFingerprint({
+    const fingerprintResult = computeFrameFingerprint({
       frameIndex,
       runtime,
       blockGraphHash: origin.blockGraphHash,
     });
+    if (!fingerprintResult.supported) {
+      markUnsupported();
+    }
     frames.push({
       frameIndex,
       traceSize: options.getTraceSize?.() ?? 0,
       journalStart,
       journalEnd,
-      fingerprint,
+      fingerprint: fingerprintResult.fingerprint,
     });
 
     if (frames.length > maxFrames) {
       clearRewindHistory("frame-limit");
-      rewindError = "この実行は正確に巻き戻せません";
+      markUnsupported();
     }
 
     return result;
@@ -209,6 +241,15 @@ export function installExecutionRewind(
           error: "restoreOrigin is not configured",
         };
       }
+      if (rewindError) {
+        return {
+          ok: false,
+          targetFrameIndex,
+          expectedFingerprint: null,
+          actualFingerprint: null,
+          error: rewindError,
+        };
+      }
 
       isReplaying = true;
       try {
@@ -218,12 +259,13 @@ export function installExecutionRewind(
           journal,
           targetFrameIndex,
           runtime,
+          cloneOrderRegistry,
           step: () => innerStep(),
           restoreOrigin: options.restoreOrigin,
           getTraceSize: options.getTraceSize,
         });
         if (!result.ok) {
-          rewindError = "この実行は正確に巻き戻せません";
+          markUnsupported();
         }
         return result;
       } finally {
@@ -243,7 +285,9 @@ export function installExecutionRewind(
       runtime._step = rawStep;
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
+      disposeCloneOrderCapture();
       disposeJournalCapture();
+      bindCloneOrderRegistry(null);
       clearRewindHistory("dispose");
     },
   };
@@ -270,6 +314,7 @@ export function createRewindOrigin(input: {
 }
 
 export {
+  CloneOrderRegistry,
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
   RewindJournal,

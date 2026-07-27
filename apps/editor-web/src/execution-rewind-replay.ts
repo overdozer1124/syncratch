@@ -2,12 +2,14 @@ import {
   computeFrameFingerprint,
   type RewindRuntimeLike,
 } from "./execution-rewind-fingerprint.js";
+import type {CloneOrderRegistry} from "./execution-rewind-clone-order.js";
 import {
   RewindJournal,
   RewindJournalMismatchError,
   RewindJournalUnconsumedError,
 } from "./execution-rewind-journal.js";
 import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
+import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import type {
   ReplayResult,
   RewindFrame,
@@ -22,6 +24,7 @@ export interface ReplayToFrameOptions {
   journal: RewindJournal;
   targetFrameIndex: number;
   runtime: ReplayRuntimeLike;
+  cloneOrderRegistry?: CloneOrderRegistry;
   /** Scheduler step inside the pause gate (trace/rewind inner `_step`). */
   step: () => unknown;
   restoreOrigin: (origin: RewindOrigin) => Promise<void>;
@@ -32,8 +35,12 @@ async function restoreRewindOriginState(
   origin: RewindOrigin,
   restoreOrigin: (origin: RewindOrigin) => Promise<void>,
   runtime: ReplayRuntimeLike,
+  cloneOrderRegistry?: CloneOrderRegistry,
 ): Promise<void> {
   await restoreOrigin(origin);
+  cloneOrderRegistry?.reset();
+  cloneOrderRegistry?.seedOriginalTargets(runtime.targets);
+  bindCloneOrderRegistry(cloneOrderRegistry ?? null);
   restartGreenFlagHatThreads(
     runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
   );
@@ -71,6 +78,7 @@ export async function replayToFrame(
     journal,
     targetFrameIndex,
     runtime,
+    cloneOrderRegistry,
     step,
     restoreOrigin,
   } = options;
@@ -87,7 +95,12 @@ export async function replayToFrame(
   }
 
   try {
-    await restoreRewindOriginState(origin, restoreOrigin, runtime);
+    await restoreRewindOriginState(
+      origin,
+      restoreOrigin,
+      runtime,
+      cloneOrderRegistry,
+    );
   } catch (error) {
     return {
       ok: false,
@@ -128,7 +141,7 @@ export async function replayToFrame(
             frameIndex: index,
             runtime,
             blockGraphHash: origin.blockGraphHash,
-          }),
+          }).fingerprint,
           error: error instanceof Error ? error.message : String(error),
         };
       }
@@ -139,12 +152,24 @@ export async function replayToFrame(
         blockGraphHash: origin.blockGraphHash,
       });
 
-      if (actualFingerprint !== frame.fingerprint) {
+      if (!actualFingerprint.supported) {
         return {
           ok: false,
           targetFrameIndex,
           expectedFingerprint: frame.fingerprint,
-          actualFingerprint,
+          actualFingerprint: actualFingerprint.fingerprint,
+          error:
+            actualFingerprint.unsupportedReason ??
+            "Stack frame state could not be normalized for rewind",
+        };
+      }
+
+      if (actualFingerprint.fingerprint !== frame.fingerprint) {
+        return {
+          ok: false,
+          targetFrameIndex,
+          expectedFingerprint: frame.fingerprint,
+          actualFingerprint: actualFingerprint.fingerprint,
           error: `Fingerprint mismatch at frame ${index}`,
         };
       }
@@ -157,14 +182,19 @@ export async function replayToFrame(
     });
 
     return {
-      ok: finalFingerprint === expected.fingerprint,
+      ok:
+        finalFingerprint.supported &&
+        finalFingerprint.fingerprint === expected.fingerprint,
       targetFrameIndex,
       expectedFingerprint: expected.fingerprint,
-      actualFingerprint: finalFingerprint,
+      actualFingerprint: finalFingerprint.fingerprint,
       error:
-        finalFingerprint === expected.fingerprint
-          ? null
-          : "Destination fingerprint mismatch",
+        !finalFingerprint.supported
+          ? finalFingerprint.unsupportedReason ??
+            "Stack frame state could not be normalized for rewind"
+          : finalFingerprint.fingerprint === expected.fingerprint
+            ? null
+            : "Destination fingerprint mismatch",
     };
   } catch (error) {
     const message =
@@ -182,7 +212,7 @@ export async function replayToFrame(
         frameIndex: targetFrameIndex,
         runtime,
         blockGraphHash: origin.blockGraphHash,
-      }),
+      }).fingerprint,
       error: message,
     };
   } finally {

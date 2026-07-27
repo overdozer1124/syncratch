@@ -1,29 +1,40 @@
+import type {CloneOrderRegistry} from "./execution-rewind-clone-order.js";
+
 export type StableTargetLike = {
   id?: string;
   isStage?: boolean;
-  getName?: () => string;
-  layerOrder?: number;
-  cloneIndex?: number;
   isOriginal?: boolean;
+  getName?: () => string;
 };
+
+let activeCloneOrderRegistry: CloneOrderRegistry | null = null;
+
+/** Bind the active clone-order registry used by {@link stableTargetIdentity}. */
+export function bindCloneOrderRegistry(registry: CloneOrderRegistry | null): void {
+  activeCloneOrderRegistry = registry;
+}
+
+export function getSpriteName(target: StableTargetLike): string {
+  try {
+    return target.getName?.() ?? "";
+  } catch {
+    return "";
+  }
+}
 
 /** Stable target identity that survives loadProject target id regeneration. */
 export function stableTargetIdentity(target: StableTargetLike): string {
-  const name = (() => {
-    try {
-      return target.getName?.() ?? "";
-    } catch {
-      return "";
-    }
-  })();
+  const name = getSpriteName(target);
   if (target.isStage) return `stage:${name}`;
-  const layer =
-    typeof target.layerOrder === "number" ? String(target.layerOrder) : "0";
-  const clone =
-    typeof target.cloneIndex === "number"
-      ? String(target.cloneIndex)
-      : target.isOriginal === false
-        ? "clone"
-        : "orig";
-  return `sprite:${name}:${layer}:${clone}`;
+
+  const order = activeCloneOrderRegistry?.getCloneOrder(target);
+  if (order === 0) return `sprite:${name}:orig`;
+  if (typeof order === "number" && order > 0) {
+    return `sprite:${name}:clone:${order}`;
+  }
+
+  if (target.isOriginal === false) {
+    return `sprite:${name}:clone:unknown`;
+  }
+  return `sprite:${name}:orig`;
 }

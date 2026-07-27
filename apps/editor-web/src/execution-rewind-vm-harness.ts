@@ -45,6 +45,10 @@ type MoveScriptOptions = {
   randomTurn?: boolean;
 };
 
+type CloneScriptOptions = {
+  cloneMoves?: number[];
+};
+
 function loadScratchVm(): new () => ScratchVmInstance {
   return require(SCRATCH_VM_PATH) as new () => ScratchVmInstance;
 }
@@ -125,9 +129,128 @@ function attachMoveScript(project: Record<string, unknown>, options: MoveScriptO
   sprite.blocks = blocks;
 }
 
+function attachCloneScript(
+  project: Record<string, unknown>,
+  options: CloneScriptOptions = {},
+): void {
+  const targets = project.targets as Array<Record<string, unknown>>;
+  const sprite = targets.find(target => target.isStage === false);
+  if (!sprite) throw new Error("Sprite target missing in cat-project fixture");
+  const cloneMoves = options.cloneMoves ?? [5, 8];
+  const blocks: Record<string, unknown> = {
+    hat: {
+      opcode: "event_whenflagclicked",
+      next: "clone1",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 0,
+    },
+    clone1: {
+      opcode: "control_create_clone_of",
+      next: "moveOrig",
+      parent: "hat",
+      inputs: {
+        CLONE_OPTION: [1, [4, "_myself_"]],
+      },
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    moveOrig: {
+      opcode: "motion_movesteps",
+      next: "clone2",
+      parent: "clone1",
+      inputs: {STEPS: [1, [4, "10"]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    clone2: {
+      opcode: "control_create_clone_of",
+      next: "wait1",
+      parent: "moveOrig",
+      inputs: {
+        CLONE_OPTION: [1, [4, "_myself_"]],
+      },
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    wait1: {
+      opcode: "control_wait",
+      next: null,
+      parent: "clone2",
+      inputs: {DURATION: [1, [4, "0.01"]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    cloneHat: {
+      opcode: "control_start_as_clone",
+      next: "cloneMove",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 120,
+    },
+    cloneMove: {
+      opcode: "motion_movesteps",
+      next: "cloneWait",
+      parent: "cloneHat",
+      inputs: {STEPS: [1, [4, String(cloneMoves[0] ?? 5)]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    cloneWait: {
+      opcode: "control_wait",
+      next: "cloneMove2",
+      parent: "cloneMove",
+      inputs: {DURATION: [1, [4, "0.01"]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    cloneMove2: {
+      opcode: "motion_movesteps",
+      next: null,
+      parent: "cloneWait",
+      inputs: {STEPS: [1, [4, String(cloneMoves[1] ?? 8)]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+  };
+  sprite.blocks = blocks;
+}
+
+function findSpriteTarget(
+  runtime: ScratchVmInstance["runtime"],
+): Record<string, unknown> & {x?: number; y?: number; id?: string; getName?: () => string; isOriginal?: boolean} {
+  const sprite = runtime.targets.find(
+    target => (target as {isStage?: boolean}).isStage === false,
+  );
+  if (!sprite) throw new Error("Sprite target missing");
+  return sprite as Record<string, unknown> & {
+    x?: number;
+    y?: number;
+    id?: string;
+    getName?: () => string;
+    isOriginal?: boolean;
+  };
+}
+
 export type RewindVmHarness = {
   vm: ScratchVmInstance;
   sprite: Record<string, unknown> & {x?: number; y?: number; id?: string};
+  findSprite(): RewindVmHarness["sprite"];
   rewind: ExecutionRewindHandle;
   journal: RewindJournal;
   originDocument: ProjectDocument;
@@ -138,20 +261,21 @@ export type RewindVmHarness = {
 };
 
 export async function createRewindVmHarness(
-  options: MoveScriptOptions = {},
+  options: MoveScriptOptions & {clones?: boolean; cloneMoves?: number[]} = {},
 ): Promise<RewindVmHarness> {
   const VirtualMachine = loadScratchVm();
   const vm = new VirtualMachine();
   vm.start();
 
   const project = readCatProjectJson();
-  attachMoveScript(project, options);
+  if (options.clones) {
+    attachCloneScript(project, {cloneMoves: options.cloneMoves});
+  } else {
+    attachMoveScript(project, options);
+  }
   await vm.loadProject(structuredClone(project));
 
-  const sprite = vm.runtime.targets.find(
-    target => (target as {isStage?: boolean}).isStage === false,
-  ) as RewindVmHarness["sprite"];
-  if (!sprite) throw new Error("Sprite missing after loadProject");
+  const sprite = findSpriteTarget(vm.runtime);
 
   const originDocument = projectJsonToDocument(project, new Map());
   const journal = new RewindJournal();
@@ -183,6 +307,7 @@ export async function createRewindVmHarness(
   return {
     vm,
     sprite,
+    findSprite: () => findSpriteTarget(vm.runtime),
     rewind,
     journal,
     originDocument,
@@ -220,4 +345,4 @@ function documentToVmJson(document: ProjectDocument): Record<string, unknown> {
   };
 }
 
-export {attachMoveScript, documentToVmJson, readCatProjectJson};
+export {attachCloneScript, attachMoveScript, documentToVmJson, findSpriteTarget, readCatProjectJson};

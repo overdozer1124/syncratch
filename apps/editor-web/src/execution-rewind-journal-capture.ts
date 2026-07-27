@@ -1,4 +1,4 @@
-import type {JournalEntry} from "./execution-rewind-types.js";
+import type {JournalEntry, JournalEntryKind} from "./execution-rewind-types.js";
 import type {RewindJournal} from "./execution-rewind-journal.js";
 import {RewindJournalMismatchError} from "./execution-rewind-journal.js";
 
@@ -31,6 +31,33 @@ export type JournalCaptureRuntimeLike = {
 const JOURNAL_WRAP_FLAG = "__syncratchRewindJournalWrap";
 
 type RandomJournalEntry = Extract<JournalEntry, {kind: "random"}>;
+
+const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
+  "random",
+  "clock",
+  "mouse",
+  "key",
+  "cloneOrder",
+]);
+
+const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
+  ["operator_random", "random"],
+  ["sensing_askandwait", "askAnswer"],
+  ["sensing_answer", "askAnswer"],
+  ["sensing_loudness", "loudness"],
+  ["sensing_loud", "loudness"],
+  ["sensing_videoon", "videoSensing"],
+  ["sensing_videotoggle", "videoSensing"],
+  ["sensing_setvideotransparency", "videoSensing"],
+  ["sensing_videomotion", "videoSensing"],
+  ["event_broadcastandwait", "broadcastOrder"],
+]);
+
+const NON_DETERMINISTIC_OPCODE_PREFIXES = ["extension_", "argument_reporter_"];
+
+export type JournalCaptureOptions = {
+  onUnsupportedInput?: (detail: {opcode: string; journalKind: JournalEntryKind}) => void;
+};
 
 function readClockSnapshot(
   runtime: JournalCaptureRuntimeLike,
@@ -74,6 +101,15 @@ function wrapRandomPrimitive(
     }
     return result;
   }) as (...args: unknown[]) => unknown;
+}
+
+function isNonDeterministicOpcode(opcode: string): JournalEntryKind | null {
+  const mapped = OPCODE_JOURNAL_KIND.get(opcode);
+  if (mapped) return mapped;
+  if (NON_DETERMINISTIC_OPCODE_PREFIXES.some(prefix => opcode.startsWith(prefix))) {
+    return "extensionReporter";
+  }
+  return null;
 }
 
 function patchClock(
@@ -198,6 +234,7 @@ function patchKeyboard(
 export function installJournalCapture(
   runtime: JournalCaptureRuntimeLike,
   journal: RewindJournal,
+  options: JournalCaptureOptions = {},
 ): () => void {
   if ((runtime as Record<string, unknown>)[JOURNAL_WRAP_FLAG]) {
     return () => undefined;
@@ -211,6 +248,16 @@ export function installJournalCapture(
     runtime.getOpcodeFunction = (opcode: string) => {
       const original = originalGetOpcodeFunction(opcode);
       if (typeof original !== "function") return original;
+
+      const journalKind = isNonDeterministicOpcode(opcode);
+      if (
+        journal.getMode() === "record" &&
+        journalKind &&
+        !IMPLEMENTED_JOURNAL_KINDS.has(journalKind)
+      ) {
+        options.onUnsupportedInput?.({opcode, journalKind});
+      }
+
       if (opcode !== "operator_random") return original;
       let wrapped = wrappedByOpcode.get(opcode);
       if (!wrapped) {
@@ -262,3 +309,5 @@ export function installJournalCapture(
     (runtime as Record<string, unknown>)[JOURNAL_WRAP_FLAG] = false;
   };
 }
+
+export {IMPLEMENTED_JOURNAL_KINDS, isNonDeterministicOpcode, OPCODE_JOURNAL_KIND};

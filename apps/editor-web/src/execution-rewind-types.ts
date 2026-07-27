@@ -68,7 +68,7 @@ export type JournalEntry =
   | {kind: "videoSensing"; attribute: string; value: unknown}
   | {kind: "extensionReporter"; opcode: string; value: unknown}
   | {kind: "promiseResolve"; token: number; value: unknown}
-  | {kind: "cloneOrder"; targetId: string; cloneIndex: number}
+  | {kind: "cloneOrder"; spriteName: string; cloneOrder: number; sourceIdentity: string}
   | {kind: "broadcastOrder"; broadcast: string; threadOrder: string[]};
 
 export interface ReplayResult {
