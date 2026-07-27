@@ -29,7 +29,10 @@ export type ExecutionThreadLike = {
   /** Hat / top block the script was started from. */
   topBlock?: string | null;
   target?: {
-    blocks?: {getBlock?: (id: string) => unknown};
+    blocks?: {
+      getBlock?: (id: string) => unknown;
+      getScripts?: () => string[];
+    };
   } | null;
   /** Monitor threads should not be shown as "what the project is doing". */
   updateMonitor?: boolean;
@@ -159,6 +162,35 @@ export function readActiveBlockIds(
  * green flag / resume must not revive motion from a script the learner already
  * removed. Returns how many threads were retired.
  */
+function threadScriptIsGone(thread: ExecutionThreadLike): boolean {
+  const blocks = thread.target?.blocks;
+  // Without a blocks API we cannot tell — leave the thread alone (tests / odd
+  // hosts). Only retire when we positively see the script is gone.
+  if (!blocks || typeof blocks.getBlock !== "function") return false;
+
+  const scripts = blocks.getScripts?.();
+  if (Array.isArray(scripts) && scripts.length === 0) return true;
+
+  const top = thread.topBlock;
+  if (typeof top === "string" && top && blocks.getBlock(top) == null) {
+    return true;
+  }
+
+  // Forever / loop body deleted while the hat remains: the stack still points
+  // at a missing block id and must not keep ticking.
+  let current: unknown;
+  try {
+    current = thread.peekStack?.();
+  } catch {
+    current = null;
+  }
+  if (typeof current === "string" && current && blocks.getBlock(current) == null) {
+    return true;
+  }
+
+  return false;
+}
+
 export function retireOrphanThreads(
   runtime: ExecutionRuntimeLike | null | undefined,
 ): number {
@@ -170,10 +202,7 @@ export function retireOrphanThreads(
   for (let i = threads.length - 1; i >= 0; i -= 1) {
     const thread = threads[i];
     if (!thread || thread.updateMonitor || thread.isKilled) continue;
-    const top = thread.topBlock;
-    if (typeof top !== "string" || !top) continue;
-    const block = thread.target?.blocks?.getBlock?.(top);
-    if (block != null) continue;
+    if (!threadScriptIsGone(thread)) continue;
 
     if (typeof runtime._stopThread === "function") {
       try {
