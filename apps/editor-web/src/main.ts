@@ -190,7 +190,7 @@ import {
   parseInviteFromUrl,
   type CollabInvite,
 } from "@blocksync/collab-invite";
-import {createWebRtcProvider} from "@blocksync/collab-webrtc";
+import {createCollabProvider, createMemoryMesh, createWebRtcProvider} from "@blocksync/collab-webrtc";
 import {
   parseCollabIceServers,
   resolveCollabIceServers,
@@ -199,6 +199,7 @@ import {
   createCollabSession,
   evaluateCollabReadiness,
   type ApplyRemoteContext,
+  type CollabProviderConfig,
   type CollabSession,
   type CollabState,
 } from "./collab-session.js";
@@ -956,6 +957,25 @@ const diagnostic = {
     await loadRecord(structuredClone(current));
     return epochBefore;
   },
+  async installE2ePublishableCollabSession(): Promise<void> {
+    await installE2ePublishableCollabSession();
+  },
+  async publishE2eCollabLocalChange(): Promise<void> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("publishE2eCollabLocalChange is available only in E2E mode");
+    }
+    if (!collabSession) {
+      throw new Error("No publishable collaboration session");
+    }
+    collabSession.noteLocalChange({force: true});
+    await collabSession.flush();
+  },
+  async flushE2eLocalSave(): Promise<void> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("flushE2eLocalSave is available only in E2E mode");
+    }
+    await saveCoordinator.flush();
+  },
 };
 
 declare global {
@@ -1073,10 +1093,10 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
         assets: assetRecordsFromMap(document, assets),
         saveState: "clean",
       };
-      const saved = await store.createOrReplace(next, source.revision);
       if (import.meta.env.MODE === "e2e") {
         recordE2ePersistAttempt();
       }
+      const saved = await store.createOrReplace(next, source.revision);
       if (!isActive()) return;
       current = saved;
       recoveryAssetOverlay.clear();
@@ -1482,6 +1502,45 @@ async function applyCollaborativeProject(
     },
   });
   return result.applied;
+}
+
+async function installE2ePublishableCollabSession(): Promise<void> {
+  if (import.meta.env.MODE !== "e2e") {
+    throw new Error("E2E collab session helper is available only in E2E mode");
+  }
+  collabSession?.leave();
+  const generation = ++collaborationGeneration;
+  const mesh = createMemoryMesh();
+  const session = createCollabSession({
+    roomId: "e2e-workspace-side-effects",
+    secret: "e2e-workspace-side-effects-secret-value",
+    participantId: randomParticipantId(),
+    debounceMs: 0,
+    createProvider: (config: CollabProviderConfig) =>
+      createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      }),
+    materializeLocal: () => {
+      const assets = runtimeAssetMap();
+      return {document: documentFromVm(assets), assets};
+    },
+    applyRemoteToLocal: async () => true,
+    onLocalPush: recordE2eCollabOutbound,
+    onState: renderCollabState,
+  });
+  if (generation !== collaborationGeneration) return;
+  const started = session.start({host: true});
+  if (!started.ok) {
+    throw new Error("Failed to start E2E publishable collab session");
+  }
+  collabSession = session;
+  activeInvite = createInvite();
+  await session.flush();
 }
 
 async function startCollaboration(
