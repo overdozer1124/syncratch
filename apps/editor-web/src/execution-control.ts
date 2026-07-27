@@ -14,9 +14,8 @@
  * light nothing up. The caller supplies a highlighter that talks to the live
  * ScratchBlocks workspace instead, which also keeps this module DOM-free.
  *
- * Known limitation: `looks_sayforsecs` / `thinkforsecs` use `setTimeout`, not the
- * stack timer, so they can still expire while paused until those blocks are
- * journaled separately during rewind.
+ * Known limitation: extension async blocks and timers created before install are
+ * not covered by the virtual clock patch.
  */
 
 import {installVirtualClock} from "./execution-virtual-clock.js";
