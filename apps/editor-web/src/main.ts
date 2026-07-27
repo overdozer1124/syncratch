@@ -282,6 +282,13 @@ import {
   resolveTraceEntries,
   type ExecutionTraceHandle,
 } from "./execution-trace.js";
+import {
+  createRewindOrigin,
+  installExecutionRewind,
+  type ExecutionRewindHandle,
+  type RewindOrigin,
+  type RewindSnapshot,
+} from "./execution-rewind.js";
 import {createTraceListView} from "./execution-trace-ui.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
@@ -1081,6 +1088,12 @@ const diagnostic = {
     }
     await saveCoordinator.flush();
   },
+  getExecutionRewindSnapshot(): RewindSnapshot | null {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("getExecutionRewindSnapshot is available only in E2E mode");
+    }
+    return executionRewind?.getSnapshot() ?? null;
+  },
 };
 
 declare global {
@@ -1172,6 +1185,20 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
     current.document,
     projectJsonToDocument(JSON.parse(vm.toJSON()), hashes),
   );
+}
+
+/** Restore execution rewind origin without autosave / collab side effects. */
+async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
+  setSuppressedVmChanges("rewind", true);
+  try {
+    if (origin.vmProjectJson !== undefined) {
+      await vm.loadProject(structuredClone(origin.vmProjectJson));
+    } else {
+      await vm.loadProject(documentToProjectJson(origin.document));
+    }
+  } finally {
+    setSuppressedVmChanges("rewind", false);
+  }
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
@@ -2429,6 +2456,7 @@ function installScratchNativeMenus(
 
 let executionController: ExecutionController | null = null;
 let executionTrace: ExecutionTraceHandle | null = null;
+let executionRewind: ExecutionRewindHandle | null = null;
 const traceListView = createTraceListView(tracePanelList);
 
 /**
@@ -2491,15 +2519,35 @@ function highlightExecutingBlocks(blockIds: string[]): void {
  */
 function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
+  executionRewind?.dispose();
   executionTrace?.dispose();
 
   // Order matters. Both wrap Runtime._step, and the pause gate has to sit
-  // OUTSIDE the recorder: gate -> recorder -> real step. Installed the other
-  // way round, the recorder still ran while execution was paused, so pressing
-  // the green flag grew the history while the stage stayed frozen — "the log
-  // moves but my sprite does not".
+  // OUTSIDE the recorder: gate -> recorder -> rewind -> real step. Installed
+  // the other way round, the recorder still ran while execution was paused, so
+  // pressing the green flag grew the history while the stage stayed frozen —
+  // "the log moves but my sprite does not".
   executionTrace = installExecutionTrace(
     vmInstance as unknown as {runtime?: unknown},
+  );
+
+  executionRewind = installExecutionRewind(
+    vmInstance as unknown as {runtime?: unknown},
+    {
+      captureOrigin: () => {
+        if (!hasCurrent) return null;
+        const vmProjectJson = JSON.parse(vm.toJSON()) as Record<string, unknown>;
+        return createRewindOrigin({
+          document: documentFromVm(),
+          assets: runtimeAssetMap(),
+          projectSessionId: projectSessions.getActive(),
+          runtime: vmInstance.runtime as import("./execution-rewind-fingerprint.js").RewindRuntimeLike,
+          vmProjectJson,
+        });
+      },
+      restoreOrigin: restoreRewindOrigin,
+      getTraceSize: () => executionTrace?.trace.size() ?? 0,
+    },
   );
 
   // Independent of pause/step: a stale glow must not cancel the frame's draw.
