@@ -241,6 +241,7 @@ import {
   type ExecutionController,
 } from "./execution-control.js";
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
+import {getWorkspaceVmDesyncLog} from "./workspace-desync-diagnostics.js";
 import {
   installExecutionTrace,
   resolveTraceEntries,
@@ -867,6 +868,9 @@ const diagnostic = {
         : null,
       issues: materialized && !materialized.ok ? materialized.issues : null,
     };
+  },
+  workspaceVmDesyncLog() {
+    return getWorkspaceVmDesyncLog();
   },
 };
 
@@ -2315,8 +2319,8 @@ let emptyWorkspaceGuardToastAt = 0;
 
 /**
  * If the Blockly workspace shows no scripts but the editing target still has
- * VM scripts or running threads, stop and clear so the stage matches the empty
- * workspace the learner is looking at.
+ * VM scripts or running threads, stop execution and record diagnostics.
+ * VM blocks are not deleted automatically — the learner chooses how to recover.
  */
 function enforceWorkspaceMatchesVm(
   vmInstance: ScratchVm,
@@ -2343,13 +2347,15 @@ function enforceWorkspaceMatchesVm(
     runtime: vmInstance.runtime as import("./workspace-run-guard.js").GuardRuntimeLike,
     editingTarget,
   });
-  if (!result || (!result.stopped && !result.clearedVmScripts)) return;
+  if (!result?.detected) return;
   if (!options.announce) return;
   const now = Date.now();
   if (now - emptyWorkspaceGuardToastAt < 4000) return;
   emptyWorkspaceGuardToastAt = now;
   appToast.show(
-    "画面上にブロックが無いので実行を止めました（中に残っていたスクリプトを消しました）",
+    result.stopped
+      ? "画面上にブロックが無いのに実行されていました。安全のため実行を止めました。"
+      : "画面上にブロックが無いのにスクリプトが残っています。保存前に内容を確認してください。",
   );
 }
 
