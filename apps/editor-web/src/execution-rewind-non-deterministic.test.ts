@@ -37,20 +37,17 @@ describe("execution-rewind-non-deterministic", () => {
     ]);
   });
 
-  it("detects sensing reporters as unsupported", () => {
+  it("detects sensing reporters as journaled extensionReporter inputs", () => {
     expect(resolveNonDeterministicOpcode("sensing_current", [])).toBe(
       "extensionReporter",
     );
-    expect(resolveNonDeterministicOpcode("sensing_dayssince2000", [])).toBe(
-      "extensionReporter",
+    expect(isUnsupportedNonDeterministicOpcode("sensing_current", [])).toBe(
+      false,
     );
-    expect(resolveNonDeterministicOpcode("sensing_online", [])).toBe(
-      "extensionReporter",
+    expect(isUnsupportedNonDeterministicOpcode("sensing_loudness", [])).toBe(
+      false,
     );
-    expect(resolveNonDeterministicOpcode("sensing_username", [])).toBe(
-      "extensionReporter",
-    );
-    expect(isUnsupportedNonDeterministicOpcode("sensing_username", [])).toBe(
+    expect(isUnsupportedNonDeterministicOpcode("event_broadcastandwait", [])).toBe(
       true,
     );
   });
@@ -59,6 +56,9 @@ describe("execution-rewind-non-deterministic", () => {
     expect(
       resolveNonDeterministicOpcode("music_playDrumForBeats", ["music"]),
     ).toBe("extensionReporter");
+    expect(
+      isUnsupportedNonDeterministicOpcode("music_playDrumForBeats", ["music"]),
+    ).toBe(false);
     expect(resolveNonDeterministicOpcode("pen_clear", ["pen"])).toBe(
       "extensionReporter",
     );
