@@ -243,6 +243,17 @@ import {
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
 import {getWorkspaceVmDesyncLog} from "./workspace-desync-diagnostics.js";
 import {
+  getActiveLoadKind,
+  getLoadBoundaryLog,
+  getLoadEpoch,
+  getSuppressedDirtyLog,
+  getWorkspaceUpdateLog,
+  installWorkspaceUpdateListener,
+  recordLoadBoundaryTransition,
+  recordSuppressedProjectChanged,
+  type LoadBoundaryKind,
+} from "./workspace-update-instrumentation.js";
+import {
   installExecutionTrace,
   resolveTraceEntries,
   type ExecutionTraceHandle,
@@ -628,6 +639,43 @@ let driveIntegration: EditorDriveIntegration;
 let driveAutosave: DriveAutosave;
 let driveReady = false;
 let suppressVmChanges = true;
+
+function readWorkspaceUpdateInstrumentationContext(): {
+  suppressVmChanges: boolean;
+  diagnosticReady: boolean;
+  uiRestoreEpoch: number;
+  collaborationGeneration: number;
+  projectSessionId: number;
+  saveDirtyGeneration: number;
+  editingTarget: ScratchVm["editingTarget"] | null | undefined;
+} {
+  return {
+    suppressVmChanges,
+    diagnosticReady: diagnostic.ready,
+    uiRestoreEpoch,
+    collaborationGeneration,
+    projectSessionId: projectSessions.getActive(),
+    saveDirtyGeneration: saveCoordinator?.getDirtyGeneration?.() ?? 0,
+    editingTarget: vm?.editingTarget ?? null,
+  };
+}
+
+function readWorkspaceUpdateInstrumentationContextFull(): import("./workspace-update-instrumentation.js").WorkspaceUpdateInstrumentationContext {
+  return {
+    loadEpoch: getLoadEpoch(),
+    loadKind: getActiveLoadKind(),
+    ...readWorkspaceUpdateInstrumentationContext(),
+  };
+}
+
+function setSuppressedVmChanges(kind: LoadBoundaryKind, value: boolean): void {
+  recordLoadBoundaryTransition(
+    kind,
+    value,
+    readWorkspaceUpdateInstrumentationContext(),
+  );
+  suppressVmChanges = value;
+}
 let failNextWrite = false;
 let collabSession: CollabSession | null = null;
 let activeInvite: CollabInvite | null = null;
@@ -872,6 +920,15 @@ const diagnostic = {
   workspaceVmDesyncLog() {
     return getWorkspaceVmDesyncLog();
   },
+  workspaceUpdateLog() {
+    return getWorkspaceUpdateLog();
+  },
+  loadBoundaryLog() {
+    return getLoadBoundaryLog();
+  },
+  suppressedDirtyLog() {
+    return getSuppressedDirtyLog();
+  },
 };
 
 declare global {
@@ -1110,7 +1167,10 @@ function installSaveCoordinator(session: ProjectSession): void {
 }
 
 function markDirty(): void {
-  if (suppressVmChanges) return;
+  if (suppressVmChanges) {
+    recordSuppressedProjectChanged(readWorkspaceUpdateInstrumentationContext());
+    return;
+  }
   saveCoordinator.markDirty();
   // Only the room-creating device may mark Drive unsynced / autosave.
   if (!collabSession || collabSession.createdThisRoom()) {
@@ -1285,7 +1345,7 @@ async function applyCollaborativeProject(
         installSaveCoordinator(session);
       },
       setSuppressed(value) {
-        suppressVmChanges = value;
+        setSuppressedVmChanges("guest", value);
       },
     });
     if (applied) {
@@ -1385,7 +1445,7 @@ async function applyCollaborativeProject(
       renderSaveState(persisted ? "clean" : "error");
     },
     setSuppressed(value) {
-      suppressVmChanges = value;
+      setSuppressedVmChanges("remote", value);
     },
     onPersistError() {
       // Status is set in commit({persisted:false}); keep for diagnostics.
@@ -1811,7 +1871,7 @@ async function loadRecord(
       candidate,
       previous,
       setSuppressed(value) {
-        suppressVmChanges = value;
+        setSuppressedVmChanges("load", value);
       },
       async load(recordToLoad) {
         attachLocalStorage(recordToLoad);
@@ -2720,6 +2780,11 @@ async function boot(): Promise<void> {
   const guiReady = getVm();
   store = await openProjectStore();
   vm = await guiReady;
+  installWorkspaceUpdateListener(
+    vm,
+    readWorkspaceUpdateInstrumentationContextFull,
+    scratchWorkspace,
+  );
   vm.on("PROJECT_CHANGED", markDirty);
   vm.on("targetsUpdate", () => {
     noteEditingTargetMaybeChanged();

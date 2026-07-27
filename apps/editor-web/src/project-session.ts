@@ -2,6 +2,7 @@ export type ProjectSession = number;
 
 export interface ProjectSessionTracker {
   begin(): ProjectSession;
+  getActive(): ProjectSession;
   isActive(session: ProjectSession): boolean;
   runIfActive(session: ProjectSession, action: () => void): void;
   runSerialized<T>(
@@ -16,6 +17,9 @@ export function createProjectSessionTracker(): ProjectSessionTracker {
   return {
     begin() {
       active += 1;
+      return active;
+    },
+    getActive() {
       return active;
     },
     isActive(session) {
