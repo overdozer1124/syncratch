@@ -3,6 +3,9 @@ import {
   CloneOrderRegistry,
 } from "./execution-rewind-clone-order.js";
 import {
+  installBroadcastOrderCapture,
+} from "./execution-rewind-broadcast-order.js";
+import {
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
   normalizeStackFrame,
@@ -289,6 +292,16 @@ describe("normalizeStackFrame", () => {
       __waitTimer: {duration: 10, pending: true},
     });
   });
+
+  it("normalizes broadcast-and-wait executionContext without Thread objects", () => {
+    const normalized = normalizeStackFrame({
+      executionContext: {
+        broadcastVar: {name: "message1", id: "var1"},
+        startedThreads: [{topBlock: "hat-a", target: {getName: () => "ネコ"}}],
+      },
+    });
+    expect(normalized?.executionContext).toEqual({});
+  });
 });
 
 describe("RewindJournal", () => {
@@ -467,6 +480,74 @@ describe("installJournalCapture", () => {
   });
 });
 
+describe("installBroadcastOrderCapture", () => {
+  it("records broadcast thread order during record", () => {
+    const journal = new RewindJournal();
+    const threadA = {
+      topBlock: "hat-a",
+      target: {isStage: false, getName: () => "ネコ"},
+    };
+    const threadB = {
+      topBlock: "hat-b",
+      target: {isStage: false, getName: () => "ネコ"},
+    };
+    const runtime = {
+      threads: [] as unknown[],
+      startHats: () => {
+        runtime.threads.push(threadA, threadB);
+        return [threadA, threadB];
+      },
+    };
+    const dispose = installBroadcastOrderCapture({runtime, journal});
+    journal.beginRecord();
+    runtime.startHats("event_whenbroadcastreceived", {BROADCAST_OPTION: "hello"});
+    journal.endFrame();
+    dispose();
+
+    expect(journal.slice(0, journal.size)).toEqual([
+      {
+        kind: "broadcastOrder",
+        broadcast: "HELLO",
+        threadOrder: ["sprite:ネコ:orig:hat-a", "sprite:ネコ:orig:hat-b"],
+      },
+    ]);
+  });
+
+  it("reorders started threads during replay", () => {
+    const journal = new RewindJournal();
+    journal.beginRecord();
+    journal.append({
+      kind: "broadcastOrder",
+      broadcast: "HELLO",
+      threadOrder: ["sprite:ネコ:orig:hat-b", "sprite:ネコ:orig:hat-a"],
+    });
+    journal.endFrame();
+
+    const threadA = {
+      topBlock: "hat-a",
+      target: {isStage: false, getName: () => "ネコ"},
+    };
+    const threadB = {
+      topBlock: "hat-b",
+      target: {isStage: false, getName: () => "ネコ"},
+    };
+    const runtime = {
+      threads: [threadA, threadB] as unknown[],
+      startHats: () => [threadA, threadB],
+    };
+    const dispose = installBroadcastOrderCapture({runtime, journal});
+    journal.beginReplay(0, 1);
+    const started = runtime.startHats("event_whenbroadcastreceived", {
+      BROADCAST_OPTION: "hello",
+    });
+    journal.endFrame();
+    dispose();
+
+    expect(started).toEqual([threadB, threadA]);
+    expect(runtime.threads).toEqual([threadB, threadA]);
+  });
+});
+
 describe("journaled extension reporter opcodes", () => {
   it.each([
     "sensing_current",
@@ -533,28 +614,39 @@ describe("journaled extension reporter opcodes", () => {
 });
 
 describe("unsupported non-deterministic opcode detection", () => {
-  it("sets canRewind=false for broadcast-and-wait", () => {
+  it("keeps canRewind=true when broadcast-and-wait journals startHats order", () => {
     const sim = makeSimulatedRuntime([1]);
-    sim.runtime._step = () => {
-      const fn = sim.runtime.getOpcodeFunction(
-        "event_broadcastandwait",
-      ) as (() => unknown) | undefined;
-      fn?.();
+    const threadA = {
+      topBlock: "hat-a",
+      target: sim.target,
+      peekStack: () => "hat-a",
     };
-    sim.runtime.getOpcodeFunction = (candidate: string) => {
-      if (candidate === "event_broadcastandwait") return () => 1;
-      if (candidate === "operator_random") return () => 1;
-      return undefined;
+    const threadB = {
+      topBlock: "hat-b",
+      target: sim.target,
+      peekStack: () => "hat-b",
+    };
+    sim.runtime.startHats = (
+      opcode: string,
+      fields?: Record<string, unknown>,
+    ) => {
+      if (opcode !== "event_whenbroadcastreceived") return [];
+      expect(fields?.BROADCAST_OPTION).toBe("msg1");
+      sim.runtime.threads.push(threadA, threadB);
+      return [threadA, threadB];
+    };
+    sim.runtime._step = () => {
+      sim.runtime.startHats!("event_whenbroadcastreceived", {
+        BROADCAST_OPTION: "msg1",
+      });
     };
     const handle = installRewindWithExtensions(sim);
     sim.runtime.fire("PROJECT_START");
     sim.runtime._step!();
     sim.runtime._step!();
 
-    expect(handle.getSnapshot().canRewind).toBe(false);
-    expect(handle.getSnapshot().unsupportedOpcodes).toContain(
-      "event_broadcastandwait",
-    );
+    expect(handle.getSnapshot().canRewind).toBe(true);
+    expect(handle.getSnapshot().unsupportedOpcodes).toEqual([]);
     handle.dispose();
   });
 

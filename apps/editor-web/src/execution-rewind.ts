@@ -6,8 +6,12 @@
  * trace truncation, and replay lifecycle hooks for side-effect suppression.
  * PR 3 wires the toolbar button; PR 4 invalidates history on project/code changes.
  * PR 5 journals loudness, ask/answer, video sensing, and extension reporter opcodes.
+ * PR 6 journals broadcast-and-wait thread order via startHats capture.
  */
 
+import {
+  installBroadcastOrderCapture,
+} from "./execution-rewind-broadcast-order.js";
 import {
   CloneOrderRegistry,
   installCloneOrderCapture,
@@ -160,6 +164,10 @@ export function installExecutionRewind(
   const disposeCloneOrderCapture = installCloneOrderCapture({
     runtime,
     registry: cloneOrderRegistry,
+    journal,
+  });
+  const disposeBroadcastOrderCapture = installBroadcastOrderCapture({
+    runtime,
     journal,
   });
 
@@ -400,6 +408,7 @@ export function installExecutionRewind(
       runtime._step = rawStep;
       runtime[REWIND_FLAG] = false;
       delete runtime[REWIND_HANDLE];
+      disposeBroadcastOrderCapture();
       disposeCloneOrderCapture();
       disposeJournalCapture();
       bindCloneOrderRegistry(null);

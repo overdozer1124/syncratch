@@ -48,7 +48,7 @@ describe("execution-rewind-non-deterministic", () => {
       false,
     );
     expect(isUnsupportedNonDeterministicOpcode("event_broadcastandwait", [])).toBe(
-      true,
+      false,
     );
   });
 
