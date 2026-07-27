@@ -50,6 +50,9 @@ describe("execution-rewind-non-deterministic", () => {
     expect(isUnsupportedNonDeterministicOpcode("event_broadcastandwait", [])).toBe(
       false,
     );
+    expect(
+      isUnsupportedNonDeterministicOpcode("looks_switchbackdroptoandwait", []),
+    ).toBe(false);
   });
 
   it("flags loaded extension opcodes unless explicitly safe", () => {

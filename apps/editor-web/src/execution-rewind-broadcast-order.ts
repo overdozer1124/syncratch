@@ -7,6 +7,11 @@ import {
 } from "./execution-rewind-target-identity.js";
 
 const BROADCAST_RECEIVED_OPCODE = "event_whenbroadcastreceived";
+const BACKDROP_SWITCHED_OPCODE = "event_whenbackdropswitchesto";
+const CAPTURED_START_HATS_OPCODES = new Set([
+  BROADCAST_RECEIVED_OPCODE,
+  BACKDROP_SWITCHED_OPCODE,
+]);
 const START_HATS_WRAP_FLAG = "__syncratchRewindStartHatsWrap";
 
 type BroadcastOrderJournalEntry = Extract<JournalEntry, {kind: "broadcastOrder"}>;
@@ -31,10 +36,22 @@ export function stableBroadcastThreadIdentity(
   return `${stableTargetIdentity(thread.target ?? {})}:${thread.topBlock ?? ""}`;
 }
 
-function readBroadcastName(optMatchFields?: Record<string, unknown>): string {
-  const value = optMatchFields?.BROADCAST_OPTION;
-  if (typeof value === "string") return value.toUpperCase();
-  return String(value ?? "").toUpperCase();
+function readThreadOrderKey(
+  requestedHatOpcode: string,
+  optMatchFields?: Record<string, unknown>,
+): string | null {
+  if (requestedHatOpcode === BROADCAST_RECEIVED_OPCODE) {
+    const value = optMatchFields?.BROADCAST_OPTION;
+    if (typeof value === "string") return value.toUpperCase();
+    return String(value ?? "").toUpperCase();
+  }
+  if (requestedHatOpcode === BACKDROP_SWITCHED_OPCODE) {
+    const value = optMatchFields?.BACKDROP;
+    const backdrop =
+      typeof value === "string" ? value : String(value ?? "");
+    return `backdrop:${backdrop.toUpperCase()}`;
+  }
+  return null;
 }
 
 function reorderStartedThreads(
@@ -82,19 +99,19 @@ function reorderRuntimeThreads(
 
 function recordBroadcastOrder(
   journal: RewindJournal,
-  broadcast: string,
+  threadOrderKey: string,
   startedThreads: BroadcastOrderThreadLike[],
 ): void {
   journal.append({
     kind: "broadcastOrder",
-    broadcast,
+    broadcast: threadOrderKey,
     threadOrder: startedThreads.map(stableBroadcastThreadIdentity),
   });
 }
 
 function replayBroadcastOrder(
   journal: RewindJournal,
-  broadcast: string,
+  threadOrderKey: string,
   startedThreads: BroadcastOrderThreadLike[],
   runtimeThreads: unknown[] | undefined,
 ): BroadcastOrderThreadLike[] {
@@ -104,9 +121,9 @@ function replayBroadcastOrder(
   if (!entry || entry.kind !== "broadcastOrder") {
     throw new RewindJournalMismatchError("Expected broadcastOrder journal entry");
   }
-  if (entry.broadcast !== broadcast) {
+  if (entry.broadcast !== threadOrderKey) {
     throw new RewindJournalMismatchError(
-      `Expected broadcast ${broadcast}, got ${entry.broadcast}`,
+      `Expected thread-order key ${threadOrderKey}, got ${entry.broadcast}`,
     );
   }
 
@@ -141,23 +158,27 @@ export function installBroadcastOrderCapture(input: {
       optMatchFields,
       optTarget,
     );
+    const threadOrderKey = readThreadOrderKey(
+      requestedHatOpcode,
+      optMatchFields,
+    );
     if (
-      requestedHatOpcode !== BROADCAST_RECEIVED_OPCODE ||
+      !threadOrderKey ||
+      !CAPTURED_START_HATS_OPCODES.has(requestedHatOpcode) ||
       !Array.isArray(startedThreads)
     ) {
       return startedThreads;
     }
 
-    const broadcast = readBroadcastName(optMatchFields);
     const mode = journal.getMode();
     if (mode === "record") {
-      recordBroadcastOrder(journal, broadcast, startedThreads);
+      recordBroadcastOrder(journal, threadOrderKey, startedThreads);
       return startedThreads;
     }
     if (mode === "replay") {
       return replayBroadcastOrder(
         journal,
-        broadcast,
+        threadOrderKey,
         startedThreads,
         runtime.threads,
       );
