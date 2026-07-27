@@ -4,6 +4,7 @@
  *
  * PR 1 exposes recording + replayToFrame() for tests. PR 2 adds rewindFrame(),
  * trace truncation, and replay lifecycle hooks for side-effect suppression.
+ * PR 3 wires the toolbar button; PR 4 invalidates history on project/code changes.
  */
 
 import {

@@ -23,6 +23,7 @@ import {
 import {
   createRewindOrigin,
   installExecutionRewind,
+  type RewindClearReason,
   type RewindOrigin,
 } from "./execution-rewind.js";
 import type {ProjectDocument} from "@blocksync/project-schema";
@@ -719,6 +720,26 @@ describe("installExecutionRewind", () => {
     const second = installExecutionRewind({runtime})!;
     expect(first).toBe(second);
     first.dispose();
+  });
+
+  it("notifies onHistoryCleared when history is cleared manually", () => {
+    const sim = makeSimulatedRuntime([1]);
+    const cleared: RewindClearReason[] = [];
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        captureOrigin: () => makeOrigin(sim.runtime),
+        cloneOrderRegistry: sim.registry,
+        onHistoryCleared: reason => cleared.push(reason),
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    cleared.length = 0;
+    handle.clearRewindHistory("manual");
+    expect(cleared).toEqual(["manual"]);
+    handle.dispose();
   });
 });
 

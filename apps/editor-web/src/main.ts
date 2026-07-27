@@ -270,8 +270,10 @@ import {
   getSyncGeneration as readSyncGeneration,
   installBlocklyVmEventPipeline,
   isBlocklyVmEventPipelineInstalled,
+  isGraphMutatingBlocklyEvent,
   rebindWorkspaceBlockListener,
   type BlockEventDropKind,
+  type BlocklyEventLike,
 } from "./blockly-vm-event-instrumentation.js";
 import {
   armBlockEventDropNext,
@@ -290,6 +292,7 @@ import {
   createRewindOrigin,
   installExecutionRewind,
   type ExecutionRewindHandle,
+  type RewindClearReason,
   type RewindOrigin,
   type RewindSnapshot,
 } from "./execution-rewind.js";
@@ -1633,6 +1636,9 @@ async function applyCollaborativeProject(
       // Status is set in commit({persisted:false}); keep for diagnostics.
     },
   });
+  if (result.applied) {
+    clearExecutionRewindHistory("remote-apply");
+  }
   return result.applied;
 }
 
@@ -2084,6 +2090,7 @@ async function loadRecord(
   signal?: AbortSignal,
 ): Promise<void> {
   driveAutosave?.cancel();
+  clearExecutionRewindHistory("project-load");
   clearLocalUiMemoryForProjectReplacement();
   resetEditHistory();
   const candidate = structuredClone(record);
@@ -2461,7 +2468,25 @@ function installScratchNativeMenus(
 let executionController: ExecutionController | null = null;
 let executionTrace: ExecutionTraceHandle | null = null;
 let executionRewind: ExecutionRewindHandle | null = null;
+let rewindInvalidationInstalled = false;
 const traceListView = createTraceListView(tracePanelList);
+
+function clearExecutionRewindHistory(reason: RewindClearReason): void {
+  executionRewind?.clearRewindHistory(reason);
+}
+
+function installRewindInvalidationListeners(): void {
+  if (rewindInvalidationInstalled) return;
+  const workspace = blocklyWorkspace();
+  if (!workspace?.addChangeListener) return;
+  workspace.addChangeListener((event: BlocklyEventLike) => {
+    if (suppressVmChanges || getActiveLoadKind()) return;
+    if (event.recordUndo === false) return;
+    if (!isGraphMutatingBlocklyEvent(event)) return;
+    clearExecutionRewindHistory("code-edit");
+  });
+  rewindInvalidationInstalled = true;
+}
 
 /**
  * Repaint the trace panel from the recorded entries.
@@ -2561,7 +2586,7 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         refreshExecUi?.();
       },
       onHistoryCleared: reason => {
-        if (reason === "replay-failure") {
+        if (reason !== "green-flag") {
           executionTrace?.trace.clear();
         }
         refreshExecUi?.();
@@ -2681,6 +2706,7 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   }, 500);
 
   render();
+  installRewindInvalidationListeners();
 }
 
 let emptyWorkspaceGuardToastAt = 0;
@@ -2716,6 +2742,9 @@ function enforceWorkspaceMatchesVm(
     editingTarget,
   });
   if (!result?.detected) return;
+  if (result.stopped) {
+    clearExecutionRewindHistory("vm-blockly-desync");
+  }
   if (!options.announce) return;
   const now = Date.now();
   if (now - emptyWorkspaceGuardToastAt < 4000) return;
