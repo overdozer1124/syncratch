@@ -24,6 +24,7 @@ import {
 } from "./execution-rewind-types.js";
 
 const REWIND_FLAG = "_syncratchExecutionRewindInstalled";
+const REWIND_HANDLE = "_syncratchExecutionRewindHandle";
 
 export type {
   ReplayResult,
@@ -63,6 +64,7 @@ function cloneOrigin(origin: RewindOrigin): RewindOrigin {
     assets: origin.assets,
     projectSessionId: origin.projectSessionId,
     blockGraphHash: origin.blockGraphHash,
+    vmProjectJson: structuredClone(origin.vmProjectJson ?? null),
   };
 }
 
@@ -77,9 +79,15 @@ export function installExecutionRewind(
           on?: (event: string, handler: (...args: unknown[]) => void) => void;
           off?: (event: string, handler: (...args: unknown[]) => void) => void;
           [REWIND_FLAG]?: boolean;
+          [REWIND_HANDLE]?: ExecutionRewindHandle;
         })
       : null;
   if (!runtime || typeof runtime._step !== "function") return null;
+
+  const existing = runtime[REWIND_HANDLE];
+  if (runtime[REWIND_FLAG] && existing) {
+    return existing;
+  }
 
   const maxFrames = Math.max(1, options.maxFrames ?? REWIND_MAX_FRAMES);
   const journal = options.journal ?? new RewindJournal();
@@ -91,7 +99,7 @@ export function installExecutionRewind(
   let disposed = false;
 
   const rawStep = runtime._step;
-  const originalStep = rawStep.bind(runtime);
+  const innerStep = rawStep.bind(runtime);
 
   const clearRewindHistory = (reason: RewindClearReason) => {
     origin = null;
@@ -108,6 +116,7 @@ export function installExecutionRewind(
   );
 
   const onProjectStart = () => {
+    if (isReplaying) return;
     clearRewindHistory("green-flag");
     const captured = options.captureOrigin?.() ?? null;
     if (captured) {
@@ -118,16 +127,20 @@ export function installExecutionRewind(
   runtime.on?.("PROJECT_START", onProjectStart);
 
   runtime._step = (...args: unknown[]) => {
-    if (disposed) return originalStep(...args);
+    if (disposed) return innerStep(...args);
 
     if (isReplaying || journal.getMode() === "replay") {
-      return originalStep(...args);
+      return innerStep(...args);
     }
 
     const journalStart = journal.size;
     journal.beginRecord();
-    const result = originalStep(...args);
-    journal.endFrame();
+    let result: unknown;
+    try {
+      result = innerStep(...args);
+    } finally {
+      journal.endFrame();
+    }
     const journalEnd = journal.size;
 
     if (!origin) {
@@ -164,7 +177,7 @@ export function installExecutionRewind(
   };
   runtime[REWIND_FLAG] = true;
 
-  return {
+  const handle: ExecutionRewindHandle = {
     getSnapshot(): RewindSnapshot {
       const rewindDepth = frames.length > 0 ? frames.length - 1 : 0;
       return {
@@ -205,6 +218,7 @@ export function installExecutionRewind(
           journal,
           targetFrameIndex,
           runtime,
+          step: () => innerStep(),
           restoreOrigin: options.restoreOrigin,
           getTraceSize: options.getTraceSize,
         });
@@ -228,10 +242,14 @@ export function installExecutionRewind(
       runtime.off?.("PROJECT_START", onProjectStart);
       runtime._step = rawStep;
       runtime[REWIND_FLAG] = false;
+      delete runtime[REWIND_HANDLE];
       disposeJournalCapture();
       clearRewindHistory("dispose");
     },
   };
+
+  runtime[REWIND_HANDLE] = handle;
+  return handle;
 }
 
 /** Convenience for callers that build a RewindOrigin from the live VM. */
@@ -240,12 +258,14 @@ export function createRewindOrigin(input: {
   assets: Map<string, Uint8Array>;
   projectSessionId: number;
   runtime: RewindRuntimeLike | null | undefined;
+  vmProjectJson?: unknown;
 }): RewindOrigin {
   return {
     document: structuredClone(input.document),
     assets: input.assets,
     projectSessionId: input.projectSessionId,
     blockGraphHash: computeProjectBlockGraphHash(input.runtime),
+    vmProjectJson: structuredClone(input.vmProjectJson ?? null),
   };
 }
 

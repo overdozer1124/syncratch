@@ -2,16 +2,19 @@ import {
   computeFrameFingerprint,
   type RewindRuntimeLike,
 } from "./execution-rewind-fingerprint.js";
-import {RewindJournal, RewindJournalMismatchError} from "./execution-rewind-journal.js";
+import {
+  RewindJournal,
+  RewindJournalMismatchError,
+  RewindJournalUnconsumedError,
+} from "./execution-rewind-journal.js";
+import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
 import type {
   ReplayResult,
   RewindFrame,
   RewindOrigin,
 } from "./execution-rewind-types.js";
 
-export type ReplayRuntimeLike = RewindRuntimeLike & {
-  _step?: (...args: unknown[]) => unknown;
-};
+export type ReplayRuntimeLike = RewindRuntimeLike;
 
 export interface ReplayToFrameOptions {
   origin: RewindOrigin;
@@ -19,8 +22,21 @@ export interface ReplayToFrameOptions {
   journal: RewindJournal;
   targetFrameIndex: number;
   runtime: ReplayRuntimeLike;
+  /** Scheduler step inside the pause gate (trace/rewind inner `_step`). */
+  step: () => unknown;
   restoreOrigin: (origin: RewindOrigin) => Promise<void>;
   getTraceSize?: () => number;
+}
+
+async function restoreRewindOriginState(
+  origin: RewindOrigin,
+  restoreOrigin: (origin: RewindOrigin) => Promise<void>,
+  runtime: ReplayRuntimeLike,
+): Promise<void> {
+  await restoreOrigin(origin);
+  restartGreenFlagHatThreads(
+    runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
+  );
 }
 
 function validateTargetFrame(
@@ -29,6 +45,17 @@ function validateTargetFrame(
 ): RewindFrame | null {
   if (targetFrameIndex < 0) return null;
   return frames.find(frame => frame.frameIndex === targetFrameIndex) ?? null;
+}
+
+function assertReplayRangeConsumed(
+  journal: RewindJournal,
+  frameIndex: number,
+): void {
+  if (!journal.replayRangeFullyConsumed()) {
+    throw new RewindJournalUnconsumedError(
+      `Journal replay range not fully consumed at frame ${frameIndex}`,
+    );
+  }
 }
 
 /**
@@ -44,6 +71,7 @@ export async function replayToFrame(
     journal,
     targetFrameIndex,
     runtime,
+    step,
     restoreOrigin,
   } = options;
 
@@ -58,20 +86,8 @@ export async function replayToFrame(
     };
   }
 
-  if (typeof runtime._step !== "function") {
-    return {
-      ok: false,
-      targetFrameIndex,
-      expectedFingerprint: expected.fingerprint,
-      actualFingerprint: null,
-      error: "Runtime._step is unavailable",
-    };
-  }
-
-  const step = runtime._step.bind(runtime);
-
   try {
-    await restoreOrigin(origin);
+    await restoreRewindOriginState(origin, restoreOrigin, runtime);
   } catch (error) {
     return {
       ok: false,
@@ -96,8 +112,26 @@ export async function replayToFrame(
       }
 
       journal.beginReplay(frame.journalStart, frame.journalEnd);
-      step();
-      journal.endFrame();
+      try {
+        step();
+      } finally {
+        journal.endFrame();
+      }
+      try {
+        assertReplayRangeConsumed(journal, index);
+      } catch (error) {
+        return {
+          ok: false,
+          targetFrameIndex,
+          expectedFingerprint: frame.fingerprint,
+          actualFingerprint: computeFrameFingerprint({
+            frameIndex: index,
+            runtime,
+            blockGraphHash: origin.blockGraphHash,
+          }),
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
 
       const actualFingerprint = computeFrameFingerprint({
         frameIndex: index,
@@ -134,7 +168,8 @@ export async function replayToFrame(
     };
   } catch (error) {
     const message =
-      error instanceof RewindJournalMismatchError
+      error instanceof RewindJournalMismatchError ||
+      error instanceof RewindJournalUnconsumedError
         ? error.message
         : error instanceof Error
           ? error.message

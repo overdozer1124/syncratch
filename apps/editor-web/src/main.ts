@@ -1184,7 +1184,11 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
 async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
   setSuppressedVmChanges("rewind", true);
   try {
-    await vm.loadProject(documentToProjectJson(origin.document));
+    if (origin.vmProjectJson !== undefined) {
+      await vm.loadProject(structuredClone(origin.vmProjectJson));
+    } else {
+      await vm.loadProject(documentToProjectJson(origin.document));
+    }
   } finally {
     setSuppressedVmChanges("rewind", false);
   }
@@ -2508,8 +2512,8 @@ function highlightExecutingBlocks(blockIds: string[]): void {
  */
 function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
-  executionTrace?.dispose();
   executionRewind?.dispose();
+  executionTrace?.dispose();
 
   // Order matters. Both wrap Runtime._step, and the pause gate has to sit
   // OUTSIDE the recorder: gate -> recorder -> rewind -> real step. Installed
@@ -2525,11 +2529,13 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     {
       captureOrigin: () => {
         if (!hasCurrent) return null;
+        const vmProjectJson = JSON.parse(vm.toJSON()) as Record<string, unknown>;
         return createRewindOrigin({
           document: documentFromVm(),
           assets: runtimeAssetMap(),
           projectSessionId: projectSessions.getActive(),
           runtime: vmInstance.runtime as import("./execution-rewind-fingerprint.js").RewindRuntimeLike,
+          vmProjectJson,
         });
       },
       restoreOrigin: restoreRewindOrigin,

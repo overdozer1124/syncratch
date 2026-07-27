@@ -33,6 +33,14 @@ export class RewindJournal {
     return this.mode;
   }
 
+  getReplayCursor(): number {
+    return this.replayCursor;
+  }
+
+  getReplayEnd(): number {
+    return this.replayEnd;
+  }
+
   clear(): void {
     this.entries = [];
     this.totalBytes = 0;
@@ -52,7 +60,7 @@ export class RewindJournal {
   }
 
   endFrame(): void {
-    if (this.mode === "replay") {
+    if (this.mode === "replay" || this.mode === "record") {
       this.mode = "idle";
     }
   }
@@ -74,6 +82,11 @@ export class RewindJournal {
     return this.entries.slice(start, end);
   }
 
+  /** True when the active replay range has been fully consumed. */
+  replayRangeFullyConsumed(): boolean {
+    return this.replayCursor >= this.replayEnd;
+  }
+
   /** Replay the next journal entry of `kind`, or null when replay range is exhausted. */
   consume(kind: JournalEntryKind): JournalEntry | null {
     if (this.mode !== "replay") return null;
@@ -85,15 +98,6 @@ export class RewindJournal {
       );
     }
     this.replayCursor += 1;
-    return entry;
-  }
-
-  /** Peek replay range without consuming — used by tests. */
-  peekReplay(kind: JournalEntryKind): JournalEntry | null {
-    if (this.mode !== "replay") return null;
-    if (this.replayCursor >= this.replayEnd) return null;
-    const entry = this.entries[this.replayCursor];
-    if (!entry || entry.kind !== kind) return null;
     return entry;
   }
 
@@ -114,5 +118,12 @@ export class RewindJournalMismatchError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "RewindJournalMismatchError";
+  }
+}
+
+export class RewindJournalUnconsumedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RewindJournalUnconsumedError";
   }
 }

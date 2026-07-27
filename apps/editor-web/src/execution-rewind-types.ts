@@ -26,6 +26,8 @@ export interface RewindOrigin {
   assets: Map<string, Uint8Array>;
   projectSessionId: number;
   blockGraphHash: string;
+  /** Exact VM project JSON for deterministic reload during replay. */
+  vmProjectJson?: unknown;
 }
 
 export interface RewindFrame {
@@ -58,7 +60,7 @@ export type JournalEntryKind =
 
 export type JournalEntry =
   | {kind: "random"; from: number; to: number; value: number}
-  | {kind: "clock"; projectTimer: number; nowMs: number}
+  | {kind: "clock"; projectTimer: number; currentMSecs: number}
   | {kind: "mouse"; x: number; y: number; down: boolean}
   | {kind: "key"; key: string; pressed: boolean}
   | {kind: "askAnswer"; answer: string}

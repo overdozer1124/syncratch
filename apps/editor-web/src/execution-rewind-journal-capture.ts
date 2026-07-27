@@ -2,13 +2,16 @@ import type {JournalEntry} from "./execution-rewind-types.js";
 import type {RewindJournal} from "./execution-rewind-journal.js";
 import {RewindJournalMismatchError} from "./execution-rewind-journal.js";
 
+type ClockJournalEntry = Extract<JournalEntry, {kind: "clock"}>;
+
 export type JournalCaptureRuntimeLike = {
+  currentMSecs?: number;
+  updateCurrentMSecs?: () => void;
   getOpcodeFunction?: (opcode: string) => unknown;
   ioDevices?: {
     clock?: {
       projectTimer?: () => number;
-      __syncratchRewindOriginalNow?: () => number;
-      now?: () => number;
+      __syncratchRewindOriginalProjectTimer?: () => number;
     };
     mouse?: {
       getScratchX?: () => number;
@@ -28,6 +31,25 @@ export type JournalCaptureRuntimeLike = {
 const JOURNAL_WRAP_FLAG = "__syncratchRewindJournalWrap";
 
 type RandomJournalEntry = Extract<JournalEntry, {kind: "random"}>;
+
+function readClockSnapshot(
+  runtime: JournalCaptureRuntimeLike,
+  clock: NonNullable<JournalCaptureRuntimeLike["ioDevices"]>["clock"],
+  readProjectTimer: () => number,
+): ClockJournalEntry {
+  return {
+    kind: "clock",
+    projectTimer: readProjectTimer(),
+    currentMSecs: runtime.currentMSecs ?? 0,
+  };
+}
+
+function applyClockSnapshot(
+  runtime: JournalCaptureRuntimeLike,
+  entry: ClockJournalEntry,
+): void {
+  runtime.currentMSecs = entry.currentMSecs;
+}
 
 function wrapRandomPrimitive(
   original: (...args: unknown[]) => unknown,
@@ -55,32 +77,55 @@ function wrapRandomPrimitive(
 }
 
 function patchClock(
+  runtime: JournalCaptureRuntimeLike,
   clock: NonNullable<JournalCaptureRuntimeLike["ioDevices"]>["clock"],
   journal: RewindJournal,
 ): void {
-  if (!clock || clock.__syncratchRewindOriginalNow) return;
-  const originalNow = clock.now?.bind(clock);
+  if (!clock || clock.__syncratchRewindOriginalProjectTimer) return;
   const originalProjectTimer = clock.projectTimer?.bind(clock);
-  if (typeof originalNow !== "function") return;
+  const originalUpdateCurrentMSecs = runtime.updateCurrentMSecs?.bind(runtime);
+  if (typeof originalProjectTimer !== "function") return;
 
-  clock.__syncratchRewindOriginalNow = originalNow;
-  clock.now = () => {
+  clock.__syncratchRewindOriginalProjectTimer = originalProjectTimer;
+
+  clock.projectTimer = () => {
     const mode = journal.getMode();
     if (mode === "replay") {
       const entry = journal.consume("clock");
       if (!entry || entry.kind !== "clock") {
         throw new RewindJournalMismatchError("Expected clock journal entry");
       }
-      return entry.nowMs;
+      applyClockSnapshot(runtime, entry);
+      return entry.projectTimer;
     }
-    const nowMs = originalNow();
-    const projectTimer =
-      typeof originalProjectTimer === "function" ? originalProjectTimer() : 0;
+    const projectTimer = originalProjectTimer();
     if (mode === "record") {
-      journal.append({kind: "clock", projectTimer, nowMs});
+      journal.append(
+        readClockSnapshot(runtime, clock, () => projectTimer),
+      );
     }
-    return nowMs;
+    return projectTimer;
   };
+
+  if (typeof originalUpdateCurrentMSecs === "function") {
+    runtime.updateCurrentMSecs = () => {
+      const mode = journal.getMode();
+      if (mode === "replay") {
+        const entry = journal.consume("clock");
+        if (!entry || entry.kind !== "clock") {
+          throw new RewindJournalMismatchError("Expected clock journal entry");
+        }
+        applyClockSnapshot(runtime, entry);
+        return;
+      }
+      originalUpdateCurrentMSecs();
+      if (mode === "record") {
+        journal.append(
+          readClockSnapshot(runtime, clock, originalProjectTimer),
+        );
+      }
+    };
+  }
 }
 
 function patchMouse(
@@ -160,6 +205,7 @@ export function installJournalCapture(
 
   const originalGetOpcodeFunction = runtime.getOpcodeFunction?.bind(runtime);
   const wrappedByOpcode = new Map<string, (...args: unknown[]) => unknown>();
+  const originalUpdateCurrentMSecs = runtime.updateCurrentMSecs?.bind(runtime);
 
   if (originalGetOpcodeFunction) {
     runtime.getOpcodeFunction = (opcode: string) => {
@@ -181,7 +227,7 @@ export function installJournalCapture(
   const clock = runtime.ioDevices?.clock;
   const mouse = runtime.ioDevices?.mouse;
   const keyboard = runtime.ioDevices?.keyboard;
-  patchClock(clock, journal);
+  patchClock(runtime, clock, journal);
   patchMouse(mouse, journal);
   patchKeyboard(keyboard, journal);
 
@@ -192,9 +238,12 @@ export function installJournalCapture(
       runtime.getOpcodeFunction = originalGetOpcodeFunction;
     }
     wrappedByOpcode.clear();
-    if (clock?.__syncratchRewindOriginalNow) {
-      clock.now = clock.__syncratchRewindOriginalNow;
-      delete clock.__syncratchRewindOriginalNow;
+    if (clock?.__syncratchRewindOriginalProjectTimer) {
+      clock.projectTimer = clock.__syncratchRewindOriginalProjectTimer;
+      delete clock.__syncratchRewindOriginalProjectTimer;
+    }
+    if (originalUpdateCurrentMSecs) {
+      runtime.updateCurrentMSecs = originalUpdateCurrentMSecs;
     }
     if (mouse?.__syncratchRewindOriginalGetScratchX) {
       mouse.getScratchX = mouse.__syncratchRewindOriginalGetScratchX;

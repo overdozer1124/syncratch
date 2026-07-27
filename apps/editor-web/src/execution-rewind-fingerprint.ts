@@ -1,5 +1,12 @@
 import {stableJson} from "@blocksync/sb3-tools";
+import {stableTargetIdentity} from "./execution-rewind-target-identity.js";
 import {hashVmVisibleBlockGraph} from "./workspace-desync-diagnostics.js";
+
+export type RewindStackFrameLike = {
+  warpMode?: boolean;
+  loop?: boolean;
+  params?: Record<string, unknown> | null;
+};
 
 export type RewindThreadLike = {
   topBlock?: string | null;
@@ -8,19 +15,24 @@ export type RewindThreadLike = {
   updateMonitor?: boolean;
   isKilled?: boolean;
   status?: number;
+  stack?: string[];
+  stackFrames?: RewindStackFrameLike[];
   target?: RewindTargetLike | null;
 };
 
 export type RewindTargetLike = {
   id?: string;
   isStage?: boolean;
+  isOriginal?: boolean;
   getName?: () => string;
-  /** Stable clone index assigned by scratch-vm (original targets omit this). */
+  layerOrder?: number;
   cloneIndex?: number;
   x?: number;
   y?: number;
   direction?: number;
+  size?: number;
   visible?: boolean;
+  currentCostume?: number;
   variables?: Record<string, unknown>;
   blocks?: {
     _blocks?: Record<string, unknown>;
@@ -45,17 +57,17 @@ function readCurrentBlock(thread: RewindThreadLike): string | null {
   return typeof id === "string" && id ? id : null;
 }
 
-function targetIdentity(target: RewindTargetLike): string {
-  const name = (() => {
-    try {
-      return target.getName?.() ?? "";
-    } catch {
-      return "";
-    }
-  })();
-  const clone =
-    typeof target.cloneIndex === "number" ? String(target.cloneIndex) : "orig";
-  return `${target.id ?? ""}:${clone}:${name}`;
+function hashStackFrames(frames: RewindStackFrameLike[] | undefined): string {
+  if (!Array.isArray(frames) || frames.length === 0) return "";
+  return frames
+    .map(frame =>
+      stableJson({
+        warpMode: Boolean(frame.warpMode),
+        loop: Boolean(frame.loop),
+        params: frame.params ?? null,
+      }),
+    )
+    .join(";");
 }
 
 function hashTargetState(target: RewindTargetLike): string {
@@ -65,23 +77,28 @@ function hashTargetState(target: RewindTargetLike): string {
     .map(key => `${key}=${stableJson(vars[key])}`)
     .join(",");
   return [
-    targetIdentity(target),
+    stableTargetIdentity(target),
     target.x ?? 0,
     target.y ?? 0,
-    target.direction ?? 0,
+    target.direction ?? 90,
+    target.size ?? 100,
     target.visible === false ? "0" : "1",
+    target.currentCostume ?? 0,
     sortedVars,
   ].join("|");
 }
 
 function hashThreadState(thread: RewindThreadLike): string {
   const target = thread.target;
+  const stack = Array.isArray(thread.stack) ? thread.stack.join(">") : "";
   return [
-    targetIdentity(target ?? {}),
+    stableTargetIdentity(target ?? {}),
     thread.topBlock ?? "",
     readCurrentBlock(thread) ?? "",
     thread.status ?? "",
     thread.isKilled ? "1" : "0",
+    stack,
+    hashStackFrames(thread.stackFrames),
   ].join(":");
 }
 
@@ -96,7 +113,7 @@ export function computeProjectBlockGraphHash(
       const blocks = target.blocks?._blocks as
         | Record<string, import("./workspace-desync-diagnostics.js").VmBlockLike>
         | undefined;
-      return `${targetIdentity(target)}=${hashVmVisibleBlockGraph(blocks)}`;
+      return `${stableTargetIdentity(target)}=${hashVmVisibleBlockGraph(blocks)}`;
     })
     .sort();
   return parts.join("|");
@@ -112,9 +129,7 @@ export function computeFrameFingerprint(input: {
     .filter(thread => thread && !thread.updateMonitor)
     .map(hashThreadState)
     .sort();
-  const targets = (runtime?.targets ?? [])
-    .map(hashTargetState)
-    .sort();
+  const targets = (runtime?.targets ?? []).map(hashTargetState).sort();
   return stableJson({
     frameIndex: input.frameIndex,
     blockGraphHash: input.blockGraphHash,
