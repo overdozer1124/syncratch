@@ -26,14 +26,22 @@ export type ExecutionThreadLike = {
   /** Block the sequencer ran most recently this frame. */
   blockGlowInFrame?: string | null;
   peekStack?: () => string | null | undefined;
+  /** Hat / top block the script was started from. */
+  topBlock?: string | null;
+  target?: {
+    blocks?: {getBlock?: (id: string) => unknown};
+  } | null;
   /** Monitor threads should not be shown as "what the project is doing". */
   updateMonitor?: boolean;
+  isKilled?: boolean;
+  status?: number;
 };
 
 export type ExecutionRuntimeLike = {
   threads?: ExecutionThreadLike[];
   _step?: (...args: unknown[]) => unknown;
   _updateGlows?: (...args: unknown[]) => unknown;
+  _stopThread?: (thread: ExecutionThreadLike) => void;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   off?: (event: string, handler: (...args: unknown[]) => void) => void;
   [PATCH_FLAG]?: boolean;
@@ -144,6 +152,47 @@ export function readActiveBlockIds(
 }
 
 /**
+ * Stop threads whose script hat no longer exists.
+ *
+ * scratch-vm's `deleteBlock` does not stop running threads (upstream TODO).
+ * While paused that leaves a live thread pointing at deleted blocks; pressing
+ * green flag / resume must not revive motion from a script the learner already
+ * removed. Returns how many threads were retired.
+ */
+export function retireOrphanThreads(
+  runtime: ExecutionRuntimeLike | null | undefined,
+): number {
+  if (!runtime) return 0;
+  const threads = runtime.threads;
+  if (!Array.isArray(threads) || threads.length === 0) return 0;
+
+  let retired = 0;
+  for (let i = threads.length - 1; i >= 0; i -= 1) {
+    const thread = threads[i];
+    if (!thread || thread.updateMonitor || thread.isKilled) continue;
+    const top = thread.topBlock;
+    if (typeof top !== "string" || !top) continue;
+    const block = thread.target?.blocks?.getBlock?.(top);
+    if (block != null) continue;
+
+    if (typeof runtime._stopThread === "function") {
+      try {
+        runtime._stopThread(thread);
+      } catch {
+        thread.isKilled = true;
+      }
+    } else {
+      thread.isKilled = true;
+    }
+    // Drop it immediately so a paused VM does not keep a zombie around until
+    // the next free-running step filters `isKilled`.
+    threads.splice(i, 1);
+    retired += 1;
+  }
+  return retired;
+}
+
+/**
  * Install pause/step control on `vm`. Calling this twice on the same runtime
  * returns a controller over the existing patch rather than stacking wrappers.
  */
@@ -203,6 +252,9 @@ export function installExecutionControl(
   // looks exactly like a broken editor: the flag lights up, a thread is
   // created, and nothing moves.
   const onProjectStart = () => {
+    // stopAll already ran; still drop any orphan that slipped through before
+    // hats are started (e.g. deleted-while-paused forever loop).
+    retireOrphanThreads(runtime);
     if (state === "paused") {
       state = "running";
       framesToRun = 0;
@@ -212,8 +264,21 @@ export function installExecutionControl(
   };
   runtime.on?.("PROJECT_START", onProjectStart);
 
+  // Block edits while paused must not leave a runnable zombie thread. Without
+  // this, deleting the forever loop and then free-running (resume / flag) can
+  // look like "the sprite moves with no blocks on the workspace".
+  const onProjectChanged = () => {
+    if (disposed) return;
+    if (retireOrphanThreads(runtime) > 0 && state === "paused") {
+      setHighlight(readActiveBlockIds(runtime));
+      notify();
+    }
+  };
+  runtime.on?.("PROJECT_CHANGED", onProjectChanged);
+
   runtime._step = (...args: unknown[]) => {
     if (disposed) return originalStep(...args);
+    retireOrphanThreads(runtime);
     if (state === "paused") {
       if (framesToRun <= 0) return undefined;
       framesToRun -= 1;
@@ -262,6 +327,7 @@ export function installExecutionControl(
       if (disposed) return;
       disposed = true;
       runtime.off?.("PROJECT_START", onProjectStart);
+      runtime.off?.("PROJECT_CHANGED", onProjectChanged);
       setHighlight([]);
       listeners.clear();
       runtime._step = rawStep;
