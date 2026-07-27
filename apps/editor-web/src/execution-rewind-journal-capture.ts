@@ -346,7 +346,9 @@ export function installJournalCapture(
       }
 
       const captureKind =
-        journalKind && IMPLEMENTED_JOURNAL_KINDS.has(journalKind)
+        journalKind &&
+        IMPLEMENTED_JOURNAL_KINDS.has(journalKind) &&
+        journalKind !== "broadcastOrder"
           ? journalKind
           : opcode === "operator_random"
             ? ("random" as const)

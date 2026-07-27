@@ -176,7 +176,9 @@ function normalizeExecutionContext(
   const normalized: Record<string, unknown> = {};
   for (const key of Object.keys(context).sort()) {
     const value = context[key];
-    if (key === "timer") continue;
+    if (key === "timer" || key === "startedThreads" || key === "broadcastVar") {
+      continue;
+    }
     if (value === undefined || typeof value === "function") {
       throw new StackFrameNormalizationError(
         `Unsupported executionContext entry: ${key}`,

@@ -12,6 +12,7 @@ export const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
   "askAnswer",
   "videoSensing",
   "extensionReporter",
+  "broadcastOrder",
 ]);
 
 /** Explicit opcode → journal kind mapping for unjournaled non-deterministic inputs. */
