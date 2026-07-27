@@ -509,6 +509,42 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
+  it("restores origin baseline when replay fails", async () => {
+    const sim = makeSimulatedRuntime([2, 4]);
+    const journal = new RewindJournal();
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        journal,
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => sim.resetToOrigin(),
+        cloneOrderRegistry: sim.registry,
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+    expect(sim.target.x).toBe(6);
+
+    const corrupted = journal.cloneEntries();
+    const randomIndex = corrupted.findIndex(entry => entry.kind === "random");
+    if (randomIndex >= 0) {
+      corrupted[randomIndex] = {
+        kind: "random",
+        from: 1,
+        to: 10,
+        value: 999,
+      };
+    }
+    journal.restoreEntries(corrupted);
+
+    const result = await handle.replayToFrame(1);
+    expect(result.ok).toBe(false);
+    expect(sim.target.x).toBe(0);
+    handle.dispose();
+  });
+
   it("returns the same handle when installed twice", () => {
     const {runtime} = makeSimulatedRuntime([]);
     const first = installExecutionRewind({runtime})!;
