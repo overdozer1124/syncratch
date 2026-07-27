@@ -148,21 +148,6 @@ function matchesDropKind(
   return event.type === "move" && classifyMoveEvent(event) === "move";
 }
 
-function eventSignature(entry: BlocklyEventLogEntry): string {
-  return [
-    entry.type,
-    entry.blockId ?? "",
-    entry.element ?? "",
-    entry.name ?? "",
-    String(entry.oldParentId ?? ""),
-    String(entry.newParentId ?? ""),
-    String(entry.oldInputName ?? ""),
-    String(entry.newInputName ?? ""),
-    entry.moveKind ?? "",
-    String(entry.graphMutating),
-  ].join("\0");
-}
-
 function diffSignature(entry: BlocklyVmGraphDiffEntry): string {
   return [
     String(entry.afterEventSeq),
@@ -242,13 +227,6 @@ export function recordBlocklyEvent(
     editingTargetId: context.editingTargetId,
     repeatCount: 1,
   };
-
-  const last = eventEntries.at(-1);
-  if (last && eventSignature(last) === eventSignature(entry)) {
-    last.at = entry.at;
-    last.repeatCount = (last.repeatCount ?? 1) + 1;
-    return last;
-  }
 
   pushBounded(eventEntries, entry, MAX_EVENT_ENTRIES);
   return entry;
@@ -374,7 +352,7 @@ export function installBlocklyVmEventPipeline(
     uninstallBlocklyVmEventPipeline(pipelineVm);
   }
 
-  originalBlockListener = vm.blockListener.bind(vm);
+  originalBlockListener = vm.blockListener;
   pipelineVm = vm;
   readDropDecision = options?.readDropDecision ?? null;
 
@@ -410,7 +388,7 @@ export function installBlocklyVmEventPipeline(
       return;
     }
 
-    originalBlockListener?.(event);
+    originalBlockListener.call(vm, event);
     if (recorded) {
       scheduleBlocklyVmGraphDiff(
         recorded,
@@ -455,6 +433,12 @@ export function rebindWorkspaceBlockListener(
     // ignore duplicate removal
   }
   workspace.addChangeListener(wrapped);
+}
+
+export function getWrappedBlockListener(
+  vm: VmBlockListenerHost,
+): ((event: BlocklyEventLike) => void) | null {
+  return pipelineVm === vm ? vm.blockListener : null;
 }
 
 export function isBlocklyVmEventPipelineInstalled(

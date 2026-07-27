@@ -22,10 +22,12 @@ declare global {
         syncGeneration?: number;
         event: {type?: string; blockId?: string};
       }>;
+      getSyncGeneration?: () => number;
       armDropNext?: (
         kind: "move" | "delete" | "connection-change",
         count?: number | "all",
       ) => void;
+      disarmDrop?: () => void;
     };
   }
 }
@@ -70,19 +72,6 @@ async function bootEditor(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="scratch-gui"]')).toBeVisible();
 }
 
-async function waitForNewSyncGeneration(
-  page: Page,
-  previousGeneration: number,
-): Promise<void> {
-  await page.waitForFunction(
-    prev =>
-      (window.__blocksyncTask3?.getSyncGeneration?.() ?? 0) > prev,
-    previousGeneration,
-    {timeout: 15_000},
-  );
-  await page.waitForTimeout(400);
-}
-
 async function dropLogCount(page: Page): Promise<number> {
   return page.evaluate(
     () => window.__blocksyncTask3?.blockEventDropLog?.()?.length ?? 0,
@@ -97,12 +86,6 @@ async function waitForNewDropLog(page: Page, previousCount: number): Promise<voi
     {timeout: 15_000},
   );
   await page.waitForTimeout(400);
-}
-
-async function currentSyncGeneration(page: Page): Promise<number> {
-  return page.evaluate(
-    () => window.__blocksyncTask3?.getSyncGeneration?.() ?? 0,
-  );
 }
 
 async function waitForGraphMutatingEvent(
@@ -130,8 +113,29 @@ async function graphMutatingEventCount(page: Page): Promise<number> {
 async function waitForNewGraphDiff(page: Page, previousCount: number): Promise<void> {
   await page.waitForFunction(
     prev =>
-      (window.__blocksyncTask3?.blocklyVmGraphDiffLog?.().length ?? 0) > prev,
+      (window.__blocksyncTask3?.blocklyVmGraphDiffLog?.()?.length ?? 0) > prev,
     previousCount,
+    {timeout: 15_000},
+  );
+  await page.waitForTimeout(400);
+}
+
+async function waitForDropMismatchDiff(
+  page: Page,
+  previousDropCount: number,
+): Promise<void> {
+  await page.waitForFunction(
+    prev => {
+      const drops = window.__blocksyncTask3?.blockEventDropLog?.() ?? [];
+      if (drops.length <= prev) return false;
+      const lastDrop = drops.at(-1);
+      const diffs = window.__blocksyncTask3?.blocklyVmGraphDiffLog?.() ?? [];
+      return diffs.some(
+        entry =>
+          entry.syncGeneration === lastDrop?.syncGeneration && entry.mismatch,
+      );
+    },
+    previousDropCount,
     {timeout: 15_000},
   );
   await page.waitForTimeout(400);
@@ -227,13 +231,15 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
     kind: "delete" | "move" | "connection-change",
     action: string,
   ): Promise<void> {
-    const beforeDiffCount = await graphDiffCount(page);
     const beforeDropCount = await dropLogCount(page);
     await page.evaluate(
       ({dropKind, countArg}) => {
         window.__blocksyncTask3?.armDropNext?.(dropKind, countArg);
       },
-      {dropKind: kind, countArg: 1},
+      {
+        dropKind: kind,
+        countArg: 1,
+      },
     );
 
     await page.evaluate(actionScript => {
@@ -241,10 +247,10 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
     }, action);
 
     await waitForNewDropLog(page, beforeDropCount);
-    if (kind !== "move" && kind !== "connection-change") {
-      await waitForNewGraphDiff(page, beforeDiffCount);
-    } else {
+    if (kind === "move") {
       await page.waitForTimeout(400);
+    } else {
+      await waitForDropMismatchDiff(page, beforeDropCount);
     }
 
     const snapshot = await page.evaluate(expectedKind => {
@@ -268,22 +274,17 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
       };
     }, kind);
 
-    if (kind === "connection-change") {
-      expect(snapshot.lastDrop?.kind).toBe("connection-change");
-      expect(snapshot.matchingDiff?.mismatch).toBe(false);
-    } else if (kind === "move" || kind === "delete") {
-      expect(snapshot.lastDrop?.kind).toBe(kind);
-      expect(snapshot.matchingDiff?.mismatch).toBe(false);
-    } else {
-      expect(snapshot.lastDrop?.kind).toBe(kind);
-      expect(snapshot.matchingDiff?.mismatch).toBe(true);
-    }
+    expect(snapshot.lastDrop?.kind).toBe(kind);
     expect(snapshot.lastEvent?.syncGeneration).toBeDefined();
     expect(snapshot.lastDrop?.syncGeneration).toBe(
       snapshot.lastEvent?.syncGeneration,
     );
-    if (snapshot.matchingDiff) {
-      expect(snapshot.matchingDiff.syncGeneration).toBe(
+
+    if (kind === "move") {
+      expect(snapshot.matchingDiff?.mismatch ?? false).toBe(false);
+    } else {
+      expect(snapshot.matchingDiff?.mismatch).toBe(true);
+      expect(snapshot.matchingDiff?.syncGeneration).toBe(
         snapshot.lastEvent?.syncGeneration,
       );
     }
@@ -300,12 +301,7 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
   await assertDropCase(
     "move",
     `(() => { ${FIBER_HELPERS}
-      const vm = resolveVm();
-      vm.blockListener({
-        type: 'move',
-        blockId: ${JSON.stringify(hatId)},
-        newCoordinate: {x: 240, y: 240},
-      });
+      resolveScratchBlocks().getMainWorkspace().getBlockById(${JSON.stringify(hatId)}).moveBy(55, 15);
     })()`,
   );
 
@@ -318,13 +314,10 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
   await assertDropCase(
     "connection-change",
     `(() => { ${FIBER_HELPERS}
-      const vm = resolveVm();
-      vm.blockListener({
-        type: 'move',
-        blockId: ${JSON.stringify(moveId)},
-        oldParentId: null,
-        newParentId: ${JSON.stringify(hatId)},
-      });
+      const ws = resolveScratchBlocks().getMainWorkspace();
+      const hat = ws.getBlockById(${JSON.stringify(hatId)});
+      const move = ws.getBlockById(${JSON.stringify(moveId)});
+      hat.nextConnection.connect(move.previousConnection);
     })()`,
   );
 
@@ -339,15 +332,11 @@ test("dropped delete/move/connection events correlate mismatch with syncGenerati
   await waitForGraphMutatingEvent(page, eventCount);
   eventCount = await graphMutatingEventCount(page);
   await waitForNewGraphDiff(page, diffCount);
-  diffCount = await graphDiffCount(page);
 
   await assertDropCase(
     "delete",
     `(() => { ${FIBER_HELPERS}
-      resolveVm().blockListener({
-        type: 'delete',
-        blockId: ${JSON.stringify(soloId)},
-      });
+      resolveScratchBlocks().getMainWorkspace().getBlockById(${JSON.stringify(soloId)}).dispose(false);
     })()`,
   );
 });

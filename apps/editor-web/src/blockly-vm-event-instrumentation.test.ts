@@ -64,6 +64,19 @@ describe("blockly-vm-event-instrumentation", () => {
     expect(getBlocklyEventLog()).toHaveLength(2);
   });
 
+  it("records each duplicate-shaped event with its own syncGeneration", () => {
+    const signature = {
+      type: "move",
+      blockId: "a",
+      newCoordinate: {x: 0, y: 0},
+    };
+    const first = recordBlocklyEvent(signature, baseContext);
+    const second = recordBlocklyEvent(signature, baseContext);
+    expect(first.syncGeneration).toBe(1);
+    expect(second.syncGeneration).toBe(2);
+    expect(getBlocklyEventLog()).toHaveLength(2);
+  });
+
   it("records graph diff mismatch when Blockly and VM diverge", () => {
     const event = recordBlocklyEvent({type: "delete", blockId: "hat"}, baseContext);
     const diff = recordBlocklyVmGraphDiff({
@@ -131,7 +144,7 @@ describe("blockly-vm-event-instrumentation", () => {
     globalThis.requestAnimationFrame = raf;
   });
 
-  it("rebinds workspace listener to the wrapped vm.blockListener", () => {
+  it("rebind leaves exactly one wrapped workspace listener", () => {
     const originalListener = vi.fn();
     const vm = {blockListener: originalListener};
     const workspaceListeners: Array<(event: BlocklyEventLike) => void> = [];
@@ -154,9 +167,14 @@ describe("blockly-vm-event-instrumentation", () => {
     );
     rebindWorkspaceBlockListener(workspace);
 
-    expect(workspaceListeners.at(-1)).toBe(vm.blockListener);
-    vm.blockListener({type: "delete", blockId: "x"});
+    expect(workspaceListeners).toHaveLength(1);
+    expect(workspaceListeners[0]).toBe(vm.blockListener);
+    expect(workspaceListeners[0]).not.toBe(originalListener);
+
+    workspaceListeners[0]?.({type: "delete", blockId: "x"});
+    expect(originalListener).toHaveBeenCalledTimes(1);
     expect(getBlocklyEventLog()[0]?.type).toBe("delete");
+
     uninstallBlocklyVmEventPipeline(vm);
   });
 });
