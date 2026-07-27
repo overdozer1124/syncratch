@@ -5,6 +5,11 @@ import {
   IMPLEMENTED_JOURNAL_KINDS,
   resolveNonDeterministicOpcode,
 } from "./execution-rewind-non-deterministic.js";
+import {
+  enqueueReplayPromise,
+  isPromiseValue,
+  recordPromiseResult,
+} from "./execution-rewind-promise-resolve.js";
 
 type ClockJournalEntry = Extract<JournalEntry, {kind: "clock"}>;
 
@@ -298,6 +303,33 @@ function recordJournalValue(
   }
 }
 
+function wrapExtensionReporterOpcode(
+  opcode: string,
+  original: (...args: unknown[]) => unknown,
+  journal: RewindJournal,
+): (...args: unknown[]) => unknown {
+  return (...args: unknown[]) => {
+    const mode = journal.getMode();
+    if (mode === "replay") {
+      const next = journal.peekReplayEntry();
+      if (next?.kind === "promiseResolve") {
+        return enqueueReplayPromise();
+      }
+      return replayJournalValue(journal, "extensionReporter", opcode, args[0]);
+    }
+
+    const result = original(...args);
+    if (mode !== "record") {
+      return result;
+    }
+    if (isPromiseValue(result)) {
+      return recordPromiseResult(journal, result);
+    }
+    recordJournalValue(journal, "extensionReporter", opcode, args[0], result);
+    return result;
+  };
+}
+
 function wrapJournaledOpcode(
   opcode: string,
   kind: JournalEntryKind,
@@ -349,7 +381,8 @@ export function installJournalCapture(
         journalKind &&
         IMPLEMENTED_JOURNAL_KINDS.has(journalKind) &&
         journalKind !== "broadcastOrder" &&
-        journalKind !== "promiseResolve"
+        journalKind !== "promiseResolve" &&
+        journalKind !== "backdropResolve"
           ? journalKind
           : opcode === "operator_random"
             ? ("random" as const)
@@ -365,12 +398,18 @@ export function installJournalCapture(
                 original as (...args: unknown[]) => unknown,
                 journal,
               )
-            : wrapJournaledOpcode(
-                opcode,
-                captureKind,
-                original as (...args: unknown[]) => unknown,
-                journal,
-              );
+            : captureKind === "extensionReporter"
+              ? wrapExtensionReporterOpcode(
+                  opcode,
+                  original as (...args: unknown[]) => unknown,
+                  journal,
+                )
+              : wrapJournaledOpcode(
+                  opcode,
+                  captureKind,
+                  original as (...args: unknown[]) => unknown,
+                  journal,
+                );
         wrappedByOpcode.set(opcode, wrapped);
       }
       return wrapped;

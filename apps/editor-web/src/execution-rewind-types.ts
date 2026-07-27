@@ -60,7 +60,8 @@ export type JournalEntryKind =
   | "extensionReporter"
   | "promiseResolve"
   | "cloneOrder"
-  | "broadcastOrder";
+  | "broadcastOrder"
+  | "backdropResolve";
 
 export type JournalEntry =
   | {kind: "random"; from: number; to: number; value: number}
@@ -73,7 +74,13 @@ export type JournalEntry =
   | {kind: "extensionReporter"; opcode: string; value: unknown}
   | {kind: "promiseResolve"; token: number; value: unknown}
   | {kind: "cloneOrder"; spriteName: string; cloneOrder: number; sourceIdentity: string}
-  | {kind: "broadcastOrder"; broadcast: string; threadOrder: string[]};
+  | {kind: "broadcastOrder"; broadcast: string; threadOrder: string[]}
+  | {
+      kind: "backdropResolve";
+      requested: string;
+      backdropName: string;
+      costumeIndex: number;
+    };
 
 export interface ReplayResult {
   ok: boolean;

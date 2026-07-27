@@ -30,7 +30,7 @@ function createDeferred(): Deferred {
   return {promise, resolve};
 }
 
-function isPromise(value: unknown): value is Promise<unknown> {
+export function isPromiseValue(value: unknown): value is Promise<unknown> {
   return (
     value !== null &&
     typeof value === "object" &&
@@ -47,6 +47,38 @@ function appendPromiseResolveEntry(
     return;
   }
   pendingRecordEntries.push(entry);
+}
+
+export function enqueueReplayPromise(): Promise<unknown> {
+  const deferred = createDeferred();
+  replayDeferreds.push(deferred);
+  return deferred.promise;
+}
+
+export function recordPromiseResolveValue(
+  journal: RewindJournal,
+  value: unknown,
+): void {
+  const token = nextPromiseToken;
+  nextPromiseToken += 1;
+  appendPromiseResolveEntry(journal, {
+    kind: "promiseResolve",
+    token,
+    value,
+  });
+}
+
+export function recordPromiseResult(
+  journal: RewindJournal,
+  result: unknown,
+): unknown {
+  if (!isPromiseValue(result)) {
+    return result;
+  }
+  return result.then(value => {
+    recordPromiseResolveValue(journal, value);
+    return value;
+  });
 }
 
 /** Flush promise journal entries resolved in the same scheduler frame. */
@@ -95,13 +127,11 @@ function wrapPromiseOpcode(
   return (...args: unknown[]) => {
     const mode = journal.getMode();
     if (mode === "replay") {
-      const deferred = createDeferred();
-      replayDeferreds.push(deferred);
-      return deferred.promise;
+      return enqueueReplayPromise();
     }
 
     const result = original(...args);
-    if (mode !== "record" || !isPromise(result)) {
+    if (mode !== "record" || !isPromiseValue(result)) {
       return result;
     }
 

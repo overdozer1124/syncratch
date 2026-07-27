@@ -101,6 +101,12 @@ export class RewindJournal {
     return entry;
   }
 
+  peekReplayEntry(): JournalEntry | null {
+    if (this.mode !== "replay") return null;
+    if (this.replayCursor >= this.replayEnd) return null;
+    return this.entries[this.replayCursor] ?? null;
+  }
+
   cloneEntries(): JournalEntry[] {
     return this.entries.map(entry => structuredClone(entry));
   }
