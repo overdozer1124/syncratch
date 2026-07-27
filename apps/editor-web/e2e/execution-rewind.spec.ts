@@ -210,3 +210,18 @@ test("rewind does not trigger autosave side effects", async ({page}) => {
   expect(after?.persistAttempts).toBe(before?.persistAttempts ?? 0);
   expect(after?.collabOutboundAttempts).toBe(before?.collabOutboundAttempts ?? 0);
 });
+
+test("rewind auto-pauses while running", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+
+  await page.getByTestId("exec-rewind").click();
+  await waitForRewindIdle(page);
+  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
+  expect(
+    await page.evaluate(
+      () => window.__blocksyncTask3?.getExecutionRewindSnapshot?.()?.rewindError,
+    ),
+  ).toBeNull();
+});
