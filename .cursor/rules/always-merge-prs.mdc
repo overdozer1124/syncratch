@@ -1,0 +1,15 @@
+---
+description: Always merge completed PR work to main before finishing
+alwaysApply: true
+---
+
+# Always merge PRs
+
+When this agent opens or updates a pull request for work that is ready (tests/CI green, fix or feature complete):
+
+1. Mark the PR ready for review (not draft) if it was created as draft.
+2. **Merge it into `main` before ending the turn** (`gh pr merge --merge` or equivalent). Do not leave merge to the user or the next chat.
+3. Prefer merge (merge commit) unless the repo standard says otherwise.
+4. After merge, confirm `mergedAt` is set on the PR.
+
+This applies every session. Do not stop at "PR created" or "CI passed".
