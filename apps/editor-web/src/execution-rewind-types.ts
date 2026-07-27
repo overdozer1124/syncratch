@@ -62,7 +62,8 @@ export type JournalEntryKind =
   | "cloneOrder"
   | "broadcastOrder"
   | "backdropResolve"
-  | "sequencerWork";
+  | "sequencerWork"
+  | "edgeBounce";
 
 export type JournalEntry =
   | {kind: "random"; from: number; to: number; value: number}
@@ -82,7 +83,14 @@ export type JournalEntry =
       backdropName: string;
       costumeIndex: number;
     }
-  | {kind: "sequencerWork"; innerLoops: number; lastElapsed: number};
+  | {kind: "sequencerWork"; innerLoops: number; lastElapsed: number}
+  | {
+      kind: "edgeBounce";
+      applied: boolean;
+      direction: number;
+      x: number;
+      y: number;
+    };
 
 export interface ReplayResult {
   ok: boolean;
