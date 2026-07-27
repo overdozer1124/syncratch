@@ -417,3 +417,57 @@ test("green flag after deleting a running script must not move the sprite", asyn
     "deleting scripts then green-flagging must not revive motion",
   ).toBe(atFlag);
 });
+
+/**
+ * #126 guard must stop execution when Blockly is empty but VM scripts remain,
+ * without deleting VM blocks (recoverable partial-sync failure).
+ */
+test("empty Blockly with VM scripts stops execution but keeps VM blocks", async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(400);
+
+  const before = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    return {
+      vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
+      x: vm.runtime.targets.find(t => !t.isStage).x,
+    };
+  })()`);
+
+  // Simulate partial VM→Blockly sync failure: Blockly cleared, VM untouched.
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const Blockly = globalThis.Blockly;
+    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    if (!ws || typeof ws.clear !== 'function') throw new Error('Blockly workspace missing');
+    ws.clear();
+  })()`);
+
+  await page.waitForTimeout(750);
+
+  const after = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    const Blockly = globalThis.Blockly;
+    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    const tops = ws && ws.getTopBlocks ? ws.getTopBlocks(false) : [];
+    return {
+      vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
+      workspaceTops: tops.length,
+      x: vm.runtime.targets.find(t => !t.isStage).x,
+      desyncLog: window.__blocksyncTask3?.workspaceVmDesyncLog?.() ?? [],
+      runningThreads: vm.runtime.threads.filter(t => !t.updateMonitor && !t.isKilled).length,
+    };
+  })()`);
+
+  expect(after.workspaceTops, "Blockly workspace should look empty").toBe(0);
+  expect(after.vmBlocks, "VM blocks must not be auto-deleted").toBe(before.vmBlocks);
+  expect(after.vmBlocks).toBeGreaterThan(0);
+  expect(after.desyncLog.length, "desync should be recorded").toBeGreaterThan(0);
+  expect(
+    Math.abs(after.x - before.x),
+    "motion should stop after desync guard",
+  ).toBeLessThan(5);
+  expect(after.runningThreads, "active threads should be stopped").toBe(0);
+});

@@ -51,13 +51,15 @@ describe("readActiveBlockIds", () => {
     ).toEqual(["next"]);
   });
 
-  it("skips monitor threads and de-duplicates", () => {
+  it("skips monitor threads, killed threads, and de-duplicates", () => {
     expect(
       readActiveBlockIds({
         threads: [
           {blockGlowInFrame: "shared"},
           {blockGlowInFrame: "shared"},
           {blockGlowInFrame: "monitor", updateMonitor: true},
+          {blockGlowInFrame: "killed", isKilled: true},
+          {blockGlowInFrame: "done", status: 4},
           {blockGlowInFrame: "other"},
         ],
       }),
@@ -83,7 +85,9 @@ describe("readActiveBlockIds", () => {
 
 describe("retireOrphanThreads", () => {
   it("kills threads whose hat block was deleted", () => {
-    const stop = vi.fn();
+    const stop = vi.fn((thread: {isKilled?: boolean}) => {
+      thread.isKilled = true;
+    });
     const alive = {
       topBlock: "hat",
       target: {
@@ -104,7 +108,8 @@ describe("retireOrphanThreads", () => {
     };
 
     expect(retireOrphanThreads(runtime)).toBe(1);
-    expect(runtime.threads).toEqual([alive]);
+    expect(runtime.threads).toHaveLength(2);
+    expect(orphan.isKilled).toBe(true);
     expect(stop).toHaveBeenCalledWith(orphan);
   });
 
@@ -122,7 +127,8 @@ describe("retireOrphanThreads", () => {
     };
     const runtime: ExecutionRuntimeLike = {threads: [orphan]};
     expect(retireOrphanThreads(runtime)).toBe(1);
-    expect(runtime.threads).toEqual([]);
+    expect(runtime.threads).toHaveLength(1);
+    expect(orphan.isKilled).toBe(true);
   });
 
   it("leaves monitor threads and intact scripts alone", () => {
@@ -375,7 +381,7 @@ describe("installExecutionControl", () => {
 
   // Deleting a forever loop while paused used to leave the thread alive. The
   // workspace looked empty, then resume / green flag could still advance it.
-  it("retires orphan threads when blocks are deleted while paused", () => {
+  it("retires orphan threads when blocks are deleted while paused", async () => {
     const orphan = {
       topBlock: "hat",
       target: {blocks: {getBlock: () => undefined}},
@@ -385,7 +391,9 @@ describe("installExecutionControl", () => {
     control.pause();
 
     fire("PROJECT_CHANGED");
-    expect(runtime.threads).toEqual([]);
+    await Promise.resolve();
+    expect(orphan.isKilled).toBe(true);
+    expect(runtime.threads).toHaveLength(1);
 
     // A later step must not revive motion from the deleted script.
     control.resume();

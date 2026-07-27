@@ -37,8 +37,12 @@ export type ExecutionThreadLike = {
   /** Monitor threads should not be shown as "what the project is doing". */
   updateMonitor?: boolean;
   isKilled?: boolean;
+  /** scratch-vm Thread.STATUS_DONE === 4 */
   status?: number;
 };
+
+/** Matches scratch-vm Thread.STATUS_DONE without importing scratch-vm. */
+const THREAD_STATUS_DONE = 4;
 
 export type ExecutionRuntimeLike = {
   threads?: ExecutionThreadLike[];
@@ -138,7 +142,14 @@ export function readActiveBlockIds(
   if (!Array.isArray(threads)) return [];
   const ids: string[] = [];
   for (const thread of threads) {
-    if (!thread || thread.updateMonitor) continue;
+    if (
+      !thread ||
+      thread.updateMonitor ||
+      thread.isKilled ||
+      thread.status === THREAD_STATUS_DONE
+    ) {
+      continue;
+    }
     let id: unknown = thread.blockGlowInFrame;
     if (typeof id !== "string" || !id) {
       try {
@@ -213,9 +224,6 @@ export function retireOrphanThreads(
     } else {
       thread.isKilled = true;
     }
-    // Drop it immediately so a paused VM does not keep a zombie around until
-    // the next free-running step filters `isKilled`.
-    threads.splice(i, 1);
     retired += 1;
   }
   return retired;
@@ -298,10 +306,14 @@ export function installExecutionControl(
   // look like "the sprite moves with no blocks on the workspace".
   const onProjectChanged = () => {
     if (disposed) return;
-    if (retireOrphanThreads(runtime) > 0 && state === "paused") {
-      setHighlight(readActiveBlockIds(runtime));
-      notify();
-    }
+    // Defer so we do not mutate thread state while the sequencer is stepping.
+    queueMicrotask(() => {
+      if (disposed) return;
+      if (retireOrphanThreads(runtime) > 0 && state === "paused") {
+        setHighlight(readActiveBlockIds(runtime));
+        notify();
+      }
+    });
   };
   runtime.on?.("PROJECT_CHANGED", onProjectChanged);
 
