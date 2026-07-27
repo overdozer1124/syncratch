@@ -9,6 +9,7 @@ import {
   collectVmShadowBlockIds,
   hashBlocklyWorkspaceEdges,
   hashVmVisibleBlockGraph,
+  type BlocklyBlockLike,
   type BlocklyWorkspaceLike,
 } from "./workspace-desync-diagnostics.js";
 
@@ -133,7 +134,7 @@ function blocklyTopCount(workspace: BlocklyWorkspaceLike | null | undefined): nu
   if (!workspace?.getTopBlocks) return null;
   try {
     const tops = workspace.getTopBlocks(false) ?? [];
-    return tops.filter(block => {
+    return tops.filter((block: BlocklyBlockLike) => {
       try {
         return !block.isShadow?.();
       } catch {

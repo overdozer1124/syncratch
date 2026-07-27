@@ -291,7 +291,7 @@ export async function createRewindVmHarness(
           document: projectJsonToDocument(vmProjectJson, new Map()),
           assets: new Map(),
           projectSessionId: 1,
-          runtime: vm.runtime,
+          runtime: vm.runtime as import("./execution-rewind-fingerprint.js").RewindRuntimeLike,
           vmProjectJson,
         });
       },

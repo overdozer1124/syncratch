@@ -119,7 +119,9 @@ function normalizeJsonValue(value: unknown, depth = 0): unknown {
   );
 }
 
-function normalizeTimerContext(context: Record<string, unknown>): unknown {
+function normalizeTimerContext(
+  context: Record<string, unknown>,
+): {__waitTimer: {duration: number; pending: boolean}} {
   const duration = context.duration;
   if (typeof duration !== "number" || !Number.isFinite(duration)) {
     throw new StackFrameNormalizationError("Invalid wait timer duration");

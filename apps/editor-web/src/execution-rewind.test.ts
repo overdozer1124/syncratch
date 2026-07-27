@@ -657,6 +657,59 @@ describe("installExecutionRewind", () => {
     const result = await handle.replayToFrame(1);
     expect(result.ok).toBe(false);
     expect(sim.target.x).toBe(0);
+    expect(handle.getFrames()).toHaveLength(0);
+    expect(handle.getSnapshot().rewindError).toMatch(/巻き戻せません/);
+    handle.dispose();
+  });
+
+  it("invalidates trace and frame history on replay failure without restarting green flag", async () => {
+    const sim = makeSimulatedRuntime([2, 4]);
+    const journal = new RewindJournal();
+    let truncatedTo = -1;
+    let clearedReason: string | null = null;
+    const startHats = vi.fn();
+    sim.runtime.startHats = startHats;
+
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        journal,
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => sim.resetToOrigin(),
+        cloneOrderRegistry: sim.registry,
+        onTraceTruncate: size => {
+          truncatedTo = size;
+        },
+        onHistoryCleared: reason => {
+          clearedReason = reason;
+        },
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    const corrupted = journal.cloneEntries();
+    const randomIndex = corrupted.findIndex(entry => entry.kind === "random");
+    if (randomIndex >= 0) {
+      corrupted[randomIndex] = {
+        kind: "random",
+        from: 1,
+        to: 10,
+        value: 999,
+      };
+    }
+    journal.restoreEntries(corrupted);
+
+    const result = await handle.rewindFrame();
+    expect(result.ok).toBe(false);
+    expect(handle.getFrames()).toHaveLength(0);
+    expect(truncatedTo).toBe(0);
+    expect(clearedReason).toBe("replay-failure");
+    // replayToFrame restarts green-flag hats once while loading origin; recovery
+    // must not trigger a second restart after the failed replay.
+    expect(startHats).toHaveBeenCalledTimes(1);
     handle.dispose();
   });
 

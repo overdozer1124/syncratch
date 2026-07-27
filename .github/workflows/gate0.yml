@@ -37,6 +37,9 @@ jobs:
       - name: TypeScript build
         run: pnpm build
 
+      - name: Editor web typecheck
+        run: pnpm --filter @blocksync/editor-web typecheck
+
       - name: License inventory present
         run: pnpm gate0:check-licenses
 

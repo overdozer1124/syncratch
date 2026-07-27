@@ -141,10 +141,17 @@ export function installCloneOrderCapture(input: {
     }
   };
 
-  runtime.on?.("targetWasCreated", onTargetCreated);
+  const onTargetCreatedHandler = (...args: unknown[]) => {
+    onTargetCreated(
+      args[0] as CloneOrderTargetLike,
+      args[1] as CloneOrderTargetLike | undefined,
+    );
+  };
+
+  runtime.on?.("targetWasCreated", onTargetCreatedHandler);
 
   return () => {
-    runtime.off?.("targetWasCreated", onTargetCreated);
+    runtime.off?.("targetWasCreated", onTargetCreatedHandler);
     registry.reset();
   };
 }

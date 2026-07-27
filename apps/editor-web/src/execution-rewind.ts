@@ -21,7 +21,6 @@ import {
 } from "./execution-rewind-non-deterministic.js";
 import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
-import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
 import {replayToFrame, truncateFramesAfter} from "./execution-rewind-replay.js";
 import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import {
@@ -242,12 +241,18 @@ export function installExecutionRewind(
       cloneOrderRegistry.reset();
       cloneOrderRegistry.seedOriginalTargets(runtime.targets);
       bindCloneOrderRegistry(cloneOrderRegistry);
-      restartGreenFlagHatThreads(
-        runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
-      );
     } catch {
       // Recovery is best-effort; callers should treat failed replay as terminal.
     }
+  };
+
+  const invalidateHistoryAfterReplayFailure = () => {
+    frames = [];
+    nextFrameIndex = 0;
+    journal.clear();
+    cloneOrderRegistry.reset();
+    options.onTraceTruncate?.(0);
+    options.onHistoryCleared?.("replay-failure");
   };
 
   const runDeterministicReplay = async (
@@ -298,6 +303,7 @@ export function installExecutionRewind(
       if (!result.ok) {
         markUnsupported();
         await recoverOriginBaseline();
+        invalidateHistoryAfterReplayFailure();
       }
       return result;
     } finally {

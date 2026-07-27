@@ -4,7 +4,7 @@
  * Does not modify tracked vendor sources — only produces dist/ outputs.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -51,4 +51,20 @@ if (!existsSync(vmDist)) {
   console.error("Build finished but VM dist missing:", vmDist);
   process.exit(1);
 }
+
+// Webpack node bundle + jsdom resolve browser/default-stylesheet.css at runtime.
+const cssStub = join(
+  vendor,
+  "packages/scratch-vm/browser/default-stylesheet.css",
+);
+if (!existsSync(cssStub)) {
+  mkdirSync(join(vendor, "packages/scratch-vm/browser"), {recursive: true});
+  writeFileSync(
+    cssStub,
+    "/* Gate0 stub for missing published asset */\n",
+    "utf8",
+  );
+  console.log("[build-vendor] wrote css stub", cssStub);
+}
+
 console.log("[build-vendor] OK", vmDist);
