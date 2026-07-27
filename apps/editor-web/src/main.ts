@@ -287,6 +287,7 @@ import {
   installExecutionRewind,
   type ExecutionRewindHandle,
   type RewindOrigin,
+  type RewindSnapshot,
 } from "./execution-rewind.js";
 import {createTraceListView} from "./execution-trace-ui.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
@@ -1086,6 +1087,12 @@ const diagnostic = {
       throw new Error("flushE2eLocalSave is available only in E2E mode");
     }
     await saveCoordinator.flush();
+  },
+  getExecutionRewindSnapshot(): RewindSnapshot | null {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("getExecutionRewindSnapshot is available only in E2E mode");
+    }
+    return executionRewind?.getSnapshot() ?? null;
   },
 };
 

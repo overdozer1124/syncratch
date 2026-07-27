@@ -11,10 +11,10 @@ import {
   RewindJournal,
   RewindJournalMismatchError,
 } from "./execution-rewind-journal.js";
+import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {
-  installJournalCapture,
-  isNonDeterministicOpcode,
-} from "./execution-rewind-journal-capture.js";
+  resolveNonDeterministicOpcode,
+} from "./execution-rewind-non-deterministic.js";
 import {replayToFrame} from "./execution-rewind-replay.js";
 import {
   bindCloneOrderRegistry,
@@ -162,13 +162,57 @@ function makeSimulatedRuntime(seedValues: number[]) {
   return {runtime, target, thread, resetToOrigin, operatorRandom, registry};
 }
 
-function makeOrigin(runtime: ReturnType<typeof makeSimulatedRuntime>["runtime"]): RewindOrigin {
+function makeOrigin(
+  runtime: ReturnType<typeof makeSimulatedRuntime>["runtime"],
+  extensions: string[] = [],
+): RewindOrigin {
   return createRewindOrigin({
-    document: emptyDocument(),
+    document: {...emptyDocument(), extensions},
     assets: new Map(),
     projectSessionId: 1,
     runtime,
+    vmProjectJson: {extensions, targets: [], monitors: []},
   });
+}
+
+function installRewindWithExtensions(
+  sim: ReturnType<typeof makeSimulatedRuntime>,
+  extensions: string[] = [],
+) {
+  return installExecutionRewind(
+    {runtime: sim.runtime},
+    {
+      captureOrigin: () => makeOrigin(sim.runtime, extensions),
+      restoreOrigin: async () => sim.resetToOrigin(),
+      cloneOrderRegistry: sim.registry,
+    },
+  )!;
+}
+
+function invokeOpcodeDuringRecord(
+  runtime: ReturnType<typeof makeSimulatedRuntime>["runtime"],
+  opcode: string,
+  extensions: string[] = [],
+) {
+  runtime.getOpcodeFunction = (candidate: string) => {
+    if (candidate === opcode) return () => 1;
+    if (candidate === "operator_random") {
+      return () => 1;
+    }
+    return undefined;
+  };
+  const journal = new RewindJournal();
+  const unsupported = vi.fn();
+  const dispose = installJournalCapture(runtime, journal, {
+    getExtensionIds: () => extensions,
+    onUnsupportedInput: unsupported,
+  });
+  journal.beginRecord();
+  const fn = runtime.getOpcodeFunction(opcode) as (() => unknown) | undefined;
+  fn?.();
+  journal.endFrame();
+  dispose();
+  return unsupported;
 }
 
 describe("stableTargetIdentity", () => {
@@ -381,29 +425,100 @@ describe("installJournalCapture", () => {
   });
 
   it("flags unsupported non-deterministic opcodes", () => {
-    const journal = new RewindJournal();
     const {runtime} = makeSimulatedRuntime([]);
-    const unsupported = vi.fn();
-    runtime.getOpcodeFunction = (opcode: string) => {
-      if (opcode === "sensing_loudness") return () => 50;
-      if (opcode === "operator_random") {
-        return () => 1;
-      }
-      return undefined;
-    };
-    const dispose = installJournalCapture(runtime, journal, {
-      onUnsupportedInput: unsupported,
-    });
-    journal.beginRecord();
-    const loudness = runtime.getOpcodeFunction("sensing_loudness") as () => number;
-    loudness();
-    journal.endFrame();
-    dispose();
-    expect(isNonDeterministicOpcode("sensing_loudness")).toBe("loudness");
+    const unsupported = invokeOpcodeDuringRecord(
+      runtime,
+      "sensing_loudness",
+    );
+    expect(resolveNonDeterministicOpcode("sensing_loudness", [])).toBe("loudness");
     expect(unsupported).toHaveBeenCalledWith({
       opcode: "sensing_loudness",
       journalKind: "loudness",
     });
+  });
+});
+
+describe("unsupported non-deterministic opcode detection", () => {
+  it.each([
+    "sensing_current",
+    "sensing_dayssince2000",
+    "sensing_username",
+  ] as const)("sets canRewind=false for %s", opcode => {
+    const sim = makeSimulatedRuntime([1]);
+    sim.runtime._step = () => {
+      const fn = sim.runtime.getOpcodeFunction(opcode) as (() => unknown) | undefined;
+      fn?.();
+    };
+    sim.runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === opcode) return () => 1;
+      if (candidate === "operator_random") return () => 1;
+      return undefined;
+    };
+    const handle = installRewindWithExtensions(sim);
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    expect(handle.getSnapshot().canRewind).toBe(false);
+    expect(handle.getSnapshot().rewindError).toMatch(/巻き戻せません/);
+    expect(handle.getSnapshot().unsupportedOpcodes).toContain(opcode);
+    handle.dispose();
+  });
+
+  it.each([
+    ["music_playDrumForBeats", ["music"]],
+    ["pen_clear", ["pen"]],
+    ["text2speech_speak", ["text2speech"]],
+  ] as const)("sets canRewind=false for extension opcode %s", (opcode, extensions) => {
+    const sim = makeSimulatedRuntime([1]);
+    sim.runtime._step = () => {
+      const fn = sim.runtime.getOpcodeFunction(opcode) as (() => unknown) | undefined;
+      fn?.();
+    };
+    sim.runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === opcode) return () => 1;
+      if (candidate === "operator_random") return () => 1;
+      return undefined;
+    };
+    const handle = installRewindWithExtensions(sim, [...extensions]);
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    expect(handle.getSnapshot().canRewind).toBe(false);
+    expect(handle.getSnapshot().unsupportedOpcodes).toContain(opcode);
+    handle.dispose();
+  });
+
+  it("keeps canRewind=true for argument_reporter_* opcodes", () => {
+    const sim = makeSimulatedRuntime([1, 2]);
+    sim.runtime._step = () => {
+      const fn = sim.runtime.getOpcodeFunction(
+        "argument_reporter_string_number",
+      ) as (() => unknown) | undefined;
+      fn?.();
+      sim.runtime.updateCurrentMSecs();
+      sim.runtime.ioDevices.clock.projectTimer();
+      const random = sim.runtime.getOpcodeFunction("operator_random") as (
+        args: {FROM: number; TO: number},
+      ) => number;
+      sim.target.x += random({FROM: 1, TO: 10});
+    };
+    sim.runtime.getOpcodeFunction = (candidate: string) => {
+      if (candidate === "argument_reporter_string_number") return () => "steps";
+      if (candidate === "operator_random") {
+        return sim.operatorRandom;
+      }
+      return undefined;
+    };
+    const handle = installRewindWithExtensions(sim, ["music"]);
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    expect(handle.getSnapshot().canRewind).toBe(true);
+    expect(handle.getSnapshot().unsupportedOpcodes).toEqual([]);
+    handle.dispose();
   });
 });
 

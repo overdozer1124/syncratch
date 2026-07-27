@@ -15,6 +15,10 @@ import {
   computeProjectBlockGraphHash,
   type RewindRuntimeLike,
 } from "./execution-rewind-fingerprint.js";
+import {
+  extractExtensionIds,
+  IMPLEMENTED_JOURNAL_KINDS,
+} from "./execution-rewind-non-deterministic.js";
 import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
@@ -108,9 +112,12 @@ export function installExecutionRewind(
   let nextFrameIndex = 0;
   let isReplaying = false;
   let rewindError: string | null = null;
+  let unsupportedOpcodes = new Set<string>();
+  let activeExtensionIds: string[] = [];
   let disposed = false;
 
-  const markUnsupported = () => {
+  const markUnsupported = (opcode?: string) => {
+    if (opcode) unsupportedOpcodes.add(opcode);
     rewindError = REWIND_UNSUPPORTED_ERROR;
   };
 
@@ -122,6 +129,8 @@ export function installExecutionRewind(
     frames = [];
     nextFrameIndex = 0;
     rewindError = null;
+    unsupportedOpcodes = new Set();
+    activeExtensionIds = [];
     journal.clear();
     cloneOrderRegistry.reset();
     options.onHistoryCleared?.(reason);
@@ -131,8 +140,11 @@ export function installExecutionRewind(
     runtime as import("./execution-rewind-journal-capture.js").JournalCaptureRuntimeLike,
     journal,
     {
-      onUnsupportedInput: () => {
-        markUnsupported();
+      getExtensionIds: () => activeExtensionIds,
+      onUnsupportedInput: ({opcode, journalKind}) => {
+        if (!IMPLEMENTED_JOURNAL_KINDS.has(journalKind)) {
+          markUnsupported(opcode);
+        }
       },
     },
   );
@@ -151,6 +163,7 @@ export function installExecutionRewind(
     const captured = options.captureOrigin?.() ?? null;
     if (captured) {
       origin = cloneOrigin(captured);
+      activeExtensionIds = extractExtensionIds(origin);
     }
     nextFrameIndex = 0;
   };
@@ -222,6 +235,7 @@ export function installExecutionRewind(
         rewindDepth,
         isReplaying,
         rewindError,
+        unsupportedOpcodes: [...unsupportedOpcodes].sort(),
       };
     },
     clearRewindHistory(reason: RewindClearReason) {
@@ -333,6 +347,7 @@ export {
   CloneOrderRegistry,
   computeFrameFingerprint,
   computeProjectBlockGraphHash,
+  extractExtensionIds,
   RewindJournal,
   replayToFrame,
 };

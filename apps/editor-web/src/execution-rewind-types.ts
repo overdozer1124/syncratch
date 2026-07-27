@@ -42,7 +42,10 @@ export interface RewindSnapshot {
   canRewind: boolean;
   rewindDepth: number;
   isReplaying: boolean;
+  /** User-facing generalized error message. */
   rewindError: string | null;
+  /** Opcodes that disabled rewind; exposed for E2E diagnostics. */
+  unsupportedOpcodes: string[];
 }
 
 export type JournalEntryKind =

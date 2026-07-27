@@ -1,6 +1,10 @@
-import type {JournalEntry, JournalEntryKind} from "./execution-rewind-types.js";
+import type {JournalEntry} from "./execution-rewind-types.js";
 import type {RewindJournal} from "./execution-rewind-journal.js";
 import {RewindJournalMismatchError} from "./execution-rewind-journal.js";
+import {
+  IMPLEMENTED_JOURNAL_KINDS,
+  resolveNonDeterministicOpcode,
+} from "./execution-rewind-non-deterministic.js";
 
 type ClockJournalEntry = Extract<JournalEntry, {kind: "clock"}>;
 
@@ -32,31 +36,12 @@ const JOURNAL_WRAP_FLAG = "__syncratchRewindJournalWrap";
 
 type RandomJournalEntry = Extract<JournalEntry, {kind: "random"}>;
 
-const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
-  "random",
-  "clock",
-  "mouse",
-  "key",
-  "cloneOrder",
-]);
-
-const OPCODE_JOURNAL_KIND = new Map<string, JournalEntryKind>([
-  ["operator_random", "random"],
-  ["sensing_askandwait", "askAnswer"],
-  ["sensing_answer", "askAnswer"],
-  ["sensing_loudness", "loudness"],
-  ["sensing_loud", "loudness"],
-  ["sensing_videoon", "videoSensing"],
-  ["sensing_videotoggle", "videoSensing"],
-  ["sensing_setvideotransparency", "videoSensing"],
-  ["sensing_videomotion", "videoSensing"],
-  ["event_broadcastandwait", "broadcastOrder"],
-]);
-
-const NON_DETERMINISTIC_OPCODE_PREFIXES = ["extension_"];
-
 export type JournalCaptureOptions = {
-  onUnsupportedInput?: (detail: {opcode: string; journalKind: JournalEntryKind}) => void;
+  getExtensionIds?: () => readonly string[];
+  onUnsupportedInput?: (detail: {
+    opcode: string;
+    journalKind: import("./execution-rewind-types.js").JournalEntryKind;
+  }) => void;
 };
 
 function readClockSnapshot(
@@ -101,15 +86,6 @@ function wrapRandomPrimitive(
     }
     return result;
   }) as (...args: unknown[]) => unknown;
-}
-
-function isNonDeterministicOpcode(opcode: string): JournalEntryKind | null {
-  const mapped = OPCODE_JOURNAL_KIND.get(opcode);
-  if (mapped) return mapped;
-  if (NON_DETERMINISTIC_OPCODE_PREFIXES.some(prefix => opcode.startsWith(prefix))) {
-    return "extensionReporter";
-  }
-  return null;
 }
 
 function patchClock(
@@ -249,10 +225,11 @@ export function installJournalCapture(
       const original = originalGetOpcodeFunction(opcode);
       if (typeof original !== "function") return original;
 
-      const journalKind = isNonDeterministicOpcode(opcode);
+      const extensionIds = options.getExtensionIds?.() ?? [];
+      const journalKind = resolveNonDeterministicOpcode(opcode, extensionIds);
       if (
-        journal.getMode() === "record" &&
         journalKind &&
+        journal.getMode() === "record" &&
         !IMPLEMENTED_JOURNAL_KINDS.has(journalKind)
       ) {
         options.onUnsupportedInput?.({opcode, journalKind});
@@ -309,5 +286,3 @@ export function installJournalCapture(
     (runtime as Record<string, unknown>)[JOURNAL_WRAP_FLAG] = false;
   };
 }
-
-export {IMPLEMENTED_JOURNAL_KINDS, isNonDeterministicOpcode, OPCODE_JOURNAL_KIND};
