@@ -221,6 +221,21 @@ describe("installExecutionControl", () => {
     expect(control.getSnapshot().state).toBe("paused");
   });
 
+  it("repaints the stage on idle scheduler ticks while paused", () => {
+    const draw = vi.fn();
+    const {vm, runtime, step} = makeVm({
+      renderer: {draw},
+    } as Partial<ExecutionRuntimeLike>);
+    const control = installExecutionControl(vm)!;
+
+    control.pause();
+    runtime._step!();
+    runtime._step!();
+
+    expect(step).not.toHaveBeenCalled();
+    expect(draw).toHaveBeenCalledTimes(2);
+  });
+
   it("advances exactly one frame per stepFrame", () => {
     const {vm, runtime, step} = makeVm();
     const control = installExecutionControl(vm)!;

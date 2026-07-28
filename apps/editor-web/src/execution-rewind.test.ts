@@ -1295,6 +1295,8 @@ describe("rewindFrame", () => {
   it("truncates trace and wraps replay in lifecycle hooks", async () => {
     const sim = makeSimulatedRuntime([2, 4, 6]);
     const lifecycle: Array<"start" | "end"> = [];
+    const draw = vi.fn();
+    sim.runtime.renderer = {draw};
     let truncatedTo = -1;
     let traceSize = 0;
     const handle = installExecutionRewind(
@@ -1323,6 +1325,7 @@ describe("rewindFrame", () => {
     expect(result.ok).toBe(true);
     expect(lifecycle).toEqual(["start", "end"]);
     expect(truncatedTo).toBe(6);
+    expect(draw).toHaveBeenCalled();
     handle.dispose();
   });
 

@@ -117,6 +117,28 @@ async function waitForRewindIdle(page: Page): Promise<void> {
   });
 }
 
+async function countNonWhiteCanvasSamples(page: Page): Promise<number> {
+  return page.evaluate(`(() => { ${FIBER_HELPERS}
+    const canvas = document.querySelector('canvas');
+    if (!canvas) return 0;
+    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    if (!gl) return 0;
+    let count = 0;
+    const px = new Uint8Array(4);
+    const xs = [0.2, 0.35, 0.5, 0.65, 0.8];
+    const ys = [0.2, 0.35, 0.5, 0.65, 0.8];
+    for (const xRatio of xs) {
+      for (const yRatio of ys) {
+        const x = Math.floor(canvas.width * xRatio);
+        const y = Math.floor(canvas.height * yRatio);
+        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        if (px[3] > 0 && px[0] + px[1] + px[2] < 740) count += 1;
+      }
+    }
+    return count;
+  })()`) as Promise<number>;
+}
+
 test("rewind is unavailable before execution history exists", async ({page}) => {
   await bootEditor(page);
   await createForeverScript(page);
@@ -224,4 +246,25 @@ test("rewind auto-pauses while running", async ({page}) => {
       () => window.__blocksyncTask3?.getExecutionRewindSnapshot?.()?.rewindError,
     ),
   ).toBeNull();
+});
+
+test("stage stays visible after canvas resize while paused", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(500);
+  await page.getByTestId("exec-pause").click();
+
+  expect(await countNonWhiteCanvasSamples(page)).toBeGreaterThan(0);
+
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const renderer = resolveVm().runtime.renderer;
+    renderer.resize(renderer.canvas.width, renderer.canvas.height);
+  })()`);
+  await page.waitForTimeout(250);
+
+  expect(await countNonWhiteCanvasSamples(page)).toBeGreaterThan(0);
+
+  await page.getByTestId("exec-rewind").click();
+  await waitForRewindIdle(page);
+  expect(await countNonWhiteCanvasSamples(page)).toBeGreaterThan(0);
 });
