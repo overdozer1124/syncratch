@@ -1263,7 +1263,7 @@ describe("replayToFrame", () => {
 });
 
 describe("rewindFrame", () => {
-  it("rewinds one scheduler frame and discards future history", async () => {
+  it("scrubs one scheduler frame without discarding future history", async () => {
     const sim = makeSimulatedRuntime([3, 5, 2]);
     const origin = makeOrigin(sim.runtime);
     const handle = installExecutionRewind(
@@ -1286,18 +1286,21 @@ describe("rewindFrame", () => {
     expect(result.ok).toBe(true);
     expect(result.targetFrameIndex).toBe(1);
     expect(sim.target.x).toBe(8);
-    expect(handle.getFrames()).toHaveLength(2);
+    expect(handle.getFrames()).toHaveLength(3);
+    expect(handle.getSnapshot().playbackFrameIndex).toBe(1);
+    expect(handle.getSnapshot().scrubDepthForward).toBe(1);
     expect(handle.getSnapshot().rewindDepth).toBe(1);
 
     handle.dispose();
   });
 
-  it("truncates trace and wraps replay in lifecycle hooks", async () => {
+  it("moves trace display cursor on scrub without truncating frames", async () => {
     const sim = makeSimulatedRuntime([2, 4, 6]);
     const lifecycle: Array<"start" | "end"> = [];
     const draw = vi.fn();
     sim.runtime.renderer = {draw};
     let truncatedTo = -1;
+    let displayCursor = -1;
     let traceSize = 0;
     const handle = installExecutionRewind(
       {runtime: sim.runtime},
@@ -1310,6 +1313,9 @@ describe("rewindFrame", () => {
           return traceSize;
         },
         onReplayLifecycle: phase => lifecycle.push(phase),
+        onTraceDisplayCursor: size => {
+          displayCursor = size;
+        },
         onTraceTruncate: size => {
           truncatedTo = size;
         },
@@ -1324,7 +1330,9 @@ describe("rewindFrame", () => {
     const result = await handle.rewindFrame();
     expect(result.ok).toBe(true);
     expect(lifecycle).toEqual(["start", "end"]);
-    expect(truncatedTo).toBe(6);
+    expect(displayCursor).toBe(6);
+    expect(truncatedTo).toBe(-1);
+    expect(handle.getFrames()).toHaveLength(3);
     expect(draw).toHaveBeenCalled();
     handle.dispose();
   });

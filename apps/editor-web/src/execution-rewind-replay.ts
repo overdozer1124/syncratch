@@ -116,8 +116,8 @@ export async function replayToFrame(
 
   try {
     for (let index = 0; index <= targetFrameIndex; index += 1) {
-      const frame = frames.find(entry => entry.frameIndex === index);
-      if (!frame) {
+      const frame = frames[index];
+      if (!frame || frame.frameIndex !== index) {
         return {
           ok: false,
           targetFrameIndex,

@@ -299,6 +299,8 @@ import {
 import {
   formatRewindButtonLabel,
   formatRewindButtonTitle,
+  formatScrubSliderAriaValueText,
+  formatScrubSliderLabel,
   isExecutionControlShortcutTarget,
   resolveExecutionControlShortcut,
   shouldNotifyRewindUnavailable,
@@ -495,6 +497,8 @@ const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
 const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
 const execRewindButton = requiredElement<HTMLButtonElement>("exec-rewind");
 const execRewindLabel = requiredElement<HTMLElement>("exec-rewind-label");
+const execScrubInput = requiredElement<HTMLInputElement>("exec-scrub");
+const execScrubLabel = requiredElement<HTMLElement>("exec-scrub-label");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
 const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
@@ -2566,7 +2570,7 @@ function renderExecutionTrace(vmInstance: ScratchVm): void {
     ?.targets;
   traceListView.render(
     resolveTraceEntries(
-      executionTrace.trace.getEntries(),
+      executionTrace.trace.getDisplayEntries(),
       (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
     ),
   );
@@ -2651,9 +2655,15 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       getTraceSize: () => executionTrace?.trace.size() ?? 0,
       onReplayLifecycle: phase => {
         setSuppressedVmChanges("rewind", phase === "start");
+        executionTrace?.trace.setRecordingSuspended(phase === "start");
+      },
+      onTraceDisplayCursor: traceSize => {
+        executionTrace?.trace.setDisplayCursor(traceSize);
+        refreshExecUi?.();
       },
       onTraceTruncate: traceSize => {
         executionTrace?.trace.truncateTo(traceSize);
+        executionTrace?.trace.setDisplayCursor(traceSize);
         refreshExecUi?.();
       },
       onHistoryCleared: reason => {
@@ -2691,15 +2701,29 @@ function installExecutionControls(vmInstance: ScratchVm): void {
 
   let lastRewindSnapshot: RewindSnapshot | null = null;
 
+  let scrubDebounceTimer: number | null = null;
+
   const renderRewindControl = (): void => {
     const snapshot = executionRewind?.getSnapshot() ?? null;
-    const canRewind = snapshot?.canRewind ?? false;
+    const paused = executionController?.getSnapshot().state === "paused";
+    const canScrub = snapshot?.canScrub ?? false;
     const isReplaying = snapshot?.isReplaying ?? false;
-    execRewindButton.disabled = !canRewind || isReplaying;
+    execRewindButton.disabled = !canScrub || isReplaying || (snapshot?.scrubDepthBack ?? 0) <= 0;
     const title = formatRewindButtonTitle(snapshot);
     execRewindButton.title = title;
     execRewindButton.setAttribute("aria-label", title);
     execRewindLabel.textContent = formatRewindButtonLabel(snapshot);
+
+    const frontier = snapshot?.recordFrontierFrameIndex ?? -1;
+    execScrubInput.min = "0";
+    execScrubInput.max = String(Math.max(0, frontier));
+    execScrubInput.value = String(snapshot?.playbackFrameIndex ?? 0);
+    execScrubInput.disabled = !canScrub || isReplaying || !paused || frontier < 1;
+    execScrubInput.setAttribute(
+      "aria-valuetext",
+      formatScrubSliderAriaValueText(snapshot),
+    );
+    execScrubLabel.textContent = formatScrubSliderLabel(snapshot);
 
     if (shouldNotifyRewindUnavailable(lastRewindSnapshot, snapshot)) {
       appToast.show(title);
@@ -2741,8 +2765,12 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   controller.subscribe(render);
   execPauseButton.addEventListener("click", () => {
     const {state} = controller.getSnapshot();
-    if (state === "paused") controller.resume();
-    else controller.pause();
+    if (state === "paused") {
+      executionRewind?.commitPlaybackBranch();
+      controller.resume();
+    } else {
+      controller.pause();
+    }
   });
   execRewindButton.addEventListener("click", () => {
     void (async () => {
@@ -2761,7 +2789,68 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     })();
   });
   execStepButton.addEventListener("click", () => {
-    controller.stepFrame();
+    void (async () => {
+      const snapshot = executionRewind?.getSnapshot();
+      if (
+        snapshot?.canScrub &&
+        snapshot.scrubDepthForward > 0 &&
+        executionController?.getSnapshot().state === "paused"
+      ) {
+        execStepButton.disabled = true;
+        try {
+          const result = await executionRewind!.scrubForwardOneFrame();
+          if (!result.ok && result.error) {
+            appToast.show(result.error);
+          }
+        } finally {
+          render();
+        }
+        return;
+      }
+      controller.stepFrame();
+    })();
+  });
+
+  const runScrubToSliderValue = (value: number): void => {
+    void (async () => {
+      if (!executionRewind) return;
+      const {state} = controller.getSnapshot();
+      if (state === "running") controller.pause();
+      execScrubInput.disabled = true;
+      try {
+        const result = await executionRewind.scrubToFrame(value);
+        if (!result.ok && result.error) {
+          appToast.show(result.error);
+        }
+      } finally {
+        render();
+      }
+    })();
+  };
+
+  execScrubInput.addEventListener("input", () => {
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+    }
+    const value = Number(execScrubInput.value);
+    scrubDebounceTimer = window.setTimeout(() => {
+      scrubDebounceTimer = null;
+      runScrubToSliderValue(value);
+    }, 150);
+  });
+  execScrubInput.addEventListener("change", () => {
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+      scrubDebounceTimer = null;
+    }
+    runScrubToSliderValue(Number(execScrubInput.value));
+  });
+  execScrubInput.addEventListener("pointerup", () => {
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+      scrubDebounceTimer = null;
+    }
+    runScrubToSliderValue(Number(execScrubInput.value));
   });
 
   const handleExecutionControlShortcut = (event: KeyboardEvent): void => {
@@ -2773,13 +2862,17 @@ function installExecutionControls(vmInstance: ScratchVm): void {
 
     if (action === "pause") {
       const {state} = controller.getSnapshot();
-      if (state === "paused") controller.resume();
-      else controller.pause();
+      if (state === "paused") {
+        executionRewind?.commitPlaybackBranch();
+        controller.resume();
+      } else {
+        controller.pause();
+      }
       return;
     }
 
     if (action === "step") {
-      controller.stepFrame();
+      execStepButton.click();
       return;
     }
 

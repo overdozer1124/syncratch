@@ -5,15 +5,15 @@ export function formatRewindButtonTitle(
 ): string {
   if (!snapshot) return "1コマ戻る";
 
-  if (snapshot.rewindError && !snapshot.canRewind) {
+  if (snapshot.rewindError && !snapshot.canScrub) {
     if (snapshot.unsupportedOpcodes.length > 0) {
       return `${snapshot.rewindError} (${snapshot.unsupportedOpcodes.join(", ")})`;
     }
     return snapshot.rewindError;
   }
 
-  if (snapshot.rewindDepth > 1) {
-    return `1コマ戻る (${snapshot.rewindDepth}コマ)`;
+  if (snapshot.scrubDepthBack > 1) {
+    return `1コマ戻る (${snapshot.scrubDepthBack}コマ)`;
   }
   return "1コマ戻る";
 }
@@ -21,8 +21,24 @@ export function formatRewindButtonTitle(
 export function formatRewindButtonLabel(
   snapshot: RewindSnapshot | null | undefined,
 ): string {
-  if (!snapshot || snapshot.rewindDepth <= 1) return "戻る";
-  return `戻る (${snapshot.rewindDepth})`;
+  if (!snapshot || snapshot.scrubDepthBack <= 1) return "戻る";
+  return `戻る (${snapshot.scrubDepthBack})`;
+}
+
+export function formatScrubSliderLabel(
+  snapshot: RewindSnapshot | null | undefined,
+): string {
+  if (!snapshot || snapshot.recordFrontierFrameIndex < 0) return "0 / 0";
+  return `${snapshot.playbackFrameIndex} / ${snapshot.recordFrontierFrameIndex}`;
+}
+
+export function formatScrubSliderAriaValueText(
+  snapshot: RewindSnapshot | null | undefined,
+): string {
+  if (!snapshot || snapshot.recordFrontierFrameIndex < 0) {
+    return "コマ 0 / 0";
+  }
+  return `コマ ${snapshot.playbackFrameIndex} / ${snapshot.recordFrontierFrameIndex}`;
 }
 
 export function shouldNotifyRewindUnavailable(
@@ -30,7 +46,7 @@ export function shouldNotifyRewindUnavailable(
   next: RewindSnapshot | null | undefined,
 ): boolean {
   if (!previous || !next) return false;
-  return previous.canRewind && !next.canRewind && Boolean(next.rewindError);
+  return previous.canScrub && !next.canScrub && Boolean(next.rewindError);
 }
 
 export function isExecutionControlShortcutTarget(target: EventTarget | null): boolean {

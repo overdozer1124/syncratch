@@ -40,13 +40,31 @@ export interface RewindFrame {
 }
 
 export interface RewindSnapshot {
+  /** Scrub available (2+ frames recorded, no error, not replaying). */
+  canScrub: boolean;
+  /** VM playback head (scheduler frame index). */
+  playbackFrameIndex: number;
+  /** Latest recorded frame index, or -1 when empty. */
+  recordFrontierFrameIndex: number;
+  /** Steps scrub can move forward within recorded history. */
+  scrubDepthForward: number;
+  /** Steps scrub can move backward toward frame 0. */
+  scrubDepthBack: number;
+  /** @deprecated Use scrubDepthBack > 0. */
   canRewind: boolean;
+  /** @deprecated Use scrubDepthBack. */
   rewindDepth: number;
   isReplaying: boolean;
   /** User-facing generalized error message. */
   rewindError: string | null;
   /** Opcodes that disabled rewind; exposed for E2E diagnostics. */
   unsupportedOpcodes: string[];
+}
+
+export interface ScrubResult {
+  ok: boolean;
+  playbackFrameIndex: number;
+  error: string | null;
 }
 
 export type JournalEntryKind =

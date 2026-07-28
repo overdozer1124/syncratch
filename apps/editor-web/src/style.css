@@ -2796,6 +2796,33 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   cursor: default;
 }
 
+.exec-scrub {
+  width: min(7rem, 18vw);
+  min-width: 4.5rem;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.exec-scrub:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.exec-scrub-label {
+  min-width: 3.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4a5568;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1399px) {
+  .exec-scrub-label {
+    display: none;
+  }
+}
+
 /* Paused is a mode the whole editor is in — the green flag looks dead while it
    lasts — so it needs to be visible, not just announced. Shown only while
    paused, which keeps the running toolbar as narrow as #120 made it. */

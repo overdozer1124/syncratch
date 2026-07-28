@@ -2,16 +2,8 @@
  * Deterministic rewind foundation: origin snapshot, per-frame journal, and
  * fingerprint recording for scheduler-frame replay.
  *
- * PR 1 exposes recording + replayToFrame() for tests. PR 2 adds rewindFrame(),
- * trace truncation, and replay lifecycle hooks for side-effect suppression.
- * PR 3 wires the toolbar button; PR 4 invalidates history on project/code changes.
- * PR 5 journals loudness, ask/answer, video sensing, and extension reporter opcodes.
- * PR 6 journals broadcast-and-wait thread order via startHats capture.
- * PR 7 journals async primitive promise resolutions (ask/answer, say/think for secs).
- * PR 10 extends broadcastOrder capture to backdrop-switch-and-wait hats.
- * PR 12 journals random backdrop resolution and async extension promises.
- * PR 13 journals sequencer work-loop counts for deterministic forever/turbo frames.
- * PR 14 journals edge-bounce outcomes so replay does not depend on renderer bounds.
+ * PR 15 adds timeline scrubbing with a playback head (bidirectional scrub
+ * without truncating recorded history until branch commit on resume).
  */
 
 import {
@@ -56,6 +48,7 @@ import {
   type RewindFrameResult,
   type RewindOrigin,
   type RewindSnapshot,
+  type ScrubResult,
 } from "./execution-rewind-types.js";
 
 const REWIND_FLAG = "_syncratchExecutionRewindInstalled";
@@ -69,6 +62,7 @@ export type {
   RewindFrameResult,
   RewindOrigin,
   RewindSnapshot,
+  ScrubResult,
 } from "./execution-rewind-types.js";
 
 export type RewindVmLike = {
@@ -85,6 +79,8 @@ export interface ExecutionRewindOptions {
   onHistoryCleared?: (reason: RewindClearReason) => void;
   /** Called around deterministic replay (load + scheduler steps). */
   onReplayLifecycle?: (phase: "start" | "end") => void;
+  /** Move trace display cursor during scrub (no physical truncate). */
+  onTraceDisplayCursor?: (traceSize: number) => void;
   /** Truncate execution trace to a recorded scheduler frame boundary. */
   onTraceTruncate?: (traceSize: number) => void;
   maxFrames?: number;
@@ -99,7 +95,13 @@ export interface ExecutionRewindHandle {
   clearRewindHistory(reason: RewindClearReason): void;
   /** Test API: replay to a recorded scheduler frame index. */
   replayToFrame(targetFrameIndex: number): Promise<ReplayResult>;
-  /** Rewind one scheduler frame and discard future history. */
+  /** Scrub to a recorded scheduler frame without discarding future history. */
+  scrubToFrame(targetFrameIndex: number): Promise<ScrubResult>;
+  /** Scrub forward one frame when playback is behind the record frontier. */
+  scrubForwardOneFrame(): Promise<ScrubResult>;
+  /** Discard recorded frames after the playback head (call before resume). */
+  commitPlaybackBranch(): void;
+  /** Rewind one scheduler frame (scrub backward, non-destructive). */
   rewindFrame(): Promise<RewindFrameResult>;
   getFrames(): RewindFrame[];
   getOrigin(): RewindOrigin | null;
@@ -114,6 +116,15 @@ function cloneOrigin(origin: RewindOrigin): RewindOrigin {
     blockGraphHash: origin.blockGraphHash,
     vmProjectJson: structuredClone(origin.vmProjectJson ?? null),
   };
+}
+
+function frameAtIndex(
+  frames: RewindFrame[],
+  frameIndex: number,
+): RewindFrame | null {
+  const frame = frames[frameIndex];
+  if (!frame || frame.frameIndex !== frameIndex) return null;
+  return frame;
 }
 
 export function installExecutionRewind(
@@ -145,11 +156,38 @@ export function installExecutionRewind(
   let origin: RewindOrigin | null = null;
   let frames: RewindFrame[] = [];
   let nextFrameIndex = 0;
+  let playbackFrameIndex = 0;
   let isReplaying = false;
   let rewindError: string | null = null;
   let unsupportedOpcodes = new Set<string>();
   let activeExtensionIds: string[] = [];
   let disposed = false;
+  let pendingScrubTarget: number | null = null;
+  let scrubMutex: Promise<void> = Promise.resolve();
+
+  const recordFrontierFrameIndex = (): number =>
+    frames.length > 0 ? frames[frames.length - 1]!.frameIndex : -1;
+
+  const buildSnapshot = (): RewindSnapshot => {
+    const frontier = recordFrontierFrameIndex();
+    const canScrub =
+      frontier >= 1 && rewindError === null && !isReplaying;
+    const scrubDepthBack = frontier < 0 ? 0 : playbackFrameIndex;
+    const scrubDepthForward =
+      frontier < 0 ? 0 : Math.max(0, frontier - playbackFrameIndex);
+    return {
+      canScrub,
+      playbackFrameIndex: frontier < 0 ? 0 : playbackFrameIndex,
+      recordFrontierFrameIndex: frontier,
+      scrubDepthForward,
+      scrubDepthBack,
+      canRewind: canScrub && scrubDepthBack > 0,
+      rewindDepth: scrubDepthBack,
+      isReplaying,
+      rewindError,
+      unsupportedOpcodes: [...unsupportedOpcodes].sort(),
+    };
+  };
 
   const markUnsupported = (opcode?: string) => {
     if (opcode) unsupportedOpcodes.add(opcode);
@@ -163,6 +201,7 @@ export function installExecutionRewind(
     origin = null;
     frames = [];
     nextFrameIndex = 0;
+    playbackFrameIndex = 0;
     rewindError = null;
     unsupportedOpcodes = new Set();
     activeExtensionIds = [];
@@ -222,6 +261,7 @@ export function installExecutionRewind(
       activeExtensionIds = extractExtensionIds(origin);
     }
     nextFrameIndex = 0;
+    playbackFrameIndex = 0;
   };
   runtime.on?.("PROJECT_START", onProjectStart);
 
@@ -234,6 +274,14 @@ export function installExecutionRewind(
 
     if (journal.getMode() === "replay") {
       return innerStep(...args);
+    }
+
+    const frontier = recordFrontierFrameIndex();
+    if (frontier >= 0 && playbackFrameIndex < frontier) {
+      console.warn(
+        "[syncratch] execution rewind: resume with commitPlaybackBranch() before recording",
+      );
+      commitPlaybackBranchInternal();
     }
 
     const journalStart = journal.size;
@@ -267,13 +315,16 @@ export function installExecutionRewind(
     if (!fingerprintResult.supported) {
       markUnsupported();
     }
+    const traceSize = options.getTraceSize?.() ?? 0;
     frames.push({
       frameIndex,
-      traceSize: options.getTraceSize?.() ?? 0,
+      traceSize,
       journalStart,
       journalEnd,
       fingerprint: fingerprintResult.fingerprint,
     });
+    playbackFrameIndex = frameIndex;
+    options.onTraceDisplayCursor?.(traceSize);
 
     if (frames.length > maxFrames) {
       clearRewindHistory("frame-limit");
@@ -314,14 +365,28 @@ export function installExecutionRewind(
   const invalidateHistoryAfterReplayFailure = () => {
     frames = [];
     nextFrameIndex = 0;
+    playbackFrameIndex = 0;
     journal.clear();
     cloneOrderRegistry.reset();
     options.onTraceTruncate?.(0);
     options.onHistoryCleared?.("replay-failure");
   };
 
+  function commitPlaybackBranchInternal(): void {
+    const frontier = recordFrontierFrameIndex();
+    if (frontier < 0 || playbackFrameIndex >= frontier) return;
+
+    frames = truncateFramesAfter(frames, playbackFrameIndex);
+    nextFrameIndex = playbackFrameIndex + 1;
+    const frame = frameAtIndex(frames, playbackFrameIndex);
+    if (frame) {
+      options.onTraceTruncate?.(frame.traceSize);
+    }
+  }
+
   const runDeterministicReplay = async (
     targetFrameIndex: number,
+    mode: "scrub" | "test",
   ): Promise<ReplayResult> => {
     if (!origin) {
       return {
@@ -374,7 +439,18 @@ export function installExecutionRewind(
           await recoverOriginBaseline();
         }
         invalidateHistoryAfterReplayFailure();
+        return result;
       }
+
+      if (mode === "scrub") {
+        playbackFrameIndex = targetFrameIndex;
+        const frame = frameAtIndex(frames, targetFrameIndex);
+        if (frame) {
+          options.onTraceDisplayCursor?.(frame.traceSize);
+        }
+        requestRuntimeStageDraw(runtime);
+      }
+
       return result;
     } finally {
       isReplaying = false;
@@ -383,77 +459,119 @@ export function installExecutionRewind(
     }
   };
 
+  const runScrubLoop = async (initialTarget: number): Promise<ScrubResult> => {
+    let target = initialTarget;
+    while (true) {
+      pendingScrubTarget = null;
+      if (target === playbackFrameIndex) {
+        return {
+          ok: true,
+          playbackFrameIndex,
+          error: null,
+        };
+      }
+
+      const result = await runDeterministicReplay(target, "scrub");
+      if (!result.ok) {
+        return {
+          ok: false,
+          playbackFrameIndex,
+          error: result.error,
+        };
+      }
+
+      if (pendingScrubTarget === null) {
+        return {
+          ok: true,
+          playbackFrameIndex,
+          error: null,
+        };
+      }
+      target = pendingScrubTarget;
+    }
+  };
+
+  const enqueueScrub = (targetFrameIndex: number): Promise<ScrubResult> => {
+    pendingScrubTarget = targetFrameIndex;
+    const job = scrubMutex.then(() => runScrubLoop(targetFrameIndex));
+    scrubMutex = job.then(
+      () => undefined,
+      () => undefined,
+    );
+    return job;
+  };
+
+  const validateScrubTarget = (
+    targetFrameIndex: number,
+  ): string | null => {
+    const snapshot = buildSnapshot();
+    if (!snapshot.canScrub) {
+      return rewindError ?? "Scrub is unavailable";
+    }
+    const frontier = snapshot.recordFrontierFrameIndex;
+    if (targetFrameIndex < 0) {
+      return "Already at the origin scheduler frame";
+    }
+    if (targetFrameIndex > frontier) {
+      return `Frame ${targetFrameIndex} was not recorded`;
+    }
+    if (!frameAtIndex(frames, targetFrameIndex)) {
+      return `Frame ${targetFrameIndex} was not recorded`;
+    }
+    return null;
+  };
+
   const handle: ExecutionRewindHandle = {
     getSnapshot(): RewindSnapshot {
-      const rewindDepth = frames.length > 0 ? frames.length - 1 : 0;
-      return {
-        canRewind: rewindDepth > 0 && rewindError === null && !isReplaying,
-        rewindDepth,
-        isReplaying,
-        rewindError,
-        unsupportedOpcodes: [...unsupportedOpcodes].sort(),
-      };
+      return buildSnapshot();
     },
     clearRewindHistory(reason: RewindClearReason) {
       clearRewindHistory(reason);
     },
     async replayToFrame(targetFrameIndex: number): Promise<ReplayResult> {
-      return runDeterministicReplay(targetFrameIndex);
+      return runDeterministicReplay(targetFrameIndex, "test");
+    },
+    async scrubToFrame(targetFrameIndex: number): Promise<ScrubResult> {
+      const error = validateScrubTarget(targetFrameIndex);
+      if (error) {
+        return {
+          ok: false,
+          playbackFrameIndex,
+          error,
+        };
+      }
+      return enqueueScrub(targetFrameIndex);
+    },
+    async scrubForwardOneFrame(): Promise<ScrubResult> {
+      const frontier = recordFrontierFrameIndex();
+      if (playbackFrameIndex >= frontier) {
+        return {
+          ok: false,
+          playbackFrameIndex,
+          error: "At record frontier",
+        };
+      }
+      return enqueueScrub(playbackFrameIndex + 1);
+    },
+    commitPlaybackBranch() {
+      commitPlaybackBranchInternal();
     },
     async rewindFrame(): Promise<RewindFrameResult> {
-      const rewindDepth = frames.length > 0 ? frames.length - 1 : 0;
-      const canRewind = rewindDepth > 0 && rewindError === null && !isReplaying;
-      if (!canRewind) {
+      const snapshot = buildSnapshot();
+      if (!snapshot.canScrub || snapshot.scrubDepthBack <= 0) {
         return {
           ok: false,
           targetFrameIndex: -1,
           error: rewindError ?? "Rewind is unavailable",
         };
       }
-      if (frames.length < 2) {
-        return {
-          ok: false,
-          targetFrameIndex: -1,
-          error: "Rewind history is too shallow",
-        };
-      }
 
-      const currentFrameIndex = frames[frames.length - 1]!.frameIndex;
-      const targetFrameIndex = currentFrameIndex - 1;
-      if (targetFrameIndex < 0) {
-        return {
-          ok: false,
-          targetFrameIndex,
-          error: "Already at the origin scheduler frame",
-        };
-      }
-
-      const targetFrame = frames.find(frame => frame.frameIndex === targetFrameIndex);
-      if (!targetFrame) {
-        return {
-          ok: false,
-          targetFrameIndex,
-          error: `Frame ${targetFrameIndex} was not recorded`,
-        };
-      }
-
-      const result = await runDeterministicReplay(targetFrameIndex);
-      if (!result.ok) {
-        return {
-          ok: false,
-          targetFrameIndex,
-          error: result.error,
-        };
-      }
-
-      frames = truncateFramesAfter(frames, targetFrameIndex);
-      nextFrameIndex = targetFrameIndex + 1;
-      options.onTraceTruncate?.(targetFrame.traceSize);
-
+      const targetFrameIndex = playbackFrameIndex - 1;
+      const result = await enqueueScrub(targetFrameIndex);
       return {
-        ok: true,
-        targetFrameIndex,
-        error: null,
+        ok: result.ok,
+        targetFrameIndex: result.ok ? targetFrameIndex : -1,
+        error: result.error,
       };
     },
     getFrames(): RewindFrame[] {
