@@ -1,15 +1,29 @@
 ---
-description: Always merge completed PR work to main before finishing
+description: 作業完了後は必ず PR を main にマージしてから終了する
 alwaysApply: true
 ---
 
-# Always merge PRs
+# Always merge PRs（作業後マージ必須）
 
-When this agent opens or updates a pull request for work that is ready (tests/CI green, fix or feature complete):
+PR を作成・更新した作業は、**マージして `main` に取り込むまで未完了**とみなす。ユーザーにマージを任せず、エージェントが必ず実行する。
 
-1. Mark the PR ready for review (not draft) if it was created as draft.
-2. **Merge it into `main` before ending the turn** (`gh pr merge --merge` or equivalent). Do not leave merge to the user or the next chat.
-3. Prefer merge (merge commit) unless the repo standard says otherwise.
-4. After merge, confirm `mergedAt` is set on the PR.
+## 必須フロー
 
-This applies every session. Do not stop at "PR created" or "CI passed".
+作業内容が完成し、テスト・CI が通ったら:
+
+1. PR が draft なら **ready for review** にする。
+2. CI が green になるまで待つ（失敗時は修正して再 push）。
+3. **`main` へマージしてからターンを終える**（`gh pr merge --merge` 等）。「PR 作成済み」「CI 通過」で止めない。
+4. マージ後、`mergedAt` が設定されていることを確認する。
+5. 必要なら `git checkout main && git pull origin main` でローカルを同期する。
+
+## 禁止
+
+- マージ可能な PR を開いたまま終了すること
+- 「マージしてください」とユーザーに依頼して終了すること
+- CI 未確認のままマージすること
+
+## その他
+
+- デフォルトは merge commit（リポジトリ標準が別ならそれに従う）。
+- このルールは **毎セッション常時適用**（`alwaysApply: true`）。
