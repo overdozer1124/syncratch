@@ -2781,7 +2781,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 @media (max-width: 1399px) {
-  .exec-control .exec-label {
+  .exec-control .exec-label:not(.exec-scrub-label) {
     display: none;
   }
 }
@@ -2797,30 +2797,90 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 .exec-scrub {
+  --scrub-track: rgb(255 255 255 / 38%);
+  --scrub-fill: rgb(255 255 255 / 92%);
+  --scrub-thumb: #fffef8;
+  --scrub-thumb-ring: #0f4d7a;
+  --scrub-progress: 0%;
   width: min(7rem, 18vw);
   min-width: 4.5rem;
+  height: 1.25rem;
   margin: 0;
+  padding: 0;
   vertical-align: middle;
+  cursor: pointer;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.exec-scrub:focus-visible {
+  outline: 2px solid #ffe9b8;
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.exec-scrub::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--scrub-fill) 0%,
+    var(--scrub-fill) var(--scrub-progress),
+    var(--scrub-track) var(--scrub-progress),
+    var(--scrub-track) 100%
+  );
+}
+
+.exec-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -4px;
+  border: 2px solid var(--scrub-thumb-ring);
+  border-radius: 50%;
+  background: var(--scrub-thumb);
+  box-shadow: 0 1px 4px rgb(9 44 74 / 40%);
+}
+
+.exec-scrub::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--scrub-track);
+}
+
+.exec-scrub::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--scrub-fill);
+}
+
+.exec-scrub::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--scrub-thumb-ring);
+  border-radius: 50%;
+  background: var(--scrub-thumb);
+  box-shadow: 0 1px 4px rgb(9 44 74 / 40%);
 }
 
 .exec-scrub:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: default;
 }
 
 .exec-scrub-label {
   min-width: 3.2rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 28%);
+  color: var(--toolbar-ink);
   font-size: 0.78rem;
-  font-weight: 600;
-  color: #4a5568;
+  font-weight: 700;
+  line-height: 1.9;
   text-align: center;
   font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 1399px) {
-  .exec-scrub-label {
-    display: none;
-  }
 }
 
 /* Paused is a mode the whole editor is in — the green flag looks dead while it
