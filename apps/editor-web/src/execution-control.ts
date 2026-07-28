@@ -330,9 +330,7 @@ export function installExecutionControl(
     retireOrphanThreads(runtime);
     if (state === "paused") {
       if (framesToRun <= 0) {
-        requestRuntimeStageDraw(
-          runtime as import("./execution-stage-draw.js").StageDrawRuntimeLike,
-        );
+        requestRuntimeStageDraw(runtime);
         return undefined;
       }
       framesToRun -= 1;
