@@ -2703,6 +2703,13 @@ function installExecutionControls(vmInstance: ScratchVm): void {
 
   let scrubDebounceTimer: number | null = null;
 
+  const updateScrubSliderFill = (input: HTMLInputElement): void => {
+    const max = Number(input.max);
+    const value = Number(input.value);
+    const pct = max > 0 ? (value / max) * 100 : 0;
+    input.style.setProperty("--scrub-progress", `${pct}%`);
+  };
+
   const renderRewindControl = (): void => {
     const snapshot = executionRewind?.getSnapshot() ?? null;
     const paused = executionController?.getSnapshot().state === "paused";
@@ -2724,6 +2731,7 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       formatScrubSliderAriaValueText(snapshot),
     );
     execScrubLabel.textContent = formatScrubSliderLabel(snapshot);
+    updateScrubSliderFill(execScrubInput);
 
     if (shouldNotifyRewindUnavailable(lastRewindSnapshot, snapshot)) {
       appToast.show(title);
@@ -2829,6 +2837,7 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   };
 
   execScrubInput.addEventListener("input", () => {
+    updateScrubSliderFill(execScrubInput);
     if (scrubDebounceTimer !== null) {
       window.clearTimeout(scrubDebounceTimer);
     }
