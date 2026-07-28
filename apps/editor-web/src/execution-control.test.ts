@@ -1,5 +1,6 @@
 import {describe, expect, it, vi} from "vitest";
 import {
+  countRunnableNonMonitorThreads,
   guardGlowUpdates,
   installExecutionControl,
   readActiveBlockIds,
@@ -80,6 +81,22 @@ describe("readActiveBlockIds", () => {
     ).toEqual([]);
     expect(readActiveBlockIds(null)).toEqual([]);
     expect(readActiveBlockIds({})).toEqual([]);
+  });
+});
+
+describe("countRunnableNonMonitorThreads", () => {
+  it("counts active non-monitor threads only", () => {
+    expect(
+      countRunnableNonMonitorThreads({
+        threads: [
+          {status: 0},
+          {updateMonitor: true, status: 0},
+          {isKilled: true, status: 0},
+          {status: 4},
+        ],
+      }),
+    ).toBe(1);
+    expect(countRunnableNonMonitorThreads({threads: []})).toBe(0);
   });
 });
 

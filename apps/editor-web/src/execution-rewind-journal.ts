@@ -118,6 +118,15 @@ export class RewindJournal {
     this.replayEnd = 0;
     this.mode = "idle";
   }
+
+  /** Drop entries appended after `size` (idle scheduler ticks). */
+  truncateTo(size: number): void {
+    if (size < 0 || size >= this.entries.length) return;
+    const removed = this.entries.splice(size);
+    for (const entry of removed) {
+      this.totalBytes -= entryByteSize(entry);
+    }
+  }
 }
 
 export class RewindJournalMismatchError extends Error {
