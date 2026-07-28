@@ -862,6 +862,32 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
+  it("does not record idle scheduler ticks after stop clears threads", () => {
+    const sim = makeSimulatedRuntime([2, 4, 6]);
+    const handle = installExecutionRewind(
+      {runtime: sim.runtime},
+      {
+        captureOrigin: () => makeOrigin(sim.runtime),
+        restoreOrigin: async () => undefined,
+        cloneOrderRegistry: sim.registry,
+      },
+    )!;
+
+    sim.runtime.fire("PROJECT_START");
+    sim.runtime._step!();
+    sim.runtime._step!();
+    expect(handle.getFrames()).toHaveLength(2);
+
+    sim.runtime.threads = [];
+    sim.runtime._step!();
+    sim.runtime._step!();
+    sim.runtime._step!();
+
+    expect(handle.getFrames()).toHaveLength(2);
+    expect(handle.getSnapshot().recordFrontierFrameIndex).toBe(1);
+    handle.dispose();
+  });
+
   it("ignores wrapped _step calls while replaying", async () => {
     const sim = makeSimulatedRuntime([3, 5]);
     let releaseRestore: (() => void) | undefined;

@@ -134,12 +134,6 @@ export interface ExecutionController {
   dispose(): void;
 }
 
-/**
- * Blocks each non-monitor thread is sitting on, newest execution first.
- * `blockGlowInFrame` is what the sequencer just ran; `peekStack()` is what it
- * will run next. Prefer the former so a paused VM highlights the block the
- * learner just watched take effect.
- */
 export function readActiveBlockIds(
   runtime: ExecutionRuntimeLike | null | undefined,
 ): string[] {
@@ -168,6 +162,27 @@ export function readActiveBlockIds(
     }
   }
   return ids;
+}
+
+/** Non-monitor threads that can still advance (matches scratch-vm run status). */
+export function countRunnableNonMonitorThreads(
+  runtime: ExecutionRuntimeLike | null | undefined,
+): number {
+  const threads = runtime?.threads;
+  if (!Array.isArray(threads)) return 0;
+  let count = 0;
+  for (const thread of threads) {
+    if (
+      !thread ||
+      thread.updateMonitor ||
+      thread.isKilled ||
+      thread.status === THREAD_STATUS_DONE
+    ) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 /**

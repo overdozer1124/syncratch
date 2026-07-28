@@ -39,6 +39,7 @@ import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {replayToFrame, truncateFramesAfter} from "./execution-rewind-replay.js";
 import {requestRuntimeStageDraw} from "./execution-stage-draw.js";
+import {countRunnableNonMonitorThreads} from "./execution-control.js";
 import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import {
   REWIND_MAX_FRAMES,
@@ -285,6 +286,7 @@ export function installExecutionRewind(
     }
 
     const journalStart = journal.size;
+    const threadsBefore = countRunnableNonMonitorThreads(runtime);
     journal.beginRecord();
     let result: unknown;
     try {
@@ -294,8 +296,16 @@ export function installExecutionRewind(
       journal.endFrame();
     }
     const journalEnd = journal.size;
+    const threadsAfter = countRunnableNonMonitorThreads(runtime);
 
     if (!origin) {
+      return result;
+    }
+
+    if (threadsBefore === 0 && threadsAfter === 0) {
+      if (journalEnd > journalStart) {
+        journal.truncateTo(journalStart);
+      }
       return result;
     }
 
