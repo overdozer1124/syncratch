@@ -248,6 +248,38 @@ test("rewind auto-pauses while running", async ({page}) => {
   ).toBeNull();
 });
 
+test("timeline scrub moves sprite forward again after rewinding", async ({page}) => {
+  await bootEditor(page);
+  await createForeverScript(page);
+  await page.getByTestId("exec-pause").click();
+  await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
+  await page.waitForFunction(
+    `(() => { ${FIBER_HELPERS}
+      const vm = resolveVm();
+      return vm.runtime.threads.filter(t => !t.updateMonitor).length > 0;
+    })()`,
+    undefined,
+    {timeout: 10_000},
+  );
+
+  await stepOnce(page);
+  await stepOnce(page);
+  await stepOnce(page);
+  const xAtThree = await readSpriteX(page);
+
+  await page.getByTestId("exec-rewind").click();
+  await waitForRewindIdle(page);
+  const xAtTwo = await readSpriteX(page);
+  expect(xAtTwo).not.toBe(xAtThree);
+
+  const scrub = page.getByTestId("exec-scrub");
+  await expect(scrub).toBeEnabled();
+  await scrub.fill("3");
+  await scrub.dispatchEvent("change");
+  await waitForRewindIdle(page);
+  expect(await readSpriteX(page)).toBe(xAtThree);
+});
+
 test("stage stays visible after canvas resize while paused", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);

@@ -20,10 +20,16 @@ export interface ExecutionTrace {
   record(entry: Omit<TraceEntry, "time"> & {time?: number}): void;
   /** Oldest first. */
   getEntries(): TraceEntry[];
+  /** Entries visible at the current playback cursor. */
+  getDisplayEntries(): TraceEntry[];
   clear(): void;
   /** Drop newest entries so {@link size} is at most `maxSize`. */
   truncateTo(maxSize: number): void;
   size(): number;
+  setRecordingSuspended(suspended: boolean): void;
+  isRecordingSuspended(): boolean;
+  setDisplayCursor(maxSize: number): void;
+  getDisplayCursor(): number;
 }
 
 export interface ExecutionTraceOptions {
@@ -41,9 +47,16 @@ export function createExecutionTrace(
   const limit = Math.max(1, options.limit ?? DEFAULT_LIMIT);
   const now = options.now ?? (() => Date.now());
   let entries: TraceEntry[] = [];
+  let recordingSuspended = false;
+  let displayCursor = 0;
+
+  const clampDisplayCursor = () => {
+    displayCursor = Math.max(0, Math.min(displayCursor, entries.length));
+  };
 
   return {
     record(entry) {
+      if (recordingSuspended) return;
       if (typeof entry.blockId !== "string" || !entry.blockId) return;
       const at = typeof entry.time === "number" ? entry.time : now();
       entries.push({
@@ -56,22 +69,47 @@ export function createExecutionTrace(
       if (entries.length > limit) {
         entries = entries.slice(entries.length - limit);
       }
+      if (displayCursor >= entries.length - 1) {
+        displayCursor = entries.length;
+      }
+      clampDisplayCursor();
     },
     getEntries: () =>
       entries.map(entry => ({
         ...entry,
         snapshot: cloneSnapshot(entry.snapshot),
       })),
+    getDisplayEntries() {
+      clampDisplayCursor();
+      return entries.slice(0, displayCursor).map(entry => ({
+        ...entry,
+        snapshot: cloneSnapshot(entry.snapshot),
+      }));
+    },
     clear() {
       entries = [];
+      displayCursor = 0;
     },
     truncateTo(maxSize: number) {
       const limitSize = Math.max(0, Math.floor(maxSize));
       if (entries.length > limitSize) {
         entries = entries.slice(0, limitSize);
       }
+      displayCursor = Math.min(displayCursor, entries.length);
     },
     size: () => entries.length,
+    setRecordingSuspended(suspended: boolean) {
+      recordingSuspended = suspended;
+    },
+    isRecordingSuspended: () => recordingSuspended,
+    setDisplayCursor(maxSize: number) {
+      displayCursor = Math.max(0, Math.floor(maxSize));
+      clampDisplayCursor();
+    },
+    getDisplayCursor: () => {
+      clampDisplayCursor();
+      return displayCursor;
+    },
   };
 }
 
@@ -150,6 +188,7 @@ export function installExecutionTrace(
   const disposePrimitiveCapture = installPrimitiveTraceCapture(runtime, trace);
 
   const instrumentAll = () => {
+    if (trace.isRecordingSuspended()) return;
     const threads = runtime.threads;
     if (!Array.isArray(threads)) return;
     for (const thread of threads) {
