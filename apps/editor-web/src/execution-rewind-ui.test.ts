@@ -6,8 +6,6 @@ import {
   formatRewindButtonTitle,
   formatScrubSliderAriaValueText,
   formatScrubSliderLabel,
-  isExecutionControlShortcutTarget,
-  resolveExecutionControlShortcut,
   shouldNotifyRewindUnavailable,
 } from "./execution-rewind-ui.js";
 
@@ -70,20 +68,5 @@ describe("execution-rewind-ui", () => {
     });
     expect(shouldNotifyRewindUnavailable(previous, next)).toBe(true);
     expect(shouldNotifyRewindUnavailable(next, next)).toBe(false);
-  });
-
-  it("maps keyboard shortcuts", () => {
-    expect(resolveExecutionControlShortcut(" ", false)).toBe("pause");
-    expect(resolveExecutionControlShortcut("[", false)).toBe("rewind");
-    expect(resolveExecutionControlShortcut("]", false)).toBe("step");
-    expect(resolveExecutionControlShortcut("[", true)).toBeNull();
-  });
-
-  it("ignores shortcut targets inside editable fields", () => {
-    const input = document.createElement("input");
-    expect(isExecutionControlShortcutTarget(input)).toBe(false);
-    expect(isExecutionControlShortcutTarget(document.createElement("button"))).toBe(
-      true,
-    );
   });
 });

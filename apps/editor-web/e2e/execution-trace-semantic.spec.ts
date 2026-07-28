@@ -39,8 +39,12 @@ async function bootEditor(page: Page): Promise<void> {
   await expect(page.locator('[data-testid="scratch-gui"]')).toBeVisible();
 }
 
-async function openTracePanel(page: Page): Promise<void> {
-  await page.getByTestId("trace-panel").locator("summary").click();
+async function openDebugPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("exec-debug-panel");
+  if (!(await panel.isVisible())) {
+    await page.getByTestId("exec-pause").click();
+  }
+  await expect(panel).toBeVisible();
   await expect(page.getByTestId("trace-list")).toBeVisible();
 }
 
@@ -96,7 +100,7 @@ test("semantic trace lists forever, move, and bounce in execution order", async 
 }) => {
   await bootEditor(page);
   await startBounceForeverScript(page, 10);
-  await openTracePanel(page);
+  await openDebugPanel(page);
 
   await waitForTraceLabel(page, "緑の旗でスクリプトを開始した");
   await waitForTraceLabel(page, "「ずっと」を開始した");
@@ -125,7 +129,7 @@ test("bounce at stage edge is reported as はい with direction change", async (
     vm.editingTarget.setXY(220, 0);
   })()`);
   await startBounceForeverScript(page, 1);
-  await openTracePanel(page);
+  await openDebugPanel(page);
   await page.waitForTimeout(1200);
 
   const labels = await traceLabels(page);
@@ -160,8 +164,7 @@ test("step mode appends one semantic entry per frame without changing motion sta
     vm.emitWorkspaceUpdate();
     vm.greenFlag();
   })()`);
-  await page.getByTestId("exec-pause").click();
-  await openTracePanel(page);
+  await openDebugPanel(page);
   await page.getByTestId("trace-clear").click();
   await expect(page.getByTestId("trace-list").locator(".trace-empty")).toBeVisible();
 
@@ -197,8 +200,7 @@ test("step mode appends one semantic entry per frame without changing motion sta
 test("paused project does not append semantic trace entries", async ({page}) => {
   await bootEditor(page);
   await startBounceForeverScript(page, 10);
-  await page.getByTestId("exec-pause").click();
-  await openTracePanel(page);
+  await openDebugPanel(page);
   await page.getByTestId("trace-clear").click();
   await page.waitForTimeout(900);
   await expect(page.getByTestId("trace-list").locator(".trace-empty")).toBeVisible();

@@ -681,70 +681,106 @@
               title="一時停止"
             ><span aria-hidden="true" class="exec-icon">⏯</span
             ><span class="exec-label" data-testid="exec-pause-label" id="exec-pause-label">一時停止</span></button>
-            <button
-              class="toolbar-action exec-control-button"
-              data-testid="exec-rewind"
-              id="exec-rewind"
-              title="1コマ戻る"
-              aria-label="1コマ戻る"
-              type="button"
-              disabled
-            ><span aria-hidden="true" class="exec-icon">⏮</span
-            ><span class="exec-label" data-testid="exec-rewind-label" id="exec-rewind-label">戻る</span></button>
-            <input
-              type="range"
-              class="exec-scrub"
-              data-testid="exec-scrub"
-              id="exec-scrub"
-              min="0"
-              max="0"
-              value="0"
-              step="1"
-              disabled
-              aria-label="実行位置"
-              aria-valuetext="コマ 0 / 0"
-            />
-            <span
-              class="exec-scrub-label exec-label"
-              data-testid="exec-scrub-label"
-              id="exec-scrub-label"
-            >0 / 0</span>
-            <button
-              class="toolbar-action exec-control-button"
-              data-testid="exec-step"
-              id="exec-step"
-              title="1コマ進む"
-              aria-label="1コマ進む"
-              type="button"
-            ><span aria-hidden="true" class="exec-icon">⏭</span
-            ><span class="exec-label">1コマ</span></button>
-            <span
-              class="exec-control-status"
-              data-testid="exec-status"
-              id="exec-status"
-              role="status"
-              aria-live="polite"
-            >動いています</span>
-            <details class="tool-panel trace-panel" data-testid="trace-panel">
-              <summary title="じっこう履歴" aria-label="じっこう履歴"
-                ><span aria-hidden="true" class="exec-icon">🕘</span
-                ><span class="exec-label">履歴</span></summary>
-              <div class="panel-content">
-                <div class="trace-panel-actions">
-                  <button
-                    class="toolbar-action toolbar-action--quiet"
-                    data-testid="trace-clear"
-                    id="trace-clear"
-                    type="button"
-                  >消す</button>
-                </div>
-                <div
-                  class="trace-panel-body"
-                  data-testid="trace-list"
-                  id="trace-list"
-                ></div>
+            <div
+              class="debug-floating-panel"
+              data-testid="exec-debug-panel"
+              id="exec-debug-panel"
+              hidden
+            >
+              <div
+                class="debug-panel-chrome"
+                data-testid="exec-debug-drag-handle"
+                id="exec-debug-drag-handle"
+              >
+                <h2 class="debug-panel-title" id="exec-debug-title">デバッグ</h2>
+                <button
+                  class="debug-panel-close"
+                  data-testid="exec-debug-close"
+                  id="exec-debug-close"
+                  type="button"
+                  aria-label="閉じる（一時停止は続く）"
+                  title="閉じる（一時停止は続く）"
+                >×</button>
               </div>
-            </details>
+              <div class="debug-panel-body">
+                <p
+                  class="exec-control-status"
+                  data-testid="exec-status"
+                  id="exec-status"
+                  role="status"
+                  aria-live="polite"
+                >止まっています</p>
+                <div
+                  class="debug-panel-controls"
+                  role="group"
+                  aria-label="コマ送り"
+                >
+                  <button
+                    class="toolbar-action exec-control-button"
+                    data-testid="exec-rewind"
+                    id="exec-rewind"
+                    title="1コマ戻る"
+                    aria-label="1コマ戻る"
+                    type="button"
+                    disabled
+                  ><span aria-hidden="true" class="exec-icon">⏮</span
+                  ><span class="exec-label" data-testid="exec-rewind-label" id="exec-rewind-label">戻る</span></button>
+                  <input
+                    type="range"
+                    class="exec-scrub"
+                    data-testid="exec-scrub"
+                    id="exec-scrub"
+                    min="0"
+                    max="0"
+                    value="0"
+                    step="1"
+                    disabled
+                    aria-label="実行位置"
+                    aria-valuetext="コマ 0 / 0"
+                  />
+                  <span
+                    class="exec-scrub-label exec-label"
+                    data-testid="exec-scrub-label"
+                    id="exec-scrub-label"
+                  >0 / 0</span>
+                  <button
+                    class="toolbar-action exec-control-button"
+                    data-testid="exec-step"
+                    id="exec-step"
+                    title="1コマ進む"
+                    aria-label="1コマ進む"
+                    type="button"
+                  ><span aria-hidden="true" class="exec-icon">⏭</span
+                  ><span class="exec-label">1コマ</span></button>
+                </div>
+                <button
+                  class="toolbar-action debug-panel-resume"
+                  data-testid="exec-debug-resume"
+                  id="exec-debug-resume"
+                  type="button"
+                >再開</button>
+                <section
+                  class="debug-panel-history"
+                  aria-label="じっこう履歴"
+                  data-testid="trace-panel"
+                >
+                  <div class="debug-panel-history-header">
+                    <h3 class="debug-panel-history-title">履歴</h3>
+                    <button
+                      class="toolbar-action toolbar-action--quiet"
+                      data-testid="trace-clear"
+                      id="trace-clear"
+                      type="button"
+                    >消す</button>
+                  </div>
+                  <div
+                    class="trace-panel-body"
+                    data-testid="trace-list"
+                    id="trace-list"
+                  ></div>
+                </section>
+              </div>
+            </div>
           </div>
         </div>
       </div>
