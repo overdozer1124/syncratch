@@ -3046,9 +3046,11 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.trace-time {
+.trace-step {
   flex: 0 0 auto;
+  min-width: 1.5rem;
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
   color: #6b6b6b;
 }
 

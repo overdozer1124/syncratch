@@ -4,7 +4,7 @@ import {
   createTraceListView,
   formatTraceLine,
   formatTraceLines,
-  formatTraceTime,
+  formatTraceStep,
 } from "./execution-trace-ui.js";
 import type {ResolvedTraceEntry} from "./execution-trace.js";
 
@@ -22,16 +22,14 @@ function entry(overrides: Partial<ResolvedTraceEntry> = {}): ResolvedTraceEntry 
   };
 }
 
-const at = (h: number, m: number, s: number) => (value: number) =>
-  new Date(2026, 0, 1, h, m, s, value % 1000);
-
 describe("formatTraceLines", () => {
-  it("lists oldest first without mutating the input", () => {
+  it("lists oldest first with 1-based step numbers", () => {
     const entries = [
       entry({blockId: "a", snapshot: {opcode: "event_whenflagclicked", args: {}}}),
       entry({blockId: "b", snapshot: {opcode: "motion_movesteps", args: {STEPS: 10}}}),
     ];
-    const lines = formatTraceLines(entries, at(10, 0, 0));
+    const lines = formatTraceLines(entries);
+    expect(lines.map(l => l.step)).toEqual(["1", "2"]);
     expect(lines.map(l => l.label)).toEqual([
       "緑の旗でスクリプトを開始した",
       "10歩動いた",
@@ -41,17 +39,18 @@ describe("formatTraceLines", () => {
 });
 
 describe("formatTraceLine", () => {
-  it("uses semantic snapshot labels", () => {
+  it("uses semantic snapshot labels and the given step index", () => {
     const line = formatTraceLine(
       entry({snapshot: {opcode: "motion_movesteps", args: {STEPS: 15}}}),
-      at(10, 0, 0),
+      3,
     );
+    expect(line.step).toBe("3");
     expect(line.label).toBe("15歩動いた");
   });
 });
 
 describe("createTraceListView", () => {
-  it("renders one line per entry in execution order", () => {
+  it("renders one line per entry in execution order with step numbers", () => {
     const container = document.createElement("div");
     createTraceListView(container).render([
       entry({blockId: "a", snapshot: {opcode: "event_whenflagclicked", args: {}}}),
@@ -60,10 +59,13 @@ describe("createTraceListView", () => {
 
     const items = container.querySelectorAll(".trace-line");
     expect(items).toHaveLength(2);
+    expect(items[0]?.querySelector(".trace-step")?.textContent).toBe("1");
+    expect(items[1]?.querySelector(".trace-step")?.textContent).toBe("2");
     expect(items[0]?.querySelector(".trace-label")?.textContent).toBe(
       "緑の旗でスクリプトを開始した",
     );
     expect(items[1]?.querySelector(".trace-label")?.textContent).toBe("4歩動いた");
+    expect(items[0]?.querySelector(".trace-time")).toBeNull();
     expect(items[0]?.querySelector(".trace-repeat")).toBeNull();
   });
 
@@ -102,8 +104,9 @@ describe("createTraceListView", () => {
   });
 });
 
-describe("formatTraceTime", () => {
-  it("pads to HH:MM:SS", () => {
-    expect(formatTraceTime(0, at(9, 5, 3))).toBe("09:05:03");
+describe("formatTraceStep", () => {
+  it("formats 1-based step numbers as plain digits", () => {
+    expect(formatTraceStep(1)).toBe("1");
+    expect(formatTraceStep(12)).toBe("12");
   });
 });
