@@ -6,39 +6,32 @@ import {describeTraceSnapshot} from "./execution-trace-format.js";
 import type {ResolvedTraceEntry} from "./execution-trace.js";
 
 export interface TraceLine {
-  time: string;
+  /** 1-based step number in execution order. */
+  step: string;
   target: string;
   label: string;
 }
 
-export function formatTraceTime(
-  timestamp: number,
-  toDate: (value: number) => Date = value => new Date(value),
-): string {
-  const date = toDate(timestamp);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
-    date.getSeconds(),
-  )}`;
+/** Format a 1-based execution step index for the history list. */
+export function formatTraceStep(stepIndex: number): string {
+  const step = Math.max(1, Math.floor(stepIndex));
+  return String(step);
 }
 
 export function formatTraceLine(
   entry: ResolvedTraceEntry,
-  toDate?: (value: number) => Date,
+  stepIndex: number,
 ): TraceLine {
   return {
-    time: formatTraceTime(entry.time, toDate),
+    step: formatTraceStep(stepIndex),
     target: entry.targetName ?? "",
     label: describeTraceSnapshot(entry.snapshot),
   };
 }
 
 /** Oldest first — execution order. */
-export function formatTraceLines(
-  entries: ResolvedTraceEntry[],
-  toDate?: (value: number) => Date,
-): TraceLine[] {
-  return entries.map(entry => formatTraceLine(entry, toDate));
+export function formatTraceLines(entries: ResolvedTraceEntry[]): TraceLine[] {
+  return entries.map((entry, index) => formatTraceLine(entry, index + 1));
 }
 
 export interface TraceListView {
@@ -76,10 +69,11 @@ export function createTraceListView(
         const item = documentRef.createElement("li");
         item.className = "trace-line";
 
-        const time = documentRef.createElement("span");
-        time.className = "trace-time";
-        time.textContent = line.time;
-        item.appendChild(time);
+        const step = documentRef.createElement("span");
+        step.className = "trace-step";
+        step.textContent = line.step;
+        step.setAttribute("aria-label", `ステップ ${line.step}`);
+        item.appendChild(step);
 
         if (line.target) {
           const target = documentRef.createElement("span");
