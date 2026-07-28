@@ -42,25 +42,87 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-24 13:20:56 JST |
+| 最終更新 | 2026-07-28 20:44:55 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `READY` |
-| 現在の担当 | ユーザー（Stage 5 手動 / 本番確認） |
-| 現在のTask | Stage 5 残りゲート（A5–A7, B1, B3） |
+| 現在の担当 | Codex（AI 実装ブランチ一覧の参照） / ユーザー |
+| 現在のTask | AI 助言試作の実装済みブランチ棚卸し（下記一覧） |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 / #13 / #16 / #17 / #19 / #22 / #24 / #26 / #28 / #30 / #32 / #37 / #44 / #55 / #59 / #61 / #62 / #64 / #65 / #67 / #69 / #71 / #73 / #75 merge 済み） |
+| Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`bbbf63d` = PR #75 merge） |
+| 作業ブランチ | `main`（`71e54c7`） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | online ホスト tooltip 二重表示修正（#75）。いっしょに作るリンク自動コピー＋2秒トースト（#73）。共同編集接続者名簿（#71）。Scratch メニュー中央クリック透過（#69）。共同編集 online＋王冠（#67）。AIにきく前面ドラッグダイアログ（#65）。base64 SVG 紫アイコン→青（#64）。読込みスプラッシュ（#62）。ライブラリ／モーダルのツールバー重なり解消（#61）。Scratch クローム紫→Syncratch 青（#59）。ツールバー見た目統一（#55）。Drive refresh-token OAuth（#44）。単一青ヘッダー（#32/#37）。AI 助言は `packages/ai-assist` |
+| 設計 | AI 助言は `packages/ai-assist`（main 取り込み済み・ブランチ一覧は下記「Codex向け」節）。メニュー統合・共同編集・実行可視化などは別系列 |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
 | 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に online ホバー文言が1回だけ出ることを確認 |
-| Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI は試作開始） |
+| Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
+
+## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
+
+基準: `main` @ `71e54c7`（2026-07-28）。コード本体は `packages/ai-assist` + `apps/editor-web`（設定は「設定」メニュー内、UIは「AI にきく」フローティングパネル）。設計メモ: `docs/superpowers/specs/2026-07-23-ai-advice-assist-design.md`。
+
+**未実装（意図的）:** IR→Mutation 適用 / プレビュー / AI Undo / 自律デバッグループ / 学校ポリシー継承・サーバー予算。
+
+### コア機能（ブランチ → PR）
+
+| ブランチ | PR | 内容 |
+|---|---|---|
+| `cursor/ai-coding-assist-1111` | #33 | 助言プロトタイプ本体（provider自動判別、安いモデル、level 0–6、localStorage、PII sanitize、opcode要約、`/ai/chat`） |
+| `cursor/fix-ai-vite-config-1111` | #35 | Vite が `ai-assist` TS を読めない問題 |
+| `cursor/fix-ai-key-detect-1111` | #36 | APIキー判別＋手動プロバイダ選択 |
+| `cursor/fix-gemini-key-detect-1111` | #38 | Gemini 新キー `AQ.` 判別 |
+| `cursor/fix-gemini-rate-limit-msg-1111` | #39 | 既定モデルを `gemini-3.1-flash-lite` へ |
+| `cursor/ai-project-aware-debug-1111` | #41 | 実スクリプトスタック診断（帽子→next） |
+| `cursor/fix-settings-field-spacing-1111` | #42 | AI設定フィールドの行間修正 |
+| `cursor/ai-sprite-target-select-1111` | #43 | 質問対象スプライト明示選択 |
+| `cursor/ai-kid-friendly-diagrams-1111` | #45 | 小学生向け文言＋`【ず】…【/ず】` |
+| `cursor/fix-ai-substack-read-1111` | #46 | C型ブロック `SUBSTACK` 読み取り（ずっと内） |
+| `cursor/ai-smooth-bounce-advice-1111` | （main直取り込み / #49系と一体） | 弾む助言で瞬間移動を悪化させない |
+| `cursor/ai-intent-clarify-choices-1111` | #49 | 意図確認の選択肢（初版） |
+| `cursor/ai-multi-turn-chat-1111` | #50 | マルチターン会話 |
+| `cursor/fix-ai-truncated-answers-1111` | #51 | 回答途切れ対策（maxTokens＋続き取得） |
+| `cursor/fix-chrome-password-prompt-1111` | #52 | APIキーのパスワード保存誤認抑制 |
+| `cursor/ai-dynamic-clarify-choices-1111` | #53 | 意図選択肢を質問から動的生成 |
+| `cursor/ai-answer-paging-1111` | #54 | 回答を1往復ずつページ表示 |
+| `cursor/ai-answer-area-larger-1111` | #56 | 解答欄拡大・回答中レイアウト |
+| `cursor/ai-anti-loop-followup-1111` | #58 | 続き質問の同一回答ループ抑制 |
+
+### UI / パネル見た目（ブランチ → PR）
+
+| ブランチ | PR | 内容 |
+|---|---|---|
+| `cursor/ai-ask-draggable-modal-f431` | #65 | AIにきくを前面ドラッグ可能なフローティングダイアログに |
+| `cursor/ai-panel-contrast-a19a` | #91 | コントラスト改善 |
+| `cursor/ai-panel-scratch-blue-a19a` | #92 | 黄＋Scratch青のトーン |
+| `cursor/ai-panel-claude-design-a19a` | #93 | Claude Design 青系リデザイン |
+| `cursor/ai-panel-two-column-a19a` | #94 | 左右2カラム（質問｜回答） |
+
+### 主要モジュール（現状）
+
+- `packages/ai-assist/src/context.ts` — 作品コンテキスト（SUBSTACK/dy/dx 等）
+- `packages/ai-assist/src/prompt.ts` — 助言プロンプト・会話履歴・anti-loop
+- `packages/ai-assist/src/clarify.ts` — 動的意図確認
+- `packages/ai-assist/src/client.ts` / `forward.ts` / `providers.ts` — プロバイダ呼び出し
+- `apps/editor-web/src/main.ts` + `ai-floating-panel.ts` + `ai-assist-ui.ts` — UI配線
+- 設定 UI はメニュー「設定」内（旧「AI 設定」独立パネルは統合済み）
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。Railway 再デプロイ後、online ホバーでホスト文言が1回だけ出ること、リンク作成トースト／接続者一覧を確認。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+Stage 5 手動ゲート支援（指示時）。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+
+## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
+
+```text
+最終更新: 2026-07-28 20:44:55 JST
+更新者: Cursor
+状態: READY（Codex 参照用の AI 実装ブランチ一覧を台帳へ記載）
+対象: packages/ai-assist + editor-web AI UI（main 取り込み済み）
+内容:
+- 上記「Codex向け: 実装済み AI 助言ブランチ一覧」を追加
+- コア機能 #33〜#58、パネルUI #65/#91〜#94 をブランチ名付きで列挙
+- 未実装境界（IR適用・AI Undo 等）を再掲
+```
 
 ## 作業ログ追記（2026-07-23 AI advice assist prototype）
 
