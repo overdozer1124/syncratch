@@ -52,6 +52,14 @@ async function bootEditor(page: Page): Promise<void> {
   await expect(page.getByTestId("exec-control")).toBeVisible();
 }
 
+async function openDebugPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("exec-debug-panel");
+  if (!(await panel.isVisible())) {
+    await page.getByTestId("exec-pause").click();
+  }
+  await expect(panel).toBeVisible();
+}
+
 /**
  * Build a forever-loop script on the editing target and start it, so there is
  * a running thread to pause. Uses the VM's own block API rather than dragging.
@@ -111,7 +119,7 @@ test("pause stops the VM and resume restarts it", async ({page}) => {
     first,
   );
 
-  await page.getByTestId("exec-pause").click();
+  await openDebugPanel(page);
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
   await expect(page.getByTestId("exec-pause-label")).toHaveText("再開");
 
@@ -160,8 +168,9 @@ test("step advances exactly one frame and highlights the running block", async (
 test("the trace panel records what actually ran", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
+  await page.waitForTimeout(1500);
 
-  await page.getByTestId("trace-panel").locator("summary").click();
+  await openDebugPanel(page);
   const lines = page.getByTestId("trace-list").locator(".trace-line");
   await expect(lines.first()).toBeVisible({timeout: 15_000});
 
@@ -193,12 +202,12 @@ for (const size of [
   {width: 1280, height: 800},
   {width: 1920, height: 1000},
 ]) {
-  test(`toolbar and trace panel fit at ${size.width}px`, async ({page}) => {
+  test(`toolbar and debug panel fit at ${size.width}px`, async ({page}) => {
     await page.setViewportSize(size);
     await bootEditor(page);
 
-    await page.getByTestId("trace-panel").locator("summary").click();
-    const panel = page.getByTestId("trace-panel").locator(".panel-content");
+    await openDebugPanel(page);
+    const panel = page.getByTestId("exec-debug-panel");
     await expect(panel).toBeVisible();
 
     const box = (await panel.boundingBox())!;
@@ -250,19 +259,16 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
+  await openDebugPanel(page);
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
   const paused = await readSpriteX(page);
 
-  // The history panel must survive clicking the run controls beside it.
-  await page.getByTestId("trace-panel").locator("summary").click();
-  await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-  ).toBeVisible();
+  // The debug panel must survive clicking the run controls inside it.
+  await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
   await page.getByTestId("exec-step").click();
   await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-    "stepping must not close the history panel",
+    page.getByTestId("exec-debug-panel"),
+    "stepping must not close the debug panel",
   ).toBeVisible();
 
   // Pressing the green flag has to actually start the project.
@@ -297,11 +303,7 @@ test("a paused project neither runs nor logs", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
-  await page.getByTestId("trace-panel").locator("summary").click();
-  await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-  ).toBeVisible();
+  await openDebugPanel(page);
   await page.getByTestId("trace-clear").click();
 
   // Starting scripts while paused must not grow the log: a log that moves

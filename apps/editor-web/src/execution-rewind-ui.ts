@@ -48,27 +48,3 @@ export function shouldNotifyRewindUnavailable(
   if (!previous || !next) return false;
   return previous.canScrub && !next.canScrub && Boolean(next.rewindError);
 }
-
-export function isExecutionControlShortcutTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return false;
-  const tag = target.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return false;
-  return true;
-}
-
-export type ExecutionControlShortcutAction =
-  | "pause"
-  | "rewind"
-  | "step";
-
-export function resolveExecutionControlShortcut(
-  key: string,
-  shiftKey: boolean,
-): ExecutionControlShortcutAction | null {
-  if (shiftKey) return null;
-  if (key === " ") return "pause";
-  if (key === "[") return "rewind";
-  if (key === "]") return "step";
-  return null;
-}

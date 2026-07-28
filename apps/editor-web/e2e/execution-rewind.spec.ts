@@ -196,7 +196,7 @@ test("rewind truncates the execution trace", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
   await page.getByTestId("exec-pause").click();
-  await page.getByTestId("trace-panel").locator("summary").click();
+  await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
 
   await stepOnce(page);
   await stepOnce(page);

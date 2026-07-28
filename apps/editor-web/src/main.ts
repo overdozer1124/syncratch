@@ -296,13 +296,12 @@ import {
   type RewindOrigin,
   type RewindSnapshot,
 } from "./execution-rewind.js";
+import {installDebugFloatingPanel} from "./debug-floating-panel.js";
 import {
   formatRewindButtonLabel,
   formatRewindButtonTitle,
   formatScrubSliderAriaValueText,
   formatScrubSliderLabel,
-  isExecutionControlShortcutTarget,
-  resolveExecutionControlShortcut,
   shouldNotifyRewindUnavailable,
 } from "./execution-rewind-ui.js";
 import {createTraceListView} from "./execution-trace-ui.js";
@@ -502,6 +501,10 @@ const execScrubLabel = requiredElement<HTMLElement>("exec-scrub-label");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
 const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
+const execDebugPanel = requiredElement<HTMLElement>("exec-debug-panel");
+const execDebugDragHandle = requiredElement<HTMLElement>("exec-debug-drag-handle");
+const execDebugCloseButton = requiredElement<HTMLButtonElement>("exec-debug-close");
+const execDebugResumeButton = requiredElement<HTMLButtonElement>("exec-debug-resume");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
@@ -615,10 +618,10 @@ for (const panel of toolPanels) {
 }
 
 document.addEventListener("pointerdown", event => {
-  // Pausing or stepping while watching the history must not close the history.
+  // Pausing or stepping in the debug panel must not close other toolbar menus.
   if (
     event.target instanceof Node &&
-    execControlGroup.contains(event.target)
+    (execControlGroup.contains(event.target) || execDebugPanel.contains(event.target))
   ) {
     return;
   }
@@ -2535,7 +2538,7 @@ function installScratchNativeMenus(
 let executionController: ExecutionController | null = null;
 let executionTrace: ExecutionTraceHandle | null = null;
 let executionRewind: ExecutionRewindHandle | null = null;
-let disposeExecutionControlShortcuts: (() => void) | null = null;
+let disposeDebugPanel: (() => void) | null = null;
 let rewindInvalidationInstalled = false;
 const traceListView = createTraceListView(tracePanelList);
 
@@ -2564,8 +2567,7 @@ function installRewindInvalidationListeners(): void {
  */
 function renderExecutionTrace(vmInstance: ScratchVm): void {
   if (!executionTrace) return;
-  const panel = tracePanelList.closest("details");
-  if (panel && !panel.open) return;
+  if (execDebugPanel.hidden) return;
   const targets = (vmInstance.runtime as {targets?: unknown[]} | undefined)
     ?.targets;
   traceListView.render(
@@ -2618,8 +2620,8 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
   executionRewind?.dispose();
   executionTrace?.dispose();
-  disposeExecutionControlShortcuts?.();
-  disposeExecutionControlShortcuts = null;
+  disposeDebugPanel?.();
+  disposeDebugPanel = null;
 
   // Order matters. Both wrap Runtime._step, and the pause gate has to sit
   // OUTSIDE the recorder: gate -> recorder -> rewind -> real step. Installed
@@ -2739,14 +2741,35 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     lastRewindSnapshot = snapshot;
   };
 
-  const tracePanel = tracePanelList.closest("details");
-  tracePanel?.addEventListener("toggle", () => {
-    renderExecutionTrace(vmInstance);
-  });
   traceClearButton.addEventListener("click", () => {
     executionTrace?.trace.clear();
     renderExecutionTrace(vmInstance);
   });
+
+  const debugPanel = installDebugFloatingPanel({
+    panel: execDebugPanel,
+    handle: execDebugDragHandle,
+    closeButton: execDebugCloseButton,
+  });
+  disposeDebugPanel = () => debugPanel.dispose();
+
+  let wasPaused = false;
+
+  const resumeExecution = (): void => {
+    executionRewind?.commitPlaybackBranch();
+    controller.resume();
+  };
+
+  const syncDebugPanelForPause = (paused: boolean): void => {
+    if (!paused) {
+      debugPanel.setOpen(false);
+      return;
+    }
+    if (!wasPaused) {
+      debugPanel.setOpen(true);
+    }
+  };
+
   // While running, refresh trace (when open) and rewind availability on a timer.
   window.setInterval(() => {
     renderExecutionTrace(vmInstance);
@@ -2756,16 +2779,21 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   const render = () => {
     const {state} = controller.getSnapshot();
     const paused = state === "paused";
+    syncDebugPanelForPause(paused);
     execControlGroup.dataset.state = state;
-    const pauseLabel = paused ? "再開" : "一時停止";
+    const pauseLabel = paused
+      ? debugPanel.isOpen()
+        ? "再開"
+        : "デバッグ"
+      : "一時停止";
     execPauseLabel.textContent = pauseLabel;
-    // The label is hidden on narrow toolbars, so the state has to live here too.
     execPauseButton.setAttribute("aria-label", pauseLabel);
     execPauseButton.title = pauseLabel;
     execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
     execStatus.textContent = paused ? "止まっています" : "動いています";
     renderExecutionTrace(vmInstance);
     renderRewindControl();
+    wasPaused = paused;
   };
 
   refreshExecUi = render;
@@ -2774,11 +2802,22 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   execPauseButton.addEventListener("click", () => {
     const {state} = controller.getSnapshot();
     if (state === "paused") {
-      executionRewind?.commitPlaybackBranch();
-      controller.resume();
-    } else {
-      controller.pause();
+      if (debugPanel.isOpen()) {
+        resumeExecution();
+      } else {
+        debugPanel.setOpen(true);
+        render();
+      }
+      return;
     }
+    controller.pause();
+  });
+  execDebugCloseButton.addEventListener("click", () => {
+    debugPanel.setOpen(false);
+    render();
+  });
+  execDebugResumeButton.addEventListener("click", () => {
+    resumeExecution();
   });
   execRewindButton.addEventListener("click", () => {
     void (async () => {
@@ -2861,39 +2900,6 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     }
     runScrubToSliderValue(Number(execScrubInput.value));
   });
-
-  const handleExecutionControlShortcut = (event: KeyboardEvent): void => {
-    if (execControlGroup.hidden) return;
-    if (!isExecutionControlShortcutTarget(event.target)) return;
-    const action = resolveExecutionControlShortcut(event.key, event.shiftKey);
-    if (!action) return;
-    event.preventDefault();
-
-    if (action === "pause") {
-      const {state} = controller.getSnapshot();
-      if (state === "paused") {
-        executionRewind?.commitPlaybackBranch();
-        controller.resume();
-      } else {
-        controller.pause();
-      }
-      return;
-    }
-
-    if (action === "step") {
-      execStepButton.click();
-      return;
-    }
-
-    if (action === "rewind") {
-      execRewindButton.click();
-    }
-  };
-
-  document.addEventListener("keydown", handleExecutionControlShortcut);
-  disposeExecutionControlShortcuts = () => {
-    document.removeEventListener("keydown", handleExecutionControlShortcut);
-  };
 
   // Green flag runs every sprite. Learners often stare at an empty workspace
   // on the selected sprite and think the editor is moving "with no blocks".
