@@ -16,9 +16,14 @@
  *
  * Known limitation: extension async blocks and timers created before install are
  * not covered by the virtual clock patch.
+ *
+ * While paused, the VM scheduler still ticks but threads do not advance. The
+ * stage is kept visible by repainting via `renderer.draw()` on those idle ticks,
+ * because WebGL buffers can be cleared by `renderer.resize()` while paused.
  */
 
 import {installVirtualClock} from "./execution-virtual-clock.js";
+import {requestRuntimeStageDraw} from "./execution-stage-draw.js";
 
 const PATCH_FLAG = "_syncratchExecutionControlPatched";
 
@@ -324,7 +329,10 @@ export function installExecutionControl(
     if (disposed) return originalStep(...args);
     retireOrphanThreads(runtime);
     if (state === "paused") {
-      if (framesToRun <= 0) return undefined;
+      if (framesToRun <= 0) {
+        requestRuntimeStageDraw(runtime);
+        return undefined;
+      }
       framesToRun -= 1;
       const result = originalStep(...args);
       steppedFrames += 1;

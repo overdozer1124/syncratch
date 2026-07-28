@@ -46,6 +46,7 @@ import {
 import {installJournalCapture} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {replayToFrame, truncateFramesAfter} from "./execution-rewind-replay.js";
+import {requestRuntimeStageDraw} from "./execution-stage-draw.js";
 import {bindCloneOrderRegistry} from "./execution-rewind-target-identity.js";
 import {
   REWIND_MAX_FRAMES,
@@ -378,6 +379,7 @@ export function installExecutionRewind(
     } finally {
       isReplaying = false;
       options.onReplayLifecycle?.("end");
+      requestRuntimeStageDraw(runtime);
     }
   };
 
