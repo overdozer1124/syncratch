@@ -5050,3 +5050,28 @@ mergedAt: 2026-07-29T03:14:57Z
 次の担当: ユーザー
 全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
 ```
+
+### 2026-07-29 14:14:45 JST — Cursor（Drive 作品名リネーム修正）
+
+```text
+最終更新: 2026-07-29 14:14:45 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+ユーザー報告: 作品名を変えて Drive 保存しても以前の名前のまま
+作業ブランチ: cursor/fix-drive-rename-on-save-23c9
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+
+原因:
+- createFile だけ name を送り、既存ファイルの updateFile は bytes/appProperties のみ更新していた
+
+対応:
+- UpdateDriveFileInput.name を追加し multipart metadata に載せる
+- drive-integration が現在の title から driveSb3FileName() を作り create/update 双方へ渡す
+
+テスト:
+- @blocksync/google-drive-sync: 31 PASS
+- apps/editor-web drive-integration: 39 PASS（リネーム回帰を含む）
+- typecheck: PASS
+
+次の担当: Codex → Gate 0 PASS 後 Cursor が main へマージ
+```
