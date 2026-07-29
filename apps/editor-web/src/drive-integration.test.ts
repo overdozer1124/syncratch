@@ -15,10 +15,19 @@ import {openProjectStore} from "@blocksync/project-store-idb";
 import {emptyProject} from "@blocksync/project-schema";
 import {
   createEditorDriveIntegration,
+  driveSb3FileName,
   type EditorDriveDependencies,
 } from "./drive-integration.js";
 
 const bytes = new Uint8Array([80, 75, 3, 4]);
+
+describe("driveSb3FileName", () => {
+  it("builds a .sb3 name from the project title", () => {
+    expect(driveSb3FileName("新しい名前")).toBe("新しい名前.sb3");
+    expect(driveSb3FileName(" already.sb3 ")).toBe("already.sb3");
+    expect(driveSb3FileName("   ")).toBe("Project.sb3");
+  });
+});
 
 function localRecord(localProjectId: string): LocalProjectRecord {
   return {
@@ -414,7 +423,49 @@ describe("editor Drive integration", () => {
     expect(deps.drive.updateFile).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: "existing-file",
+        name: "Local.sb3",
         knownObservation: {version: "12", snapshotId: "snapshot-12"},
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("renames an existing Drive file when the project title changes", async () => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "新しい名前",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "古い名前.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: "0",
+          stateHash: "hash-12",
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      // Match Drive stateHash so connect can re-observe, then still update
+      // (content write + rename) on the subsequent save.
+      hashBytes: vi.fn(async () => "hash-12"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await integration.connect();
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(deps.drive.updateFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: "existing-file",
+        name: "新しい名前.sb3",
       }),
       expect.any(AbortSignal),
     );
