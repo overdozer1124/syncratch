@@ -42,20 +42,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-29 18:44:12 JST |
+| 最終更新 | 2026-07-29 18:54:49 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（Gate 0）→ Cursor が main へマージ |
-| 現在のTask | 実行履歴: 帽子ブロックのキー名など field 抜け修正 |
+| ワークフロー状態 | `IN_PROGRESS` |
+| 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
+| 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ A5–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/fix-trace-hat-fields-23c9` |
+| 作業ブランチ | `main`（`a1021e1`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Gate 0 PASS 後 main マージ。その後ユーザーが A5–A7 / B1 / B3 をかんたん版で実施 |
+| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -5139,6 +5139,27 @@ mergedAt: 2026-07-29T05:52:47Z
 案内:
 - Railway が main 追従なら、回転方法など主要ブロックの履歴が日本語になる
 - 例: 「回転方法を左右のみにした」（motion_setrotationstyle / left-right は出さない）
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+```
+
+### 2026-07-29 18:54:49 JST — Cursor（PR #161 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー報告対応: 実行履歴のキー名抜け（帽子ブロック fields）
+対象: PR #161 → base main
+merge: a1021e1c660dc142a269731d57f2116de2670ea2
+mergedAt: 2026-07-29T09:54:43Z
+事前: Gate 0 SUCCESS ×2
+- https://github.com/overdozer1124/syncratch/actions/runs/30440866051
+- https://github.com/overdozer1124/syncratch/actions/runs/30440876497
+
+案内:
+- Railway が main 追従なら、「スペースキーが押されたとき」は履歴で「スペースキーが押された」と出る
+- メッセージ受信・背景が変わったとき・しきい値帽子も field を表示
 
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
