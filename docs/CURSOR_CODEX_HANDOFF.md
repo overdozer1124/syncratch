@@ -42,20 +42,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-29 14:38:23 JST |
+| 最終更新 | 2026-07-29 14:53:15 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（実行履歴の日本語化）→ マージ後ユーザー（Stage 5 残り） |
-| 現在のTask | 実行履歴の児童向け日本語化 + Stage 5 残り手動ゲート |
+| ワークフロー状態 | `IN_PROGRESS` |
+| 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
+| 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ A5–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/fix-trace-ja-labels-23c9` |
+| 作業ブランチ | `main`（`4761529`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | 実行履歴日本語化のマージ後、ユーザーが A5–A7 / B1 / B3 を実施 |
+| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -110,10 +110,9 @@
 
 ## Cursorが次に行う作業
 
-1. 実行履歴日本語化 PR を Gate 0 PASS 後に main へマージする（必須）。
-2. ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
-3. Phase 2 / TURN / default branch 切替は指示まで停止。
-4. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
+1. ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
+2. Phase 2 / TURN / default branch 切替は指示まで停止。
+3. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5125,4 +5124,23 @@ Gate 0:
 - typecheck: PASS
 
 次の担当: Codex → Gate 0 PASS 後 Cursor が main へマージ
+```
+
+### 2026-07-29 14:53:15 JST — Cursor（PR #159 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー報告対応: 実行履歴の英語表示
+対象: PR #159 → base main
+merge: 476152979643c35ec2026fefc060992a232576f7
+mergedAt: 2026-07-29T05:52:47Z
+事前: Gate 0 SUCCESS ×2
+
+案内:
+- Railway が main 追従なら、回転方法など主要ブロックの履歴が日本語になる
+- 例: 「回転方法を左右のみにした」（motion_setrotationstyle / left-right は出さない）
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
 ```
