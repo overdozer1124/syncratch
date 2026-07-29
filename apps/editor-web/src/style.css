@@ -23,6 +23,8 @@
   /* Stacking: Scratch menu-bar 491 < toolbar < menus/panels < Scratch modals < Drive picker */
   --syncratch-toolbar-z: 600;
   --syncratch-menu-z: 700;
+  /* Flyout collapse toggle: above Blockly surfaces, below Scratch modals. */
+  --syncratch-flyout-toggle-z: 750;
   --syncratch-panel-z: 720;
   --syncratch-modal-z: 800;
   /* AI ask floats above Scratch libraries; Drive picker stays higher. */
@@ -2699,7 +2701,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .syncratch-flyout-toggle {
   position: fixed;
   /* Above Scratch workspace SVG / drag surfaces; below modal/picker. */
-  z-index: 9000;
+  z-index: var(--syncratch-flyout-toggle-z);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -262,7 +262,13 @@ export function installFlyoutLayout(options: {
     host.classList.toggle("syncratch-flyout-hover-expanded", hoverExpanded);
   }
 
-  function applyWidth(): void {
+  /**
+   * @param reflow When true, ask Blockly to rebuild flyout contents/geometry.
+   *   Must stay false for MutationObserver-driven updates: reflow mutates the
+   *   flyout DOM, which re-triggers the observer and also breaks flyout button
+   *   clicks (Create Variable / List / Block) mid pointerdown→pointerup.
+   */
+  function applyWidth(reflow = true): void {
     const workspace = options.getWorkspace();
     const flyout = resolveFlyout(workspace);
     if (!flyout) return;
@@ -296,16 +302,18 @@ export function installFlyoutLayout(options: {
     const metricsChanged = metricsWidth !== lastMetricsWidth;
     lastMetricsWidth = metricsWidth;
 
-    try {
-      // Reflow/position always OK; resize only when metrics width changes
-      // (collapse/expand). Hover overlay must not call workspace.resize().
-      flyout.reflow?.();
-      flyout.position?.();
-      if (metricsChanged) {
-        workspace?.resize?.();
+    if (reflow) {
+      try {
+        // Reflow/position only on intentional layout changes. Hover overlay
+        // must not call workspace.resize().
+        flyout.reflow?.();
+        flyout.position?.();
+        if (metricsChanged) {
+          workspace?.resize?.();
+        }
+      } catch {
+        // Blockly may throw during teardown / mid-gesture.
       }
-    } catch {
-      // Blockly may throw during teardown / mid-gesture.
     }
 
     const flyoutSvg = findFlyoutSvg(options.root);
@@ -387,6 +395,8 @@ export function installFlyoutLayout(options: {
 
   let ignoreClickUntil = 0;
   let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while a pointer is down inside the flyout — skip layout churn. */
+  let flyoutPointerActive = false;
 
   function clearLeaveTimer(): void {
     if (leaveTimer) {
@@ -442,28 +452,45 @@ export function installFlyoutLayout(options: {
     scheduleHoverLeave();
   };
 
+  const onRootPointerDownCapture = (event: PointerEvent) => {
+    if (isFlyoutHoverTarget(event.target)) {
+      flyoutPointerActive = true;
+    }
+  };
+
+  const onGlobalPointerUp = () => {
+    flyoutPointerActive = false;
+  };
+
   toggle.addEventListener("pointerdown", onTogglePointerDown, true);
   toggle.addEventListener("click", onToggleClick);
   options.root.addEventListener("pointerover", onRootPointerOver);
   options.root.addEventListener("pointerout", onRootPointerOut);
+  options.root.addEventListener("pointerdown", onRootPointerDownCapture, true);
+  window.addEventListener("pointerup", onGlobalPointerUp, true);
+  window.addEventListener("pointercancel", onGlobalPointerUp, true);
 
-  let applyScheduled = false;
-  const scheduleApply = () => {
-    if (disposed || applyScheduled) return;
-    applyScheduled = true;
+  let chromeSyncScheduled = false;
+  /**
+   * MutationObserver-driven updates: reposition the collapse toggle / overlay
+   * only. Never reflow — that rebuilds flyout buttons and cancels clicks.
+   */
+  const scheduleChromeSync = () => {
+    if (disposed || chromeSyncScheduled || flyoutPointerActive) return;
+    chromeSyncScheduled = true;
     requestAnimationFrame(() => {
-      applyScheduled = false;
-      if (disposed) return;
+      chromeSyncScheduled = false;
+      if (disposed || flyoutPointerActive) return;
       const flyout = resolveFlyout(options.getWorkspace());
       if (!flyout) return;
-      applyWidth();
+      applyWidth(false);
     });
   };
 
-  const observer = new MutationObserver(() => scheduleApply());
+  const observer = new MutationObserver(() => scheduleChromeSync());
   observer.observe(options.root, {childList: true, subtree: true});
 
-  const onResize = () => applyWidth();
+  const onResize = () => applyWidth(true);
   window.addEventListener("resize", onResize);
 
   const tryAttach = () => {
@@ -490,8 +517,15 @@ export function installFlyoutLayout(options: {
       clearLeaveTimer();
       observer.disconnect();
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("pointerup", onGlobalPointerUp, true);
+      window.removeEventListener("pointercancel", onGlobalPointerUp, true);
       options.root.removeEventListener("pointerover", onRootPointerOver);
       options.root.removeEventListener("pointerout", onRootPointerOut);
+      options.root.removeEventListener(
+        "pointerdown",
+        onRootPointerDownCapture,
+        true,
+      );
       toggle.removeEventListener("pointerdown", onTogglePointerDown, true);
       toggle.removeEventListener("click", onToggleClick);
       toolboxEl?.removeEventListener("click", onCategoryClick);

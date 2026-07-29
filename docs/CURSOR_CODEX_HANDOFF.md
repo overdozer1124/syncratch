@@ -42,20 +42,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 06:25:11 JST |
+| 最終更新 | 2026-07-30 07:03:40 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `IN_PROGRESS` |
-| 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
-| 現在のTask | Local-First Stage 5 リリースゲート |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（Gate 0）→ Cursor が main へマージ |
+| 現在のTask | ブロックリスト: 変数/リスト/ブロック定義ボタン無反応 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`7f55d86`） |
+| 作業ブランチ | `cursor/fix-flyout-create-buttons-23c9` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
+| 次Task | Gate 0 PASS 後 main マージ。その後ユーザーが A5–A7 / B1 / B3 をかんたん版で実施 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -5258,4 +5258,32 @@ mergedAt: 2026-07-29T21:25:08Z
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
 全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+```
+
+### 2026-07-30 07:03:40 JST — Cursor（変数/リスト/ブロック定義ボタン無反応）
+
+```text
+最終更新: 2026-07-30 07:03:40 JST
+更新者: Cursor
+状態: READY_FOR_CODEX_REVIEW
+ユーザー報告: ブロックリストで変数・リスト・ブロック定義を作るボタンを押しても反応しない
+作業ブランチ: cursor/fix-flyout-create-buttons-23c9
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+
+原因:
+- installFlyoutLayout の MutationObserver が毎回 flyout.reflow() を呼んでいた
+- reflow が flyout ボタン DOM を作り直し、pointerdown→pointerup のクリックが成立しない
+- ついでに collapse toggle の z-index 9000 が modal(800) より高く、ダイアログを覆い得た
+
+対応:
+- Observer 駆動は chrome sync のみ（reflow しない）
+- 意図的な collapse/hover/resize のときだけ reflow
+- flyout 上の pointerdown 中は layout churn をスキップ
+- toggle z-index を --syncratch-flyout-toggle-z: 750（modal より下）へ
+
+テスト:
+- flyout-layout + modal-toolbar-stacking: PASS
+- typecheck: PASS
+
+次の担当: Codex → Gate 0 PASS 後 Cursor が main へマージ
 ```
