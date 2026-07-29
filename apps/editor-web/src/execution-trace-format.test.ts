@@ -100,17 +100,18 @@ describe("describeTraceSnapshot", () => {
     ).toBe("条件「端に触れた」→ いいえ。「なら」をスキップした");
   });
 
-  it("does not assert results for unknown extension opcodes", () => {
+  it("does not invent assertive results for unknown extension opcodes", () => {
     indexBlockTemplates([
-      {type: "music_playDrumForBeats", message0: "ドラム %1 を %2 拍鳴らす"},
+      {type: "custom_ext_zap", message0: "ザップ %1"},
     ]);
     const text = describeTraceSnapshot({
-      opcode: "music_playDrumForBeats",
-      displayTemplate: lookupBlockTemplate("music_playDrumForBeats"),
-      args: {DRUM: "スネア", BEATS: 1},
+      opcode: "custom_ext_zap",
+      displayTemplate: lookupBlockTemplate("custom_ext_zap"),
+      args: {POWER: "強"},
     });
-    expect(text).toContain("を実行した");
-    expect(text).not.toMatch(/鳴らした$/);
+    expect(text).toBe("「ザップ 強」を実行した");
+    expect(text).not.toMatch(/ザップした$/);
+    expect(text).not.toMatch(/入力:/);
   });
 
   it("keeps frozen snapshot text after hypothetical edits", () => {
