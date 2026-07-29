@@ -196,7 +196,24 @@ describe("instrumentThread", () => {
     instrumentThread(thread, trace);
     const entry = trace.getEntries()[0];
     expect(entry?.snapshot.args.KEY_OPTION).toBe("space");
+    expect(entry?.topBlockId).toBe("hat");
     expect(describeTraceSnapshot(entry!.snapshot)).toBe("スペースキーが押された");
+  });
+
+  it("does not invent a hat-start line for hat-less stack clicks", () => {
+    const trace = createExecutionTrace({now: () => 0});
+    const thread: TraceThreadLike = {
+      topBlock: "move",
+      target: {
+        id: "sprite1",
+        getName: () => "Sprite1",
+        blocks: {
+          getBlock: () => ({opcode: "motion_movesteps"}),
+        },
+      },
+    };
+    instrumentThread(thread, trace);
+    expect(trace.getEntries()).toHaveLength(0);
   });
 });
 
@@ -334,7 +351,11 @@ describe("installExecutionTrace", () => {
     runtime._step!();
 
     const util = {
-      thread: {peekStack: () => "move", target: thread.target},
+      thread: {
+        peekStack: () => "move",
+        topBlock: "hat",
+        target: thread.target,
+      },
       target: thread.target,
       stackFrame: {},
     };
@@ -342,7 +363,9 @@ describe("installExecutionTrace", () => {
 
     expect(move).toHaveBeenCalledWith({STEPS: 10}, util);
     const entries = handle.trace.getEntries();
-    expect(entries.some(entry => entry.snapshot.args.STEPS === 10)).toBe(true);
+    const moveEntry = entries.find(entry => entry.snapshot.args.STEPS === 10);
+    expect(moveEntry).toBeDefined();
+    expect(moveEntry?.topBlockId).toBe("hat");
 
     handle.dispose();
     expect(runtime.getOpcodeFunction!("motion_movesteps")).toBe(move);
@@ -370,6 +393,7 @@ describe("resolveTraceEntries", () => {
           blockId: "b1",
           targetId: "t1",
           targetName: null,
+          topBlockId: "hat",
           time: 1,
           snapshot: {opcode: "motion_movesteps", args: {STEPS: 10}},
         },

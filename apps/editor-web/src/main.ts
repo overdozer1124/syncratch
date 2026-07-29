@@ -305,6 +305,11 @@ import {
   shouldNotifyRewindUnavailable,
 } from "./execution-rewind-ui.js";
 import {createTraceListView} from "./execution-trace-ui.js";
+import {
+  filterEntriesByScript,
+  listTraceScripts,
+  resolveSelectedScriptKey,
+} from "./execution-trace-scripts.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
@@ -493,6 +498,12 @@ const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const execControlGroup = requiredElement<HTMLElement>("exec-control");
 const tracePanelList = requiredElement<HTMLElement>("trace-list");
 const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
+const traceScriptFilterWrap = requiredElement<HTMLElement>(
+  "trace-script-filter-wrap",
+);
+const traceScriptFilter = requiredElement<HTMLSelectElement>(
+  "trace-script-filter",
+);
 const execDebugToggleButton =
   requiredElement<HTMLButtonElement>("exec-debug-toggle");
 const execDebugToggleLabel = requiredElement<HTMLElement>(
@@ -2546,6 +2557,9 @@ let executionRewind: ExecutionRewindHandle | null = null;
 let disposeDebugPanel: (() => void) | null = null;
 let rewindInvalidationInstalled = false;
 const traceListView = createTraceListView(tracePanelList);
+/** User-picked script key; null means auto (most recently active). */
+let selectedTraceScriptKey: string | null = null;
+let traceScriptFilterUserPicked = false;
 
 function clearExecutionRewindHistory(reason: RewindClearReason): void {
   executionRewind?.clearRewindHistory(reason);
@@ -2564,23 +2578,61 @@ function installRewindInvalidationListeners(): void {
   rewindInvalidationInstalled = true;
 }
 
+function syncTraceScriptFilter(
+  scripts: ReturnType<typeof listTraceScripts>,
+  selectedKey: string | null,
+): void {
+  const showFilter = scripts.length > 1;
+  traceScriptFilterWrap.hidden = !showFilter;
+  if (!showFilter) {
+    traceScriptFilter.replaceChildren();
+    return;
+  }
+  const previousFocus = document.activeElement === traceScriptFilter;
+  traceScriptFilter.replaceChildren();
+  for (const script of scripts) {
+    const option = document.createElement("option");
+    option.value = script.key;
+    option.textContent = script.label;
+    if (script.key === selectedKey) option.selected = true;
+    traceScriptFilter.appendChild(option);
+  }
+  if (selectedKey) traceScriptFilter.value = selectedKey;
+  if (previousFocus) traceScriptFilter.focus();
+}
+
 /**
  * Repaint the trace panel from the recorded entries.
  *
  * Only runs while the panel is open: a `forever` loop records constantly, and
  * rebuilding a list nobody is looking at would burn frames for nothing.
+ *
+ * When several hats have run, history is filtered to one script at a time
+ * (selectable). A single hat-less stack run shows only that stack.
  */
 function renderExecutionTrace(vmInstance: ScratchVm): void {
   if (!executionTrace) return;
   if (execDebugPanel.hidden) return;
   const targets = (vmInstance.runtime as {targets?: unknown[]} | undefined)
     ?.targets;
-  traceListView.render(
-    resolveTraceEntries(
-      executionTrace.trace.getDisplayEntries(),
-      (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
-    ),
+  const displayEntries = resolveTraceEntries(
+    executionTrace.trace.getDisplayEntries(),
+    (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
   );
+  const scripts = listTraceScripts(displayEntries);
+  const preferred = traceScriptFilterUserPicked ? selectedTraceScriptKey : null;
+  const selectedKey = resolveSelectedScriptKey(scripts, preferred);
+  if (traceScriptFilterUserPicked && preferred && selectedKey !== preferred) {
+    // Cleared / truncated away — resume auto-follow of the latest script.
+    traceScriptFilterUserPicked = false;
+  }
+  selectedTraceScriptKey = selectedKey;
+  syncTraceScriptFilter(scripts, selectedKey);
+  const visible =
+    scripts.length > 1
+      ? filterEntriesByScript(displayEntries, selectedKey)
+      : displayEntries;
+  traceListView.render(visible);
 }
 
 /** scratch-blocks builds this filter at inject time (src/glows.ts). */
@@ -2748,6 +2800,14 @@ function installExecutionControls(vmInstance: ScratchVm): void {
 
   traceClearButton.addEventListener("click", () => {
     executionTrace?.trace.clear();
+    selectedTraceScriptKey = null;
+    traceScriptFilterUserPicked = false;
+    renderExecutionTrace(vmInstance);
+  });
+
+  traceScriptFilter.addEventListener("change", () => {
+    selectedTraceScriptKey = traceScriptFilter.value || null;
+    traceScriptFilterUserPicked = true;
     renderExecutionTrace(vmInstance);
   });
 
