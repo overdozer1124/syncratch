@@ -42,20 +42,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 07:03:40 JST |
+| 最終更新 | 2026-07-30 07:13:44 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（Gate 0）→ Cursor が main へマージ |
-| 現在のTask | ブロックリスト: 変数/リスト/ブロック定義ボタン無反応 |
+| ワークフロー状態 | `IN_PROGRESS` |
+| 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
+| 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ A5–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/fix-flyout-create-buttons-23c9` |
+| 作業ブランチ | `main`（`00c6cbd`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Gate 0 PASS 後 main マージ。その後ユーザーが A5–A7 / B1 / B3 をかんたん版で実施 |
+| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -5286,4 +5286,25 @@ mergedAt: 2026-07-29T21:25:08Z
 - typecheck: PASS
 
 次の担当: Codex → Gate 0 PASS 後 Cursor が main へマージ
+```
+
+### 2026-07-30 07:13:44 JST — Cursor（PR #169 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー報告対応: 変数/リスト/ブロック定義ボタン無反応
+対象: PR #169 → base main
+merge: 00c6cbd7a13b17a0f80f6cdf13ba929fb2acc5b0
+mergedAt: 2026-07-29T22:13:41Z
+事前: Gate 0 SUCCESS ×2
+- https://github.com/overdozer1124/syncratch/actions/runs/30494738177
+- https://github.com/overdozer1124/syncratch/actions/runs/30494748344
+
+案内:
+- Railway が main 追従なら、ブロックリストの「変数を作る」「リストを作る」「ブロックを作る」が再び反応する
+- 作成ダイアログが flyout トグルの下に隠れないよう z-index も調整済み
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
 ```
