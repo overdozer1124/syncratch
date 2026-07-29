@@ -1358,6 +1358,7 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       localTimer = setTimeout(doLocalPush, waitMs);
     },
     reportDriveConflict() {
+      if (conflict) return;
       conflict = true;
       emitState();
     },
