@@ -7,6 +7,7 @@ import {
   installPrimitiveTraceCapture,
   recordHatBlockStart,
 } from "./execution-trace-capture.js";
+import {isTraceHatOpcode} from "./execution-trace-scripts.js";
 import type {TraceEntry, TraceSemanticSnapshot} from "./execution-trace-types.js";
 
 const TRACE_FLAG = "_syncratchExecutionTraceInstalled";
@@ -63,6 +64,10 @@ export function createExecutionTrace(
         blockId: entry.blockId,
         targetId: entry.targetId,
         targetName: entry.targetName,
+        topBlockId:
+          typeof entry.topBlockId === "string" && entry.topBlockId
+            ? entry.topBlockId
+            : null,
         time: at,
         snapshot: cloneSnapshot(entry.snapshot),
       });
@@ -157,7 +162,12 @@ export function instrumentThread(
   if (!thread || thread[THREAD_FLAG] || thread.updateMonitor) return false;
 
   if (!thread[HAT_FLAG] && typeof thread.topBlock === "string" && thread.topBlock) {
-    recordHatBlockStart(trace, thread);
+    // Hat-less stack clicks still have a topBlock, but recording a synthetic
+    // "hat start" would duplicate the first command. Only real hats go here.
+    const top = thread.target?.blocks?.getBlock?.(thread.topBlock);
+    if (isTraceHatOpcode(top?.opcode ?? null)) {
+      recordHatBlockStart(trace, thread);
+    }
     thread[HAT_FLAG] = true;
   }
 

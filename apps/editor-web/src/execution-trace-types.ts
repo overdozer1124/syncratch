@@ -36,6 +36,11 @@ export interface TraceEntry {
   targetId: string | null;
   /** Frozen at record time so deleted sprites still show a name. */
   targetName: string | null;
+  /**
+   * Stack-root block id (hat or first block of a hat-less stack).
+   * Used to group history per script when several hats run.
+   */
+  topBlockId: string | null;
   time: number;
   snapshot: TraceSemanticSnapshot;
 }
@@ -43,6 +48,8 @@ export interface TraceEntry {
 export type TraceBlockUtilLike = {
   thread?: {
     peekStack?: () => string | null;
+    /** Script root (hat / hat-less stack top). */
+    topBlock?: string | null;
     target?: TraceTargetLike | null;
   } | null;
   target?: TraceTargetLike | null;

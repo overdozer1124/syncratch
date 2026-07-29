@@ -215,10 +215,15 @@ function wrapPrimitiveFunction(
         if (resolved !== undefined) {
           snapshot.result = serializeTraceValue(resolved);
         }
+        const topBlockId =
+          typeof util.thread?.topBlock === "string" && util.thread.topBlock
+            ? util.thread.topBlock
+            : null;
         recorder.record({
           blockId,
           targetId,
           targetName,
+          topBlockId,
           snapshot,
         });
         return resolved;
@@ -255,6 +260,7 @@ export function recordHatBlockStart(
     blockId,
     targetId: target?.id ?? null,
     targetName: readTargetName(target),
+    topBlockId: blockId,
     snapshot: {
       opcode,
       displayTemplate: lookupBlockTemplate(opcode),

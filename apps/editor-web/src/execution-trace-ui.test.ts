@@ -13,6 +13,7 @@ function entry(overrides: Partial<ResolvedTraceEntry> = {}): ResolvedTraceEntry 
     blockId: "b1",
     targetId: "t1",
     targetName: "ネコ",
+    topBlockId: "b1",
     time: 0,
     snapshot: {
       opcode: "motion_movesteps",
