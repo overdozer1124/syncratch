@@ -1,5 +1,11 @@
 import {allowedOpcodeSet} from "@blocksync/project-schema";
 import {
+  describeOpcodeInJapanese,
+  fallbackJapaneseLabel,
+  localizeArgsForDisplay,
+  localizeTraceArgValue,
+} from "./execution-trace-ja.js";
+import {
   formatDirection,
   formatTraceNumber,
   traceValueToText,
@@ -214,7 +220,10 @@ const descriptors: Record<string, TraceDescriptor> = {
   },
   control_stop: {
     describe(snapshot) {
-      const option = argText(snapshot.args, "STOP_OPTION");
+      const option = localizeTraceArgValue(
+        "STOP_OPTION",
+        snapshot.args.STOP_OPTION,
+      );
       if (!option) return "スクリプトを止めた";
       return `「${option}」を止めた`;
     },
@@ -343,29 +352,51 @@ export function lookupBlockTemplate(opcode: string | null | undefined): string |
 }
 
 function fillTemplate(template: string, args: Record<string, TraceValue>): string {
-  return template.replace(/%[nsb]/gi, () => {
-    const key = Object.keys(args)[0];
+  const keys = Object.keys(args);
+  let index = 0;
+  // Scratch message0 uses %1/%2…; some JSON defs use %n/%s/%b.
+  return template.replace(/%(?:[nsb]|\d+)/gi, () => {
+    const key = keys[index];
+    index += 1;
     if (!key) return "…";
-    const value = traceValueToText(args[key]);
+    const value = localizeTraceArgValue(key, args[key]);
     return value || "…";
   });
 }
 
+function looksLikeOpcodeId(text: string): boolean {
+  return /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/i.test(text.trim());
+}
+
 function formatGenericFallback(snapshot: TraceSemanticSnapshot): string {
-  const template =
+  const localizedArgs = localizeArgsForDisplay(snapshot.args);
+  const rawTemplate =
     snapshot.displayTemplate ??
-    (snapshot.opcode ? lookupBlockTemplate(snapshot.opcode) : undefined) ??
-    snapshot.opcode ??
-    "ブロック";
-  const filled = fillTemplate(template, snapshot.args);
-  const argEntries = Object.entries(snapshot.args).filter(([key]) => key !== "mutation");
-  if (argEntries.length === 0) {
+    (snapshot.opcode ? lookupBlockTemplate(snapshot.opcode) : undefined);
+  const hasLearnerTemplate =
+    typeof rawTemplate === "string" &&
+    rawTemplate.trim().length > 0 &&
+    !looksLikeOpcodeId(rawTemplate);
+
+  if (hasLearnerTemplate) {
+    const filled = fillTemplate(rawTemplate, localizedArgs);
     return `「${filled}」を実行した`;
   }
+
+  const label = fallbackJapaneseLabel(snapshot.opcode, rawTemplate);
+  const argEntries = Object.entries(localizedArgs).filter(
+    ([key]) => key !== "mutation",
+  );
+  if (argEntries.length === 0) {
+    return `「${label}」を実行した`;
+  }
+  // Learner-facing summary: Japanese values only (no STYLE=left-right dumps).
   const inputSummary = argEntries
-    .map(([key, value]) => `${key}=${traceValueToText(value)}`)
-    .join(", ");
-  return `「${filled}」を実行した（入力: ${inputSummary}）`;
+    .map(([key, value]) => localizeTraceArgValue(key, value))
+    .filter(Boolean)
+    .join("、");
+  if (!inputSummary) return `「${label}」を実行した`;
+  return `「${label}（${inputSummary}）」を実行した`;
 }
 
 /** Assertive past-tense fragments that generic fallback must not invent. */
@@ -382,6 +413,8 @@ export function describeTraceSnapshot(snapshot: TraceSemanticSnapshot): string {
   if (opcode && descriptors[opcode]) {
     return descriptors[opcode].describe(snapshot);
   }
+  const japanese = describeOpcodeInJapanese(snapshot);
+  if (japanese) return japanese;
   return formatGenericFallback(snapshot);
 }
 
