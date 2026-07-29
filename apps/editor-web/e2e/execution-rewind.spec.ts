@@ -151,7 +151,7 @@ test("rewind is unavailable before execution history exists", async ({page}) => 
   ).toBe(false);
 
   await startForeverScript(page);
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await page.waitForFunction(
     () => window.__blocksyncTask3?.getExecutionRewindSnapshot?.()?.canRewind === true,
   );
@@ -161,7 +161,7 @@ test("rewind is unavailable before execution history exists", async ({page}) => 
 test("rewind undoes one scheduler frame while paused", async ({page}) => {
   await bootEditor(page);
   await createForeverScript(page);
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
   await page.waitForFunction(
     `(() => { ${FIBER_HELPERS}
@@ -195,7 +195,7 @@ test("rewind undoes one scheduler frame while paused", async ({page}) => {
 test("rewind truncates the execution trace", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
 
   await stepOnce(page);
@@ -216,7 +216,7 @@ test("rewind does not trigger autosave side effects", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
   await page.evaluate(() => window.__blocksyncTask3?.resetE2eSideEffectCounters?.());
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await stepOnce(page);
   await stepOnce(page);
 
@@ -237,6 +237,9 @@ test("rewind auto-pauses while running", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
   await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+  await page.getByTestId("exec-debug-toggle").click();
+  await page.getByTestId("exec-debug-pause-resume").click();
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
 
   await page.getByTestId("exec-rewind").click();
   await waitForRewindIdle(page);
@@ -251,7 +254,7 @@ test("rewind auto-pauses while running", async ({page}) => {
 test("timeline scrub moves sprite forward again after rewinding", async ({page}) => {
   await bootEditor(page);
   await createForeverScript(page);
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await page.evaluate(`(() => { ${FIBER_HELPERS} resolveVm().greenFlag(); })()`);
   await page.waitForFunction(
     `(() => { ${FIBER_HELPERS}
@@ -284,7 +287,7 @@ test("stage stays visible after canvas resize while paused", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
   await page.waitForTimeout(500);
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
 
   expect(await countNonWhiteCanvasSamples(page)).toBeGreaterThan(0);
 

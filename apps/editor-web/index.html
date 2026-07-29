@@ -673,14 +673,15 @@
           >
             <button
               class="toolbar-action exec-control-button"
-              data-testid="exec-pause"
-              id="exec-pause"
+              data-testid="exec-debug-toggle"
+              id="exec-debug-toggle"
               type="button"
-              aria-pressed="false"
-              aria-label="一時停止"
-              title="一時停止"
+              aria-expanded="false"
+              aria-controls="exec-debug-panel"
+              aria-label="デバッグ"
+              title="デバッグ"
             ><span aria-hidden="true" class="exec-icon">⏯</span
-            ><span class="exec-label" data-testid="exec-pause-label" id="exec-pause-label">一時停止</span></button>
+            ><span class="exec-label" data-testid="exec-debug-toggle-label" id="exec-debug-toggle-label">デバッグ</span></button>
             <div
               class="debug-floating-panel"
               data-testid="exec-debug-panel"
@@ -698,8 +699,8 @@
                   data-testid="exec-debug-close"
                   id="exec-debug-close"
                   type="button"
-                  aria-label="閉じる（一時停止は続く）"
-                  title="閉じる（一時停止は続く）"
+                  aria-label="閉じる（実行を再開）"
+                  title="閉じる（実行を再開）"
                 >×</button>
               </div>
               <div class="debug-panel-body">
@@ -754,11 +755,12 @@
                   ><span class="exec-label">1コマ</span></button>
                 </div>
                 <button
-                  class="toolbar-action debug-panel-resume"
-                  data-testid="exec-debug-resume"
-                  id="exec-debug-resume"
+                  class="toolbar-action debug-panel-pause-resume"
+                  data-testid="exec-debug-pause-resume"
+                  id="exec-debug-pause-resume"
                   type="button"
-                >再開</button>
+                  aria-label="一時停止"
+                >一時停止</button>
                 <section
                   class="debug-panel-history"
                   aria-label="じっこう履歴"

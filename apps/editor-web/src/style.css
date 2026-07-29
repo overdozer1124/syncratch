@@ -2781,7 +2781,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   }
 }
 
-.exec-control-button[aria-pressed="true"] {
+.exec-control-button[aria-expanded="true"] {
   background: #ffe9b8;
   box-shadow: inset 0 0 0 2px #e0a01a;
 }
@@ -2890,7 +2890,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   gap: 0.35rem;
 }
 
-.debug-panel-resume {
+.debug-panel-pause-resume {
   align-self: flex-start;
   min-height: 2.1rem;
   padding-inline: 1rem;
@@ -2899,8 +2899,8 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   font-weight: 800;
 }
 
-.debug-panel-resume:hover,
-.debug-panel-resume:focus-visible {
+.debug-panel-pause-resume:hover,
+.debug-panel-pause-resume:focus-visible {
   background: var(--syncratch-chrome-dark);
 }
 

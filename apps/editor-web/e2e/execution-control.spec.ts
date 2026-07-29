@@ -55,9 +55,10 @@ async function bootEditor(page: Page): Promise<void> {
 async function openDebugPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("exec-debug-panel");
   if (!(await panel.isVisible())) {
-    await page.getByTestId("exec-pause").click();
+    await page.getByTestId("exec-debug-toggle").click();
   }
   await expect(panel).toBeVisible();
+  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
 }
 
 /**
@@ -108,33 +109,45 @@ async function readSpriteX(page: Page): Promise<number> {
   })()`) as Promise<number>;
 }
 
-test("pause stops the VM and resume restarts it", async ({page}) => {
+test("debug toggle pauses and in-panel resume restarts without closing", async ({
+  page,
+}) => {
   await bootEditor(page);
   await startForeverScript(page);
 
-  // Running: the sprite keeps moving.
   const first = await readSpriteX(page);
   await page.waitForTimeout(300);
-  expect(await readSpriteX(page), "sprite should move while running").not.toBe(
-    first,
-  );
+  expect(await readSpriteX(page)).not.toBe(first);
 
   await openDebugPanel(page);
-  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
-  await expect(page.getByTestId("exec-pause-label")).toHaveText("再開");
+  await expect(page.getByTestId("exec-debug-toggle-label")).toHaveText("デバッグ");
+  await expect(page.getByTestId("exec-debug-pause-resume")).toHaveText("再開");
 
   const paused = await readSpriteX(page);
   await page.waitForTimeout(400);
-  expect(await readSpriteX(page), "sprite must not move while paused").toBe(
-    paused,
-  );
+  expect(await readSpriteX(page)).toBe(paused);
 
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-pause-resume").click();
   await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+  await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
+  await expect(page.getByTestId("exec-debug-pause-resume")).toHaveText("一時停止");
   await page.waitForTimeout(300);
-  expect(await readSpriteX(page), "sprite should move again after resume").not.toBe(
-    paused,
-  );
+  expect(await readSpriteX(page)).not.toBe(paused);
+});
+
+test("closing debug via toolbar or close button resumes", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await openDebugPanel(page);
+
+  await page.getByTestId("exec-debug-toggle").click();
+  await expect(page.getByTestId("exec-debug-panel")).toBeHidden();
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+
+  await openDebugPanel(page);
+  await page.getByTestId("exec-debug-close").click();
+  await expect(page.getByTestId("exec-debug-panel")).toBeHidden();
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
 });
 
 test("step advances exactly one frame and highlights the running block", async ({
@@ -143,7 +156,7 @@ test("step advances exactly one frame and highlights the running block", async (
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
 
   // scratch-blocks paints a glow via an SVG filter (src/glows.ts), not a class.
@@ -376,7 +389,7 @@ test("green flag with no blocks must not move the sprite", async ({page}) => {
   await page.waitForTimeout(400);
 
   // Pause mid-run (the path that previously left stale execution state).
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
   await page.getByTestId("exec-step").click();
   await page.waitForTimeout(200);

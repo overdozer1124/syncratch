@@ -493,18 +493,23 @@ const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const execControlGroup = requiredElement<HTMLElement>("exec-control");
 const tracePanelList = requiredElement<HTMLElement>("trace-list");
 const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
-const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
+const execDebugToggleButton =
+  requiredElement<HTMLButtonElement>("exec-debug-toggle");
+const execDebugToggleLabel = requiredElement<HTMLElement>(
+  "exec-debug-toggle-label",
+);
+const execDebugPauseResumeButton = requiredElement<HTMLButtonElement>(
+  "exec-debug-pause-resume",
+);
 const execRewindButton = requiredElement<HTMLButtonElement>("exec-rewind");
 const execRewindLabel = requiredElement<HTMLElement>("exec-rewind-label");
 const execScrubInput = requiredElement<HTMLInputElement>("exec-scrub");
 const execScrubLabel = requiredElement<HTMLElement>("exec-scrub-label");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
-const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
 const execDebugPanel = requiredElement<HTMLElement>("exec-debug-panel");
 const execDebugDragHandle = requiredElement<HTMLElement>("exec-debug-drag-handle");
 const execDebugCloseButton = requiredElement<HTMLButtonElement>("exec-debug-close");
-const execDebugResumeButton = requiredElement<HTMLButtonElement>("exec-debug-resume");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
@@ -2753,21 +2758,25 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   });
   disposeDebugPanel = () => debugPanel.dispose();
 
-  let wasPaused = false;
-
   const resumeExecution = (): void => {
     executionRewind?.commitPlaybackBranch();
     controller.resume();
   };
 
-  const syncDebugPanelForPause = (paused: boolean): void => {
-    if (!paused) {
-      debugPanel.setOpen(false);
-      return;
+  const closeDebugPanelAndResume = (): void => {
+    if (controller.getSnapshot().state === "paused") {
+      resumeExecution();
     }
-    if (!wasPaused) {
-      debugPanel.setOpen(true);
+    debugPanel.setOpen(false);
+    render();
+  };
+
+  const openDebugPanelAndPause = (): void => {
+    if (controller.getSnapshot().state === "running") {
+      controller.pause();
     }
+    debugPanel.setOpen(true);
+    render();
   };
 
   // While running, refresh trace (when open) and rewind availability on a timer.
@@ -2779,45 +2788,46 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   const render = () => {
     const {state} = controller.getSnapshot();
     const paused = state === "paused";
-    syncDebugPanelForPause(paused);
+    const panelOpen = debugPanel.isOpen();
     execControlGroup.dataset.state = state;
-    const pauseLabel = paused
-      ? debugPanel.isOpen()
-        ? "再開"
-        : "デバッグ"
-      : "一時停止";
-    execPauseLabel.textContent = pauseLabel;
-    execPauseButton.setAttribute("aria-label", pauseLabel);
-    execPauseButton.title = pauseLabel;
-    execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
+
+    execDebugToggleLabel.textContent = "デバッグ";
+    execDebugToggleButton.setAttribute("aria-label", "デバッグ");
+    execDebugToggleButton.title = "デバッグ";
+    execDebugToggleButton.setAttribute(
+      "aria-expanded",
+      panelOpen ? "true" : "false",
+    );
+
+    const pauseResumeLabel = paused ? "再開" : "一時停止";
+    execDebugPauseResumeButton.textContent = pauseResumeLabel;
+    execDebugPauseResumeButton.setAttribute("aria-label", pauseResumeLabel);
+
     execStatus.textContent = paused ? "止まっています" : "動いています";
     renderExecutionTrace(vmInstance);
     renderRewindControl();
-    wasPaused = paused;
   };
 
   refreshExecUi = render;
 
   controller.subscribe(render);
-  execPauseButton.addEventListener("click", () => {
-    const {state} = controller.getSnapshot();
-    if (state === "paused") {
-      if (debugPanel.isOpen()) {
-        resumeExecution();
-      } else {
-        debugPanel.setOpen(true);
-        render();
-      }
+  execDebugToggleButton.addEventListener("click", () => {
+    if (debugPanel.isOpen()) {
+      closeDebugPanelAndResume();
       return;
     }
-    controller.pause();
+    openDebugPanelAndPause();
   });
   execDebugCloseButton.addEventListener("click", () => {
-    debugPanel.setOpen(false);
-    render();
+    closeDebugPanelAndResume();
   });
-  execDebugResumeButton.addEventListener("click", () => {
-    resumeExecution();
+  execDebugPauseResumeButton.addEventListener("click", () => {
+    const {state} = controller.getSnapshot();
+    if (state === "paused") {
+      resumeExecution();
+    } else {
+      controller.pause();
+    }
   });
   execRewindButton.addEventListener("click", () => {
     void (async () => {
