@@ -87,7 +87,7 @@ describe("describeTraceSnapshot", () => {
         args: {CONDITION: true},
         control: {branch: 1, conditionText: "端に触れた"},
       }),
-    ).toBe("条件「端に触れた」→ はい。「なら」の中へ進んだ");
+    ).toBe("もし「端に触れた」→ はい。「なら」の中へ進んだ");
   });
 
   it("describes if false branch", () => {
@@ -97,7 +97,24 @@ describe("describeTraceSnapshot", () => {
         args: {CONDITION: false},
         control: {branch: 0, conditionText: "端に触れた"},
       }),
-    ).toBe("条件「端に触れた」→ いいえ。「なら」をスキップした");
+    ).toBe("もし「端に触れた」→ いいえ。「なら」をスキップした");
+  });
+
+  it("does not treat boolean CONDITION as the expression text", () => {
+    expect(
+      describeTraceSnapshot({
+        opcode: "control_if",
+        args: {CONDITION: false},
+        control: {branch: 0},
+      }),
+    ).toBe("もし「条件」→ いいえ。「なら」をスキップした");
+    expect(
+      describeTraceSnapshot({
+        opcode: "control_if",
+        args: {CONDITION: false},
+        control: {branch: 0},
+      }),
+    ).not.toMatch(/条件「いいえ」/);
   });
 
   it("does not invent assertive results for unknown extension opcodes", () => {

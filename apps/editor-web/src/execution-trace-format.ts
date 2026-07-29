@@ -1,4 +1,5 @@
 import {allowedOpcodeSet} from "@blocksync/project-schema";
+import {describeConditionExpression} from "./execution-trace-condition.js";
 import {
   describeOpcodeInJapanese,
   fallbackJapaneseLabel,
@@ -41,6 +42,10 @@ function argText(args: Record<string, TraceValue>, key: string): string {
 function formatConditionText(snapshot: TraceSemanticSnapshot): string {
   if (snapshot.control?.conditionText) return snapshot.control.conditionText;
   const condition = snapshot.args.CONDITION;
+  // Boolean args are the branch result already shown as はい/いいえ.
+  if (typeof condition === "boolean" || condition === null || condition === undefined) {
+    return "条件";
+  }
   const text = traceValueToText(condition);
   return text || "条件";
 }
@@ -178,37 +183,61 @@ const descriptors: Record<string, TraceDescriptor> = {
     },
   },
   control_if: {
-    enrichControl(args) {
+    enrichControl(args, util) {
       const condition = Boolean(args.CONDITION);
       return {
         branch: condition ? 1 : 0,
-        conditionText: conditionTextFromArgs(args),
+        conditionText:
+          describeConditionExpression(util) ?? conditionTextFromArgs(args),
       };
     },
     describe(snapshot) {
       const condition = formatConditionText(snapshot);
       const truthy = snapshot.control?.branch === 1;
       if (truthy) {
-        return `条件「${condition}」→ はい。「なら」の中へ進んだ`;
+        return `もし「${condition}」→ はい。「なら」の中へ進んだ`;
       }
-      return `条件「${condition}」→ いいえ。「なら」をスキップした`;
+      return `もし「${condition}」→ いいえ。「なら」をスキップした`;
     },
   },
   control_if_else: {
-    enrichControl(args) {
+    enrichControl(args, util) {
       const condition = Boolean(args.CONDITION);
       return {
         branch: condition ? 1 : 2,
-        conditionText: conditionTextFromArgs(args),
+        conditionText:
+          describeConditionExpression(util) ?? conditionTextFromArgs(args),
       };
     },
     describe(snapshot) {
       const condition = formatConditionText(snapshot);
       const branch = snapshot.control?.branch;
       if (branch === 1) {
-        return `条件「${condition}」→ はい。「なら」の中へ進んだ`;
+        return `もし「${condition}」→ はい。「なら」の中へ進んだ`;
       }
-      return `条件「${condition}」→ いいえ。「でなければ」の中へ進んだ`;
+      return `もし「${condition}」→ いいえ。「でなければ」の中へ進んだ`;
+    },
+  },
+  control_wait_until: {
+    enrichControl(_args, util) {
+      return {
+        conditionText: describeConditionExpression(util) ?? "条件",
+      };
+    },
+    describe(snapshot) {
+      const condition = formatConditionText(snapshot);
+      return `「${condition}」になるまで待った`;
+    },
+  },
+  control_repeat_until: {
+    enrichControl(_args, util) {
+      return {
+        conditionText: describeConditionExpression(util) ?? "条件",
+      };
+    },
+    describe(snapshot) {
+      const condition = formatConditionText(snapshot);
+      return `「${condition}」になるまで繰り返した`;
     },
   },
   control_wait: {
@@ -308,9 +337,10 @@ const descriptors: Record<string, TraceDescriptor> = {
 
 function conditionTextFromArgs(args: Record<string, unknown>): string {
   const condition = args.CONDITION;
-  if (typeof condition === "string") return condition;
+  // Evaluated booleans are the branch result, not the expression learners wrote.
+  if (typeof condition === "boolean") return "条件";
+  if (typeof condition === "string" && condition.trim() !== "") return condition;
   if (typeof condition === "number") return formatTraceNumber(condition);
-  if (typeof condition === "boolean") return condition ? "はい" : "いいえ";
   return "条件";
 }
 
