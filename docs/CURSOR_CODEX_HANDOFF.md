@@ -42,16 +42,16 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-29 12:04:32 JST |
+| 最終更新 | 2026-07-29 12:15:02 JST |
 | 更新者 | Cursor |
 | ワークフロー状態 | `IN_PROGRESS` |
-| 現在の担当 | ユーザー（残り手動ゲート A5–A7 / B1 / B3）+ Cursor（文書・本番再プローブ支援） |
+| 現在の担当 | ユーザー（残り手動ゲート A5–A7 / B1 / B3） |
 | 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 本番再プローブ PASS（2026-07-29）/ A5–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書・本番再プローブ MERGED（#155）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/release-gates-stage5-23c9`（旧 Draft #21 を main `eb045b9` へ載せ替え） |
+| 作業ブランチ | `main`（`d3a2409`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
@@ -111,9 +111,8 @@
 ## Cursorが次に行う作業
 
 1. ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
-2. Stage 5 文書 PR を Gate 0 PASS 後に main へマージする（必須）。
-3. Phase 2 / TURN / default branch 切替は指示まで停止。
-4. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
+2. Phase 2 / TURN / default branch 切替は指示まで停止。
+3. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5025,4 +5024,28 @@ merge: 33a54357747d7926f3afb4154c6322d5bead7c9b
 - M1 local-diagnostics は台帳承認前のため着手しない
 - Phase 2 / TURN / default branch 切替はしない
 次の担当: ユーザー（残り手動ゲート）→ 報告後 Cursor が COMPLETE 更新
+```
+
+### 2026-07-29 12:15:02 JST — Cursor（PR #155 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー指示: 「作業を順次開始してください」（Stage 5 文書更新分）
+対象: PR #155 → base main
+merge: d3a240926d8f7a251b4a983ae44b06e417de86bc
+mergedAt: 2026-07-29T03:14:57Z
+事前: Gate 0 SUCCESS ×2 / MERGEABLE
+旧 Draft #21: CLOSED（#155 で置換）
+
+含まれる変更:
+- STAGE5_MANUAL_GATES.md を現行 tip へ載せ替え
+- Railway 再プローブ・online ホバー1回確認・台帳同期
+
+残り（ユーザー実機）:
+- A5 / A6 / A7 / B1 / B3
+- B1 は本番リンク作成に Google 必須のため、この環境では未完了
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
 ```
