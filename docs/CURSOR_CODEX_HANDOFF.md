@@ -5125,3 +5125,22 @@ Gate 0:
 
 次の担当: Codex → Gate 0 PASS 後 Cursor が main へマージ
 ```
+
+### 2026-07-29 14:53:15 JST — Cursor（PR #159 merge → MERGED）
+
+```text
+状態: MERGED
+ユーザー報告対応: 実行履歴の英語表示
+対象: PR #159 → base main
+merge: 476152979643c35ec2026fefc060992a232576f7
+mergedAt: 2026-07-29T05:52:47Z
+事前: Gate 0 SUCCESS ×2
+
+案内:
+- Railway が main 追従なら、回転方法など主要ブロックの履歴が日本語になる
+- 例: 「回転方法を左右のみにした」（motion_setrotationstyle / left-right は出さない）
+
+停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
+次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+```
