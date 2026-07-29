@@ -5,6 +5,7 @@ import {
   lookupBlockTemplate,
 } from "./execution-trace-format.js";
 import type {
+  TraceBlockLike,
   TraceBlockUtilLike,
   TraceEntry,
   TraceSemanticSnapshot,
@@ -42,6 +43,102 @@ function readTargetName(target: TraceTargetLike | null | undefined): string | nu
   } catch {
     return null;
   }
+}
+
+/** Read a Scratch field (runtime `{value}` or sb3 `[value, id]`). */
+export function readTraceFieldValue(field: unknown): unknown {
+  if (field === null || field === undefined) return undefined;
+  if (
+    typeof field === "string" ||
+    typeof field === "number" ||
+    typeof field === "boolean"
+  ) {
+    return field;
+  }
+  if (Array.isArray(field)) {
+    return field.length > 0 ? field[0] : undefined;
+  }
+  if (typeof field === "object") {
+    const record = field as {value?: unknown};
+    if ("value" in record) return record.value;
+  }
+  return undefined;
+}
+
+/** sb3 input: `[shadowType, literal|[type, value]|blockId]` (+ optional shadow). */
+function readSb3InputLiteral(entry: unknown): unknown {
+  if (!Array.isArray(entry) || entry.length < 2) return undefined;
+  const primary = entry[1];
+  if (Array.isArray(primary) && primary.length >= 2) {
+    return primary[1];
+  }
+  if (entry.length >= 3 && Array.isArray(entry[2]) && entry[2].length >= 2) {
+    // Obscured shadow still carries the dropdown/number default.
+    return entry[2][1];
+  }
+  return undefined;
+}
+
+const SHADOW_LITERAL_FIELD_KEYS = ["NUM", "TEXT", "COLOUR", "VALUE"] as const;
+
+function readLeafBlockLiteral(block: TraceBlockLike | null | undefined): unknown {
+  if (!block?.fields) return undefined;
+  for (const key of SHADOW_LITERAL_FIELD_KEYS) {
+    if (key in block.fields) {
+      const value = readTraceFieldValue(block.fields[key]);
+      if (value !== undefined) return value;
+    }
+  }
+  const values = Object.values(block.fields);
+  if (values.length === 1) return readTraceFieldValue(values[0]);
+  return undefined;
+}
+
+function readRuntimeInputLiteral(
+  entry: unknown,
+  getBlock: (id: string) => TraceBlockLike | null | undefined,
+): unknown {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+  const record = entry as {block?: string | null; shadow?: string | null};
+  const blockId =
+    typeof record.block === "string" && record.block
+      ? record.block
+      : typeof record.shadow === "string" && record.shadow
+        ? record.shadow
+        : null;
+  if (!blockId) return undefined;
+  return readLeafBlockLiteral(getBlock(blockId));
+}
+
+/**
+ * Collect hat/menu fields and shadow literals for history display.
+ * Stack commands normally get evaluated args from the VM primitive wrapper;
+ * hats are recorded separately and need this extraction.
+ */
+export function extractBlockSnapshotArgs(
+  block: TraceBlockLike | null | undefined,
+  getBlock?: (id: string) => TraceBlockLike | null | undefined,
+): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  if (!block) return args;
+
+  for (const [key, field] of Object.entries(block.fields ?? {})) {
+    const value = readTraceFieldValue(field);
+    if (value !== undefined) args[key] = value;
+  }
+
+  for (const [key, input] of Object.entries(block.inputs ?? {})) {
+    if (key in args) continue;
+    let value: unknown;
+    if (Array.isArray(input)) {
+      value = readSb3InputLiteral(input);
+    } else if (getBlock) {
+      value = readRuntimeInputLiteral(input, getBlock);
+    }
+    if (value !== undefined) args[key] = value;
+  }
+
+  return args;
 }
 
 function shouldRecordCommand(opcode: string, util: TraceBlockUtilLike): boolean {
@@ -150,8 +247,10 @@ export function recordHatBlockStart(
   const blockId = thread.topBlock;
   if (typeof blockId !== "string" || !blockId) return;
   const target = thread.target ?? null;
-  const block = target?.blocks?.getBlock?.(blockId);
+  const getBlock = target?.blocks?.getBlock?.bind(target.blocks);
+  const block = getBlock?.(blockId) ?? null;
   const opcode = block?.opcode ?? "event_whenflagclicked";
+  const rawArgs = extractBlockSnapshotArgs(block, getBlock);
   recorder.record({
     blockId,
     targetId: target?.id ?? null,
@@ -159,7 +258,7 @@ export function recordHatBlockStart(
     snapshot: {
       opcode,
       displayTemplate: lookupBlockTemplate(opcode),
-      args: {},
+      args: serializeTraceArgs(rawArgs),
       control: {firstVisit: true},
     },
   });

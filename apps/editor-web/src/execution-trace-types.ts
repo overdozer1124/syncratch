@@ -50,6 +50,13 @@ export type TraceBlockUtilLike = {
   sequencer?: {runtime?: TraceRuntimeMetadataLike} | null;
 };
 
+/** Runtime or sb3-shaped block used when capturing hat / stack snapshots. */
+export type TraceBlockLike = {
+  opcode?: string;
+  fields?: Record<string, unknown>;
+  inputs?: Record<string, unknown>;
+};
+
 export type TraceTargetLike = {
   id?: string;
   getName?: () => string;
@@ -57,7 +64,7 @@ export type TraceTargetLike = {
   y?: number;
   direction?: number;
   blocks?: {
-    getBlock?: (id: string) => {opcode?: string; fields?: Record<string, {value?: unknown}>} | null;
+    getBlock?: (id: string) => TraceBlockLike | null;
   };
   lookupVariableById?: (id: string) => {value?: unknown} | null;
   lookupOrCreateVariable?: (

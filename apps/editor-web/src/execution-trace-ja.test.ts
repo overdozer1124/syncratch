@@ -30,6 +30,75 @@ describe("describeOpcodeInJapanese", () => {
       }),
     ).toBe("回転方法を左右のみにした");
   });
+
+  it("includes the pressed key name (space / arrows / letters)", () => {
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenkeypressed",
+        args: {KEY_OPTION: "space"},
+      }),
+    ).toBe("スペースキーが押された");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenkeypressed",
+        args: {KEY_OPTION: "any"},
+      }),
+    ).toBe("どれかのキーが押された");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenkeypressed",
+        args: {KEY_OPTION: "left arrow"},
+      }),
+    ).toBe("「左向き矢印」キーが押された");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenkeypressed",
+        args: {KEY_OPTION: "a"},
+      }),
+    ).toBe("「a」キーが押された");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenkeypressed",
+        args: {},
+      }),
+    ).toBe("キーが押された");
+  });
+
+  it("includes backdrop / broadcast / louder-than hat details", () => {
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenbackdropswitchesto",
+        args: {BACKDROP: "Blue Sky"},
+      }),
+    ).toBe("背景が「Blue Sky」になった");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whenbroadcastreceived",
+        args: {BROADCAST_OPTION: "go"},
+      }),
+    ).toBe("「go」を受け取った");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whengreaterthan",
+        args: {WHENGREATERTHANMENU: "loudness", VALUE: 10},
+      }),
+    ).toBe("音量が 10 より大きくなった");
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "event_whengreaterthan",
+        args: {WHENGREATERTHANMENU: "timer", VALUE: 5},
+      }),
+    ).toBe("タイマーが 5 より大きくなった");
+  });
+
+  it("localizes clone-of myself menu", () => {
+    expect(
+      describeOpcodeInJapanese({
+        opcode: "control_create_clone_of",
+        args: {CLONE_OPTION: "_myself_"},
+      }),
+    ).toBe("「自分自身」のクローンを作った");
+  });
 });
 
 describe("describeTraceSnapshot Japanese learner labels", () => {
