@@ -86,6 +86,12 @@ function projectTitle(fileName: string): string {
   return fileName.replace(/\.sb3$/i, "") || "Google ドライブの作品";
 }
 
+/** Drive `.sb3` display name from the editor project title. */
+export function driveSb3FileName(title: string): string {
+  const trimmed = title.trim().replace(/\.sb3$/i, "");
+  return `${trimmed || "Project"}.sb3`;
+}
+
 interface TrackedObservation extends DriveObservation {
   contentHash: string;
 }
@@ -537,10 +543,11 @@ export function createEditorDriveIntegration(
             boundFiles.set(current.localProjectId, targetFileId);
             pendingCreates.add(targetFileId);
           }
+          const fileName = driveSb3FileName(current.title);
           if (pendingCreates.has(targetFileId)) {
             const created = await dependencies.drive.createFile({
                 fileId: targetFileId,
-                name: `${current.title || "Project"}.sb3`,
+                name: fileName,
                 bytes,
                 snapshot,
               }, operation.controller.signal);
@@ -620,6 +627,7 @@ export function createEditorDriveIntegration(
             }
             const updated = await dependencies.drive.updateFile({
               fileId: targetFileId,
+              name: fileName,
               bytes,
               knownObservation: {
                 version: knownObservation.version,

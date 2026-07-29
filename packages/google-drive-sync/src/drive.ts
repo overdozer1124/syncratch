@@ -65,6 +65,8 @@ export interface UpdateDriveFileInput {
   bytes: Uint8Array;
   knownObservation: DriveObservation;
   snapshot: DriveSnapshot;
+  /** When set, renames the Drive file to match the current project title. */
+  name?: string;
 }
 
 export interface DriveRestAdapter {
@@ -492,7 +494,7 @@ export function createDriveRestAdapter(
       });
       const multipart = multipartBody(
         undefined,
-        undefined,
+        input.name,
         input.bytes,
         input.snapshot,
       );
