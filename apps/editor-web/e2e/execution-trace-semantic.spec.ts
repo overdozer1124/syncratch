@@ -42,7 +42,7 @@ async function bootEditor(page: Page): Promise<void> {
 async function openDebugPanel(page: Page): Promise<void> {
   const panel = page.getByTestId("exec-debug-panel");
   if (!(await panel.isVisible())) {
-    await page.getByTestId("exec-pause").click();
+    await page.getByTestId("exec-debug-toggle").click();
   }
   await expect(panel).toBeVisible();
   await expect(page.getByTestId("trace-list")).toBeVisible();
