@@ -42,19 +42,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-28 20:44:55 JST |
+| 最終更新 | 2026-07-29 12:04:32 JST |
 | 更新者 | Cursor |
-| ワークフロー状態 | `READY` |
-| 現在の担当 | Codex（AI 実装ブランチ一覧の参照） / ユーザー |
-| 現在のTask | AI 助言試作の実装済みブランチ棚卸し（下記一覧） |
+| ワークフロー状態 | `IN_PROGRESS` |
+| 現在の担当 | ユーザー（残り手動ゲート A5–A7 / B1 / B3）+ Cursor（文書・本番再プローブ支援） |
+| 現在のTask | Local-First Stage 5 リリースゲート |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 本番再プローブ PASS（2026-07-29）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`71e54c7`） |
+| 作業ブランチ | `cursor/release-gates-stage5-23c9`（旧 Draft #21 を main `eb045b9` へ載せ替え） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | AI 助言は `packages/ai-assist`（main 取り込み済み・ブランチ一覧は下記「Codex向け」節）。メニュー統合・共同編集・実行可視化などは別系列 |
+| 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Stage 5 手動継続（A5–A7, B1, B3）。Railway 再デプロイ後に online ホバー文言が1回だけ出ることを確認 |
+| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 
@@ -109,7 +110,10 @@
 
 ## Cursorが次に行う作業
 
-Stage 5 手動ゲート支援（指示時）。**実装完了 PR は Gate 0 PASS 後に必ず main へマージする（ユーザー指示済み・必須）。**
+1. ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
+2. Stage 5 文書 PR を Gate 0 PASS 後に main へマージする（必須）。
+3. Phase 2 / TURN / default branch 切替は指示まで停止。
+4. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -4988,4 +4992,37 @@ merge: 33a54357747d7926f3afb4154c6322d5bead7c9b
 テスト: apps/editor-web 255 PASS / Gate 0 PASS
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー
+```
+
+### 2026-07-29 12:04:32 JST — Cursor（Stage 5 再開・文書を現行 main へ載せ替え）
+
+```text
+最終更新: 2026-07-29 12:04:32 JST
+更新者: Cursor
+状態: IN_PROGRESS
+ユーザー指示: 「作業を順次開始してください」
+対象Task: Local-First Stage 5（台帳次Task: A5–A7 / B1 / B3）
+作業ブランチ: cursor/release-gates-stage5-23c9
+基準 tip: main eb045b9ce6d70bbbc16f023b176738813196636d
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+
+実施:
+- 旧 Draft PR #21（cursor/release-gates-stage5-f431）の Stage 5 文書を現行 main へ載せ替え
+- docs/local-first/STAGE5_MANUAL_GATES.md / RELEASE_CHECKLIST.md / FINAL_ACCEPTANCE_REPORT.md を更新
+- Railway 本番再プローブ: /healthz ok、drive.file + APP_ID bake-in 維持
+- online ホバー「あなたはホスト（リンクを作った人）」が production bundle / unit で 1 回のみであることを確認
+- focused unit 21/21 PASS（status-icons / collab-role-ui / project-status / ui-copy）
+- 台帳「現在の状態」を Stage 5 IN_PROGRESS に同期（AI 一覧は参照節として維持）
+
+未実施（ユーザー実機）:
+- A5 ホストだけ Drive 保存
+- A6 権限削除後も local / SB3
+- A7 Drive 競合停止
+- B1 友だち切断後の表示
+- B3 token 非永続（DevTools）
+
+停止:
+- M1 local-diagnostics は台帳承認前のため着手しない
+- Phase 2 / TURN / default branch 切替はしない
+次の担当: ユーザー（残り手動ゲート）→ 報告後 Cursor が COMPLETE 更新
 ```
