@@ -2781,7 +2781,7 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   }
 }
 
-.exec-control-button[aria-pressed="true"] {
+.exec-control-button[aria-expanded="true"] {
   background: #ffe9b8;
   box-shadow: inset 0 0 0 2px #e0a01a;
 }
