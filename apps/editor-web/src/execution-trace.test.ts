@@ -9,9 +9,12 @@ import {
 } from "./execution-trace.js";
 import {
   entriesWouldCoalesce,
+  extractBlockSnapshotArgs,
   installPrimitiveTraceCapture,
+  recordHatBlockStart,
   shouldRecordCommand,
 } from "./execution-trace-capture.js";
+import {describeTraceSnapshot} from "./execution-trace-format.js";
 
 describe("createExecutionTrace", () => {
   it("records executions oldest first without coalescing", () => {
@@ -173,6 +176,114 @@ describe("instrumentThread", () => {
     instrumentThread(thread, trace);
     expect(trace.getEntries()).toHaveLength(1);
     expect(trace.getEntries()[0]?.snapshot.opcode).toBe("event_whenflagclicked");
+  });
+
+  it("captures key name from when-key-pressed hat fields", () => {
+    const trace = createExecutionTrace({now: () => 0});
+    const thread: TraceThreadLike = {
+      topBlock: "hat",
+      target: {
+        id: "sprite1",
+        getName: () => "Sprite1",
+        blocks: {
+          getBlock: () => ({
+            opcode: "event_whenkeypressed",
+            fields: {KEY_OPTION: {name: "KEY_OPTION", value: "space"}},
+          }),
+        },
+      },
+    };
+    instrumentThread(thread, trace);
+    const entry = trace.getEntries()[0];
+    expect(entry?.snapshot.args.KEY_OPTION).toBe("space");
+    expect(describeTraceSnapshot(entry!.snapshot)).toBe("スペースキーが押された");
+  });
+});
+
+describe("extractBlockSnapshotArgs / recordHatBlockStart", () => {
+  it("reads sb3-shaped field arrays", () => {
+    expect(
+      extractBlockSnapshotArgs({
+        opcode: "event_whenkeypressed",
+        fields: {KEY_OPTION: ["right arrow", null]},
+      }),
+    ).toEqual({KEY_OPTION: "right arrow"});
+  });
+
+  it("reads greater-than hat menu field and shadow VALUE", () => {
+    const blocks: Record<
+      string,
+      {
+        opcode?: string;
+        fields?: Record<string, unknown>;
+        inputs?: Record<string, unknown>;
+      }
+    > = {
+      n1: {opcode: "math_number", fields: {NUM: {name: "NUM", value: "10"}}},
+    };
+    const hat = {
+      opcode: "event_whengreaterthan",
+      fields: {WHENGREATERTHANMENU: {name: "WHENGREATERTHANMENU", value: "loudness"}},
+      inputs: {VALUE: {name: "VALUE", block: "n1", shadow: "n1"}},
+    };
+    const args = extractBlockSnapshotArgs(hat, id => blocks[id] ?? null);
+    expect(args).toEqual({WHENGREATERTHANMENU: "loudness", VALUE: "10"});
+  });
+
+  it("reads sb3 shadow literal inputs for greater-than hats", () => {
+    expect(
+      extractBlockSnapshotArgs({
+        opcode: "event_whengreaterthan",
+        fields: {WHENGREATERTHANMENU: ["timer", null]},
+        inputs: {VALUE: [1, [4, "5"]]},
+      }),
+    ).toEqual({WHENGREATERTHANMENU: "timer", VALUE: "5"});
+  });
+
+  it("records broadcast / backdrop hat option fields for learner text", () => {
+    const recorded: Array<{snapshot: {opcode: string; args: Record<string, unknown>}}> = [];
+    const recorder = {
+      record(entry: {snapshot: {opcode: string; args: Record<string, unknown>}}) {
+        recorded.push(entry);
+      },
+    };
+
+    recordHatBlockStart(recorder, {
+      topBlock: "bcast",
+      target: {
+        id: "t1",
+        getName: () => "Sprite1",
+        blocks: {
+          getBlock: () => ({
+            opcode: "event_whenbroadcastreceived",
+            fields: {
+              BROADCAST_OPTION: {name: "BROADCAST_OPTION", value: "スタート", id: "b1"},
+            },
+          }),
+        },
+      },
+    });
+    expect(describeTraceSnapshot(recorded[0]!.snapshot as never)).toBe(
+      "「スタート」を受け取った",
+    );
+
+    recorded.length = 0;
+    recordHatBlockStart(recorder, {
+      topBlock: "back",
+      target: {
+        id: "t1",
+        getName: () => "Sprite1",
+        blocks: {
+          getBlock: () => ({
+            opcode: "event_whenbackdropswitchesto",
+            fields: {BACKDROP: {name: "BACKDROP", value: "背景1"}},
+          }),
+        },
+      },
+    });
+    expect(describeTraceSnapshot(recorded[0]!.snapshot as never)).toBe(
+      "背景が「背景1」になった",
+    );
   });
 });
 

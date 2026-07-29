@@ -48,13 +48,22 @@ export const TRACE_MENU_VALUE_JA: Record<string, string> = {
   // sensing_setdragmode
   draggable: "ドラッグできる",
   "not draggable": "ドラッグできない",
-  // keys (common)
+  // keys (common Scratch key menu)
   space: "スペース",
   "left arrow": "左向き矢印",
   "right arrow": "右向き矢印",
   "up arrow": "上向き矢印",
   "down arrow": "下向き矢印",
   any: "どれかの",
+  // event_whengreaterthan
+  loudness: "音量",
+  timer: "タイマー",
+  // control_create_clone_of / menus
+  _myself_: "自分自身",
+  // backdrop menus
+  "next backdrop": "次の背景",
+  "previous backdrop": "前の背景",
+  "random backdrop": "どれかの背景",
 };
 
 /** Short Japanese names when a full past-tense phrase is not available. */
@@ -338,8 +347,12 @@ const JA_DESCRIBE: Record<string, JaDescribe> = {
     return volume === null ? "音量を決めた" : `音量を ${fmtNum(volume)} にした`;
   },
   event_whenkeypressed: s => {
+    const raw = s.args.KEY_OPTION;
     const key = text(s.args, "KEY_OPTION");
-    return key ? `「${key}」キーが押された` : "キーが押された";
+    if (!key) return "キーが押された";
+    // Scratch ja UI: 「スペースキーが押されたとき」「どれかのキーが押されたとき」
+    if (raw === "space" || raw === "any") return `${key}キーが押された`;
+    return `「${key}」キーが押された`;
   },
   event_whenthisspriteclicked: () => "このスプライトが押された",
   event_whenstageclicked: () => "ステージが押された",
