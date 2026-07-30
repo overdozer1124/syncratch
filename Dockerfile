@@ -68,6 +68,7 @@ RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
 COPY --from=export /out/app /app
 
 EXPOSE 8080
-VOLUME ["/app/data"]
+# Do not use Docker VOLUME here — Railway rejects it ("use Railway Volumes").
+# Persist admin SQLite by mounting a Railway Volume at /app/data (optional).
 
 CMD ["pnpm", "start"]

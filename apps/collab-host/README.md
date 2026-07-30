@@ -67,8 +67,11 @@ Optional layer for allowlisted teachers. Spec:
 | `GOOGLE_CLIENT_ID` | Same browser client ID (ID token `aud`) |
 | `SYNCRATCH_ADMIN_EMAILS` | CSV of allowed admin emails (required; no self-signup) |
 | `ADMIN_DB_PATH` | Optional SQLite path (default `./data/admin.sqlite`) |
-| `SYNCRATCH_DATA_DIR` | Optional data dir; uses `<dir>/admin.sqlite` when `ADMIN_DB_PATH` unset |
+| `SYNCRATCH_DATA_DIR` | Optional data dir; uses `<dir>/admin.sqlite` when `ADMIN_DB_PATH` unset (Docker default `/app/data`) |
 | `VITE_GOOGLE_CLIENT_ID` | Build-time; needed for `/admin` GIS login button |
+
+To keep policies/links across redeploys on Railway, attach a **Railway Volume**
+mounted at `/app/data` (do not add a Docker `VOLUME` instruction — Railway rejects it).
 
 Surfaces (SPA via static fallback):
 
