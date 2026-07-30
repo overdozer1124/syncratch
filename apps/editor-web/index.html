@@ -637,6 +637,58 @@
                 </div>
               </div>
             </details>
+
+            <details
+              class="tool-panel diagnostic-panel"
+              data-testid="diagnostic-panel"
+              id="diagnostic-panel"
+            >
+              <summary>
+                <svg
+                  aria-hidden="true"
+                  class="menu-summary-icon menu-summary-icon--inline"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  width="18"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 3a9 9 0 1 0 9 9A9 9 0 0 0 12 3Zm.75 13.5h-1.5v-1.5h1.5Zm0-3h-1.5V7.5h1.5Z"
+                  ></path>
+                </svg>
+                ヒントを見る
+              </summary>
+              <div class="panel-content diagnostic-panel-content" id="diagnostic-panel-content">
+                <p class="panel-help">
+                  APIキーなしで、この端末だけで作品を確認します。外部へは送りません。
+                </p>
+                <button
+                  class="ai-submit"
+                  data-testid="diagnostic-run"
+                  id="diagnostic-run"
+                  type="button"
+                >
+                  ヒントを見る
+                </button>
+                <p
+                  aria-live="polite"
+                  class="diagnostic-status"
+                  data-testid="diagnostic-status"
+                  id="diagnostic-status"
+                ></p>
+                <div
+                  class="diagnostic-results"
+                  data-testid="diagnostic-results"
+                  id="diagnostic-results"
+                ></div>
+                <p
+                  aria-live="polite"
+                  class="panel-feedback"
+                  data-testid="diagnostic-feedback"
+                  id="diagnostic-feedback"
+                ></p>
+              </div>
+            </details>
           </div>
           <span
             aria-atomic="true"
