@@ -48,15 +48,15 @@
 | 案件名 | Browser-Local Diagnostics and AI Routing（標準ルール診断 M1） |
 | 現在の状態 | `IN_PROGRESS` |
 | 次の担当 | Cursor |
-| 次の作業 | Phase 1 を PR / main 反映し、続けて Phase 2（rules + hints）へ |
+| 次の作業 | Phase 2（rules + hints + corpus）を PR / main 反映し、続けて Phase 3（editor UI）へ |
 | 計画書 | `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`（main @ `60e0dc3` / PR #176） |
-| 禁止 | Transformers.js / 外部AI自動フォールバック / Phase 3+ への勝手な先行 |
+| 禁止 | Transformers.js / 外部AI自動フォールバック / Phase 4+ への勝手な先行 |
 
 ### 案件レジストリ
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `local-diagnostics-ai-routing` | `IN_PROGRESS` | Cursor | Phase 1 → Phase 2 | **現行アクティブ**。計画は PR #176 で main 反映済み |
+| `local-diagnostics-ai-routing` | `IN_PROGRESS` | Cursor | Phase 2 → Phase 3 | **現行アクティブ**。Phase 1 は PR #177 で main 反映済み |
 | `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | 並行待ち。アクティブではない |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
@@ -71,24 +71,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 19:55:00 JST |
+| 最終更新 | 2026-07-30 20:05:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `local-diagnostics-ai-routing`（上表が正） |
 | ワークフロー状態 | `IN_PROGRESS` |
-| 現在の担当 | Cursor（diagnostics-core Phase 1） |
-| 現在のTask | local-diagnostics AI routing — Phase 1（contracts + IR） |
+| 現在の担当 | Cursor（diagnostics-core Phase 2） |
+| 現在のTask | local-diagnostics AI routing — Phase 2（rules + hints + corpus） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/diagnostics-core-m1-phase1-258b`（base `main` @ `60e0dc3`） |
+| 作業ブランチ | `cursor/diagnostics-core-m1-phase2-258b`（base `main` @ `79ec0de`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | local-diagnostics: `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`。AI 助言は `packages/ai-assist`（維持） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Phase 1 PR マージ後に Phase 2（schema findings + rules + hints） |
+| 次Task | Phase 2 PR マージ後に Phase 3（editor live snapshot + 標準ヒント UI） |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | **計画 main 反映済み（#176）。Phase 1（diagnostics-core）実装完了・PR準備。** |
+| local-diagnostics | **計画 #176 / Phase 1 #177 main 済み。Phase 2 実装中。** |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -141,9 +141,9 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `local-diagnostics-ai-routing`。** Phase 1（`@blocksync/diagnostics-core`）を main 反映し、続けて Phase 2 を新規ブランチで着手する。
+1. **アクティブ案件は `local-diagnostics-ai-routing`。** Phase 2 を main 反映し、続けて Phase 3（editor UI）を新規ブランチで着手する。
 2. Stage 5 手動ゲート（A5–A7 / B1 / B3）はユーザー待ちのまま。アクティブではないので勝手に切り替えない。
-3. Phase 3+ / TURN / Transformers.js / 外部AI自動フォールバックは計画段階まで停止。
+3. Phase 4+ / TURN / Transformers.js / 外部AI自動フォールバックは計画段階まで停止。
 4. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
@@ -5382,4 +5382,38 @@ mergedAt: 2026-07-29T22:13:41Z
 
 禁止: ai-assist・/ai/chat contract 変更 / Transformers.js / 外部AI自動フォールバック
 次の担当: Cursor（本PRを main 反映後 Phase 2）
+```
+
+### 2026-07-30 20:00:00 JST — Cursor（Phase 1 MERGED #177）
+
+```text
+案件ID: local-diagnostics-ai-routing
+状態: MERGED（Phase 1）
+対象: PR #177 → base main
+merge: 79ec0de8bcec06ae43d95ccfc325ceaa019c1414
+mergedAt: 2026-07-30T10:59:18Z
+Gate 0: SUCCESS
+```
+
+### 2026-07-30 20:05:00 JST — Cursor（Phase 2: rules + hints + corpus）
+
+```text
+最終更新: 2026-07-30 20:05:00 JST
+更新者: Cursor
+案件ID: local-diagnostics-ai-routing
+状態: IN_PROGRESS
+作業ブランチ: cursor/diagnostics-core-m1-phase2-258b（base main @ 79ec0de）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了 / local-diagnostics Phase 2 実装完了（PR前）
+
+実施:
+1. schemaFindingsFromDocument: validateProject → severity integrity
+2. diagnoseProject + 初期ルール:
+   - empty-c-block / broadcast.send-without-receive / broadcast.receive-without-send / empty-event-script
+   - broadcast は menu shadow の BROADCAST_OPTION 経由（親 fields 単独は見ない）
+3. prioritizeFindings（最大3）+ presentDiagnosticHints（ja staged / 汎用デバッグガイド）
+4. release corpus: single mutations / normal variants / large-project 線形性
+5. 検証: pnpm --filter @blocksync/diagnostics-core test PASS（40） / typecheck PASS
+
+禁止: Transformers.js / 外部AI自動フォールバック / ai-assist contract 変更
+次の担当: Cursor（本PR main 反映後 Phase 3）
 ```
