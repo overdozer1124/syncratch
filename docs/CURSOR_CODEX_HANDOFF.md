@@ -44,20 +44,21 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `stage5-manual-gates` |
-| 案件名 | Local-First Stage 5 リリース手動ゲート |
-| 現在の状態 | `WAITING_USER` |
-| 次の担当 | ユーザー |
-| 次の作業 | A5–A7 / B1 / B3 をかんたん版で実施し、結果を報告する |
-| 禁止 | `local-diagnostics-ai-routing`（M1）への着手。計画書が origin/main に無い間は実装しない |
+| **アクティブ案件ID** | `local-diagnostics-ai-routing` |
+| 案件名 | Browser-Local Diagnostics and AI Routing（標準ルール診断 M1） |
+| 現在の状態 | `IN_PROGRESS` |
+| 次の担当 | Cursor |
+| 次の作業 | Phase 1 を PR / main 反映し、続けて Phase 2（rules + hints）へ |
+| 計画書 | `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`（main @ `60e0dc3` / PR #176） |
+| 禁止 | Transformers.js / 外部AI自動フォールバック / Phase 3+ への勝手な先行 |
 
 ### 案件レジストリ
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | **現行アクティブ** |
-| `local-diagnostics-ai-routing` | `DESIGN_DONE_NOT_ON_MAIN` | ユーザー → Cursor | ①ローカル計画ブランチを最新 `origin/main` へ載せ直す ②PR/main 反映 ③台帳でアクティブ切替後に M1 | 計画: ローカル `codex/local-diagnostics-ai-routing-plan` @ `5c5dd4f`（本 remote には未存在）。M1 / DiagnosticProjectIR / diagnostics-core / Transformers.js は **未実装** |
-| `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み（#171–#174 周辺） |
+| `local-diagnostics-ai-routing` | `IN_PROGRESS` | Cursor | Phase 1 → Phase 2 | **現行アクティブ**。計画は PR #176 で main 反映済み |
+| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | 並行待ち。アクティブではない |
+| `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
 ### 読取手順（「作業完了」時）
 
@@ -70,24 +71,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 18:38:11 JST |
+| 最終更新 | 2026-07-30 19:55:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `stage5-manual-gates`（上表が正） |
+| アクティブ案件ID | `local-diagnostics-ai-routing`（上表が正） |
 | ワークフロー状態 | `IN_PROGRESS` |
-| 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
-| 現在のTask | Local-First Stage 5 リリースゲート |
+| 現在の担当 | Cursor（diagnostics-core Phase 1） |
+| 現在のTask | local-diagnostics AI routing — Phase 1（contracts + IR） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`d2df22f`） |
+| 作業ブランチ | `cursor/diagnostics-core-m1-phase1-258b`（base `main` @ `60e0dc3`） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
+| 設計 | local-diagnostics: `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`。AI 助言は `packages/ai-assist`（維持） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
+| 次Task | Phase 1 PR マージ後に Phase 2（schema findings + rules + hints） |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | **設計完了・実装未着手。** 計画は remote main 未着。M1 はアクティブ切替＋計画 main 反映後のみ |
+| local-diagnostics | **計画 main 反映済み（#176）。Phase 1（diagnostics-core）実装完了・PR準備。** |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -140,12 +141,10 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `stage5-manual-gates`。** ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
-2. Phase 2 / TURN / default branch 切替は指示まで停止。
-3. **`local-diagnostics-ai-routing`（M1）は着手しない。** 条件が揃うまで禁止:
-   - 計画書が最新 `origin/main` に存在する（ローカル専用ブランチのままでは不可）
-   - 案件レジストリで状態が実装可になり、**アクティブ案件IDが明示切替**されている
-4. 計画ブランチ `codex/local-diagnostics-ai-routing-plan`（`5c5dd4f`）は本 remote に無い。ユーザーが push / 内容提供したあと、最新 main へ載せ直して PR する。
+1. **アクティブ案件は `local-diagnostics-ai-routing`。** Phase 1（`@blocksync/diagnostics-core`）を main 反映し、続けて Phase 2 を新規ブランチで着手する。
+2. Stage 5 手動ゲート（A5–A7 / B1 / B3）はユーザー待ちのまま。アクティブではないので勝手に切り替えない。
+3. Phase 3+ / TURN / Transformers.js / 外部AI自動フォールバックは計画段階まで停止。
+4. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5360,4 +5359,27 @@ mergedAt: 2026-07-29T22:13:41Z
 
 次の担当: Codex（台帳ルーティング修正の確認）→ ユーザーが計画ブランチを remote へ
 禁止: アクティブ切替なしの M1 実装開始
+```
+
+### 2026-07-30 19:55:00 JST — Cursor（計画 main 反映 + アクティブ切替 + Phase 1）
+
+```text
+最終更新: 2026-07-30 19:55:00 JST
+更新者: Cursor
+案件ID: local-diagnostics-ai-routing
+状態: IN_PROGRESS
+作業ブランチ: cursor/diagnostics-core-m1-phase1-258b（base main @ 60e0dc3）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了 / local-diagnostics Phase 1 実装完了（PR前）
+
+実施:
+1. 計画ブランチ codex/local-diagnostics-ai-routing-plan @ 5ebf5d0 を PR #176 で main 反映（merge 60e0dc3）
+2. 台帳のアクティブ案件IDを local-diagnostics-ai-routing へ切替（stage5-manual-gates は WAITING_USER のまま）
+3. Phase 1: packages/diagnostics-core を新設
+   - contracts: DiagnosticFinding/Report + normalizeFindings（重複抑制・安定順）
+   - ir: DiagnosticProjectIR / buildDiagnosticProjectIR / normalizeDiagnosticInput
+   - next/parent/SUBSTACK/SUBSTACK2/primitive shadow/broadcast menu/cycle-safe をテスト
+4. 検証: pnpm --filter @blocksync/diagnostics-core test PASS（15） / typecheck PASS
+
+禁止: ai-assist・/ai/chat contract 変更 / Transformers.js / 外部AI自動フォールバック
+次の担当: Cursor（本PRを main 反映後 Phase 2）
 ```

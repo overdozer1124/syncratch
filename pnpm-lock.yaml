@@ -451,6 +451,19 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
+  packages/diagnostics-core:
+    dependencies:
+      '@blocksync/project-schema':
+        specifier: workspace:*
+        version: link:../project-schema
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
   packages/google-drive-sync:
     devDependencies:
       typescript:
