@@ -91,6 +91,11 @@ Allowlisted teachers can open `/admin`, define a ClassroomPolicy, and issue
 Build-time `VITE_GOOGLE_CLIENT_ID` is required for the `/admin` Google button.
 Admin sessions use cookie `syncratch_admin_session` (never reuse Drive session).
 
+To persist the admin DB across redeploys, add a **Railway Volume** mounted at
+`/app/data` in the service settings. Do not put a Docker `VOLUME` instruction in
+the Dockerfile — Railway fails the build with
+`docker VOLUME … is not supported, use Railway Volumes`.
+
 ## Signaling
 
 Set `VITE_COLLAB_SIGNALING_URL` to an explicit `wss://` endpoint running
