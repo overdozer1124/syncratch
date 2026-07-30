@@ -1110,6 +1110,55 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   background: rgb(255 255 255 / 24%);
 }
 
+.diagnostic-panel summary {
+  padding: 0 15px;
+  background: rgb(255 255 255 / 10%);
+  font-weight: 700;
+}
+
+.diagnostic-panel-content {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.diagnostic-status {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--sc-ink-muted, #3d5a73);
+}
+
+.diagnostic-results {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.diagnostic-finding {
+  padding: 0.75rem 0.85rem;
+  border-left: 3px solid #4c97ff;
+  background: #f4f8fc;
+}
+
+.diagnostic-finding--integrity {
+  border-left-color: #cf6336;
+  background: #fff6f1;
+}
+
+.diagnostic-finding--secondary {
+  opacity: 0.92;
+}
+
+.diagnostic-stage {
+  margin: 0 0 0.4rem;
+  line-height: 1.45;
+}
+
+.diagnostic-generic-actions {
+  margin: 0;
+  padding-left: 1.25rem;
+  line-height: 1.5;
+}
+
 .panel-content {
   /* Anchor to the open column so Scratch under other columns stays usable. */
   position: absolute;

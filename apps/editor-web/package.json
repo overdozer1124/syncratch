@@ -16,6 +16,7 @@
   "dependencies": {
     "@blocksync/ai-assist": "workspace:*",
     "@blocksync/classroom-access": "workspace:*",
+    "@blocksync/diagnostics-core": "workspace:*",
     "@blocksync/collab-invite": "workspace:*",
     "@blocksync/collab-leader": "workspace:*",
     "@blocksync/collab-webrtc": "workspace:*",

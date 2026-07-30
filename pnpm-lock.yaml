@@ -83,6 +83,9 @@ importers:
       '@blocksync/collaboration-domain':
         specifier: workspace:*
         version: link:../../packages/collaboration-domain
+      '@blocksync/diagnostics-core':
+        specifier: workspace:*
+        version: link:../../packages/diagnostics-core
       '@blocksync/google-drive-sync':
         specifier: workspace:*
         version: link:../../packages/google-drive-sync

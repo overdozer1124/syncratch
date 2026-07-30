@@ -104,6 +104,9 @@ import {
 } from "./tool-panel-dismiss.js";
 import {setMenuButtonLabel} from "./menu-button-label.js";
 import {installAiFloatingPanel} from "./ai-floating-panel.js";
+import {createDiagnosticController} from "./diagnostic-controller.js";
+import {renderDiagnosticView} from "./diagnostic-ui.js";
+import {captureLiveProjectSnapshot} from "./live-project-snapshot.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {
   closeExtensionLibraryAction,
@@ -617,6 +620,11 @@ const aiPageStatus = requiredElement<HTMLElement>("ai-page-status");
 const aiThread = requiredElement<HTMLElement>("ai-thread");
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
+const diagnosticPanel = requiredElement<HTMLDetailsElement>("diagnostic-panel");
+const diagnosticRunButton = requiredElement<HTMLButtonElement>("diagnostic-run");
+const diagnosticStatus = requiredElement<HTMLElement>("diagnostic-status");
+const diagnosticResults = requiredElement<HTMLElement>("diagnostic-results");
+const diagnosticFeedback = requiredElement<HTMLElement>("diagnostic-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 const guiSplash = document.querySelector<HTMLElement>("#gui-splash");
 const appMain = document.querySelector<HTMLElement>("#app");
@@ -3931,6 +3939,55 @@ fillAiProviderSelect();
 fillAiLevelSelect();
 applyAiSettingsToForm(aiSettings);
 renderAiUi(aiSettings);
+
+const diagnosticController = createDiagnosticController({
+  captureSnapshot: () =>
+    captureLiveProjectSnapshot({
+      readVmJson:
+        typeof vm === "undefined" || !vm
+          ? null
+          : () => vm.toJSON(),
+      previousDocument: hasCurrent ? current.document : null,
+      assetHashes:
+        typeof vm === "undefined" || !vm
+          ? undefined
+          : assetHashCache.hashesFor(runtimeAssetMap()),
+    }),
+});
+
+const diagnosticUiBindings = {
+  runButton: diagnosticRunButton,
+  statusEl: diagnosticStatus,
+  resultsEl: diagnosticResults,
+  feedbackEl: diagnosticFeedback,
+};
+
+function paintDiagnosticView(): void {
+  renderDiagnosticView(
+    diagnosticUiBindings,
+    diagnosticController.getViewModel(),
+    {
+      onReveal: findingId => {
+        diagnosticController.revealNextHint(findingId);
+        paintDiagnosticView();
+      },
+    },
+  );
+}
+
+paintDiagnosticView();
+
+diagnosticRunButton.addEventListener("click", () => {
+  void (async () => {
+    // Kick off run (sets running) then paint after the first microtask.
+    const pending = diagnosticController.run();
+    paintDiagnosticView();
+    await pending;
+    paintDiagnosticView();
+    diagnosticPanel.open = true;
+    diagnosticRunButton.focus();
+  })();
+});
 
 aiSettingsSaveButton.addEventListener("click", () => {
   persistAiSettingsFromForm();
