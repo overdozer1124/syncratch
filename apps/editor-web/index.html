@@ -866,9 +866,12 @@
     ></div>
     <script>
       // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
+      // Must use Vite BASE_URL (absolute), not location-relative "./" — student
+      // routes (/s/{token}) would otherwise resolve media under /s/static/… (404).
       (function () {
-        var base = new URL("./", document.baseURI || location.href).pathname;
-        if (!base.endsWith("/")) base += "/";
+        var base = "%BASE_URL%";
+        if (!base || base.charAt(0) !== "/") base = "/";
+        if (base.charAt(base.length - 1) !== "/") base += "/";
         window.__BLOCKSYNC_GUI_PUBLIC_PATH__ = base;
       })();
     </script>

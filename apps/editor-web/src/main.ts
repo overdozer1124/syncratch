@@ -161,6 +161,7 @@ import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
+import {scratchGuiBasePath} from "./gui-public-path.js";
 import {staticAssetUrl} from "./static-url.js";
 import {
   createProjectSessionTracker,
@@ -430,6 +431,8 @@ interface ScratchGuiGlobal {
     element: HTMLElement,
   ): {
     render(options: {
+      /** Absolute asset prefix for blocks-media (must not be route-relative "./"). */
+      basePath?: string;
       canEditTitle: boolean;
       canSave: boolean;
       canManageFiles?: boolean;
@@ -622,6 +625,10 @@ const studentErrorShell = document.querySelector<HTMLElement>(
   "#student-error-shell",
 );
 const SURFACE_MODE = detectEditorSurfaceMode();
+// Pin before loadScratchGui / Blocks media resolve (nested /s/{token} routes).
+(
+  window as Window & {__BLOCKSYNC_GUI_PUBLIC_PATH__?: string}
+).__BLOCKSYNC_GUI_PUBLIC_PATH__ = scratchGuiBasePath();
 let studentPolicy: StudentPolicyView | null = null;
 if (SURFACE_MODE.kind !== "community" && appMain) {
   appMain.hidden = true;
@@ -2453,6 +2460,8 @@ async function getVm(): Promise<ScratchVm> {
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({
+      // Absolute site root — not "./". Nested /s/{token} would break blocks-media.
+      basePath: scratchGuiBasePath(),
       canEditTitle: false,
       canSave: false,
       // Syncratch owns 設定/ファイル/編集 menus (see feature-panels).
