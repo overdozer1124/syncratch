@@ -8,7 +8,7 @@
 ## 運用ルール
 
 1. Cursor/Codex は作業前に、このファイル、`git status --short`、`git rev-parse HEAD` を確認する。
-2. 実装担当は作業完了時に「現在の状態」を更新し、作業ログへ結果を追記する。
+2. 実装担当は作業完了時に「現在の状態」と **アクティブ案件** を更新し、作業ログへ結果を追記する。
 3. 実装担当が `READY_FOR_CODEX_REVIEW` にした後、ユーザーは Codex に「作業完了」とだけ伝えればよい。
 4. Codex はこのファイルと実際の差分・テストを確認し、`GO` または `NO_GO` を記録する。
 5. Codex が `CHANGES_REQUESTED` にした後、ユーザーは Cursor に「作業完了」とだけ伝えればよい。Cursor は本ファイルの指摘を読んで修正する。
@@ -16,6 +16,8 @@
 7. 作業終了報告には、必ずJSTタイムスタンプと全体進捗率を含める。
 8. 過去の作業ログは削除せず、末尾へ追記する。
 9. 承認前のTaskへ先行着手しない。
+10. **案件ルーティング（必須）:** 「作業完了」や新規着手のとき、**物理的な末尾ログだけを読んではならない。** 必ず「アクティブ案件ID」を確認し、その案件IDに一致する最新ログと案件レジストリ行を正とする。末尾が別案件のログでも、アクティブ案件以外を開始しない。
+11. 新しい案件を始めるときは、案件レジストリへ行を追加し、**アクティブ案件IDを明示的に切り替えてから**着手する。切替前の別案件には触れない。
 
 ## Cursor 内レビュー・ルーブリック（Codex 提出前の必須自己レビュー）
 
@@ -38,12 +40,39 @@
 - class-move orchestration、overlap service rule、claim、System Owner transfer、Person/link claim、audit は未実装のまま凍結し、主系進捗へ含めない。
 - `r1-persist-server`、SQLite GC、Workspace/roster/RBAC/audit は buildable を維持するが、Community runtime の必須依存にはしない。
 
+## アクティブ案件（誤ルーティング防止・必読）
+
+| 項目 | 値 |
+|---|---|
+| **アクティブ案件ID** | `stage5-manual-gates` |
+| 案件名 | Local-First Stage 5 リリース手動ゲート |
+| 現在の状態 | `WAITING_USER` |
+| 次の担当 | ユーザー |
+| 次の作業 | A5–A7 / B1 / B3 をかんたん版で実施し、結果を報告する |
+| 禁止 | `local-diagnostics-ai-routing`（M1）への着手。計画書が origin/main に無い間は実装しない |
+
+### 案件レジストリ
+
+| 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
+|---|---|---|---|---|
+| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | **現行アクティブ** |
+| `local-diagnostics-ai-routing` | `DESIGN_DONE_NOT_ON_MAIN` | ユーザー → Cursor | ①ローカル計画ブランチを最新 `origin/main` へ載せ直す ②PR/main 反映 ③台帳でアクティブ切替後に M1 | 計画: ローカル `codex/local-diagnostics-ai-routing-plan` @ `5c5dd4f`（本 remote には未存在）。M1 / DiagnosticProjectIR / diagnostics-core / Transformers.js は **未実装** |
+| `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み（#171–#174 周辺） |
+
+### 読取手順（「作業完了」時）
+
+1. この節の **アクティブ案件ID** を読む。
+2. 案件レジストリでその行の状態・担当・次作業を確認する。
+3. 作業ログは **同じ案件IDを含む最新エントリ** を探す（ファイル末尾とは限らない）。
+4. 末尾が別案件でも、アクティブ案件以外を開始しない。
+
 ## 現在の状態
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 07:13:44 JST |
+| 最終更新 | 2026-07-30 18:38:11 JST |
 | 更新者 | Cursor |
+| アクティブ案件ID | `stage5-manual-gates`（上表が正） |
 | ワークフロー状態 | `IN_PROGRESS` |
 | 現在の担当 | ユーザー（Stage 5 残り手動ゲート A5–A7 / B1 / B3） |
 | 現在のTask | Local-First Stage 5 リリースゲート |
@@ -51,13 +80,14 @@
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`00c6cbd`） |
+| 作業ブランチ | `main`（`d2df22f`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | Stage 5: `docs/local-first/STAGE5_MANUAL_GATES.md`。AI 助言は `packages/ai-assist`（main 取り込み済み・下記一覧） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
 | 次Task | ユーザーが A5–A7 / B1 / B3 をかんたん版で実施。結果報告で COMPLETE 更新 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
+| local-diagnostics | **設計完了・実装未着手。** 計画は remote main 未着。M1 はアクティブ切替＋計画 main 反映後のみ |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -110,9 +140,12 @@
 
 ## Cursorが次に行う作業
 
-1. ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
+1. **アクティブ案件は `stage5-manual-gates`。** ユーザーが A5–A7 / B1 / B3 を報告したら `STAGE5_MANUAL_GATES.md` / checklist / report を COMPLETE にする。
 2. Phase 2 / TURN / default branch 切替は指示まで停止。
-3. local-diagnostics AI routing（M1）は台帳承認前のため着手しない。
+3. **`local-diagnostics-ai-routing`（M1）は着手しない。** 条件が揃うまで禁止:
+   - 計画書が最新 `origin/main` に存在する（ローカル専用ブランチのままでは不可）
+   - 案件レジストリで状態が実装可になり、**アクティブ案件IDが明示切替**されている
+4. 計画ブランチ `codex/local-diagnostics-ai-routing-plan`（`5c5dd4f`）は本 remote に無い。ユーザーが push / 内容提供したあと、最新 main へ載せ直して PR する。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5307,4 +5340,24 @@ mergedAt: 2026-07-29T22:13:41Z
 停止: Phase 2 / TURN / default branch 切替はユーザー指示まで行わない
 次の担当: ユーザー（Stage 5 残り A5–A7 / B1 / B3）
 全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了
+```
+
+### 2026-07-30 18:38:11 JST — Cursor（共通台帳: アクティブ案件ID追加）
+
+```text
+最終更新: 2026-07-30 18:38:11 JST
+更新者: Cursor
+案件ID: stage5-manual-gates（アクティブ維持） / local-diagnostics-ai-routing（レジストリ登録のみ）
+状態: READY_FOR_CODEX_REVIEW
+対象: docs/CURSOR_CODEX_HANDOFF.md
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了 / local-diagnostics M1 0%
+
+受領した Codex レビュー指摘（設計完了・実装未着手）への対応:
+1. 共通台帳に「アクティブ案件ID」「案件レジストリ」「末尾ではなく案件ID一致ログを読む規則」を追加（運用ルール 10–11）
+2. local-diagnostics 計画ブランチは origin に未存在（5c5dd4f / codex/local-diagnostics-ai-routing-plan）。
+   本環境では計画ファイルを取得できないため、main 載せ直しはユーザーの push / 提供待ち
+3. M1 / DiagnosticProjectIR / diagnostics-core / Transformers.js は未着手のまま（禁止を明記）
+
+次の担当: Codex（台帳ルーティング修正の確認）→ ユーザーが計画ブランチを remote へ
+禁止: アクティブ切替なしの M1 実装開始
 ```
