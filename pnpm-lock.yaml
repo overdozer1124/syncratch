@@ -28,12 +28,21 @@ importers:
       '@blocksync/ai-assist':
         specifier: workspace:*
         version: link:../../packages/ai-assist
+      '@blocksync/classroom-access':
+        specifier: workspace:*
+        version: link:../../packages/classroom-access
       '@blocksync/collab-signaling':
         specifier: workspace:*
         version: link:../../packages/collab-signaling
       '@blocksync/google-drive-sync':
         specifier: workspace:*
         version: link:../../packages/google-drive-sync
+      '@blocksync/google-identity':
+        specifier: workspace:*
+        version: link:../../packages/google-identity
+      better-sqlite3:
+        specifier: ^12.11.1
+        version: 12.11.1
       tsx:
         specifier: ^4.20.3
         version: 4.23.1
@@ -41,6 +50,9 @@ importers:
         specifier: ^8.18.2
         version: 8.21.1
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -56,6 +68,9 @@ importers:
       '@blocksync/ai-assist':
         specifier: workspace:*
         version: link:../../packages/ai-assist
+      '@blocksync/classroom-access':
+        specifier: workspace:*
+        version: link:../../packages/classroom-access
       '@blocksync/collab-invite':
         specifier: workspace:*
         version: link:../../packages/collab-invite
@@ -335,6 +350,15 @@ importers:
         version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
 
   packages/auth-context:
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@24.13.3)(jsdom@28.1.0(@noble/hashes@2.2.0))(tsx@4.23.1)
+
+  packages/classroom-access:
     devDependencies:
       typescript:
         specifier: ^5.8.3

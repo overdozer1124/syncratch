@@ -3,12 +3,15 @@
  * - GET /*  → apps/editor-web/dist static files
  * - POST /ai/chat → optional AI advice proxy (API key from client Authorization)
  * - /oauth/google/* → Drive authorization-code + refresh-token sessions
+ * - /api/admin/* → classroom admin auth + policy/link CRUD (allowlist)
+ * - /api/student/policy-by-token/* → public student policy resolve
  * - GET /ice → ephemeral Open Relay TURN credentials (HMAC static-auth)
  * - WS /signal → @blocksync/collab-signaling
  *
  * This process does not relay project bytes (WebRTC data channels are P2P/TURN).
  * AI proxy never stores API keys and never touches Yjs / signaling traffic.
  * Drive refresh tokens stay server-side (HttpOnly session cookie).
+ * Admin sessions use a separate cookie from Drive OAuth.
  */
 import {createServer} from "node:http";
 import {dirname, resolve} from "node:path";
@@ -17,6 +20,19 @@ import {
   DEFAULT_SIGNALING_PATH,
   startSignalingServer,
 } from "@blocksync/collab-signaling";
+import {createAdminApiHandler} from "./admin-api.js";
+import {
+  createAdminAuthHandler,
+  createMemoryAdminSessionStore,
+  readAdminAuthConfigFromEnv,
+  type AdminAuthConfig,
+  type AdminSessionStore,
+} from "./admin-auth.js";
+import {
+  defaultAdminDbPath,
+  openAdminDb,
+  type AdminDb,
+} from "./admin-db.js";
 import {handleAiChatProxy} from "./ai-proxy.js";
 import {
   createDriveOAuthHandler,
@@ -25,11 +41,19 @@ import {
 import {handleIceCredentials} from "./ice-endpoint.js";
 import {createStaticRequestHandler} from "./static.js";
 
+export interface StartCollabHostAdminOptions {
+  db?: AdminDb;
+  config?: AdminAuthConfig | null;
+  sessions?: AdminSessionStore;
+}
+
 export interface StartCollabHostOptions {
   port?: number;
   host?: string;
   staticRoot?: string;
   signalingPath?: string;
+  /** Optional classroom admin layer (tests inject db/config/sessions). */
+  admin?: StartCollabHostAdminOptions;
 }
 
 export interface CollabHostHandle {
@@ -61,9 +85,33 @@ export async function startCollabHost(
   const handleDriveOAuth = createDriveOAuthHandler({
     config: readDriveOAuthConfigFromEnv(),
   });
+  const adminDb =
+    options.admin?.db ??
+    openAdminDb(
+      process.env.ADMIN_DB_PATH?.trim() ||
+        (process.env.VITEST === "true" ? ":memory:" : defaultAdminDbPath()),
+    );
+  const adminConfig =
+    options.admin?.config !== undefined
+      ? options.admin.config
+      : readAdminAuthConfigFromEnv();
+  const adminSessions =
+    options.admin?.sessions ?? createMemoryAdminSessionStore();
+  const handleAdminAuth = createAdminAuthHandler({
+    db: adminDb,
+    config: adminConfig,
+    sessions: adminSessions,
+  });
+  const handleAdminApi = createAdminApiHandler({
+    db: adminDb,
+    config: adminConfig,
+    sessions: adminSessions,
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
+      if (await handleAdminAuth(req, res)) return;
+      if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
       if (await handleIceCredentials(req, res)) return;
       if (handleStatic(req, res)) return;
@@ -99,6 +147,7 @@ export async function startCollabHost(
     signalingUrl: signaling.url,
     close: async () => {
       await signaling.close();
+      adminDb.close();
       await new Promise<void>((resolveClose, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolveClose()));
       });

@@ -3106,3 +3106,98 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   color: #6b6b6b;
   font-size: 0.82rem;
 }
+
+/* Classroom admin / student shells (Phase 1) */
+.admin-shell,
+.student-error-shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 2.5rem 1.5rem 3rem;
+  background:
+    radial-gradient(120% 80% at 10% 0%, #d7ebff 0%, transparent 55%),
+    linear-gradient(165deg, #f4f8fc 0%, #e7f0f8 45%, #d9e8f4 100%);
+  color: var(--sc-ink);
+  font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif;
+}
+
+.admin-brand {
+  margin: 0 0 0.35rem;
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--syncratch-chrome-dark);
+}
+
+.admin-brand-kana {
+  margin-left: 0.35rem;
+  font-size: 0.55em;
+  font-weight: 700;
+  color: var(--sc-muted);
+}
+
+.admin-shell h1,
+.student-error-shell h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.admin-status {
+  margin: 0 0 1.25rem;
+  color: var(--sc-muted);
+}
+
+.admin-body {
+  display: grid;
+  gap: 1rem;
+  max-width: 42rem;
+}
+
+.admin-button {
+  appearance: none;
+  border: 1px solid #b7c9db;
+  background: #fff;
+  color: var(--sc-ink);
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.9rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.admin-button.primary {
+  background: var(--syncratch-chrome);
+  border-color: var(--syncratch-chrome);
+  color: #fff;
+}
+
+.admin-policy-card {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem 0;
+  border-top: 1px solid #c9d7e6;
+}
+
+.admin-policy-card h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.admin-muted,
+.admin-link-out {
+  margin: 0;
+  color: var(--sc-muted);
+  word-break: break-all;
+}
+
+.admin-toggles {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.admin-links {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--sc-muted);
+}

@@ -314,6 +314,7 @@ import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
   AI_CHAT_PROXY_PATH,
+  DEFAULT_AI_SETTINGS,
   buildAdviceMessages,
   buildAiProjectContext,
   buildContinuationUserPrompt,
@@ -335,6 +336,15 @@ import {
   type AiChatMessage,
   type AiConversationTurn,
 } from "@blocksync/ai-assist";
+import type {StudentPolicyView} from "@blocksync/classroom-access";
+import {startAdminSurface} from "./admin-surface.js";
+import {
+  aiSettingsFromStudentPolicy,
+  applyStudentPolicyToDom,
+  studentPolicyBlocksAiPersist,
+} from "./classroom-policy-apply.js";
+import {detectEditorSurfaceMode} from "./surface-mode.js";
+import {fetchStudentPolicy, showStudentLinkError} from "./student-surface.js";
 import {
   aiModeOptionsForLevel,
   aiPanelHidden,
@@ -606,8 +616,18 @@ const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 const guiSplash = document.querySelector<HTMLElement>("#gui-splash");
+const appMain = document.querySelector<HTMLElement>("#app");
+const adminShell = document.querySelector<HTMLElement>("#admin-shell");
+const studentErrorShell = document.querySelector<HTMLElement>(
+  "#student-error-shell",
+);
+const SURFACE_MODE = detectEditorSurfaceMode();
+let studentPolicy: StudentPolicyView | null = null;
+if (SURFACE_MODE.kind !== "community" && appMain) {
+  appMain.hidden = true;
+}
 const chromeLeft = document.querySelector<HTMLElement>(".chrome-left");
-if (chromeLeft) {
+if (chromeLeft && SURFACE_MODE.kind !== "admin") {
   installSyncratchChromeLayout({chromeLeft, guiHost});
 }
 const toolPanels = [
@@ -3669,9 +3689,12 @@ collabDiagnosticsButton.addEventListener("click", () => {
 /* Settings live in localStorage only (never Y.Doc / .sb3 / signaling).        */
 /* -------------------------------------------------------------------------- */
 
-let aiSettings: AiAssistSettings = loadAiAssistSettings(
-  typeof localStorage === "undefined" ? null : localStorage,
-);
+let aiSettings: AiAssistSettings =
+  SURFACE_MODE.kind === "student" || SURFACE_MODE.kind === "admin"
+    ? {...DEFAULT_AI_SETTINGS}
+    : loadAiAssistSettings(
+        typeof localStorage === "undefined" ? null : localStorage,
+      );
 let aiAskInFlight = false;
 /** In-memory advice thread for this editor session (not persisted). */
 let aiConversation: AiConversationTurn[] = [];
@@ -3867,6 +3890,14 @@ function renderAiUi(settings: AiAssistSettings = aiSettings): void {
 }
 
 function persistAiSettingsFromForm(): AiAssistSettings {
+  if (studentPolicy && studentPolicyBlocksAiPersist(studentPolicy)) {
+    aiSettings = aiSettingsFromStudentPolicy(studentPolicy);
+    applyAiSettingsToForm(aiSettings);
+    renderAiUi(aiSettings);
+    aiSettingsFeedback.textContent =
+      "このリンクでは設定を変更できません（管理者の設定に従います）。";
+    return aiSettings;
+  }
   const next = readSettingsFromForm({
     enabled: aiEnabledInput.checked,
     apiKey: aiApiKeyInput.value,
@@ -4233,11 +4264,66 @@ aiClarifyOtherSubmit.addEventListener("click", () => {
   void askAiWithIntent(buildOtherClarifyChoice(other));
 });
 
-boot().catch(error => {
+async function startEditorSurface(): Promise<void> {
+  if (SURFACE_MODE.kind === "admin") {
+    if (!adminShell) {
+      throw new Error("admin shell missing");
+    }
+    await startAdminSurface(adminShell);
+    return;
+  }
+
+  if (SURFACE_MODE.kind === "student") {
+    const policy = await fetchStudentPolicy(SURFACE_MODE.token);
+    if (!policy) {
+      if (studentErrorShell) showStudentLinkError(studentErrorShell);
+      return;
+    }
+    studentPolicy = policy;
+    aiSettings = aiSettingsFromStudentPolicy(policy);
+    applyAiSettingsToForm(aiSettings);
+    renderAiUi(aiSettings);
+    applyStudentPolicyToDom(policy, {
+      settingsPanel: document.querySelector<HTMLElement>(
+        '[data-testid="settings-panel"]',
+      ),
+      aiPanel,
+      aiEnabledInput,
+      aiApiKeyInput,
+      aiSettingsSaveButton,
+      downloadButton,
+      openButton,
+      fileInput,
+      connectGoogleButton,
+      openDriveButton,
+      saveDriveButton,
+      disconnectGoogleButton,
+      createRoomButton,
+      joinRoomButton,
+      copyInviteButton,
+      collabInviteInput,
+      drivePanel: document.querySelector<HTMLElement>(
+        '[data-testid="drive-panel"]',
+      ),
+      collabPanel: document.querySelector<HTMLElement>(
+        '[data-testid="collab-panel"]',
+      ),
+      filePanel: document.querySelector<HTMLElement>(
+        '[data-testid="file-panel"]',
+      ),
+    });
+    if (appMain) appMain.hidden = false;
+  }
+
+  await boot();
+}
+
+startEditorSurface().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
   fatalBootError =
     "エディターを始められませんでした。ページを読み直してください。";
   console.error("[syncratch] boot failed", error);
+  if (appMain) appMain.hidden = false;
   setGuiSplashVisible(guiSplash, true);
   setGuiSplashProgress(guiSplash, {
     ratio: 1,
