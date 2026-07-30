@@ -46,9 +46,9 @@
 |---|---|
 | **アクティブ案件ID** | `local-diagnostics-ai-routing` |
 | 案件名 | Browser-Local Diagnostics and AI Routing（標準ルール診断 M1） |
-| 現在の状態 | `IN_PROGRESS` |
-| 次の担当 | Cursor |
-| 次の作業 | Phase 3（editor live snapshot + ヒント UI）を PR / main 反映。Phase 4 は指示まで停止 |
+| 現在の状態 | `MILESTONE_A_MERGED` |
+| 次の担当 | ユーザー / Codex |
+| 次の作業 | Milestone A（Phase 1–3）完了を確認。Phase 4（外部AIゲート）は指示があるまで停止 |
 | 計画書 | `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`（main @ `60e0dc3` / PR #176） |
 | 禁止 | Transformers.js / 外部AI自動フォールバック / Phase 4+ への勝手な先行 |
 
@@ -56,7 +56,7 @@
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `local-diagnostics-ai-routing` | `IN_PROGRESS` | Cursor | Phase 3 →（指示後）Phase 4 | **現行アクティブ**。Phase 1 #177 / Phase 2 #178 main 済み |
+| `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー / Codex | Phase 4 は指示後 | **現行アクティブ**。Phase 1–3 = #177–#179 main 済み（Milestone A） |
 | `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | 並行待ち。アクティブではない |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
@@ -71,24 +71,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 20:20:00 JST |
+| 最終更新 | 2026-07-30 20:30:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `local-diagnostics-ai-routing`（上表が正） |
-| ワークフロー状態 | `IN_PROGRESS` |
-| 現在の担当 | Cursor（diagnostics-core Phase 3） |
-| 現在のTask | local-diagnostics AI routing — Phase 3（editor UI） |
+| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
+| 現在の担当 | Codex（Milestone A 確認）→ ユーザー（Phase 4 指示） |
+| 現在のTask | local-diagnostics — Milestone A（Phase 1–3）MERGED |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/diagnostics-core-m1-phase3-258b`（base `main` @ `04b445b`） |
+| 作業ブランチ | `main`（`8755160`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | 設計 | local-diagnostics: `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`。AI 助言は `packages/ai-assist`（維持） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Phase 3 PR マージ後。Phase 4（外部AIゲート）は指示まで停止 |
+| 次Task | Phase 4（外部AIゲート）はユーザー指示まで停止 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | **計画 #176 / Phase 1 #177 / Phase 2 #178 main 済み。Phase 3 実装中。** |
+| local-diagnostics | **Milestone A main 済み（#176–#179）。Phase 4+ は指示待ち。** |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -141,7 +141,7 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `local-diagnostics-ai-routing`。** Phase 3（`ヒントを見る` UI）を main 反映する。Milestone A の Phase 1–3 完了後、Phase 4 は指示まで停止。
+1. **アクティブ案件は `local-diagnostics-ai-routing`。** Milestone A（Phase 1–3）は main 反映済み。Phase 4 は指示があるまで着手しない。
 2. Stage 5 手動ゲート（A5–A7 / B1 / B3）はユーザー待ちのまま。アクティブではないので勝手に切り替えない。
 3. Phase 4+ / TURN / Transformers.js / 外部AI自動フォールバックは計画段階まで停止。
 4. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
@@ -5447,4 +5447,26 @@ mergedAt: 2026-07-30T11:13:12Z
 
 禁止: Transformers.js / 外部AI自動フォールバック / Phase 4 勝手着手
 次の担当: Cursor（本PR main 反映）→ Phase 4 は指示待ち
+```
+
+### 2026-07-30 20:28:31 JST — Cursor（Phase 3 MERGED #179 / Milestone A）
+
+```text
+最終更新: 2026-07-30 20:30:00 JST
+更新者: Cursor
+案件ID: local-diagnostics-ai-routing
+状態: MILESTONE_A_MERGED / READY_FOR_CODEX_REVIEW
+対象:
+- 計画 PR #176 → main @ 60e0dc3
+- Phase 1 PR #177 → main @ 79ec0de
+- Phase 2 PR #178 → main @ 04b445b
+- Phase 3 PR #179 → main @ 8755160（mergedAt: 2026-07-30T11:28:31Z）
+全体進捗: Local-First primary 100% / Stage 5 手動ゲート 未完了 / local-diagnostics Milestone A 100%
+
+製品面:
+- 標準診断パッケージ @blocksync/diagnostics-core
+- エディタ「ヒントを見る」（APIキー不要・この端末で確認・外部AI非フォールバック）
+
+停止: Phase 4（外部AIゲート）/ Transformers.js / TURN / default branch 切替はユーザー指示まで
+次の担当: Codex（Milestone A 確認）→ ユーザー（Phase 4 指示 or Stage 5 手動ゲート）
 ```
