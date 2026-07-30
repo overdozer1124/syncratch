@@ -76,6 +76,21 @@ The editor calls `/oauth/google/session` to obtain short-lived access tokens.
 If these host env vars are missing, the editor falls back to the GIS token client
 (memory-only; re-auth on each reload).
 
+### Classroom admin (optional)
+
+Allowlisted teachers can open `/admin`, define a ClassroomPolicy, and issue
+`/s/{token}` student links. See
+`docs/superpowers/specs/2026-07-30-admin-student-access-design.md`.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_ADMIN_EMAILS` | CSV of admin emails (no self-registration) |
+| `GOOGLE_CLIENT_ID` | ID token audience (same as Drive client ID is fine) |
+| `ADMIN_DB_PATH` or `SYNCRATCH_DATA_DIR` | SQLite for policies/links (default `/app/data/admin.sqlite` in Docker) |
+
+Build-time `VITE_GOOGLE_CLIENT_ID` is required for the `/admin` Google button.
+Admin sessions use cookie `syncratch_admin_session` (never reuse Drive session).
+
 ## Signaling
 
 Set `VITE_COLLAB_SIGNALING_URL` to an explicit `wss://` endpoint running

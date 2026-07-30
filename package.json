@@ -10,7 +10,7 @@
     "gate0:check-licenses": "node scripts/check-licenses.mjs",
     "gate0:build-vendor-vm": "node scripts/build-vendor-scratch-vm.mjs",
     "gate0:build-vendor-gui-spike": "node scripts/build-vendor-scratch-gui-spike.mjs",
-    "gate0:test": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" --filter \"./apps/gate0-collab-demo\" test",
+    "gate0:test": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" --filter \"./apps/gate0-collab-demo\" --filter \"./apps/collab-host\" test",
     "gate0:collab": "pnpm --filter @blocksync/gate0-collab-demo test:collab",
     "gate0:summary": "node scripts/gate0-summary.mjs",
     "build": "pnpm -r --filter \"./packages/**\" --filter \"./apps/gate0-collab-server\" build",

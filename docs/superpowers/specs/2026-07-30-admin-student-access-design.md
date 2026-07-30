@@ -1,6 +1,6 @@
 # Syncratch 管理者 / 児童生徒アクセス分離
 
-**Status:** Draft for review
+**Status:** Phase 1 implemented (allowlist admin + policy-locked student links)
 
 **Date:** 2026-07-30
 
@@ -292,14 +292,12 @@ collab-host (or thin admin API)
 - Token: 生成エントロピーと revoke 後の拒否。
 - 生徒 API レスポンスに秘密フィールドが混入しないこと。
 
-## 14. Open questions
+## 14. Open questions (Phase 1 decisions)
 
-実装前に決める事項（本仕様の採用後、計画書でクローズする）。
-
-1. 管理者 IdP を Google のみに固定するか。
-2. 永続化を SQLite (A) と極小 KV (B) のどちらにするか。
-3. 生徒 AI を「常にオフ」「管理者プロキシキー」「（例外）生徒キー許可」のどれを既定にするか。
-4. `/` を案内ページ化するタイミング（Phase 1 では現行エディター維持でよいか）。
+1. 管理者 IdP → **Google ID token のみ**（`POST /api/admin/auth/google` + GIS）。
+2. 永続化 → **ホストローカル SQLite**（`ADMIN_DB_PATH` / `SYNCRATCH_DATA_DIR`）。
+3. 生徒 AI 既定 → **オフ**（`allowStudentApiKey=false`。管理者プロキシキーは Phase 3）。
+4. `/` → Phase 1 では**現行エディター維持**。
 
 ## 15. Summary
 
