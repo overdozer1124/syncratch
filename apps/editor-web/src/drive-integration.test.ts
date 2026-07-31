@@ -13,6 +13,7 @@ import {
 } from "@blocksync/project-local-core";
 import {openProjectStore} from "@blocksync/project-store-idb";
 import {emptyProject} from "@blocksync/project-schema";
+import {LocalDriveSaveError} from "./drive-export.js";
 import {
   createEditorDriveIntegration,
   driveSb3FileName,
@@ -686,6 +687,29 @@ describe("editor Drive integration", () => {
       expect.any(AbortSignal),
     );
     expect(integration.getStatus()).toBe("synced");
+  });
+
+  it("does not mislabel a local save conflict as a remote Drive conflict", async () => {
+    const onStatus = vi.fn();
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      exportCurrent: vi.fn(async () => {
+        throw new LocalDriveSaveError("conflict");
+      }),
+      onStatus,
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(false);
+    expect(integration.getStatus()).toBe("unsynced");
+    expect(onStatus).toHaveBeenCalledWith(
+      "unsynced",
+      expect.stringMatching(/local project is not committed \(conflict\)/i),
+    );
   });
 
   it("refuses reconnect baseline when remote state hash differs", async () => {

@@ -19,6 +19,16 @@ describe("friendlyDriveMessage", () => {
     );
   });
 
+  it("maps local commit failures without calling them remote Drive conflicts", () => {
+    expect(
+      friendlyDriveMessage(
+        "Local project is not committed (conflict); save locally before Drive",
+      ),
+    ).toBe(
+      "先に「もう一度保存」でこのパソコンへ保存してから、Google ドライブに保存してください。",
+    );
+  });
+
   it("maps collaboration write-gate reasons without calling them Drive faults", () => {
     expect(
       friendlyDriveMessage("Collaboration bootstrap is not ready"),

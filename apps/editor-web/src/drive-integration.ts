@@ -179,11 +179,17 @@ export function createEditorDriveIntegration(
     ) {
       return false;
     }
-    const next =
-      error instanceof DriveConflictError ||
-      (error instanceof LocalDriveSaveError && error.state === "conflict")
-        ? "conflict"
-        : "unsynced";
+    // Local IndexedDB commit problems must not be labeled as a remote Drive
+    // conflict ("changed elsewhere"). Only DriveConflictError means the cloud
+    // file diverged from the last observation.
+    if (error instanceof LocalDriveSaveError) {
+      setStatus(
+        "unsynced",
+        `Local project is not committed (${error.state}); save locally before Drive`,
+      );
+      return false;
+    }
+    const next = error instanceof DriveConflictError ? "conflict" : "unsynced";
     const message = error instanceof DriveSyncError
       ? error.message
       : "Google Drive operation failed";

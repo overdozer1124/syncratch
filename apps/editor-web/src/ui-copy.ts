@@ -40,6 +40,12 @@ const DRIVE_MESSAGES: Array<[RegExp, string]> = [
     "いっしょに作るリンクを作った人だけが Google ドライブに保存できます。",
   ],
   [
+    // Must stay above the generic /conflict/ pattern — local messages may
+    // include the word "conflict" for IndexedDB STALE_REVISION.
+    /local project is not committed/i,
+    "先に「もう一度保存」でこのパソコンへ保存してから、Google ドライブに保存してください。",
+  ],
+  [
     /differs|changed during|conflict/i,
     "このパソコンと Google ドライブの作品がちがいます。内容をたしかめてください。",
   ],
