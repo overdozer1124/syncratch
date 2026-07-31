@@ -1925,7 +1925,17 @@ async function ensureGoogleBeforeCollab(intent: {
   invite?: CollabInvite;
 }): Promise<boolean> {
   if (!shouldGateCollabOnGoogle(driveIntegration.getStatus())) return true;
-  if (driveIntegration.isConnected()) return true;
+  if (driveIntegration.isConnected()) {
+    // Already Google-connected (e.g. prior OAuth). Re-observe so a stale
+    // "connected" status cannot hide local↔Drive drift, then push the host
+    // baseline when still unsynced.
+    if (intent.role === "host") {
+      await driveIntegration.connect();
+      await syncGoogleAvatarProfile();
+      await pushHostDriveBaselineBeforeCollab();
+    }
+    return true;
+  }
 
   if (intent.role === "host") {
     markPendingHostCreate();
@@ -1948,7 +1958,24 @@ async function ensureGoogleBeforeCollab(intent: {
     }
     return false;
   }
+  if (intent.role === "host") {
+    await pushHostDriveBaselineBeforeCollab();
+  }
   return true;
+}
+
+/**
+ * Host "いっしょに作る" asserts the current local project as the shared source
+ * of truth. If reconnect left Drive unsynced (local ≠ remote), push an
+ * explicit save before the room opens so the host is not stuck on a diverge
+ * banner with only a mislabeled secondary button.
+ * Failure is non-fatal: local-first collab still starts; the Save CTA remains.
+ */
+async function pushHostDriveBaselineBeforeCollab(): Promise<void> {
+  if (driveIntegration.getStatus() !== "unsynced") return;
+  if (!driveIntegration.isConnected()) return;
+  driveAutosave?.cancel();
+  await driveIntegration.saveToDrive({explicit: true});
 }
 
 async function createRoom(): Promise<void> {
@@ -3318,6 +3345,12 @@ function renderDriveStatus(
   // Host: keep Save enabled during conflict for explicit retry after re-baseline.
   // Guest: always disabled — only the invite creator may write Drive.
   saveDriveButton.disabled = controls.saveDisabled;
+  saveDriveButton.classList.toggle(
+    "drive-save-primary",
+    !controls.saveDisabled &&
+      !controls.guestDriveBlocked &&
+      (status === "unsynced" || status === "conflict"),
+  );
   disconnectGoogleButton.disabled = controls.disconnectDisabled;
   if (conflictAction === "report") collabSession?.reportDriveConflict();
   if (conflictAction === "clear") collabSession?.clearDriveConflict();

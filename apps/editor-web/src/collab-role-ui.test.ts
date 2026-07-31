@@ -65,5 +65,21 @@ describe("collab room role UI", () => {
     expect(host.saveDisabled).toBe(false);
     expect(host.openDisabled).toBe(false);
     expect(host.connectDisabled).toBe(true);
+
+    const hostUnsynced = driveControlFlags({
+      driveReady: true,
+      status: "unsynced",
+      collabGuest: false,
+    });
+    expect(hostUnsynced.connectDisabled).toBe(true);
+    expect(hostUnsynced.saveDisabled).toBe(false);
+
+    const hostConflict = driveControlFlags({
+      driveReady: true,
+      status: "conflict",
+      collabGuest: false,
+    });
+    expect(hostConflict.connectDisabled).toBe(true);
+    expect(hostConflict.saveDisabled).toBe(false);
   });
 });
