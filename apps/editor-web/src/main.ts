@@ -850,7 +850,14 @@ let guestInitialRollback: {
 let collaborationTestGate = false;
 let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
+/** Friendly Japanese detail for status icons / titles. */
 let lastDriveMessage: string | undefined;
+/**
+ * Raw English (or gate) detail from Drive integration. Must be kept separately
+ * from `lastDriveMessage` — re-running friendlyDriveMessage on already-localized
+ * text falls through to the generic "もう一度ためしてください" copy.
+ */
+let lastDriveRawMessage: string | undefined;
 let driveOverwriteConfirmationRequired = false;
 /** Google profile picture for the collab avatar chip; cleared on disconnect. */
 let googleAvatarUrl: string | undefined;
@@ -1544,7 +1551,7 @@ let syncingDriveControlsFromCollab = false;
 function refreshDriveControlsForCollab(): void {
   syncingDriveControlsFromCollab = true;
   try {
-    renderDriveStatus(lastDriveStatus, lastDriveMessage);
+    renderDriveStatus(lastDriveStatus, lastDriveRawMessage);
   } finally {
     syncingDriveControlsFromCollab = false;
   }
@@ -3287,6 +3294,7 @@ function renderDriveStatus(
   );
   const friendlyMessage = friendlyDriveMessage(detailMessage);
   lastDriveStatus = status;
+  lastDriveRawMessage = detailMessage;
   lastDriveMessage = friendlyMessage;
   const collabGuest = Boolean(
     collabSession && !collabSession.createdThisRoom(),

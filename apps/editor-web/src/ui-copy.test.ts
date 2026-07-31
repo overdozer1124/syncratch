@@ -29,6 +29,24 @@ describe("friendlyDriveMessage", () => {
     );
   });
 
+  it("maps reconnect diverge without calling it a remote clobber", () => {
+    expect(
+      friendlyDriveMessage(
+        "Local project differs from Drive; save to Drive to update the shared file",
+      ),
+    ).toContain("Google ドライブに保存");
+  });
+
+  it("keeps already-friendly Japanese details stable (no generic fallback)", () => {
+    const localized =
+      "このパソコンと Google ドライブの作品がちがいます。内容をたしかめてください。";
+    // Re-feeding localized text must not collapse to the generic retry copy.
+    // Callers should pass the raw English message; this guards accidental reuse.
+    expect(friendlyDriveMessage(localized)).not.toBe(
+      "Google ドライブでエラーが起きました。もう一度ためしてください。",
+    );
+  });
+
   it("maps collaboration write-gate reasons without calling them Drive faults", () => {
     expect(
       friendlyDriveMessage("Collaboration bootstrap is not ready"),

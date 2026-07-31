@@ -264,12 +264,10 @@ export function createEditorDriveIntegration(
           }
           if (!isActive(operation)) return false;
           if (metadata.stateHash !== localStateHash) {
-            if (metadata.stateHash !== null) {
-              throw new DriveConflictError(
-                "Drive content differs from the committed local project; open from Drive to resolve",
-                "pre-write",
-              );
-            }
+            // Hash mismatch on reconnect is usually "local edits not yet on
+            // Drive" (or a stale app-property), not a mid-session remote
+            // clobber. Keep Google connected and observe remote bytes so the
+            // host can explicitly save or reopen from Drive.
             const downloaded = await dependencies.drive.readFile(
               current.driveFileId,
               operation.controller.signal,
@@ -277,12 +275,23 @@ export function createEditorDriveIntegration(
             if (!isActive(operation)) return false;
             const remoteHash = await dependencies.hashBytes(downloaded.bytes);
             if (!isActive(operation)) return false;
-            if (remoteHash !== localStateHash) {
-              throw new DriveConflictError(
-                "Drive content differs from the committed local project; open from Drive to resolve",
-                "pre-write",
+            if (remoteHash === localStateHash) {
+              trackObservation(
+                current.driveFileId,
+                metadata,
+                localStateHash,
               );
+              boundFiles.set(current.localProjectId, current.driveFileId);
+              setStatus("connected");
+              return true;
             }
+            trackObservation(current.driveFileId, metadata, remoteHash);
+            boundFiles.set(current.localProjectId, current.driveFileId);
+            setStatus(
+              "unsynced",
+              "Local project differs from Drive; save to Drive to update the shared file",
+            );
+            return true;
           }
           trackObservation(
             current.driveFileId,

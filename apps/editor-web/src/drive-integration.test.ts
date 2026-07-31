@@ -712,7 +712,12 @@ describe("editor Drive integration", () => {
     );
   });
 
-  it("refuses reconnect baseline when remote state hash differs", async () => {
+  it("keeps Google connected as unsynced when remote state hash differs", async () => {
+    const hashBytes = vi
+      .fn()
+      .mockResolvedValueOnce("local-hash") // connect export
+      .mockResolvedValueOnce("remote-bytes-hash") // connect download compare
+      .mockResolvedValueOnce("local-hash"); // save export
     const deps = dependencies({
       getCurrent: vi.fn(() => ({
         localProjectId: "local-1",
@@ -734,18 +739,33 @@ describe("editor Drive integration", () => {
           canEdit: true,
           canDownload: true,
         })),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/octet-stream",
+            size: 4,
+            version: "12",
+            headRevisionId: "head-12",
+            snapshotId: "snapshot-12",
+            leadershipEpoch: "0",
+            stateHash: "remote-hash",
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
       },
-      hashBytes: vi.fn(async () => "local-hash"),
+      hashBytes,
     });
     const integration = createEditorDriveIntegration(deps);
 
-    await expect(integration.connect()).resolves.toBe(false);
-    expect(integration.getStatus()).toBe("conflict");
+    await expect(integration.connect()).resolves.toBe(true);
+    expect(integration.getStatus()).toBe("unsynced");
 
-    // Explicit save may re-baseline; here remote bytes hash as local-hash so
-    // the project is treated as already matching and no upload occurs.
-    await expect(integration.saveToDrive()).resolves.toBe(true);
-    expect(deps.drive.updateFile).not.toHaveBeenCalled();
+    // Explicit save uploads local bytes using the remote observation baseline.
+    await expect(integration.saveToDrive({explicit: true})).resolves.toBe(true);
+    expect(deps.drive.updateFile).toHaveBeenCalled();
     expect(integration.getStatus()).toBe("synced");
   });
 
