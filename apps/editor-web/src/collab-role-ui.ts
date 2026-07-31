@@ -48,15 +48,14 @@ export function driveControlFlags(input: {
   const connected = !["not-configured", "disconnected", "syncing"]
     .includes(input.status);
   const guestDriveBlocked = input.collabGuest;
+  // unsynced/conflict already have a Google session; keep "つなぐ" off so the
+  // Save CTA is the obvious next action (label matches the status copy).
+  const googleSessionActive = connected || input.status === "syncing";
 
   return {
     guestDriveBlocked,
     // Guests may connect Google for avatar/name presence; Drive open/save stay blocked.
-    connectDisabled: !input.driveReady ||
-      !configured ||
-      input.status === "connected" ||
-      input.status === "synced" ||
-      input.status === "syncing",
+    connectDisabled: !input.driveReady || !configured || googleSessionActive,
     // Opening another Drive file mid-guest session would fork confusingly.
     openDisabled: !input.driveReady || !connected || guestDriveBlocked,
     saveDisabled: !input.driveReady || !connected || guestDriveBlocked,
