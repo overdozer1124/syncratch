@@ -64,6 +64,7 @@ import {
 } from "./local-collab-profile.js";
 import {
   COLLAB_GOOGLE_CONNECT_HINT,
+  COLLAB_GOOGLE_OAUTH_FAILED,
   COLLAB_GOOGLE_REQUIRED_FOR_CREATE,
   COLLAB_GOOGLE_REQUIRED_FOR_JOIN,
   consumePendingGuestInvite,
@@ -71,6 +72,7 @@ import {
   ensureInviteHashOnLocation,
   markPendingHostCreate,
   peekPendingGuestInvite,
+  peekPendingHostCreate,
   savePendingGuestInvite,
   shouldGateCollabOnGoogle,
 } from "./collab-oauth-gate.js";
@@ -3514,17 +3516,28 @@ async function boot(): Promise<void> {
   }
   diagnostic.ready = true;
   driveReady = true;
-  consumeDriveOAuthReturnFlag();
+  const oauthReturn = consumeDriveOAuthReturnFlag();
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   await syncGoogleAvatarProfile();
 
+  // OAuth cancel / missing refresh_token / expired state returns here with
+  // drive_oauth=error. Do not auto-redirect back to Google — that looks like
+  // being stuck on the account chooser.
+  if (oauthReturn === "error") {
+    appToast.show(COLLAB_GOOGLE_OAUTH_FAILED);
+    renderCollabIdle(COLLAB_GOOGLE_OAUTH_FAILED);
+    return;
+  }
+
   // After host OAuth for "create link", resume create once Google is ready.
+  // Peek first so a failed/incomplete connect does not wipe the pending flag.
   if (
-    consumePendingHostCreate() &&
+    peekPendingHostCreate() &&
     driveIntegration.isConnected() &&
     shouldGateCollabOnGoogle(driveIntegration.getStatus())
   ) {
+    consumePendingHostCreate();
     renderCollabIdle();
     await createRoom();
     return;

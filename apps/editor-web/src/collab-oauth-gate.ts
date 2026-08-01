@@ -40,6 +40,16 @@ export function markPendingHostCreate(
   }
 }
 
+export function peekPendingHostCreate(
+  storage: SessionStorageLike | null = defaultStorage(),
+): boolean {
+  try {
+    return storage?.getItem(PENDING_HOST_CREATE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function consumePendingHostCreate(
   storage: SessionStorageLike | null = defaultStorage(),
 ): boolean {
@@ -114,3 +124,7 @@ export const COLLAB_GOOGLE_REQUIRED_FOR_JOIN =
 
 export const COLLAB_GOOGLE_REQUIRED_FOR_CREATE =
   "リンクを作る前に Google とつなぎます。";
+
+/** Shown when host OAuth returns `drive_oauth=error` (cancel, missing refresh, etc.). */
+export const COLLAB_GOOGLE_OAUTH_FAILED =
+  "Google アカウントとの接続ができませんでした。アカウントを選び直すか、「Google とつなぐ」をもう一度押してください。";

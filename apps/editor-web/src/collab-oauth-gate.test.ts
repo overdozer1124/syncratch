@@ -8,6 +8,7 @@ import {
   ensureInviteHashOnLocation,
   markPendingHostCreate,
   peekPendingGuestInvite,
+  peekPendingHostCreate,
   savePendingGuestInvite,
   shouldGateCollabOnGoogle,
 } from "./collab-oauth-gate.js";
@@ -37,7 +38,9 @@ describe("collab oauth gate", () => {
     const storage = memoryStorage();
     markPendingHostCreate(storage);
     expect(storage.map.get(PENDING_HOST_CREATE_KEY)).toBe("1");
+    expect(peekPendingHostCreate(storage)).toBe(true);
     expect(consumePendingHostCreate(storage)).toBe(true);
+    expect(peekPendingHostCreate(storage)).toBe(false);
     expect(consumePendingHostCreate(storage)).toBe(false);
   });
 
