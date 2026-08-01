@@ -44,20 +44,21 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `local-diagnostics-ai-routing` |
-| 案件名 | Browser-Local Diagnostics and AI Routing（標準ルール診断 M1） |
-| 現在の状態 | `MILESTONE_A_MERGED` |
-| 次の担当 | ユーザー / Codex |
-| 次の作業 | Milestone A（Phase 1–3）完了を確認。Phase 4（外部AIゲート）は指示があるまで停止 |
-| 計画書 | `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`（main @ `60e0dc3` / PR #176） |
-| 禁止 | Transformers.js / 外部AI自動フォールバック / Phase 4+ への勝手な先行 |
+| **アクティブ案件ID** | `file-panel-drive-cta-visibility` |
+| 案件名 | ファイルパネル Drive 保存 CTA 不可視 / スクロール不能（Stage 5 A5 阻塞） |
+| 現在の状態 | `READY_FOR_CODEX_INVESTIGATION` |
+| 次の担当 | Codex |
+| 次の作業 | 調査依頼書に従い根因特定（H1–H4）。修正実装は結論後に Cursor |
+| 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
+| 禁止 | local-diagnostics Phase 4 / Transformers.js / Drive concurrency 再設計への逸脱 |
 
 ### 案件レジストリ
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー / Codex | Phase 4 は指示後 | **現行アクティブ**。Phase 1–3 = #177–#179 main 済み（Milestone A） |
-| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | 並行待ち。アクティブではない |
+| `file-panel-drive-cta-visibility` | `READY_FOR_CODEX_INVESTIGATION` | Codex | 根因調査 → GO/NO_GO | **現行アクティブ**。Stage 5 A5 阻塞 |
+| `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | 一時停止。Phase 1–3 = #177–#179 main 済み |
+| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | A5 が本案件にブロック。アクティブではない |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
 ### 読取手順（「作業完了」時）
@@ -71,24 +72,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-07-30 20:30:00 JST |
+| 最終更新 | 2026-08-01 10:32:32 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `local-diagnostics-ai-routing`（上表が正） |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW` |
-| 現在の担当 | Codex（Milestone A 確認）→ ユーザー（Phase 4 指示） |
-| 現在のTask | local-diagnostics — Milestone A（Phase 1–3）MERGED |
+| アクティブ案件ID | `file-panel-drive-cta-visibility`（上表が正） |
+| ワークフロー状態 | `READY_FOR_CODEX_INVESTIGATION` |
+| 現在の担当 | Codex（ファイルパネル Drive CTA 調査） |
+| 現在のTask | Stage 5 A5 阻塞: Drive 保存ボタン不可視 / ファイルパネルスクロール不能 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / 文書 MERGED（#155）/ Drive リネーム MERGED（#157）/ 履歴日本語化 MERGED（#159）/ 帽子 field MERGED（#161）/ デバッグトグル MERGED（#164）/ もし条件式 MERGED（#165）/ 履歴ハット切替 MERGED（#167）/ flyout作成ボタン MERGED（#169）/ A5–A7・B1・B3 残り |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5 阻塞中（本案件）/ A6–A7・B1・B3 残り。Drive 修正 #181–#183 main 済みだが #183 Railway deploy failed |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`8755160`） |
+| 作業ブランチ | `main`（調査依頼マージ後 tip を正とする） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 設計 | local-diagnostics: `docs/superpowers/plans/2026-07-29-local-diagnostics-ai-routing-plan.md`。AI 助言は `packages/ai-assist`（維持） |
+| 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Phase 4（外部AIゲート）はユーザー指示まで停止 |
+| 次Task | Codex 調査 → GO 後に Cursor が最小修正。local-diagnostics Phase 4 は停止維持 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | **Milestone A main 済み（#176–#179）。Phase 4+ は指示待ち。** |
+| local-diagnostics | Milestone A main 済み。本案件完了までアクティブに戻さない |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -141,10 +142,11 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `local-diagnostics-ai-routing`。** Milestone A（Phase 1–3）は main 反映済み。Phase 4 は指示があるまで着手しない。
-2. Stage 5 手動ゲート（A5–A7 / B1 / B3）はユーザー待ちのまま。アクティブではないので勝手に切り替えない。
-3. Phase 4+ / TURN / Transformers.js / 外部AI自動フォールバックは計画段階まで停止。
-4. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
+1. **アクティブ案件は `file-panel-drive-cta-visibility`。** Codex 調査結論（GO）を受けて最小修正を実装する。
+2. Codex へは調査依頼書 `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` を正とする。
+3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは停止維持。
+4. Stage 5 の A6–A7 / B1 / B3 は A5 阻塞解消後にユーザー検証へ戻す。
+5. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5469,4 +5471,43 @@ mergedAt: 2026-07-30T11:13:12Z
 
 停止: Phase 4（外部AIゲート）/ Transformers.js / TURN / default branch 切替はユーザー指示まで
 次の担当: Codex（Milestone A 確認）→ ユーザー（Phase 4 指示 or Stage 5 手動ゲート）
+```
+
+### 2026-08-01 10:32:32 JST — Cursor（Codex 調査依頼: ファイルパネル Drive CTA）
+
+```text
+最終更新: 2026-08-01 10:32:32 JST
+更新者: Cursor
+案件ID: file-panel-drive-cta-visibility
+状態: READY_FOR_CODEX_INVESTIGATION
+全体進捗: Local-First primary 100% / Stage 5 A5 阻塞中
+
+ユーザー報告:
+1. ファイルパネルを下にスクロールできない
+2. 「Drive にも保存」ボタンが存在しない（見えない）
+3. 一方 Drive ステータス文言（local≠Drive の unsynced 案内）は見える
+4. いっしょに作るリンク作成後のホスト操作中
+
+Cursor 事前確認:
+- 本番 HTML には `#save-drive` が存在する（旧ラベル「ドライブにも保存」）
+- PR #183（CTAリネーム/baseline push）は main @ 925e1c9 まで MERGED だが Railway deploy は Failure
+- ボタン欠落というより、クリップ / スクロール不能 / student policy hidden が本命仮説
+- #181/#182/#183 はボタン削除をしていない
+
+アクティブ切替:
+- local-diagnostics-ai-routing → 一時停止（MILESTONE_A_MERGED のまま）
+- file-panel-drive-cta-visibility を現行アクティブに
+
+調査依頼書:
+docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md
+
+仮説（依頼書に詳述）:
+- H1: panel-content が viewport 外へ伸び内部スクロールが効かない（最有力）
+- H2: /s/{token} で drive.allow=false によりボタンだけ hidden（見出しは残る）
+- H3: disabled 灰色の誤認
+- H4: Railway 未反映（ラベル説明にはなるが「ボタン無し」の主因ではない）
+
+次の担当: Codex（調査 → GO/NO_GO + 修正方針）
+禁止: Phase 4 / Transformers.js / Drive concurrency 再設計。修正実装は調査結論後に Cursor
+ユーザー向け: Codex に「作業完了」または本調査依頼を読ませる
 ```
