@@ -282,18 +282,27 @@
                       id="drive-status"
                     >このパソコンでは使えません</span>
                   </div>
-                  <p class="panel-help">
-                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
-                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
-                  </p>
+                  <!--
+                    CTA before help: at 1024×600 the long help text used to push
+                    Drive buttons below the initial panel viewport (Codex H1).
+                  -->
                   <div class="drive-controls">
                     <button id="connect-google" type="button" disabled>Google とつなぐ</button>
                     <button id="open-drive" type="button" disabled>ドライブから開く</button>
-                    <button id="save-drive" type="button" disabled>
+                    <button
+                      data-testid="save-drive"
+                      id="save-drive"
+                      type="button"
+                      disabled
+                    >
                       Google ドライブに保存
                     </button>
                     <button id="disconnect-google" type="button" disabled>つながりを切る</button>
                   </div>
+                  <p class="panel-help">
+                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
+                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
+                  </p>
                 </div>
               </div>
             </details>

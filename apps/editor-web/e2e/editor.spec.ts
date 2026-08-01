@@ -134,6 +134,40 @@ test("no Google configuration keeps Drive disabled and local editing available",
   expect(googleRequests).toEqual([]);
 });
 
+test("file panel shows Drive save CTA without scrolling at 1024x600", async ({
+  page,
+}) => {
+  // Codex ROOT_CAUSE: at this size the CTA used to sit fully below the
+  // initial .panel-content viewport behind the long Drive help paragraph.
+  await page.setViewportSize({width: 1024, height: 600});
+  await waitUntilReady(page);
+  await openPanel(page, "file-panel");
+
+  const panelContent = page.locator(
+    '[data-testid="file-panel"] > .panel-content',
+  );
+  await expect(panelContent).toBeVisible();
+  expect(await panelContent.evaluate(el => el.scrollTop)).toBe(0);
+
+  const saveDrive = page.getByTestId("save-drive");
+  await expect(saveDrive).toBeVisible();
+  await expect(saveDrive).toBeInViewport();
+  await expect(saveDrive).toContainText("Google ドライブに保存");
+
+  // DOM order guard: controls stay above the help copy.
+  const order = await page.locator(".drive-section").evaluate(section => {
+    const controls = section.querySelector(".drive-controls");
+    const help = section.querySelector(".panel-help");
+    if (!controls || !help) return "missing";
+    return Boolean(
+      controls.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+      ? "controls-before-help"
+      : "help-before-controls";
+  });
+  expect(order).toBe("controls-before-help");
+});
+
 test("VM block mutation autosaves and survives reload", async ({page}) => {
   await waitUntilReady(page);
 

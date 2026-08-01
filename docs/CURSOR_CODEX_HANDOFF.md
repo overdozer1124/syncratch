@@ -46,17 +46,18 @@
 |---|---|
 | **アクティブ案件ID** | `file-panel-drive-cta-visibility` |
 | 案件名 | ファイルパネル Drive 保存 CTA 不可視 / スクロール不能（Stage 5 A5 阻塞） |
-| 現在の状態 | `READY_FOR_CODEX_INVESTIGATION` |
-| 次の担当 | Codex |
-| 次の作業 | 調査依頼書に従い根因特定（H1–H4）。修正実装は結論後に Cursor |
+| 現在の状態 | `IN_PROGRESS` |
+| 次の担当 | Cursor |
+| 次の作業 | Codex GO に従い CTA を説明文より上へ移し、1024×600 E2E + 生徒 drive.allow=false 試験を追加して main 反映 |
 | 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
+| Codex判定 | `GO / ROOT_CAUSE_CONFIRMED`（未 push の `codex/file-panel-drive-cta-investigation` @ `b86ea5e` をユーザー経由で受領） |
 | 禁止 | local-diagnostics Phase 4 / Transformers.js / Drive concurrency 再設計への逸脱 |
 
 ### 案件レジストリ
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `file-panel-drive-cta-visibility` | `READY_FOR_CODEX_INVESTIGATION` | Codex | 根因調査 → GO/NO_GO | **現行アクティブ**。Stage 5 A5 阻塞 |
+| `file-panel-drive-cta-visibility` | `IN_PROGRESS` | Cursor | CTA 順序修正 + E2E | **現行アクティブ**。Codex GO 済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | 一時停止。Phase 1–3 = #177–#179 main 済み |
 | `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | A5 が本案件にブロック。アクティブではない |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
@@ -72,24 +73,24 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-01 10:32:32 JST |
+| 最終更新 | 2026-08-01 19:53:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `file-panel-drive-cta-visibility`（上表が正） |
-| ワークフロー状態 | `READY_FOR_CODEX_INVESTIGATION` |
-| 現在の担当 | Codex（ファイルパネル Drive CTA 調査） |
-| 現在のTask | Stage 5 A5 阻塞: Drive 保存ボタン不可視 / ファイルパネルスクロール不能 |
+| ワークフロー状態 | `IN_PROGRESS` |
+| 現在の担当 | Cursor（Codex GO に基づく最小修正） |
+| 現在のTask | Drive CTA を説明文より上へ移動 + 1024×600 E2E + 生徒 drive.allow=false 試験 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5 阻塞中（本案件）/ A6–A7・B1・B3 残り。Drive 修正 #181–#183 main 済みだが #183 Railway deploy failed |
+| Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5 阻塞中（本案件修正中）/ A6–A7・B1・B3 残り |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（調査依頼マージ後 tip を正とする） |
+| 作業ブランチ | `cursor/fix-file-panel-drive-cta-order-258b` |
 | 作業worktree | `/workspace`（cloud agent） |
 | 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | Codex 調査 → GO 後に Cursor が最小修正。local-diagnostics Phase 4 は停止維持 |
+| 次Task | 本修正を main 反映 → ユーザーが A5 再検証。local-diagnostics Phase 4 は停止維持 |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | Milestone A main 済み。本案件完了までアクティブに戻さない |
+| local-diagnostics | Milestone A main 済み。Phase 4 停止中 |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -142,11 +143,12 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `file-panel-drive-cta-visibility`。** Codex 調査結論（GO）を受けて最小修正を実装する。
-2. Codex へは調査依頼書 `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` を正とする。
+1. **アクティブ案件は `file-panel-drive-cta-visibility`（Codex `GO / ROOT_CAUSE_CONFIRMED` 受領済み）。**
+2. 推奨修正を実装中: Drive ボタン列を説明文より上へ / 1024×600 E2E / 生徒 `drive.allow=false` 試験。
 3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは停止維持。
-4. Stage 5 の A6–A7 / B1 / B3 は A5 阻塞解消後にユーザー検証へ戻す。
+4. Stage 5 の A6–A7 / B1 / B3 は A5 再検証後にユーザーへ戻す。
 5. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
+6. Codex ローカル tip `b86ea5e`（未 push）は台帳記録のみ受領。実装は本クラウドブランチで行う。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 

@@ -976,8 +976,12 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   border: 1px solid #e6edf4;
 }
 
+.drive-section .drive-controls {
+  margin-bottom: 10px;
+}
+
 .drive-section .panel-help {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 12.5px;
 }
 

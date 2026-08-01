@@ -58,4 +58,56 @@ describe("classroom policy apply", () => {
     expect(settingsPanel.hidden).toBe(true);
     expect(aiPanel.hidden).toBe(true);
   });
+
+  it("hides Drive CTAs when drive.allow is false (intentional student lock)", () => {
+    const connectGoogleButton = {hidden: false} as HTMLElement;
+    const openDriveButton = {hidden: false} as HTMLElement;
+    const saveDriveButton = {hidden: false} as HTMLElement;
+    const disconnectGoogleButton = {hidden: false} as HTMLElement;
+    applyStudentPolicyToDom(policy({drive: {allow: false}}), {
+      settingsPanel: null,
+      aiPanel: null,
+      aiEnabledInput: null,
+      aiApiKeyInput: null,
+      aiSettingsSaveButton: null,
+      downloadButton: null,
+      openButton: null,
+      fileInput: null,
+      connectGoogleButton,
+      openDriveButton,
+      saveDriveButton,
+      disconnectGoogleButton,
+      createRoomButton: null,
+      joinRoomButton: null,
+      copyInviteButton: null,
+      collabInviteInput: null,
+    });
+    expect(connectGoogleButton.hidden).toBe(true);
+    expect(openDriveButton.hidden).toBe(true);
+    expect(saveDriveButton.hidden).toBe(true);
+    expect(disconnectGoogleButton.hidden).toBe(true);
+  });
+
+  it("keeps Drive CTAs visible when drive.allow is true", () => {
+    const saveDriveButton = {hidden: false} as HTMLElement;
+    applyStudentPolicyToDom(policy({drive: {allow: true}}), {
+      settingsPanel: null,
+      aiPanel: null,
+      aiEnabledInput: null,
+      aiApiKeyInput: null,
+      aiSettingsSaveButton: null,
+      downloadButton: null,
+      openButton: null,
+      fileInput: null,
+      connectGoogleButton: {hidden: false} as HTMLElement,
+      openDriveButton: {hidden: false} as HTMLElement,
+      saveDriveButton,
+      disconnectGoogleButton: {hidden: false} as HTMLElement,
+      createRoomButton: null,
+      joinRoomButton: null,
+      copyInviteButton: null,
+      collabInviteInput: null,
+    });
+    expect(saveDriveButton.hidden).toBe(false);
+  });
 });
