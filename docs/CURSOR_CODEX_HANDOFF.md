@@ -79,7 +79,7 @@
 | アクティブ案件ID | `file-panel-drive-cta-visibility`（上表が正） |
 | ワークフロー状態 | `MERGED` / `WAITING_USER` |
 | 現在の担当 | ユーザー（A5 再検証） |
-| 現在のTask | #185 本番反映後、ファイルパネルで Drive CTA が見えること + A5 |
+| 現在のTask | A5 再検証中。OAuth アカウント選択ループ修正を別PRで投入 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
 | Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5 再検証待ち（#185）/ A6–A7・B1・B3 残り |
@@ -5561,4 +5561,24 @@ Gate 0: SUCCESS ×2
 
 次の担当: ユーザー（A5）
 local-diagnostics: Milestone A / Phase 4 停止維持
+```
+
+### 2026-08-01 20:55:00 JST — Cursor（OAuth アカウント選択ループ修正着手）
+
+```text
+案件ID: file-panel-drive-cta-visibility / stage5-manual-gates（A5）
+状態: IN_PROGRESS（OAuth 修正）
+ユーザー報告: アカウントの選択画面で先に進みません
+
+根因仮説（コード確認）:
+- Google「アカウントの選択」はホスト OAuth（prompt=consent）
+- drive_oauth=error 戻りを無視したままゲスト招待 URL が ensureGoogleBeforeCollab → connect で即再リダイレクト
+- ホスト pending create が && 短絡でも consume されて失敗時に消える
+
+修正:
+- consumeDriveOAuthReturnFlag が ok|error|null を返す
+- error 時はトースト表示して自動で Google に戻さない
+- peekPendingHostCreate で成功時のみ consume
+
+次: PR → main → ユーザー再検証
 ```
