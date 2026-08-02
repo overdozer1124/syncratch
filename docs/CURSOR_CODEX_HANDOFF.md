@@ -5776,3 +5776,34 @@ PR 1 実装:
 次: Codex PR 1 レビュー → GO 後 PR 2 着手
 ```
 
+
+### 2026-08-02 21:05:00 JST — Cursor（classroom-roster-drive-submissions PR 1）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: PHASE1_IN_PROGRESS → READY_FOR_CODEX_REVIEW
+次の担当: Codex
+base: main @ e51051d
+branch: cursor/classroom-roster-drive-submissions-pr1-258b
+
+PR 1 実装:
+- docs/superpowers/specs/2026-08-02-classroom-roster-drive-submissions-design.md
+- docs/superpowers/plans/2026-08-02-classroom-roster-drive-submissions-plan.md
+- @blocksync/classroom-access: StudentAccessMode, roster/submission contracts, paths, feature flags
+- admin DB migration ledger v1 (Phase 2 baseline adopt) + v2 (roster foundation tables)
+- policy columns: roster_id, student_auth_required, submission_enabled（既定 OFF）
+- csv-parse@7.0.1 採用確認テスト
+- exceljs@4.4.0 XLSX 安全性スパイク（gate 条件テスト）
+
+検証:
+- @blocksync/classroom-access test/typecheck: PASS（13 tests）
+- @blocksync/collab-host test/typecheck: PASS（27 tests）
+- @blocksync/editor-web typecheck: PASS
+- Phase 1/2 DB migration 回帰: PASS（admin-api + migration.test）
+- git diff --check: PASS
+- gate0:test: ローカル vendor VM 未 checkout のため scratch-adapter 11件 FAIL（CI 環境依存。対象 package は PASS）
+
+禁止維持: UI/公開 API 有効化なし / PR 2 以降未着手 / 自動マージしない
+次: Codex PR 1 レビュー → GO 後 PR 2 着手
+```
+
