@@ -138,7 +138,7 @@ test("file panel shows Drive save CTA without scrolling at 1024x600", async ({
   page,
 }) => {
   // Codex ROOT_CAUSE: at this size the CTA used to sit fully below the
-  // initial .panel-content viewport behind the long Drive help paragraph.
+  // initial .panel-content viewport behind local file buttons + long help.
   await page.setViewportSize({width: 1024, height: 600});
   await waitUntilReady(page);
   await openPanel(page, "file-panel");
@@ -150,22 +150,33 @@ test("file panel shows Drive save CTA without scrolling at 1024x600", async ({
   expect(await panelContent.evaluate(el => el.scrollTop)).toBe(0);
 
   const saveDrive = page.getByTestId("save-drive");
+  const connectGoogle = page.locator("#connect-google");
   await expect(saveDrive).toBeVisible();
   await expect(saveDrive).toBeInViewport();
   await expect(saveDrive).toContainText("Google ドライブに保存");
+  await expect(connectGoogle).toBeVisible();
+  await expect(connectGoogle).toBeInViewport();
 
-  // DOM order guard: controls stay above the help copy.
-  const order = await page.locator(".drive-section").evaluate(section => {
-    const controls = section.querySelector(".drive-controls");
-    const help = section.querySelector(".panel-help");
-    if (!controls || !help) return "missing";
-    return Boolean(
-      controls.compareDocumentPosition(help) & Node.DOCUMENT_POSITION_FOLLOWING,
-    )
-      ? "controls-before-help"
-      : "help-before-controls";
+  // DOM order guard: Drive section above local file buttons; controls above help.
+  const order = await page.locator(".panel-content").evaluate(panel => {
+    const driveSection = panel.querySelector(".drive-section");
+    const fileControls = panel.querySelector(".file-controls");
+    const controls = panel.querySelector(".drive-controls");
+    const help = driveSection?.querySelector(".panel-help");
+    if (!driveSection || !fileControls || !controls || !help) return "missing";
+    const driveBeforeFiles = Boolean(
+      driveSection.compareDocumentPosition(fileControls) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    const controlsBeforeHelp = Boolean(
+      controls.compareDocumentPosition(help) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    return driveBeforeFiles && controlsBeforeHelp
+      ? "drive-before-files-and-controls-before-help"
+      : "unexpected-order";
   });
-  expect(order).toBe("controls-before-help");
+  expect(order).toBe("drive-before-files-and-controls-before-help");
 });
 
 test("VM block mutation autosaves and survives reload", async ({page}) => {

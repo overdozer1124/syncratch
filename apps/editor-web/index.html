@@ -238,6 +238,44 @@
                 <p class="panel-help">
                   作品ファイルを開いたり、この作品をファイルにして残したりできます。
                 </p>
+                <div class="drive-section">
+                  <div class="drive-section-header">
+                    <img
+                      alt=""
+                      class="drive-section-logo"
+                      src="%BASE_URL%branding/google-drive-2026-color-64dp.png"
+                    />
+                    <span class="drive-section-title">Google ドライブ</span>
+                    <span
+                      aria-hidden="true"
+                      class="panel-status"
+                      data-testid="drive-status"
+                      id="drive-status"
+                    >このパソコンでは使えません</span>
+                  </div>
+                  <!--
+                    Drive section sits above local file buttons so CTAs stay in the
+                    initial panel viewport at 1024×600 (Codex H1 follow-up).
+                    Controls stay above the long help paragraph within the card.
+                  -->
+                  <div class="drive-controls">
+                    <button id="connect-google" type="button" disabled>Google とつなぐ</button>
+                    <button id="open-drive" type="button" disabled>ドライブから開く</button>
+                    <button
+                      data-testid="save-drive"
+                      id="save-drive"
+                      type="button"
+                      disabled
+                    >
+                      Google ドライブに保存
+                    </button>
+                    <button id="disconnect-google" type="button" disabled>つながりを切る</button>
+                  </div>
+                  <p class="panel-help">
+                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
+                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
+                  </p>
+                </div>
                 <div class="file-controls">
                   <button
                     class="button-secondary"
@@ -266,43 +304,6 @@
                     <span aria-hidden="true" class="menu-item-icon">💾</span>
                     <span class="menu-item-label">今すぐ保存</span>
                   </button>
-                </div>
-                <div class="drive-section">
-                  <div class="drive-section-header">
-                    <img
-                      alt=""
-                      class="drive-section-logo"
-                      src="%BASE_URL%branding/google-drive-2026-color-64dp.png"
-                    />
-                    <span class="drive-section-title">Google ドライブ</span>
-                    <span
-                      aria-hidden="true"
-                      class="panel-status"
-                      data-testid="drive-status"
-                      id="drive-status"
-                    >このパソコンでは使えません</span>
-                  </div>
-                  <!--
-                    CTA before help: at 1024×600 the long help text used to push
-                    Drive buttons below the initial panel viewport (Codex H1).
-                  -->
-                  <div class="drive-controls">
-                    <button id="connect-google" type="button" disabled>Google とつなぐ</button>
-                    <button id="open-drive" type="button" disabled>ドライブから開く</button>
-                    <button
-                      data-testid="save-drive"
-                      id="save-drive"
-                      type="button"
-                      disabled
-                    >
-                      Google ドライブに保存
-                    </button>
-                    <button id="disconnect-google" type="button" disabled>つながりを切る</button>
-                  </div>
-                  <p class="panel-help">
-                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
-                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
-                  </p>
                 </div>
               </div>
             </details>
