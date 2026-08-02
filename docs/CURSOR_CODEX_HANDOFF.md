@@ -46,9 +46,9 @@
 |---|---|
 | **アクティブ案件ID** | `admin-student-access` |
 | 案件名 | 管理者 / 生徒リンク — Phase 2 運用品質 |
-| 現在の状態 | `READY_FOR_CODEX_REVIEW` |
-| 次の担当 | Codex |
-| 次の作業 | Phase 2 PR レビュー（grant 交換・有効期限・allowExtensions） |
+| 現在の状態 | `PHASE2_COMPLETE` |
+| 次の担当 | ユーザー |
+| 次の作業 | Phase 3 は指示があるまで停止。`release-decision` 公開は明示指示後のみ |
 | 禁止 | 公開告知 / deploy / タグ / GitHub Release / token 再掲 / Phase 3 / AI Phase 4+ |
 
 ### 案件レジストリ
@@ -59,7 +59,7 @@
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
-| `admin-student-access` | `READY_FOR_CODEX_REVIEW` | Codex | Phase 2 PR レビュー | **現行アクティブ**。grant / expiry / allowExtensions |
+| `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | **現行アクティブ**。Phase 2 Codex GO。#197 @ `dc5b3ff`。Phase 3 停止 |
 
 ### 読取手順（「作業完了」時）
 
@@ -72,17 +72,17 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 17:15:00 JST |
+| 最終更新 | 2026-08-02 18:28:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `admin-student-access` |
-| ワークフロー状態 | `READY_FOR_CODEX_REVIEW`（Phase 2 実装完了・PR 提出） |
-| 現在の担当 | Codex |
-| 現在のTask | admin-student-access Phase 2 PR レビュー |
+| ワークフロー状態 | `PHASE2_COMPLETE`（Codex GO・#197 マージ予定） |
+| 現在の担当 | ユーザー |
+| 現在のTask | Phase 2 完了。Phase 3 / 告知公開はユーザー指示後 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/admin-student-access-phase2-258b`（base `eb0d035`） |
+| 作業ブランチ | `cursor/admin-student-access-phase2-258b` → PR #197（head `dc5b3ff`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | 公開実行待ち（ユーザー明示指示後）。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
@@ -142,7 +142,7 @@
 ## Cursorが次に行う作業
 
 1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **アクティブ案件 `admin-student-access` Phase 2:** PR レビュー待ち（`READY_FOR_CODEX_REVIEW`）。**自動マージしない。**
+2. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**（Codex GO / #197）。Phase 3 は **停止**。
 3. **`release-decision`:** `APPROVED_FOR_PUBLICATION` で停止。公開はユーザー明示指示後のみ。
 4. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
 
@@ -5699,7 +5699,7 @@ Codex 指摘対応:
 2. reissueLink — 旧 expires_at コピーを廃止。API/UI から新 expiresAt を受け取り
    リンク作成と同じ検証。未指定時は新リンク期限なし（null）
 
-head SHA: 8d4e66d
+head SHA: ac5f928
 
 テスト:
 - @blocksync/classroom-access: 9 passed + typecheck OK
@@ -5709,4 +5709,21 @@ head SHA: 8d4e66d
 - CI gate0: 提出後確認
 
 自動マージ: 禁止（維持）
+```
+
+### 2026-08-02 18:28:00 JST — Codex（admin-student-access Phase 2 GO）
+
+```text
+案件ID: admin-student-access
+状態: PHASE2_COMPLETE
+次の担当: ユーザー
+
+Codex再レビュー: GO
+PR: #197
+head SHA: dc5b3ff
+Phase 2: Codex承認済み（grant 交換・URL query/hash 保持・reissue 期限修正）
+Phase 3: 未着手・停止維持
+
+次: Cursor が台帳更新 → CI green → #197 main マージ
+禁止: 公開/deploy/タグ/Release/token/Phase 3/AI Phase 4+
 ```
