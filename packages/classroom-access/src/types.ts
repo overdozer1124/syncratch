@@ -1,3 +1,5 @@
+import type {StudentAuthPolicy, SubmissionPolicy} from "./roster-types.js";
+
 /** Utilization levels aligned with @blocksync/ai-assist (0–6). */
 export type ClassroomAiLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -35,6 +37,10 @@ export interface ClassroomPolicy {
   ownerAdminId: string;
   title: string;
   status: ClassroomPolicyStatus;
+  /** Linked roster for roster-login mode (PR 5+). Null keeps shared-anonymous. */
+  rosterId: string | null;
+  studentAuth: StudentAuthPolicy;
+  submission: SubmissionPolicy;
   aiAssist: ClassroomAiAssistPolicy;
   editor: ClassroomEditorPolicy;
   collab: ClassroomCollabPolicy;
@@ -47,6 +53,9 @@ export interface ClassroomPolicy {
 export interface ClassroomPolicyInput {
   title?: string;
   status?: ClassroomPolicyStatus;
+  rosterId?: string | null;
+  studentAuth?: Partial<StudentAuthPolicy>;
+  submission?: Partial<SubmissionPolicy>;
   aiAssist?: Partial<ClassroomAiAssistPolicy>;
   editor?: Partial<ClassroomEditorPolicy>;
   collab?: Partial<ClassroomCollabPolicy>;
@@ -60,6 +69,8 @@ export interface ClassroomPolicyInput {
 export interface StudentPolicyView {
   policyId: string;
   title: string;
+  studentAuth: StudentAuthPolicy;
+  submission: SubmissionPolicy;
   aiAssist: ClassroomAiAssistPolicy;
   editor: ClassroomEditorPolicy;
   collab: ClassroomCollabPolicy;

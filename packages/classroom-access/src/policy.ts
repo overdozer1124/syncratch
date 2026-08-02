@@ -13,6 +13,9 @@ import type {
 export interface NormalizedClassroomPolicyFields {
   title: string;
   status: ClassroomPolicyStatus;
+  rosterId: string | null;
+  studentAuth: ClassroomPolicy["studentAuth"];
+  submission: ClassroomPolicy["submission"];
   aiAssist: ClassroomAiAssistPolicy;
   editor: ClassroomEditorPolicy;
   collab: ClassroomCollabPolicy;
@@ -22,6 +25,9 @@ export interface NormalizedClassroomPolicyFields {
 export const DEFAULT_CLASSROOM_POLICY_INPUT: NormalizedClassroomPolicyFields = {
   title: "新しい教室設定",
   status: "active",
+  rosterId: null,
+  studentAuth: {required: false},
+  submission: {enabled: false},
   aiAssist: {
     enabled: false,
     level: 2,
@@ -59,6 +65,24 @@ export function normalizeClassroomPolicyInput(
   return {
     title,
     status: asStatus(input?.status ?? base.status),
+    rosterId:
+      input?.rosterId === undefined
+        ? base.rosterId
+        : input.rosterId === null
+          ? null
+          : typeof input.rosterId === "string" && input.rosterId.trim()
+            ? input.rosterId.trim()
+            : null,
+    studentAuth: {
+      required: Boolean(
+        input?.studentAuth?.required ?? base.studentAuth.required,
+      ),
+    },
+    submission: {
+      enabled: Boolean(
+        input?.submission?.enabled ?? base.submission.enabled,
+      ),
+    },
     aiAssist: {
       enabled: Boolean(input?.aiAssist?.enabled ?? base.aiAssist.enabled),
       level: clampAiLevel(input?.aiAssist?.level ?? base.aiAssist.level),
@@ -97,6 +121,9 @@ export function mergeClassroomPolicy(
   const normalized = normalizeClassroomPolicyInput({
     title: patch.title ?? existing.title,
     status: patch.status ?? existing.status,
+    rosterId: patch.rosterId !== undefined ? patch.rosterId : existing.rosterId,
+    studentAuth: {...existing.studentAuth, ...patch.studentAuth},
+    submission: {...existing.submission, ...patch.submission},
     aiAssist: {...existing.aiAssist, ...patch.aiAssist},
     editor: {...existing.editor, ...patch.editor},
     collab: {...existing.collab, ...patch.collab},
@@ -116,6 +143,8 @@ export function toStudentPolicyView(policy: ClassroomPolicy): StudentPolicyView 
   return {
     policyId: policy.policyId,
     title: policy.title,
+    studentAuth: {...policy.studentAuth},
+    submission: {...policy.submission},
     aiAssist: {...policy.aiAssist},
     editor: {...policy.editor},
     collab: {...policy.collab},
