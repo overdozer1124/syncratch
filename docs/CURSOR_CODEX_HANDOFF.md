@@ -46,11 +46,11 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 2 Admin Google OAuth |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PHASE2_COMPLETE` |
+| 次の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 2 Hermes 決裁待ち |
-| 禁止 | 公開/deploy/タグ/Release/token 再掲/自動マージ/PR 3 以降の先行 |
+| 次の作業 | PR 3（Roster admin API + CSV import）着手待ち |
+| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 3 以外の先行 |
 
 ### 案件レジストリ
 
@@ -61,7 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 2 決裁 | #198 merged。PR 2 branch `cursor/classroom-roster-drive-submissions-pr2-258b` |
+| `classroom-roster-drive-submissions` | `PHASE2_COMPLETE` | Cursor | PR 3 着手待ち | #199 merged `30380ba`。Hermes GO @9284f4f。Gate 0 green |
 
 ### 読取手順（「作業完了」時）
 
@@ -74,21 +74,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 21:35:00 JST |
-| 更新者 | Cursor |
+| 最終更新 | 2026-08-03 08:30:00 JST |
+| 更新者 | Hermes（Codex 代行） |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 2 Admin Google OAuth 提出済み） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PHASE2_COMPLETE`（#199 main マージ済み @ `30380ba`） |
+| 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 2 Hermes 決裁待ち |
+| 現在のTask | PR 3（Roster admin API + CSV import）着手待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main` @ `00dda68`（#198 マージ） |
+| 作業ブランチ | `main` @ `30380ba`（#199 マージ） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 2 着手。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 3 着手待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
