@@ -154,8 +154,8 @@ function rowToPolicy(row: PolicyRow): ClassroomPolicy {
     collab: {allow: Boolean(row.collab_allow)},
     drive: {allow: Boolean(row.drive_allow)},
     rosterId: row.roster_id ?? null,
-    studentAuth: {required: Boolean(row.student_auth_required ?? 0)},
-    submission: {enabled: Boolean(row.submission_enabled ?? 0)},
+    studentAuth: {required: Boolean(row.student_auth_required)},
+    submission: {enabled: Boolean(row.submission_enabled)},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

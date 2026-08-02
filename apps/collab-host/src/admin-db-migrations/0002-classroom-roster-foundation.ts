@@ -1,31 +1,23 @@
+/**
+ * Admin DB migration v2.
+ *
+ * The `checksum` constant may only be updated when registering a NEW migration
+ * version. Do NOT change the SQL below after v2 has shipped in production;
+ * add a new migration instead.
+ */
 import type Database from "better-sqlite3";
 import {tableHasColumnAdmin} from "./schema-fingerprint.js";
 import type {AdminSchemaMigration} from "./types.js";
 
-export const classroomRosterFoundationChecksumSource = [
-  "version=2",
-  "name=classroom-roster-foundation",
-  "alter=classroom_policies:roster_id,student_auth_required,submission_enabled",
-  "create=classroom_rosters,classroom_students,classroom_roster_memberships,student_accounts,roster_imports,roster_import_rows,classroom_audit_events",
-].join("\n");
-
-export const classroomRosterFoundationMigration: AdminSchemaMigration = {
-  version: 2,
-  name: "classroom-roster-foundation",
-  checksumSource: classroomRosterFoundationChecksumSource,
-  checksum: "6b83d6bde014290794dfea23959630e2ea410b47fefba27776d79187b076063e",
-  apply(db: Database.Database): void {
-    if (!tableHasColumnAdmin(db, "classroom_policies", "roster_id")) {
-      db.exec(`
+export const CLASSROOM_ROSTER_POLICY_ALTER_SQL = `
         ALTER TABLE classroom_policies ADD COLUMN roster_id TEXT;
         ALTER TABLE classroom_policies
           ADD COLUMN student_auth_required INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE classroom_policies
           ADD COLUMN submission_enabled INTEGER NOT NULL DEFAULT 0;
-      `);
-    }
+      `;
 
-    db.exec(`
+export const CLASSROOM_ROSTER_FOUNDATION_CREATE_SQL = `
       CREATE TABLE IF NOT EXISTS classroom_rosters (
         roster_id TEXT PRIMARY KEY,
         owner_admin_id TEXT NOT NULL,
@@ -130,6 +122,28 @@ export const classroomRosterFoundationMigration: AdminSchemaMigration = {
         ON roster_imports(roster_id);
       CREATE INDEX IF NOT EXISTS idx_audit_owner
         ON classroom_audit_events(owner_admin_id);
-    `);
+    `;
+
+export function applyClassroomRosterFoundationSchema(db: Database.Database): void {
+  if (!tableHasColumnAdmin(db, "classroom_policies", "roster_id")) {
+    db.exec(CLASSROOM_ROSTER_POLICY_ALTER_SQL);
+  }
+  db.exec(CLASSROOM_ROSTER_FOUNDATION_CREATE_SQL);
+}
+
+export const classroomRosterFoundationChecksumSource = [
+  "version=2",
+  "name=classroom-roster-foundation",
+  CLASSROOM_ROSTER_POLICY_ALTER_SQL,
+  CLASSROOM_ROSTER_FOUNDATION_CREATE_SQL,
+].join("\n");
+
+export const classroomRosterFoundationMigration: AdminSchemaMigration = {
+  version: 2,
+  name: "classroom-roster-foundation",
+  checksumSource: classroomRosterFoundationChecksumSource,
+  checksum: "f549e084eba59a21f48a34780e98a35d57894794a6dbdfc9b5535aad37ec6b87",
+  apply(db: Database.Database): void {
+    applyClassroomRosterFoundationSchema(db);
   },
 };

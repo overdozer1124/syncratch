@@ -40,7 +40,6 @@ function listUserTables(db: Database.Database): string[] {
 export type AdminLedgerlessClassification =
   | {kind: "empty"}
   | {kind: "phase2_current"}
-  | {kind: "phase1_legacy"}
   | {kind: "unknown"; difference: string};
 
 export function classifyAdminLedgerlessDatabase(
@@ -59,22 +58,9 @@ export function classifyAdminLedgerlessDatabase(
   }
 
   const hasCore = PHASE2_TABLES.every(table => tables.has(table));
-  const hasPolicies = tables.has("classroom_policies");
-  const hasLinks = tables.has("student_links");
-  const hasAccounts = tables.has("admin_accounts");
 
   if (hasCore && tableHasColumn(db, "classroom_policies", "editor_allow_extensions")) {
     return {kind: "phase2_current"};
-  }
-
-  if (
-    hasAccounts &&
-    hasPolicies &&
-    hasLinks &&
-    !tables.has("student_grants") &&
-    !tableHasColumn(db, "classroom_policies", "editor_allow_extensions")
-  ) {
-    return {kind: "phase1_legacy"};
   }
 
   const expected = [...PHASE2_TABLES].sort().join(",");

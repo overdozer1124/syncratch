@@ -6,9 +6,18 @@ import {describe, expect, it} from "vitest";
 import {openAdminDb} from "../admin-db.js";
 import {
   ADMIN_DB_MIGRATIONS,
+  AdminSchemaMigrationError,
   classifyAdminLedgerlessDatabase,
   runAdminDbMigrations,
-} from "../admin-db-migrations/index.js";
+} from "./index.js";
+import {computeMigrationChecksum} from "./checksum.js";
+import {adminPhase2BaselineMigration} from "./0001-admin-phase2-baseline.js";
+import {
+  CLASSROOM_ROSTER_FOUNDATION_CREATE_SQL,
+  classroomRosterFoundationChecksumSource,
+  classroomRosterFoundationMigration,
+} from "./0002-classroom-roster-foundation.js";
+import type {AdminSchemaMigration} from "./types.js";
 
 function createPhase2LedgerlessDb(dbPath: string): void {
   const db = new Database(dbPath);
@@ -69,6 +78,27 @@ function createPhase2LedgerlessDb(dbPath: string): void {
   db.close();
 }
 
+function listRosterFoundationTables(db: Database.Database): string[] {
+  return (
+    db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN (
+             'classroom_rosters',
+             'classroom_students',
+             'classroom_roster_memberships',
+             'student_accounts',
+             'roster_imports',
+             'roster_import_rows',
+             'classroom_audit_events'
+           )
+         ORDER BY name`,
+      )
+      .all() as Array<{name: string}>
+  ).map(row => row.name);
+}
+
 describe("admin DB migrations", () => {
   it("classifies Phase 2 ledgerless databases", () => {
     const root = mkdtempSync(join(tmpdir(), "admin-db-phase2-"));
@@ -125,6 +155,73 @@ describe("admin DB migrations", () => {
       .all() as Array<{version: number}>;
     expect(ledger.map(row => row.version)).toEqual([1, 2]);
     expect(db.pragma("user_version", {simple: true})).toBe(2);
+    db.close();
+  });
+
+  it("rolls back v2 DDL when apply throws before ledger write", () => {
+    const root = mkdtempSync(join(tmpdir(), "admin-db-rollback-"));
+    const dbPath = join(root, "rollback.sqlite");
+    const db = new Database(dbPath);
+    db.pragma("foreign_keys = ON");
+
+    runAdminDbMigrations(db, [adminPhase2BaselineMigration]);
+    expect(db.pragma("user_version", {simple: true})).toBe(1);
+
+    const failingV2: AdminSchemaMigration = {
+      ...classroomRosterFoundationMigration,
+      apply(dbInstance) {
+        dbInstance.exec(CLASSROOM_ROSTER_FOUNDATION_CREATE_SQL);
+        throw new Error("simulated migration failure");
+      },
+    };
+
+    expect(() =>
+      runAdminDbMigrations(db, [adminPhase2BaselineMigration, failingV2]),
+    ).toThrow(/simulated migration failure/);
+    db.close();
+
+    const reopened = new Database(dbPath);
+    reopened.pragma("foreign_keys = ON");
+    expect(listRosterFoundationTables(reopened)).toEqual([]);
+    const ledger = reopened
+      .prepare(`SELECT version FROM schema_migrations ORDER BY version`)
+      .all() as Array<{version: number}>;
+    expect(ledger.map(row => row.version)).toEqual([1]);
+    expect(reopened.pragma("user_version", {simple: true})).toBe(1);
+    reopened.close();
+  });
+
+  it("rejects ledgerless schemas that are not Phase 2 current", () => {
+    const root = mkdtempSync(join(tmpdir(), "admin-db-unknown-"));
+    const dbPath = join(root, "unknown.sqlite");
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE admin_accounts (admin_id TEXT PRIMARY KEY);
+      CREATE TABLE classroom_policies (policy_id TEXT PRIMARY KEY);
+      CREATE TABLE student_links (link_id TEXT PRIMARY KEY);
+    `);
+    db.close();
+
+    expect(() => openAdminDb(dbPath)).toThrow(AdminSchemaMigrationError);
+  });
+
+  it("detects tampered migration checksumSource before apply", () => {
+    const tampered = {
+      ...classroomRosterFoundationMigration,
+      checksumSource: `${classroomRosterFoundationChecksumSource}\n-- injected`,
+    };
+    expect(
+      computeMigrationChecksum(classroomRosterFoundationChecksumSource),
+    ).toBe(classroomRosterFoundationMigration.checksum);
+    expect(computeMigrationChecksum(tampered.checksumSource)).not.toBe(
+      classroomRosterFoundationMigration.checksum,
+    );
+
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    expect(() =>
+      runAdminDbMigrations(db, [adminPhase2BaselineMigration, tampered]),
+    ).toThrow(/checksum mismatch/);
     db.close();
   });
 });

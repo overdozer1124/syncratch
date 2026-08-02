@@ -1,9 +1,6 @@
 import type Database from "better-sqlite3";
 import {computeMigrationChecksum} from "./checksum.js";
-import {
-  classifyAdminLedgerlessDatabase,
-  tableHasColumnAdmin,
-} from "./schema-fingerprint.js";
+import {classifyAdminLedgerlessDatabase} from "./schema-fingerprint.js";
 import {
   AdminSchemaMigrationError,
   type AdminMigrationContext,
@@ -15,6 +12,11 @@ interface LedgerRow {
   name: string;
   checksum: string;
   applied_at: string;
+}
+
+export interface RunAdminDbMigrationsOptions {
+  now?: () => string;
+  migrations?: readonly AdminSchemaMigration[];
 }
 
 function ledgerTableExists(db: Database.Database): boolean {
@@ -164,7 +166,11 @@ function setUserVersion(db: Database.Database, version: number): void {
   db.pragma(`user_version = ${version}`);
 }
 
-function recordAdoptedMigration(
+function runInMigrationTransaction(db: Database.Database, fn: () => void): void {
+  db.transaction(fn)();
+}
+
+function recordLedgerOnly(
   db: Database.Database,
   migration: AdminSchemaMigration,
   appliedAt: string,
@@ -179,10 +185,10 @@ function applyAndRecordMigration(
   migration: AdminSchemaMigration,
   context: AdminMigrationContext,
 ): void {
-  migration.apply(db, context);
-  assertNoForeignKeyViolations(db, migration);
-  insertLedgerRow(db, migration, context.appliedAt);
-  setUserVersion(db, migration.version);
+  runInMigrationTransaction(db, () => {
+    migration.apply(db, context);
+    recordLedgerOnly(db, migration, context.appliedAt);
+  });
 }
 
 function adoptLedgerlessBaseline(
@@ -195,13 +201,10 @@ function adoptLedgerlessBaseline(
     case "empty":
       return false;
     case "phase2_current":
-      createLedgerTable(db);
-      recordAdoptedMigration(db, migration, context.appliedAt);
-      return true;
-    case "phase1_legacy":
-      createLedgerTable(db);
-      migration.apply(db, context);
-      recordAdoptedMigration(db, migration, context.appliedAt);
+      runInMigrationTransaction(db, () => {
+        createLedgerTable(db);
+        recordLedgerOnly(db, migration, context.appliedAt);
+      });
       return true;
     case "unknown":
       throw new AdminSchemaMigrationError(
@@ -219,8 +222,11 @@ function initializeOrAdoptBaseline(
   if (adoptLedgerlessBaseline(db, migration, context)) {
     return;
   }
-  createLedgerTable(db);
-  applyAndRecordMigration(db, migration, context);
+  runInMigrationTransaction(db, () => {
+    createLedgerTable(db);
+    migration.apply(db, context);
+    recordLedgerOnly(db, migration, context.appliedAt);
+  });
 }
 
 function isMigrationPending(
@@ -245,9 +251,10 @@ function isMigrationPending(
 export function runAdminDbMigrations(
   db: Database.Database,
   migrations: readonly AdminSchemaMigration[],
-  now: () => string = () => new Date().toISOString(),
+  options: RunAdminDbMigrationsOptions = {},
 ): void {
   validateRegistry(migrations);
+  const now = options.now ?? (() => new Date().toISOString());
   const context: AdminMigrationContext = {appliedAt: now()};
 
   for (const migration of migrations) {
@@ -266,78 +273,4 @@ export function runAdminDbMigrations(
   validateLedgerHistory(db, migrations);
 }
 
-export function applyPhase2BaselineSchema(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS admin_accounts (
-      admin_id TEXT PRIMARY KEY,
-      subject TEXT NOT NULL UNIQUE,
-      email TEXT NOT NULL,
-      display_name TEXT,
-      status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS classroom_policies (
-      policy_id TEXT PRIMARY KEY,
-      owner_admin_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
-      ai_enabled INTEGER NOT NULL,
-      ai_level INTEGER NOT NULL,
-      ai_allow_student_api_key INTEGER NOT NULL,
-      editor_show_settings INTEGER NOT NULL,
-      editor_allow_sb3_export INTEGER NOT NULL,
-      editor_allow_sb3_import INTEGER NOT NULL,
-      editor_allow_extensions INTEGER NOT NULL,
-      collab_allow INTEGER NOT NULL,
-      drive_allow INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (owner_admin_id) REFERENCES admin_accounts(admin_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS student_links (
-      link_id TEXT PRIMARY KEY,
-      policy_id TEXT NOT NULL,
-      owner_admin_id TEXT NOT NULL,
-      token TEXT NOT NULL UNIQUE,
-      label TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
-      expires_at TEXT,
-      created_at TEXT NOT NULL,
-      revoked_at TEXT,
-      FOREIGN KEY (policy_id) REFERENCES classroom_policies(policy_id),
-      FOREIGN KEY (owner_admin_id) REFERENCES admin_accounts(admin_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_policies_owner
-      ON classroom_policies(owner_admin_id);
-    CREATE INDEX IF NOT EXISTS idx_links_owner_policy
-      ON student_links(owner_admin_id, policy_id);
-    CREATE INDEX IF NOT EXISTS idx_links_token
-      ON student_links(token);
-  `);
-
-  if (!tableHasColumnAdmin(db, "classroom_policies", "editor_allow_extensions")) {
-    db.exec(`
-      ALTER TABLE classroom_policies
-      ADD COLUMN editor_allow_extensions INTEGER NOT NULL DEFAULT 1
-    `);
-  }
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS student_grants (
-      grant_id TEXT PRIMARY KEY,
-      link_id TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (link_id) REFERENCES student_links(link_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_grants_link
-      ON student_grants(link_id);
-  `);
-}
-
-export {tableHasColumnAdmin};
+export {applyAdminPhase2BaselineSchema} from "./0001-admin-phase2-baseline.js";

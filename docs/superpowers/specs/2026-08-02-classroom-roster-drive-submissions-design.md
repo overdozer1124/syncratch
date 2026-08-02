@@ -247,7 +247,9 @@ GET /s/{token}
 | `teacherDriveSubmissionEnabled` | `SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED` | student local auth |
 | `submissionPreviewEnabled` | `SYNCRATCH_SUBMISSION_PREVIEW_ENABLED` | teacher drive submission |
 
-起動時 `validateClassroomFeatureFlagDependencies` が失敗したら **fail closed**（collab-host 起動エラーまたは admin API 503 — 実装 PR 2 で選択）。
+起動時 `resolveClassroomFeatureFlagsForStartup()` が `validateClassroomFeatureFlagDependencies()` を実行する。依存チェーンが不正な場合は **warn ログを出して全 flag を OFF に降格**し、プロセス起動は継続する（PR 1 実装済み）。新機能 API は flag OFF のため 404/501 のまま。
+
+**禁止:** 適用済み migration の `checksumSource` / SQL を変更して checksum 定数だけ貼り替えること。DDL 変更は必ず新 migration version を追加する。
 
 **flag OFF の公開挙動:**
 - `/`, `/admin`, `/s/{token}` は Phase 2 どおり。
@@ -278,30 +280,29 @@ Phase 2 baseline を version **1**、`classroom-roster-foundation` を version *
 
 - Ledger テーブル: `schema_migrations(version, name, checksum, applied_at)`
 - `PRAGMA user_version` と ledger の **monotonic 一致**を検証（`runAdminDbMigrations`）。
+- **各 migration の `checksumSource` には `apply()` が実行する DDL SQL 文字列を含める。** checksum 定数の更新は新規 migration 追加時のみ。適用済み migration の SQL 変更は禁止。
+- **`applyAndRecordMigration` / baseline adopt は `db.transaction()` で原子的**（DDL + 台帳行 + `user_version` を同一トランザクション）。
 - version 2 は **CREATE / ALTER のみ**。既存 `classroom_policies` に `roster_id`, `student_auth_required`, `submission_enabled` を追加（既定 0 / NULL）。
+- ledgerless Phase 2 既存 DB（`student_grants` + `editor_allow_extensions` あり）は v1 を **DDL 非実行で台帳採用**のみ。それ以外の ledgerless スキーマは `SCHEMA_UNKNOWN_LEGACY` で fail closed（`phase1_legacy` 分岐は持たない）。
 - ダウングレード・ledger 改ざん検出時は起動失敗。
 
 ## 15. CSV / XLSX import gate（PR 1）
 
-PR 1 では **ライブラリ選定と安全上限のスパイクテスト**のみ（API 未配線）。
+PR 1 では **CSV 採用を確定**し、**XLSX は未検証・採用保留**とする（API 未配線）。
 
-### 15.1 CSV（`csv-parse`）
+### 15.1 CSV（`csv-parse@7.0.1`）— **採用**
 
 - ヘッダー `columns: true`、`ROSTER_SHEET_COLUMNS` 契約。
 - `attendance_number` 先頭ゼロ保持、引用符内改行可。
+- PR 3 本実装では `relax_quotes: false` を検討し、壊れた CSV は行番号付き **拒否行**として提示する。
 
-### 15.2 XLSX（`exceljs`）
+### 15.2 XLSX（`exceljs`）— **PR 1 時点で採用保留**
 
-| 上限 | 値 |
-|---|---|
-| ファイルサイズ | 2 MiB |
-| シート数 | 1 |
-| 行数 | 1000（ヘッダー除く） |
-| 列数 | 20 |
-| 読取 timeout | 5s |
-| RSS 増分 | 96 MiB 未満（スパイク観測） |
+PR 1 の `roster-import-xlsx-spike.test.ts` は **exceljs API 疎通確認のみ**であり、本番採用の安全ゲート検証ではない。
 
-**拒否:** 数式セル、2 シート以上、上限超過、zip 破損時の process crash。
+**未検証（別途スパイク PR で計測が必要）:** 2 MiB 超過拒否、行/列/シート上限、マクロ・外部リンク、高圧縮 ZIP bomb、RSS 上限、読取中断。
+
+**PR 1 決定:** 名簿インポートは **CSV のみ**で PR 3 を開始する。XLSX 採用可否は計測スパイク完了後にユーザーへ報告する。
 
 ## 16. Phased delivery（8 PR）
 
@@ -355,7 +356,9 @@ PR 1 では **ライブラリ選定と安全上限のスパイクテスト**の�
 - Feature flags: 未設定 → すべて false。依存チェーン違反 → `validateClassroomFeatureFlagDependencies` が非空。
 - Policy normalize: 新フィールド既定が false/null。`toStudentPolicyView` に `rosterId` が含まれない。
 - CSV gate: 6 列パース、先頭ゼロ、改行入り display_name。
-- XLSX gate: 正常 1 シート、formula 拒否、破損 zip で process 生存。
+- XLSX: PR 1 では API 疎通 smoke のみ。採用ゲートは未検証（design §15.2）。
+- Migration: apply 途中 throw → 再オープンで v2 テーブル 0 件・台帳 v1 のみ・`user_version === 1`。
+- Feature flags: 起動時依存検証。不正組合せ → warn + 全 OFF 降格。
 
 ### 後続 PR（参考）
 

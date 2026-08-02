@@ -6,7 +6,11 @@ export const ADMIN_DB_MIGRATIONS = [
   classroomRosterFoundationMigration,
 ] as const;
 
-export {runAdminDbMigrations, applyPhase2BaselineSchema} from "./runner.js";
+export {
+  runAdminDbMigrations,
+  applyAdminPhase2BaselineSchema,
+  type RunAdminDbMigrationsOptions,
+} from "./runner.js";
 export {
   AdminSchemaMigrationError,
   type AdminSchemaMigration,

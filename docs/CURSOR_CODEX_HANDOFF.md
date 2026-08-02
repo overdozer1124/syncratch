@@ -46,9 +46,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 1 契約・migration |
-| 現在の状態 | `PHASE1_IN_PROGRESS` |
-| 次の担当 | Codex |
-| 次の作業 | PR 1 Codex レビュー（`READY_FOR_CODEX_REVIEW`） |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 次の作業 | PR #198 再レビュー（Hermes GO/NO-GO） |
 | 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 2 以降/自動マージ |
 
 ### 案件レジストリ
@@ -60,7 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PHASE1_IN_PROGRESS` | Codex | PR 1 レビュー | 契約・migration・flags・CSV/XLSX spike。PR 2–8 停止 |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR #198 再レビュー | NO-GO @921a37d 修正済み。Hermes 決裁 |
 
 ### 読取手順（「作業完了」時）
 
@@ -73,12 +74,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 21:05:00 JST |
+| 最終更新 | 2026-08-02 21:20:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PHASE1_IN_PROGRESS`（PR 1 実装完了 → `READY_FOR_CODEX_REVIEW`） |
-| 現在の担当 | Codex |
-| 現在のTask | PR 1: 設計spec / plan / classroom-access 契約 / admin DB migration ledger / feature flags / CSV・XLSX spike |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR #198 差し戻し修正後） |
+| 現在の担当 | Hermes |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 現在のTask | PR #198 Hermes 再レビュー待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |

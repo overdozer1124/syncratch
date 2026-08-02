@@ -73,13 +73,15 @@ Pattern mirrors `packages/project-store-sqlite` ledger slice, adapted for `apps/
 - Configure WAL, foreign keys, and busy timeout before migration transactions.
 - Runtime down-migration is prohibited.
 
-**PR 1 wiring:** `openAdminDb()` calls `runAdminDbMigrations(db, ADMIN_DB_MIGRATIONS)` on startup instead of inline DDL.
+**PR 1 wiring:** `openAdminDb()` calls `runAdminDbMigrations(db, ADMIN_DB_MIGRATIONS)` on startup. Each `applyAndRecordMigration` / baseline adopt runs inside **`db.transaction()`** (DDL + ledger row + `user_version` atomically).
+
+**Checksum:** Each migration's `checksumSource` embeds the exact DDL SQL strings executed by `apply()`. The hardcoded `checksum` constant may only change when adding a **new** migration version — never when editing shipped SQL.
 
 ---
 
 ## CSV adoption and XLSX gate (PR 1)
 
-### CSV — production parser (`csv-parse@7.0.1`)
+### CSV — production parser (`csv-parse@7.0.1`) — **adopted**
 
 Adopted in `apps/collab-host/package.json` as a runtime dependency. Gate contract in `roster-import-csv.test.ts`:
 
@@ -88,31 +90,32 @@ parse(csv, {
   columns: true,
   skip_empty_lines: true,
   bom: true,
-  relax_quotes: true,
+  relax_quotes: true, // PR 1 smoke only; PR 3 target: relax_quotes: false + rejected rows
 });
 ```
 
 - Header names must match `ROSTER_SHEET_COLUMNS` from `@blocksync/classroom-access`.
 - `attendance_number` must remain a string (leading zeros preserved; never numeric-coerce).
 - Quoted newlines inside `display_name` must parse correctly.
-- Formula-leading cells must be neutralized on export (PR 3 apply path).
 
-### XLSX — safety spike only (`exceljs@4.4.0` devDependency)
+### XLSX — **adoption pending at PR 1** (`exceljs@4.4.0` devDependency)
 
-PR 1 runs spike tests only; **no production XLSX import route** until PR 3+ evaluates Go/No-Go from measured evidence.
+PR 1 includes **`roster-import-xlsx-spike.test.ts` as API smoke only** — not a production safety gate.
 
-| Gate | Limit |
+**Not verified in PR 1:** file size / row / column / sheet limits, macro & external link rejection, ZIP bomb RSS, read interruptibility.
+
+**PR 1 decision:** Ship PR 3 roster import as **CSV-only**. Revisit XLSX after a dedicated measurement spike; report Go/No-Go to the user before enabling XLSX routes.
+
+**Future gate targets (measurement PR, not PR 1 claims):**
+
+| Gate | Target limit |
 |---|---|
 | File size | ≤ 2 MiB |
 | Worksheets | exactly 1 |
 | Data rows | ≤ 1000 (excluding header) |
 | Columns | ≤ 20 |
-| Read timeout | 5 s |
-| RSS delta (spike observation) | < 96 MiB on representative workbook |
-| Formula cells | **reject** (`formula_rejected`) |
-| Malformed zip | throw; **process must survive** |
-
-If PR 3 cannot meet gates under CI memory limits, ship CSV-only import and record XLSX as No-Go in the handoff ledger.
+| Formula cells | reject |
+| Malformed zip | throw; process must survive |
 
 ---
 
@@ -120,7 +123,7 @@ If PR 3 cannot meet gates under CI memory limits, ship CSV-only import and recor
 
 | PR | Status | Primary deliverable | Flags required for behavior |
 |---|---|---|---|
-| **1** | **IN PROGRESS — this PR** | Contracts, migration v2, flags, CSV/XLSX gate tests | none (all OFF) |
+| **1** | **CHANGES REQUESTED → re-review** | Contracts, migration v2, flags, CSV gate, XLSX smoke | none (all OFF) |
 | 2 | NOT STARTED | Admin Google OAuth credential (`drive.file`) | `CLASSROOM_ROSTER` + `ADMIN_GOOGLE_CREDENTIAL` |
 | 3 | NOT STARTED | Roster/student admin API + CSV import preview/apply | `CLASSROOM_ROSTER` |
 | 4 | NOT STARTED | Google Sheet sync | + `ROSTER_SHEETS` |
@@ -133,9 +136,9 @@ If PR 3 cannot meet gates under CI memory limits, ship CSV-only import and recor
 
 # PR 1 — Foundation (contracts, migration ledger, flags, import gate)
 
-**Status:** **IN PROGRESS / this PR**
+**Status:** **Re-submission after Hermes NO-GO @ 921a37d**
 
-**Scope:** Freeze contracts and admin DB migration v2. Add feature-flag definitions and dependency validation. Prove CSV parse and XLSX safety gates in tests. **No new HTTP routes, no UI changes, no OAuth, no runtime behavior change** with flags OFF.
+**Scope:** Freeze contracts and admin DB migration v2. Add feature-flag definitions, startup wiring, and dependency validation. Prove CSV parse gate in tests; XLSX remains adoption-pending (smoke only). **No new HTTP routes, no UI changes, no OAuth, no runtime behavior change** with flags OFF.
 
 ### Files
 
@@ -154,8 +157,11 @@ If PR 3 cannot meet gates under CI memory limits, ship CSV-only import and recor
 | `apps/collab-host/src/admin-db-migrations/` | Create — ledger runner, v1 baseline, v2 foundation |
 | `apps/collab-host/src/admin-db.ts` | Modify — wire `runAdminDbMigrations`, map new policy columns |
 | `apps/collab-host/src/roster-import-csv.test.ts` | Create — `csv-parse@7.0.1` gate |
-| `apps/collab-host/src/roster-import-xlsx-spike.test.ts` | Create — `exceljs` safety spike |
+| `apps/collab-host/src/classroom-feature-flags-runtime.ts` | Create — startup flag resolve + degrade |
+| `apps/collab-host/src/classroom-feature-flags-runtime.test.ts` | Create |
+| `apps/collab-host/src/server.ts` | Modify — call `resolveClassroomFeatureFlagsForStartup` at boot |
 | `apps/collab-host/package.json` | Modify — add `csv-parse@7.0.1`, dev `exceljs@4.4.0` |
+| `apps/collab-host/src/roster-import-xlsx-spike.test.ts` | Create — `exceljs` API smoke (not safety gate) |
 | `pnpm-lock.yaml` | Update |
 
 ### APIs (contract constants only — **not registered in collab-host**)
@@ -182,9 +188,11 @@ git diff --check
 - Fresh DB reaches ledger versions `[1, 2]`, `user_version = 2`.
 - Phase 2 ledgerless fixture adopts v1 then applies v2; existing policy rows keep `editor.allowExtensions === true`, `studentAuth.required === false`, `submission.enabled === false`.
 - `toStudentPolicyView()` omits `rosterId`.
-- All flags unset → all false; broken dependency chain → non-empty `validateClassroomFeatureFlagDependencies()`.
+- All flags unset → all false; broken dependency chain → startup degrades all flags OFF + non-empty issues (tested).
 - CSV: 6-column contract, leading zero attendance, quoted newline in name.
-- XLSX: small workbook OK; formula rejected; corrupt zip does not crash process.
+- XLSX: API smoke only; design/plan mark XLSX **adoption pending**.
+- Migration rollback: apply throws → v2 tables absent, ledger v1 only, `user_version === 1`.
+- Checksum: tampered `checksumSource` → `validateRegistry` throws before apply.
 
 ### Prohibitions
 
@@ -198,9 +206,22 @@ git diff --check
 ### PR 1 handoff
 
 - Update `docs/CURSOR_CODEX_HANDOFF.md` with case ID, base SHA `e51051d`, head SHA, test summary.
-- Set handoff state to **`READY_FOR_CODEX_REVIEW`**.
-- Open PR; wait for CI green and Codex GO.
+- Set handoff state to **`READY_FOR_HERMES_REVIEW`** (Hermes reviews; Codex unavailable).
+- Open PR; wait for CI green and Hermes GO.
 - **Do not auto-merge.**
+
+---
+
+## Cross-PR acceptance criteria (Hermes review carry-forward)
+
+These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
+
+| PR | Acceptance criteria |
+|---|---|
+| **2** | OAuth pending `state` persisted in SQLite with TTL + single-use consume — **not** `drive-oauth.ts` in-memory `Map`. Tests: start → process restart → callback succeeds; parallel duplicate state → exactly one succeeds. `drive.file` operates only on Picker-opened/created files; document re-Picker flow on permission loss. |
+| **4** | `SYNC_REQUIRED` recovery: explicit re-sync API, admin UI indicator, audit event — not silent failure. |
+| **6** | If scrypt: document Node `maxmem` default (32 MiB) vs N=32768,r=8; set explicit `maxmem`, concurrency queue (2–4), measure peak RSS + p95 latency at 30 parallel hashes. |
+| **7** | Idempotency: `UNIQUE(student_account_id, idempotency_key)`; parallel duplicate requests test. SB3 5 MiB cap env-configurable with documented default; oversize student message + local SB3 export path required. |
 
 ---
 
@@ -236,6 +257,8 @@ git diff --check
 - Flag ON + valid admin session → OAuth round-trip stores credential; scope request contains only `drive.file`.
 - Admin login cookie alone does **not** imply teacher credential.
 - Migration v3 applies cleanly from v2; ledger `[1,2,3]`.
+- **Acceptance (Hermes):** OAuth `state` in SQLite with TTL + atomic single consume — not in-memory Map. Tests: restart between start/callback; duplicate parallel state → one success.
+- **Acceptance (Hermes):** `drive.file` limited to Picker-selected resources; re-Picker documented on permission loss.
 - `@blocksync/classroom-access` + `@blocksync/collab-host` tests green; `git diff --check` PASS.
 
 ### Prohibitions
@@ -319,6 +342,7 @@ git diff --check
 - Requires teacher credential (PR 2); returns 409/503 when credential missing.
 - Sheet columns match `ROSTER_SHEET_COLUMNS`; unknown columns ignored or rejected per design.
 - Revision CAS on concurrent sync.
+- **`SYNC_REQUIRED` recovery (Hermes):** re-sync API + admin UI status + audit event when mirror/Sheet diverge.
 - Flag OFF → sync route unavailable.
 - No webhook/cron in this PR (manual sync only).
 
@@ -401,6 +425,7 @@ git diff --check
 - Identity `student_id` not in policy roster → 403.
 - Grant expiry → identity invalid on next request.
 - Login accepts `login_name` or fallback `student_code`.
+- **scrypt (Hermes, if chosen):** explicit `maxmem`, concurrency queue 2–4, 30-parallel peak RSS + p95 latency measurement documented in design.
 
 ### Prohibitions
 
@@ -444,6 +469,8 @@ git diff --check
 - Drive file created only under teacher-configured folder; student cannot supply arbitrary folderId.
 - SQLite row has no SB3 bytes; SHA256 matches uploaded content.
 - Resubmission sets `isResubmission` per design.
+- **Idempotency (Hermes):** `UNIQUE(student_account_id, idempotency_key)`; parallel duplicate POST test.
+- **Size limit (Hermes):** 5 MiB cap env-configurable with documented default; oversize message + local SB3 export UI required.
 - Phase 2 anonymous editing still works when submission disabled.
 
 ### Prohibitions
