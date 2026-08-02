@@ -20,6 +20,10 @@ import {
   type StudentPolicyView,
 } from "@blocksync/classroom-access";
 import {createGrantId, STUDENT_GRANT_TTL_MS} from "./student-grant.js";
+import {
+  ADMIN_DB_MIGRATIONS,
+  runAdminDbMigrations,
+} from "./admin-db-migrations/index.js";
 
 export interface AdminDb {
   upsertAdminFromLogin(input: {
@@ -79,6 +83,9 @@ interface PolicyRow {
   editor_allow_extensions: number;
   collab_allow: number;
   drive_allow: number;
+  roster_id: string | null;
+  student_auth_required: number;
+  submission_enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -111,86 +118,8 @@ function configureSqlite(db: Database.Database): void {
   db.pragma("busy_timeout = 5000");
 }
 
-function tableHasColumn(
-  db: Database.Database,
-  table: string,
-  column: string,
-): boolean {
-  const rows = db.pragma(`table_info(${table})`) as Array<{name: string}>;
-  return rows.some(row => row.name === column);
-}
-
 function migrate(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS admin_accounts (
-      admin_id TEXT PRIMARY KEY,
-      subject TEXT NOT NULL UNIQUE,
-      email TEXT NOT NULL,
-      display_name TEXT,
-      status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS classroom_policies (
-      policy_id TEXT PRIMARY KEY,
-      owner_admin_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('active', 'disabled')),
-      ai_enabled INTEGER NOT NULL,
-      ai_level INTEGER NOT NULL,
-      ai_allow_student_api_key INTEGER NOT NULL,
-      editor_show_settings INTEGER NOT NULL,
-      editor_allow_sb3_export INTEGER NOT NULL,
-      editor_allow_sb3_import INTEGER NOT NULL,
-      collab_allow INTEGER NOT NULL,
-      drive_allow INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY (owner_admin_id) REFERENCES admin_accounts(admin_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS student_links (
-      link_id TEXT PRIMARY KEY,
-      policy_id TEXT NOT NULL,
-      owner_admin_id TEXT NOT NULL,
-      token TEXT NOT NULL UNIQUE,
-      label TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
-      expires_at TEXT,
-      created_at TEXT NOT NULL,
-      revoked_at TEXT,
-      FOREIGN KEY (policy_id) REFERENCES classroom_policies(policy_id),
-      FOREIGN KEY (owner_admin_id) REFERENCES admin_accounts(admin_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_policies_owner
-      ON classroom_policies(owner_admin_id);
-    CREATE INDEX IF NOT EXISTS idx_links_owner_policy
-      ON student_links(owner_admin_id, policy_id);
-    CREATE INDEX IF NOT EXISTS idx_links_token
-      ON student_links(token);
-  `);
-
-  if (!tableHasColumn(db, "classroom_policies", "editor_allow_extensions")) {
-    db.exec(`
-      ALTER TABLE classroom_policies
-      ADD COLUMN editor_allow_extensions INTEGER NOT NULL DEFAULT 1
-    `);
-  }
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS student_grants (
-      grant_id TEXT PRIMARY KEY,
-      link_id TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY (link_id) REFERENCES student_links(link_id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_grants_link
-      ON student_grants(link_id);
-  `);
+  runAdminDbMigrations(db, ADMIN_DB_MIGRATIONS);
 }
 
 function rowToAdmin(row: AdminRow): AdminAccount {
@@ -224,6 +153,9 @@ function rowToPolicy(row: PolicyRow): ClassroomPolicy {
     },
     collab: {allow: Boolean(row.collab_allow)},
     drive: {allow: Boolean(row.drive_allow)},
+    rosterId: row.roster_id ?? null,
+    studentAuth: {required: Boolean(row.student_auth_required)},
+    submission: {enabled: Boolean(row.submission_enabled)},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -273,13 +205,17 @@ export function openAdminDb(dbPath: string): AdminDb {
       ai_enabled, ai_level, ai_allow_student_api_key,
       editor_show_settings, editor_allow_sb3_export, editor_allow_sb3_import,
       editor_allow_extensions,
-      collab_allow, drive_allow, created_at, updated_at
+      collab_allow, drive_allow,
+      roster_id, student_auth_required, submission_enabled,
+      created_at, updated_at
     ) VALUES (
       @policy_id, @owner_admin_id, @title, @status,
       @ai_enabled, @ai_level, @ai_allow_student_api_key,
       @editor_show_settings, @editor_allow_sb3_export, @editor_allow_sb3_import,
       @editor_allow_extensions,
-      @collab_allow, @drive_allow, @created_at, @updated_at
+      @collab_allow, @drive_allow,
+      @roster_id, @student_auth_required, @submission_enabled,
+      @created_at, @updated_at
     )
   `);
 
@@ -296,6 +232,9 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_allow_extensions = @editor_allow_extensions,
       collab_allow = @collab_allow,
       drive_allow = @drive_allow,
+      roster_id = @roster_id,
+      student_auth_required = @student_auth_required,
+      submission_enabled = @submission_enabled,
       updated_at = @updated_at
     WHERE policy_id = @policy_id AND owner_admin_id = @owner_admin_id
   `);
@@ -315,6 +254,9 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_allow_extensions: policy.editor.allowExtensions ? 1 : 0,
       collab_allow: policy.collab.allow ? 1 : 0,
       drive_allow: policy.drive.allow ? 1 : 0,
+      roster_id: policy.rosterId,
+      student_auth_required: policy.studentAuth.required ? 1 : 0,
+      submission_enabled: policy.submission.enabled ? 1 : 0,
       created_at: policy.createdAt,
       updated_at: policy.updatedAt,
     };
@@ -508,6 +450,7 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_show_settings, p.editor_allow_sb3_export,
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
+                  p.roster_id, p.student_auth_required, p.submission_enabled,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
            FROM student_links l
@@ -527,6 +470,9 @@ export function openAdminDb(dbPath: string): AdminDb {
             editor_allow_extensions: number;
             collab_allow: number;
             drive_allow: number;
+            roster_id: string | null;
+            student_auth_required: number;
+            submission_enabled: number;
             p_policy_id: string;
             p_owner: string;
             p_created: string;
@@ -551,6 +497,9 @@ export function openAdminDb(dbPath: string): AdminDb {
         editor_allow_extensions: row.editor_allow_extensions,
         collab_allow: row.collab_allow,
         drive_allow: row.drive_allow,
+        roster_id: row.roster_id,
+        student_auth_required: row.student_auth_required,
+        submission_enabled: row.submission_enabled,
         created_at: row.p_created,
         updated_at: row.p_updated,
       });
@@ -598,6 +547,7 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_show_settings, p.editor_allow_sb3_export,
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
+                  p.roster_id, p.student_auth_required, p.submission_enabled,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
            FROM student_links l
@@ -617,6 +567,9 @@ export function openAdminDb(dbPath: string): AdminDb {
             editor_allow_extensions: number;
             collab_allow: number;
             drive_allow: number;
+            roster_id: string | null;
+            student_auth_required: number;
+            submission_enabled: number;
             p_policy_id: string;
             p_owner: string;
             p_created: string;
@@ -641,6 +594,9 @@ export function openAdminDb(dbPath: string): AdminDb {
         editor_allow_extensions: row.editor_allow_extensions,
         collab_allow: row.collab_allow,
         drive_allow: row.drive_allow,
+        roster_id: row.roster_id,
+        student_auth_required: row.student_auth_required,
+        submission_enabled: row.submission_enabled,
         created_at: row.p_created,
         updated_at: row.p_updated,
       });

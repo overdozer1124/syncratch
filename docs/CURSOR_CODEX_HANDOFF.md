@@ -44,12 +44,13 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `admin-student-access` |
-| 案件名 | 管理者 / 生徒リンク — Phase 2 運用品質 |
-| 現在の状態 | `PHASE2_COMPLETE` |
-| 次の担当 | ユーザー |
-| 次の作業 | Phase 3 は指示があるまで停止。`release-decision` 公開は明示指示後のみ |
-| 禁止 | 公開告知 / deploy / タグ / GitHub Release / token 再掲 / Phase 3 / AI Phase 4+ |
+| **アクティブ案件ID** | `classroom-roster-drive-submissions` |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 1 契約・migration |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 次の作業 | PR #198 再レビュー（Hermes GO/NO-GO） |
+| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 2 以降/自動マージ |
 
 ### 案件レジストリ
 
@@ -60,6 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR #198 再レビュー | NO-GO @921a37d 修正済み。Hermes 決裁 |
 
 ### 読取手順（「作業完了」時）
 
@@ -72,20 +74,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 18:28:00 JST |
+| 最終更新 | 2026-08-02 21:20:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `admin-student-access` |
-| ワークフロー状態 | `PHASE2_COMPLETE`（Codex GO・#197 main マージ済み @ `24a0778`） |
-| 現在の担当 | ユーザー |
-| 現在のTask | Phase 2 完了。Phase 3 / 告知公開はユーザー指示後 |
+| アクティブ案件ID | `classroom-roster-drive-submissions` |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR #198 差し戻し修正後） |
+| 現在の担当 | Hermes |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 現在のTask | PR #198 Hermes 再レビュー待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main` @ `24a0778`（#197 マージ） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr1-258b` |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | 公開実行待ち（ユーザー明示指示後）。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
+| 次Task | Codex PR 1 レビュー。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -5744,3 +5747,115 @@ CI gate0: green（台帳更新後・マージ前確認済み）
 Phase 3: 未着手・停止維持
 禁止: 公開/deploy/タグ/Release/token/Phase 3/AI Phase 4+
 ```
+
+### 2026-08-02 21:05:00 JST — Cursor（classroom-roster-drive-submissions PR 1）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: PHASE1_IN_PROGRESS → READY_FOR_CODEX_REVIEW
+次の担当: Codex
+base: main @ e51051d
+branch: cursor/classroom-roster-drive-submissions-pr1-258b
+
+PR 1 実装:
+- docs/superpowers/specs/2026-08-02-classroom-roster-drive-submissions-design.md
+- docs/superpowers/plans/2026-08-02-classroom-roster-drive-submissions-plan.md
+- @blocksync/classroom-access: StudentAccessMode, roster/submission contracts, paths, feature flags
+- admin DB migration ledger v1 (Phase 2 baseline adopt) + v2 (roster foundation tables)
+- policy columns: roster_id, student_auth_required, submission_enabled（既定 OFF）
+- csv-parse@7.0.1 採用確認テスト
+- exceljs@4.4.0 XLSX 安全性スパイク（gate 条件テスト）
+
+検証:
+- @blocksync/classroom-access test/typecheck: PASS（13 tests）
+- @blocksync/collab-host test/typecheck: PASS（27 tests）
+- @blocksync/editor-web typecheck: PASS
+- Phase 1/2 DB migration 回帰: PASS（admin-api + migration.test）
+- git diff --check: PASS
+- gate0:test: ローカル vendor VM 未 checkout のため scratch-adapter 11件 FAIL（CI 環境依存。対象 package は PASS）
+
+禁止維持: UI/公開 API 有効化なし / PR 2 以降未着手 / 自動マージしない
+次: Codex PR 1 レビュー → GO 後 PR 2 着手
+```
+
+### 2026-08-02 21:11:00 JST — Hermes（PR #198 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #198 @921a37d
+判定: NO-GO（差し戻し）
+Reviewer: Hermes（Codex 代行）
+Blocker: N-1 / N-2  Major: M-1 / M-2 / M-3
+次の担当: Cursor
+```
+
+### 2026-08-02 21:20:00 JST — Cursor（PR #198 差し戻し修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #198 head ae5c4ea
+修正: N-1 transaction + rollback test / N-2 phase1_legacy 削除
+        M-1 flag 起動配線 / M-2 DDL checksum / M-3 XLSX 採用保留
+Minor: m-2 ??0 削除 / m-4 PR3 relax_quotes:false 方針 / m-5 CI は PR Checks
+検証: classroom-access 13 / collab-host 33 / editor-web typecheck PASS
+禁止: 自動マージ / PR 2 以降未着手
+```
+
+
+### 2026-08-02 21:05:00 JST — Cursor（classroom-roster-drive-submissions PR 1）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: PHASE1_IN_PROGRESS → READY_FOR_CODEX_REVIEW
+次の担当: Codex
+base: main @ e51051d
+branch: cursor/classroom-roster-drive-submissions-pr1-258b
+
+PR 1 実装:
+- docs/superpowers/specs/2026-08-02-classroom-roster-drive-submissions-design.md
+- docs/superpowers/plans/2026-08-02-classroom-roster-drive-submissions-plan.md
+- @blocksync/classroom-access: StudentAccessMode, roster/submission contracts, paths, feature flags
+- admin DB migration ledger v1 (Phase 2 baseline adopt) + v2 (roster foundation tables)
+- policy columns: roster_id, student_auth_required, submission_enabled（既定 OFF）
+- csv-parse@7.0.1 採用確認テスト
+- exceljs@4.4.0 XLSX 安全性スパイク（gate 条件テスト）
+
+検証:
+- @blocksync/classroom-access test/typecheck: PASS（13 tests）
+- @blocksync/collab-host test/typecheck: PASS（27 tests）
+- @blocksync/editor-web typecheck: PASS
+- Phase 1/2 DB migration 回帰: PASS（admin-api + migration.test）
+- git diff --check: PASS
+- gate0:test: ローカル vendor VM 未 checkout のため scratch-adapter 11件 FAIL（CI 環境依存。対象 package は PASS）
+
+禁止維持: UI/公開 API 有効化なし / PR 2 以降未着手 / 自動マージしない
+次: Codex PR 1 レビュー → GO 後 PR 2 着手
+```
+
+### 2026-08-02 21:11:00 JST — Hermes（PR #198 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #198 @921a37d
+判定: NO-GO（差し戻し）
+Reviewer: Hermes（Codex 代行）
+Blocker: N-1 / N-2  Major: M-1 / M-2 / M-3
+次の担当: Cursor
+```
+
+### 2026-08-02 21:20:00 JST — Cursor（PR #198 差し戻し修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #198 head ae5c4ea
+修正: N-1 transaction + rollback test / N-2 phase1_legacy 削除
+        M-1 flag 起動配線 / M-2 DDL checksum / M-3 XLSX 採用保留
+Minor: m-2 ??0 削除 / m-4 PR3 relax_quotes:false 方針 / m-5 CI は PR Checks
+検証: classroom-access 13 / collab-host 33 / editor-web typecheck PASS
+禁止: 自動マージ / PR 2 以降未着手
+```
+

@@ -20,6 +20,7 @@ import {
 } from "./admin-auth.js";
 import {STUDENT_GRANT_COOKIE} from "./student-grant.js";
 import {openAdminDb} from "./admin-db.js";
+import {AdminSchemaMigrationError} from "./admin-db-migrations/index.js";
 
 let handle: CollabHostHandle | undefined;
 
@@ -459,7 +460,7 @@ describe("admin / student classroom API", () => {
     expect(badReissuePast.status).toBe(400);
   });
 
-  it("migrates Phase 1 DB with allowExtensions default true", () => {
+  it("rejects ledgerless admin DB without Phase 2 student_grants", () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-phase1-db-"));
     const dbPath = join(root, "legacy.sqlite");
     const legacy = new Database(dbPath);
@@ -512,9 +513,6 @@ describe("admin / student classroom API", () => {
     `);
     legacy.close();
 
-    const db = openAdminDb(dbPath);
-    const view = db.resolveStudentPolicy("abcdefghijklmnopqrstuvwxyz12");
-    expect(view?.editor.allowExtensions).toBe(true);
-    db.close();
+    expect(() => openAdminDb(dbPath)).toThrow(AdminSchemaMigrationError);
   });
 });

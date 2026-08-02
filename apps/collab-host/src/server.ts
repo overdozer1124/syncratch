@@ -42,6 +42,7 @@ import {
 } from "./drive-oauth.js";
 import {handleIceCredentials} from "./ice-endpoint.js";
 import {createStaticRequestHandler} from "./static.js";
+import {resolveClassroomFeatureFlagsForStartup} from "./classroom-feature-flags-runtime.js";
 
 export interface StartCollabHostAdminOptions {
   db?: AdminDb;
@@ -74,6 +75,8 @@ function defaultStaticRoot(): string {
 export async function startCollabHost(
   options: StartCollabHostOptions = {},
 ): Promise<CollabHostHandle> {
+  resolveClassroomFeatureFlagsForStartup(process.env);
+
   const port = options.port ?? Number(process.env.PORT ?? 8080);
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
   const staticRoot =

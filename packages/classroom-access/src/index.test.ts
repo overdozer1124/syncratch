@@ -57,6 +57,9 @@ describe("policy normalize + student view", () => {
     expect(normalized.aiAssist.allowStudentApiKey).toBe(false);
     expect(normalized.editor.showSettingsPanel).toBe(false);
     expect(normalized.editor.allowExtensions).toBe(false);
+    expect(normalized.rosterId).toBeNull();
+    expect(normalized.studentAuth.required).toBe(false);
+    expect(normalized.submission.enabled).toBe(false);
 
     const policy: ClassroomPolicy = {
       policyId: "p1",
@@ -68,7 +71,10 @@ describe("policy normalize + student view", () => {
     const view = toStudentPolicyView(policy);
     expect(view).not.toHaveProperty("ownerAdminId");
     expect(view).not.toHaveProperty("status");
+    expect(view).not.toHaveProperty("rosterId");
     expect(view.aiAssist.enabled).toBe(false);
+    expect(view.studentAuth.required).toBe(false);
+    expect(view.submission.enabled).toBe(false);
   });
 });
 
