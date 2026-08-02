@@ -320,10 +320,14 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .drive-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.drive-controls > button {
+  width: 100%;
+  min-width: 0;
 }
 
 /*
@@ -359,8 +363,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 /* Connect is the only action while disconnected. */
 .drive-controls #connect-google.drive-connect-primary {
-  order: -1;
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   min-height: 44px !important;
   background: var(--sc-accent, #1a73e8) !important;
   color: #fff !important;
@@ -373,8 +376,7 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 /* Explicit Drive save stays a full-width primary whenever writing is allowed. */
 .drive-controls #save-drive.drive-save-primary {
-  order: -1;
-  flex: 1 1 100%;
+  grid-column: 1 / -1;
   min-height: 44px !important;
   background: var(--sc-accent, #1a73e8) !important;
   color: #fff !important;
@@ -1036,6 +1038,10 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   flex: 1 1 100%;
   margin-left: 0;
   margin-top: 2px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .drive-section-logo {
@@ -1251,6 +1257,30 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   right: auto;
   width: max(100%, min(400px, 94vw));
   max-height: min(70vh, 720px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+@media (max-height: 700px) {
+  .file-panel .panel-content {
+    max-height: min(82vh, 720px);
+    padding: 14px 16px 16px;
+  }
+
+  .file-panel .panel-help {
+    margin-bottom: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .file-panel .drive-section {
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .file-panel .file-controls {
+    margin-top: 12px;
+  }
 }
 
 .settings-panel .panel-content,
