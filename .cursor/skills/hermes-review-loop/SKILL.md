@@ -110,6 +110,12 @@ workspace ルール `always-merge-prs` に従う:
 
 **禁止:** マージ可能な PR を開いたまま終了、「マージしてください」とユーザーに依頼して終了。
 
+## Engineering Integrity — 台帳・決裁の改変禁止
+
+1. **Hermes 決裁エントリは逐語コピーする。** `docs/CURSOR_CODEX_HANDOFF.md` への Hermes 判定は、Hermes 出力を要約・取捨選択して書かない。Blocker を Minor だけ残して GO に書き換える等は **決裁の改変** であり禁止。
+2. **「条件付き GO」≠ マージ許可。** 状態名は Hermes の判定語をそのまま使う（例: `PR2_CHANGES_REQUESTED`、`CONDITIONAL_GO`）。`GO` / `APPROVED_PENDING_CI` 以外ではマージしない。
+3. **マージ前に決裁照合を 1 回行う。** 台帳の最新 Hermes エントリが無条件 `GO` または `APPROVED_PENDING_CI` であることを確認し、Blocker / Major の未解消がないことを diff で検証してから `gh pr merge` する。
+
 ## NO-GO 後 — Cursor 修正
 
 1. Hermes の Blocker/Major を 1 件ずつ対応

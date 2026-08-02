@@ -1,13 +1,18 @@
-import {describe, expect, it, vi} from "vitest";
+import {beforeEach, describe, expect, it, vi} from "vitest";
 import {CLASSROOM_FEATURE_FLAG_ENV} from "@blocksync/classroom-access";
 import {
+  ClassroomFeatureFlagsNotInitializedError,
+  getClassroomFeatureFlagsForRuntime,
   resetClassroomFeatureFlagsCacheForTests,
   resolveClassroomFeatureFlagsForStartup,
 } from "./classroom-feature-flags-runtime.js";
 
 describe("resolveClassroomFeatureFlagsForStartup", () => {
-  it("returns parsed flags when dependency chain is valid", () => {
+  beforeEach(() => {
     resetClassroomFeatureFlagsCacheForTests();
+  });
+
+  it("returns parsed flags when dependency chain is valid", () => {
     const result = resolveClassroomFeatureFlagsForStartup({
       [CLASSROOM_FEATURE_FLAG_ENV.classroomRosterEnabled]: "true",
       [CLASSROOM_FEATURE_FLAG_ENV.adminGoogleCredentialEnabled]: "true",
@@ -22,7 +27,6 @@ describe("resolveClassroomFeatureFlagsForStartup", () => {
   });
 
   it("degrades all flags to OFF when dependency chain is invalid", () => {
-    resetClassroomFeatureFlagsCacheForTests();
     const warnings: string[] = [];
     const result = resolveClassroomFeatureFlagsForStartup(
       {
@@ -46,11 +50,27 @@ describe("resolveClassroomFeatureFlagsForStartup", () => {
   });
 
   it("defaults to all OFF when env is unset", () => {
-    resetClassroomFeatureFlagsCacheForTests();
     const warn = vi.fn();
     const result = resolveClassroomFeatureFlagsForStartup({}, warn);
     expect(result.degradedToOff).toBe(false);
     expect(result.flags.teacherDriveSubmissionEnabled).toBe(false);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("getClassroomFeatureFlagsForRuntime", () => {
+  beforeEach(() => {
+    resetClassroomFeatureFlagsCacheForTests();
+  });
+
+  it("throws when startup resolve was not called", () => {
+    expect(() => getClassroomFeatureFlagsForRuntime()).toThrow(
+      ClassroomFeatureFlagsNotInitializedError,
+    );
+  });
+
+  it("returns cached flags after startup resolve", () => {
+    resolveClassroomFeatureFlagsForStartup({});
+    expect(getClassroomFeatureFlagsForRuntime().classroomRosterEnabled).toBe(false);
   });
 });

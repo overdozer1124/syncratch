@@ -118,12 +118,11 @@ Register **Authorized redirect URI** e.g.
 
 Flow: admin logs in → `GET /api/admin/google/oauth/start` → Google consent
 (`drive.file` only) → `/oauth/admin-google/callback` stores an AES-256-GCM
-encrypted refresh token in SQLite and sets HttpOnly cookie
-`syncratch_admin_google`. Status: `GET /api/admin/google/oauth/session`.
+encrypted refresh token in SQLite. **No teacher-credential browser cookie is
+issued** — status is resolved via admin session + `GET /api/admin/google/oauth/session`.
 Disconnect: `POST /api/admin/google/oauth/disconnect` (CSRF required).
 
-When flags are OFF, these routes return **404** and no teacher credential cookie
-is issued.
+When flags are OFF, these routes return **404**.
 HTML for `/s` navigations sets `Referrer-Policy: no-referrer`.
 
 To persist the admin DB across redeploys, add a **Railway Volume** mounted at

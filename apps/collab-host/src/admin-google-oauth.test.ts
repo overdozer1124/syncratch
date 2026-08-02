@@ -3,7 +3,7 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import type {IncomingMessage, ServerResponse} from "node:http";
 import Database from "better-sqlite3";
-import {afterEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import {
   ADMIN_AUTH_GOOGLE_PATH,
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
@@ -20,7 +20,6 @@ import {
 import {openAdminDb} from "./admin-db.js";
 import {createAdminGoogleCredentialStore} from "./admin-google-credential-store.js";
 import {
-  ADMIN_GOOGLE_SESSION_COOKIE,
   createAdminGoogleOAuthHandler,
   readAdminGoogleOAuthConfigFromEnv,
   type AdminGoogleOAuthConfig,
@@ -30,6 +29,10 @@ import {resetClassroomFeatureFlagsCacheForTests} from "./classroom-feature-flags
 import {startCollabHost, type CollabHostHandle} from "./server.js";
 
 let handle: CollabHostHandle | undefined;
+
+beforeEach(() => {
+  resetClassroomFeatureFlagsCacheForTests();
+});
 
 afterEach(async () => {
   await handle?.close();
@@ -351,7 +354,6 @@ describe("admin google oauth handler", () => {
   });
 
   it("admin login alone does not imply teacher credential", async () => {
-    resetClassroomFeatureFlagsCacheForTests();
     const root = mkdtempSync(join(tmpdir(), "admin-google-session-"));
     writeFileSync(join(root, "index.html"), "<html></html>");
     const dbPath = join(root, "admin.sqlite");
@@ -406,8 +408,14 @@ describe("admin google oauth handler", () => {
 });
 
 describe("admin google oauth via collab-host", () => {
+  afterEach(() => {
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID;
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+  });
+
   it("registers routes only when flags are OFF", async () => {
-    resetClassroomFeatureFlagsCacheForTests();
     const root = mkdtempSync(join(tmpdir(), "admin-google-flag-off-"));
     writeFileSync(join(root, "index.html"), "<html></html>");
     const db = openAdminDb(join(root, "admin.sqlite"));
@@ -424,7 +432,6 @@ describe("admin google oauth via collab-host", () => {
   });
 
   it("disconnect clears stored credential with CSRF", async () => {
-    resetClassroomFeatureFlagsCacheForTests();
     const root = mkdtempSync(join(tmpdir(), "admin-google-disconnect-"));
     writeFileSync(join(root, "index.html"), "<html></html>");
     const dbPath = join(root, "admin.sqlite");
@@ -497,14 +504,73 @@ describe("admin google oauth via collab-host", () => {
         .prepare(`SELECT COUNT(*) AS c FROM admin_google_credentials`)
         .get() as {c: number},
     ).toEqual({c: 0});
-    const setCookies = disconnect.headers.getSetCookie?.() ?? [];
-    expect(
-      setCookies.some(raw => raw.startsWith(`${ADMIN_GOOGLE_SESSION_COOKIE}=;`)),
-    ).toBe(true);
+  });
 
-    delete process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID;
-    delete process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON;
-    delete process.env.GOOGLE_CLIENT_ID;
-    delete process.env.GOOGLE_CLIENT_SECRET;
+  it("session response omits credentialId when connected", async () => {
+    const root = mkdtempSync(join(tmpdir(), "admin-google-session-fields-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-1"),
+    };
+    const sessions = createMemoryAdminSessionStore();
+    const db = openAdminDb(dbPath);
+    const admin = db.upsertAdminFromLogin({
+      subject: "google-sub-1",
+      email: "teacher@school.example",
+      displayName: null,
+    });
+    createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys()).upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      nowIso: new Date().toISOString(),
+    });
+
+    process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID = "test-key";
+    process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON = JSON.stringify({
+      "test-key": Buffer.alloc(32, 7).toString("base64"),
+    });
+    process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+      admin: {
+        db,
+        config,
+        sessions,
+        classroomFlags: {
+          classroomRosterEnabled: true,
+          adminGoogleCredentialEnabled: true,
+        },
+        adminGoogleOAuthEnabled: true,
+      },
+    });
+
+    const cookieJar = {cookie: "", csrfToken: ""};
+    await loginAdmin(handle.url, cookieJar, config);
+
+    const sessionRes = await fetch(
+      new URL(ADMIN_GOOGLE_OAUTH_SESSION_PATH, handle.url),
+      {headers: {cookie: cookieJar.cookie}},
+    );
+    expect(sessionRes.status).toBe(200);
+    const body = (await sessionRes.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      ok: true,
+      connected: true,
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+    });
+    expect(body).not.toHaveProperty("credentialId");
   });
 });

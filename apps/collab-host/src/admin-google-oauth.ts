@@ -2,6 +2,9 @@
  * Admin teacher Google OAuth — separate from editor Drive OAuth and admin login.
  * Requires admin session; stores encrypted refresh tokens in SQLite; pending OAuth
  * state is persisted with TTL and atomic single consume.
+ *
+ * Teacher credential status is resolved server-side from admin session → SQLite.
+ * No browser cookie is issued for the teacher credential (PR 2.1).
  */
 import {createHash, randomBytes} from "node:crypto";
 import type {IncomingMessage, ServerResponse} from "node:http";
@@ -14,7 +17,6 @@ import {
 import {DRIVE_FILE_SCOPE} from "@blocksync/google-drive-sync";
 import type Database from "better-sqlite3";
 import {
-  parseCookies,
   readAdminSession,
   requireAdminCsrf,
   type AdminAuthConfig,
@@ -29,11 +31,12 @@ import {
   type AdminGoogleCryptoKeys,
 } from "./admin-token-crypto.js";
 
-export const ADMIN_GOOGLE_SESSION_COOKIE = "syncratch_admin_google";
 export const ADMIN_GOOGLE_OAUTH_RETURN_FLAG = "admin_google_oauth";
 
 const PENDING_TTL_MS = 10 * 60_000;
+/** Reserved for PR 4 access-token refresh skew checks. */
 const ACCESS_SKEW_MS = 60_000;
+void ACCESS_SKEW_MS;
 
 export interface AdminGoogleOAuthConfig {
   clientId: string;
@@ -71,34 +74,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 function pathOnly(urlPath: string): string {
   return urlPath.split("?")[0] ?? "";
-}
-
-function appendSetCookie(res: ServerResponse, value: string): void {
-  const prev = res.getHeader("set-cookie");
-  if (!prev) {
-    res.setHeader("set-cookie", value);
-    return;
-  }
-  if (Array.isArray(prev)) {
-    res.setHeader("set-cookie", [...prev, value]);
-    return;
-  }
-  res.setHeader("set-cookie", [String(prev), value]);
-}
-
-function googleSessionCookie(
-  value: string,
-  options: {secure: boolean; maxAgeSec: number; clear?: boolean},
-): string {
-  const parts = [
-    `${ADMIN_GOOGLE_SESSION_COOKIE}=${options.clear ? "" : encodeURIComponent(value)}`,
-    "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
-    `Max-Age=${options.clear ? 0 : options.maxAgeSec}`,
-  ];
-  if (options.secure) parts.push("Secure");
-  return parts.join("; ");
 }
 
 function base64Url(buffer: Buffer): string {
@@ -260,7 +235,6 @@ export function createAdminGoogleOAuthHandler(
       return true;
     }
 
-    const secure = Boolean(oauthConfig.cookieSecure);
     const adminSession = readAdminSession(req, options.adminSessions, now());
 
     if (path === ADMIN_GOOGLE_OAUTH_START_PATH) {
@@ -351,7 +325,7 @@ export function createAdminGoogleOAuthHandler(
         }
         const profile = await fetchGoogleProfile(fetchImpl, token.access_token);
         const expiresInSec = Number(token.expires_in) || 3600;
-        const credential = store.upsertCredential({
+        store.upsertCredential({
           adminId: pending.adminId,
           googleSubject: profile.sub,
           googleEmail: profile.email,
@@ -361,13 +335,6 @@ export function createAdminGoogleOAuthHandler(
           accessExpiresAt: nowMs + expiresInSec * 1000,
           nowIso: nowIso(nowMs),
         });
-        appendSetCookie(
-          res,
-          googleSessionCookie(credential.credentialId, {
-            secure,
-            maxAgeSec: 30 * 24 * 60 * 60,
-          }),
-        );
         const dest = new URL(returnTo, requestOrigin(req));
         dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, "ok");
         res.writeHead(302, {
@@ -375,7 +342,11 @@ export function createAdminGoogleOAuthHandler(
           "cache-control": "no-store",
         });
         res.end();
-      } catch {
+      } catch (err) {
+        console.warn(
+          "[collab-host] admin Google OAuth callback failed:",
+          err instanceof Error ? err.message : "unknown error",
+        );
         const dest = new URL(returnTo, requestOrigin(req));
         dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, "error");
         res.writeHead(302, {location: dest.pathname + dest.search + dest.hash});
@@ -410,7 +381,6 @@ export function createAdminGoogleOAuthHandler(
         connected: true,
         googleEmail: credential.googleEmail,
         scope: credential.scope,
-        credentialId: credential.credentialId,
       });
       return true;
     }
@@ -444,10 +414,6 @@ export function createAdminGoogleOAuthHandler(
         }
         store.deleteCredentialByAdminId(adminSession.adminId);
       }
-      appendSetCookie(
-        res,
-        googleSessionCookie("", {secure, maxAgeSec: 0, clear: true}),
-      );
       sendJson(res, 200, {ok: true, connected: false});
       return true;
     }

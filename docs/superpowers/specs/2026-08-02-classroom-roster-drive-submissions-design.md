@@ -228,11 +228,27 @@ GET /s/{token}
 | セッション | Cookie / 経路 | Scope | 用途 |
 |---|---|---|---|
 | Admin login | `syncratch_admin_session` | Google ID token（Drive scope なし） | `/admin` 管理 |
-| Teacher Google credential | `syncratch_admin_google`（PR 2 提案） | **`drive.file` のみ** | Sheet 読取、提出フォルダ作成 |
+| Teacher Google credential | **cookie なし** — `syncratch_admin_session` + サーバー SQLite 参照 | **`drive.file` のみ** | Sheet 読取、提出フォルダ作成 |
 | Editor Drive（既存） | `syncratch_drive_session` / GIS memory | **`drive.file` のみ** | 個人プロジェクトの Drive 保存 |
 | Student identity | `syncratch_student_identity` | なし | ローカル passphrase |
 
-**禁止:** `drive`, `drive.readonly`, Classroom, Gmail scopes。Admin login 成功を Teacher credential ありとみなさない。
+**禁止:** `drive`, `drive.readonly`, Classroom, Gmail scopes。Admin login 成功を Teacher credential ありとみなさない。Teacher credential の `credentialId` 等の内部 ID をブラウザ cookie や公開 API に返さない（PR 2.1）。
+
+### 11.1 `drive.file` 権限モデル（PR 2.1）
+
+Google `drive.file` scope の権限単位は **Google アカウント全体ではなく、Picker で選択した個別ファイル／フォルダ、または本アプリが `files.create` したリソース** である。
+
+| 概念 | 説明 |
+|---|---|
+| refresh token の保持 | サーバー SQLite に AES-256-GCM 暗号化で保存。OAuth 再認証で token を更新できる |
+| 個別ファイルへのアクセス | refresh token が有効でも、Picker 未経由・本アプリ未作成の fileId へは **404**（権限なし） |
+| 権限喪失の典型原因 | 教員が Drive 側で共有解除、ファイル削除、別アカウントへの移管 |
+| 復旧手順 | **OAuth 再連携だけでは不十分**。対象 Sheet／フォルダを **再 Picker** して fileId / spreadsheetId を取り直す |
+| OAuth 再認証が必要な場合 | refresh token 失効・revoke・鍵ローテーション後の decrypt 失敗など |
+
+**PR 3 以降の UI 方針:** Google Sheet 同期や Drive 書き込みが 403/404 で失敗したとき、admin UI は「再連携（OAuth）」ではなく **「シート／フォルダを選び直す」** 導線を出す。OAuth disconnect は credential 全失効時のみ。
+
+**lifecycle 分離:** refresh token の有効性と、特定 fileId への `drive.file` アクセス権は **別ライフサイクル**。token が有効でも Picker 未登録のリソースには触れない。
 
 ## 12. Feature flags（すべて既定 OFF）
 
