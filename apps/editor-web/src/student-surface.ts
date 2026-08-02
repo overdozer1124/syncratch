@@ -66,14 +66,18 @@ export async function fetchStudentPolicyFromGrant(): Promise<StudentPolicyView |
   }
 }
 
-/** Replace `/s/{token}` with token-less `/s` after grant exchange. */
+/** Replace `/s/{token}` with token-less `/s` after grant exchange (keeps query/hash). */
 export function replaceStudentUrlWithoutToken(
   basePath = typeof import.meta !== "undefined"
     ? String(import.meta.env?.BASE_URL ?? "/")
     : "/",
+  locationLike: Pick<Location, "search" | "hash"> =
+    typeof location !== "undefined"
+      ? location
+      : {search: "", hash: ""},
 ): void {
   const base = normalizeBasePath(basePath);
-  const nextPath = `${base}${STUDENT_SURFACE_SESSION_PATH}`;
+  const nextPath = `${base}${STUDENT_SURFACE_SESSION_PATH}${locationLike.search}${locationLike.hash}`;
   history.replaceState(null, "", nextPath);
 }
 

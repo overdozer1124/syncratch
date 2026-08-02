@@ -369,6 +369,9 @@ async function renderPolicyCard(
         });
         const reissue = el("button", {type: "button", class: "admin-button"}, "再発行");
         reissue.addEventListener("click", async () => {
+          const expiresAt = expiryInput.value
+            ? new Date(expiryInput.value).toISOString()
+            : null;
           const reissueRes = await api<{
             ok: boolean;
             link?: StudentLinkListItem & {studentUrl?: string};
@@ -376,6 +379,7 @@ async function renderPolicyCard(
           }>(adminLinkReissuePath(link.linkId), {
             method: "POST",
             csrfToken: getCsrf(),
+            body: JSON.stringify({expiresAt}),
           });
           if (reissueRes.ok && reissueRes.link?.studentUrl) {
             linkOut.textContent = `${reissueRes.link.studentUrl}（再発行・コピー推奨）`;

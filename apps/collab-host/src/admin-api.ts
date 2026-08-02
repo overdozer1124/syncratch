@@ -392,7 +392,41 @@ export function createAdminApiHandler(
     const reissueMatch = /^\/api\/admin\/links\/([^/]+)\/reissue$/.exec(urlPath);
     if (reissueMatch && req.method === "POST") {
       const linkId = decodeURIComponent(reissueMatch[1] ?? "");
-      const link = options.db.reissueLink(linkId, session.adminId);
+      let body: unknown = null;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        sendJson(res, 400, {ok: false, code: "BAD_REQUEST", message: "JSON required"});
+        return true;
+      }
+      let expiresAt: string | null = null;
+      if (body && typeof body === "object" && "expiresAt" in body) {
+        const parsedExpiry = parseLinkExpiresAt(
+          (body as {expiresAt?: unknown}).expiresAt,
+        );
+        if (!parsedExpiry.ok) {
+          sendJson(res, 400, {
+            ok: false,
+            code: parsedExpiry.code,
+            message: "有効期限の形式が正しくありません。",
+          });
+          return true;
+        }
+        const nowIso = new Date().toISOString();
+        if (
+          parsedExpiry.expiresAt &&
+          isLinkExpiresAtInPast(parsedExpiry.expiresAt, nowIso)
+        ) {
+          sendJson(res, 400, {
+            ok: false,
+            code: "EXPIRES_AT_IN_PAST",
+            message: "有効期限は未来の日時を指定してください。",
+          });
+          return true;
+        }
+        expiresAt = parsedExpiry.expiresAt;
+      }
+      const link = options.db.reissueLink(linkId, session.adminId, expiresAt);
       if (!link) {
         sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "link not found"});
         return true;

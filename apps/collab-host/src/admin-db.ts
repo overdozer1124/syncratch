@@ -44,7 +44,11 @@ export interface AdminDb {
     expiresAt?: string | null;
   }): StudentLink | null;
   revokeLink(linkId: string, ownerAdminId: string): StudentLinkListItem | null;
-  reissueLink(linkId: string, ownerAdminId: string): StudentLink | null;
+  reissueLink(
+    linkId: string,
+    ownerAdminId: string,
+    expiresAt?: string | null,
+  ): StudentLink | null;
   createStudentGrant(
     token: string,
     grantTtlMs?: number,
@@ -479,7 +483,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       );
     },
 
-    reissueLink(linkId, ownerAdminId) {
+    reissueLink(linkId, ownerAdminId, expiresAt = null) {
       const row = db
         .prepare(
           `SELECT * FROM student_links
@@ -492,7 +496,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         ownerAdminId,
         policyId: row.policy_id,
         label: row.label,
-        expiresAt: row.expires_at,
+        expiresAt,
       });
     },
 

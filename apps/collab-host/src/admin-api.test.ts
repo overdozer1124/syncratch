@@ -349,6 +349,116 @@ describe("admin / student classroom API", () => {
     expect(past.status).toBe(400);
   });
 
+  it("reissues expired links with new expiry and rejects old tokens", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-reissue-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-reissue"),
+    };
+    const h = await boot(config, dbPath, root);
+    const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({idToken: "tok"}),
+    });
+    const {cookie, csrfToken} = cookieJar(login);
+    const created = await fetch(new URL(ADMIN_POLICIES_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "reissue class"}),
+    });
+    const createdBody = (await created.json()) as {policy: {policyId: string}};
+
+    const linkRes = await fetch(
+      new URL(
+        `${ADMIN_POLICIES_PATH}/${createdBody.policy.policyId}/links`,
+        h.url,
+      ),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({label: "expired soon"}),
+      },
+    );
+    const linkBody = (await linkRes.json()) as {
+      link: {linkId: string; token: string};
+    };
+    const oldToken = linkBody.link.token;
+
+    const sqlite = new Database(dbPath);
+    sqlite
+      .prepare(`UPDATE student_links SET expires_at = ? WHERE link_id = ?`)
+      .run("2020-01-01T00:00:00.000Z", linkBody.link.linkId);
+    sqlite.close();
+
+    const expiredGrant = await fetch(new URL(STUDENT_GRANT_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({token: oldToken}),
+    });
+    expect(expiredGrant.status).toBe(404);
+
+    const reissueRes = await fetch(
+      new URL(`/api/admin/links/${linkBody.link.linkId}/reissue`, h.url),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({expiresAt: "2030-06-01T00:00:00.000Z"}),
+      },
+    );
+    expect(reissueRes.status).toBe(200);
+    const reissueBody = (await reissueRes.json()) as {
+      link: {linkId: string; token: string; expiresAt: string | null};
+    };
+    expect(reissueBody.link.expiresAt).toBe("2030-06-01T00:00:00.000Z");
+    expect(reissueBody.link.token).not.toBe(oldToken);
+
+    const newGrant = await fetch(new URL(STUDENT_GRANT_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({token: reissueBody.link.token}),
+    });
+    expect(newGrant.status).toBe(200);
+
+    const oldAfterReissue = await fetch(new URL(STUDENT_GRANT_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({token: oldToken}),
+    });
+    expect(oldAfterReissue.status).toBe(404);
+
+    const badReissuePast = await fetch(
+      new URL(`/api/admin/links/${reissueBody.link.linkId}/reissue`, h.url),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({expiresAt: "2020-01-01T00:00:00.000Z"}),
+      },
+    );
+    expect(badReissuePast.status).toBe(400);
+  });
+
   it("migrates Phase 1 DB with allowExtensions default true", () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-phase1-db-"));
     const dbPath = join(root, "legacy.sqlite");

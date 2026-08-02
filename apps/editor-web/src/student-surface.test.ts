@@ -2,7 +2,6 @@ import {describe, expect, it, vi} from "vitest";
 import {
   STUDENT_GRANT_PATH,
   STUDENT_POLICY_PATH,
-  STUDENT_SURFACE_SESSION_PATH,
   createStudentLinkToken,
 } from "@blocksync/classroom-access";
 import {
@@ -57,11 +56,18 @@ describe("student-surface grant flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("replaces URL with token-less /s", () => {
+  it("replaces URL with token-less /s while preserving query and hash", () => {
     const replaceState = vi.fn();
     vi.stubGlobal("history", {replaceState});
+    vi.stubGlobal("location", {search: "?x=1", hash: "#invite-abc"});
+    replaceStudentUrlWithoutToken("/base");
+    expect(replaceState).toHaveBeenCalledWith(
+      null,
+      "",
+      "/base/s?x=1#invite-abc",
+    );
     replaceStudentUrlWithoutToken("/");
-    expect(replaceState).toHaveBeenCalledWith(null, "", STUDENT_SURFACE_SESSION_PATH);
+    expect(replaceState).toHaveBeenCalledWith(null, "", "/s?x=1#invite-abc");
     vi.unstubAllGlobals();
   });
 });

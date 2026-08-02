@@ -5656,7 +5656,7 @@ Stage 5:
 次の担当: Codex
 
 base SHA: eb0d035
-head SHA: 30ca46f
+head SHA: efa1840
 
 実装概要:
 1. POST /api/student/grant → HttpOnly syncratch_student_grant（8h TTL）
@@ -5683,4 +5683,30 @@ git diff --check: PASS（提出前確認）
 
 禁止遵守: 公開/deploy/タグ/Release/token 再掲 — なし
 提出: PR 作成・CI 待ち・**自動マージしない**
+```
+
+### 2026-08-02 18:08:00 JST — Cursor（Phase 2 Codex CHANGES_REQUESTED 修正）
+
+```text
+案件ID: admin-student-access
+状態: READY_FOR_CODEX_REVIEW
+次の担当: Codex
+PR: #197
+
+Codex 指摘対応:
+1. replaceStudentUrlWithoutToken — location.search / location.hash を維持
+   回帰: /base/s/{token}?x=1#invite... → /base/s?x=1#invite...
+2. reissueLink — 旧 expires_at コピーを廃止。API/UI から新 expiresAt を受け取り
+   リンク作成と同じ検証。未指定時は新リンク期限なし（null）
+
+head SHA: （本 push 後）
+
+テスト:
+- @blocksync/classroom-access: 9 passed + typecheck OK
+- @blocksync/collab-host: 19 passed + typecheck OK（reissue 期限切れ回帰追加）
+- @blocksync/editor-web: student-surface URL 回帰 + typecheck OK
+- git diff --check: PASS
+- CI gate0: 提出後確認
+
+自動マージ: 禁止（維持）
 ```
