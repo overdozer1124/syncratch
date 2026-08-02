@@ -47,6 +47,11 @@ export interface EditorDriveDependencies {
     localProjectId: string,
     signal?: AbortSignal,
   ): Promise<void>;
+  /** Clears a Drive file binding after revoked OAuth / lost drive.file access. */
+  clearDriveFileId?(
+    localProjectId: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
   hashBytes(bytes: Uint8Array): Promise<string>;
   createSnapshotId(): string;
   onStatus(status: EditorDriveStatus, message?: string): void;
@@ -197,6 +202,23 @@ export function createEditorDriveIntegration(
     return false;
   };
 
+  const isStaleDriveLinkError = (error: unknown): boolean =>
+    error instanceof DrivePermissionError ||
+    error instanceof DriveFileNotFoundError;
+
+  const dropStaleDriveLink = async (
+    localProjectId: string,
+    fileId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    if (fileId) {
+      observations.delete(fileId);
+      boundFiles.delete(localProjectId);
+      pendingCreates.delete(fileId);
+    }
+    await dependencies.clearDriveFileId?.(localProjectId, signal);
+  };
+
   setStatus(status);
 
   return {
@@ -257,6 +279,19 @@ export function createEditorDriveIntegration(
             ) {
               pendingCreates.add(current.driveFileId);
               boundFiles.set(current.localProjectId, current.driveFileId);
+              setStatus("connected");
+              return true;
+            }
+            if (
+              error instanceof DrivePermissionError &&
+              isActive(operation) &&
+              dependencies.clearDriveFileId
+            ) {
+              await dropStaleDriveLink(
+                current.localProjectId,
+                current.driveFileId,
+                operation.controller.signal,
+              );
               setStatus("connected");
               return true;
             }
@@ -509,9 +544,11 @@ export function createEditorDriveIntegration(
           return false;
         }
         const current = dependencies.getCurrent();
+        for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const fileId = current.driveFileId ??
-            boundFiles.get(current.localProjectId);
+          const fileId = attempt === 0
+            ? current.driveFileId ?? boundFiles.get(current.localProjectId)
+            : undefined;
           const bytes = await dependencies.exportCurrent();
           if (!isActive(operation)) return false;
           if (
@@ -664,8 +701,27 @@ export function createEditorDriveIntegration(
           if (error instanceof LocalProjectChangedDuringDriveSaveError) {
             return false;
           }
+          const boundId = attempt === 0
+            ? current.driveFileId ?? boundFiles.get(current.localProjectId)
+            : undefined;
+          if (
+            attempt === 0 &&
+            boundId &&
+            isStaleDriveLinkError(error) &&
+            dependencies.clearDriveFileId
+          ) {
+            await dropStaleDriveLink(
+              current.localProjectId,
+              boundId,
+              operation.controller.signal,
+            );
+            if (!isActive(operation)) return false;
+            continue;
+          }
           return handleError(error, current.localProjectId, operation);
         }
+        }
+        return false;
         } finally {
           finishOperation(operation);
         }

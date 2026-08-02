@@ -387,6 +387,81 @@ describe("editor Drive integration", () => {
     expect(deps.importAsNewLocal).not.toHaveBeenCalled();
   });
 
+  it("clears a stale Drive link on reconnect after OAuth access was revoked", async () => {
+    const clearDriveFileId = vi.fn(async () => undefined);
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      clearDriveFileId,
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => {
+          throw new DrivePermissionError("Google Drive permission denied");
+        }),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(true);
+    expect(clearDriveFileId).toHaveBeenCalledWith(
+      "local-1",
+      expect.any(AbortSignal),
+    );
+    expect(integration.getStatus()).toBe("connected");
+  });
+
+  it("creates a new Drive file when the linked file lost drive.file access", async () => {
+    const clearDriveFileId = vi.fn(async () => undefined);
+    const metadata = {
+      id: "existing-file",
+      name: "Local.sb3",
+      mimeType: "application/x.scratch.sb3",
+      size: 4,
+      version: "12",
+      headRevisionId: "head-12",
+      snapshotId: "snapshot-12",
+      leadershipEpoch: "0",
+      stateHash: "hash-old",
+      canEdit: true,
+      canDownload: true,
+    };
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      clearDriveFileId,
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => metadata),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata,
+        })),
+        updateFile: vi.fn(async () => {
+          throw new DrivePermissionError("Google Drive permission denied");
+        }),
+      },
+      hashBytes: vi.fn(async () => "state-hash"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(clearDriveFileId).toHaveBeenCalledWith(
+      "local-1",
+      expect.any(AbortSignal),
+    );
+    expect(deps.drive.createFile).toHaveBeenCalled();
+    expect(deps.drive.updateFile).toHaveBeenCalledTimes(1);
+    expect(integration.getStatus()).toBe("synced");
+  });
+
   it("re-observes an existing Drive-backed project on explicit reconnect", async () => {
     const deps = dependencies({
       getCurrent: vi.fn(() => ({

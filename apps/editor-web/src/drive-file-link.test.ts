@@ -5,7 +5,7 @@ import {
 } from "@blocksync/project-local-core";
 import {ProjectStoreRevisionConflictError} from "@blocksync/project-store-idb";
 import {emptyProject} from "@blocksync/project-schema";
-import {persistDriveFileLink} from "./drive-file-link.js";
+import {clearDriveFileLink, persistDriveFileLink} from "./drive-file-link.js";
 
 function record(revision: number, title: string): LocalProjectRecord {
   return {
@@ -65,5 +65,20 @@ describe("persistDriveFileLink", () => {
       controller.signal,
     )).rejects.toMatchObject({name: "AbortError"});
     expect(createOrReplace).not.toHaveBeenCalled();
+  });
+
+  it("removes driveFileId from the local record", async () => {
+    const linked = {...record(1, "linked"), driveFileId: "drive-1"};
+    const get = vi.fn(async () => linked);
+    const createOrReplace = vi.fn(async (next: LocalProjectRecord) => next);
+
+    const saved = await clearDriveFileLink(
+      {get, createOrReplace},
+      "local-1",
+      () => "2026-07-19T01:00:00.000Z",
+    );
+
+    expect(saved.driveFileId).toBeUndefined();
+    expect(saved.revision).toBe(2);
   });
 });
