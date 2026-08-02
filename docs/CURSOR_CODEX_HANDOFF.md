@@ -44,12 +44,12 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `release-decision`（明示的次案件。待機のみなら「なし」） |
+| **アクティブ案件ID** | `release-decision` |
 | 案件名 | Stage 5 完了後のリリース告知・スコープ境界の判断 |
-| 現在の状態 | `WAITING_OPERATOR` |
-| 次の担当 | ユーザー / 運用者 |
-| 次の作業 | 告知文ドラフト（Local-First 完了 vs AI 診断 Milestone A 止まりを明記）。新しい生徒リンクが必要なら `/admin` で再発行 |
-| 禁止 | 旧 A5 再検証ループへの誤ルーティング / local-diagnostics Phase 4 への無指示着手 |
+| 現在の状態 | `READY_FOR_USER_REVIEW` |
+| 次の担当 | ユーザー |
+| 次の作業 | 告知ドラフト `docs/local-first/STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md` の承認・公開チャネル決定 |
+| 禁止 | **公開** / deploy / git 履歴 scrub / token 再掲 / AI Phase 4 着手 / 旧 A5 再検証ループ |
 
 ### 案件レジストリ
 
@@ -57,7 +57,7 @@
 |---|---|---|---|---|
 | `stage5-manual-gates` | `COMPLETE` | — | — | A1–A7 / B1–B3 PASS（2026-08-02）。#192 docs |
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
-| `release-decision` | `WAITING_OPERATOR` | ユーザー | 告知可否・スコープ明記 | **現行アクティブ**（待機） |
+| `release-decision` | `READY_FOR_USER_REVIEW` | ユーザー | 告知ドラフト承認 | **現行アクティブ**。ドラフト: `STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md` |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
@@ -72,17 +72,17 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 14:15:00 JST |
+| 最終更新 | 2026-08-02 15:20:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `release-decision`（待機。作業指示がなければ「なし」扱い） |
-| ワークフロー状態 | Stage 5 **COMPLETE** / リリース告知前ゲート（トークン redact 済み） |
-| 現在の担当 | ユーザー / 運用者（告知判断） |
-| 現在のTask | リリース告知可否。Local-First Stage 5 完了 vs AI 診断 Milestone A 止まりの区別を告知文へ明記 |
+| アクティブ案件ID | `release-decision` |
+| ワークフロー状態 | `READY_FOR_USER_REVIEW`（告知ドラフト作成済み・未公開） |
+| 現在の担当 | ユーザー（ドラフト承認） |
+| 現在のTask | `STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md` のレビュー。承認後のみ公開 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`e8198c9` + 本修正 PR 予定） |
+| 作業ブランチ | `main`（`9685439` + 本 PR） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | 告知判断のみ。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
@@ -142,7 +142,7 @@
 ## Cursorが次に行う作業
 
 1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **アクティブ案件は `release-decision`（待機）。** ユーザーから告知・次フェーズ指示があるまで新規実装に着手しない。
+2. **アクティブ案件 `release-decision`:** 告知ドラフトは `docs/local-first/STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md`。ユーザー承認まで **公開しない**。
 3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
 4. 告知文では **Local-First Stage 5 完了** と **AI 診断 Milestone A 止まり（Phase 4+ 未）** を区別して書く。
 
