@@ -79,17 +79,22 @@ If these host env vars are missing, the editor falls back to the GIS token clien
 ### Classroom admin (optional)
 
 Allowlisted teachers can open `/admin`, define a ClassroomPolicy, and issue
-`/s/{token}` student links. See
+`/s/{token}` student links. Phase 2 exchanges the URL token for an HttpOnly
+grant (`syncratch_student_grant`); after first load the browser URL becomes
+token-less `/s`. Policy is fetched via `GET /api/student/policy` (re-validates
+link revoke/expiry on every request). See
 `docs/superpowers/specs/2026-07-30-admin-student-access-design.md`.
 
 | Runtime env (collab-host) | Value |
 | --- | --- |
 | `SYNCRATCH_ADMIN_EMAILS` | CSV of admin emails (no self-registration) |
 | `GOOGLE_CLIENT_ID` | ID token audience (same as Drive client ID is fine) |
-| `ADMIN_DB_PATH` or `SYNCRATCH_DATA_DIR` | SQLite for policies/links (default `/app/data/admin.sqlite` in Docker) |
+| `ADMIN_DB_PATH` or `SYNCRATCH_DATA_DIR` | SQLite for policies/links/grants (default `/app/data/admin.sqlite` in Docker) |
 
 Build-time `VITE_GOOGLE_CLIENT_ID` is required for the `/admin` Google button.
 Admin sessions use cookie `syncratch_admin_session` (never reuse Drive session).
+Student grants use separate HttpOnly cookie `syncratch_student_grant`.
+HTML for `/s` navigations sets `Referrer-Policy: no-referrer`.
 
 To persist the admin DB across redeploys, add a **Railway Volume** mounted at
 `/app/data` in the service settings. Do not put a Docker `VOLUME` instruction in

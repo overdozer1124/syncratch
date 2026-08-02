@@ -44,12 +44,12 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `release-decision` |
-| 案件名 | Stage 5 完了後のリリース告知・スコープ境界の判断 |
-| 現在の状態 | `APPROVED_FOR_PUBLICATION` |
+| **アクティブ案件ID** | `admin-student-access` |
+| 案件名 | 管理者 / 生徒リンク — Phase 2 運用品質 |
+| 現在の状態 | `PHASE2_COMPLETE` |
 | 次の担当 | ユーザー |
-| 次の作業 | **公開実行はユーザー明示指示後のみ。** 推奨順: リリースノート → SNS（リリースノート URL 案内） |
-| 禁止 | **公開実行** / deploy / タグ / GitHub Release / git 履歴 scrub / token 再掲 / AI Phase 4 着手 / 旧 A5 再検証ループ（内容承認済みだが、公開は未指示） |
+| 次の作業 | Phase 3 は指示があるまで停止。`release-decision` 公開は明示指示後のみ |
+| 禁止 | 公開告知 / deploy / タグ / GitHub Release / token 再掲 / Phase 3 / AI Phase 4+ |
 
 ### 案件レジストリ
 
@@ -57,9 +57,9 @@
 |---|---|---|---|---|
 | `stage5-manual-gates` | `COMPLETE` | — | — | A1–A7 / B1–B3 PASS（2026-08-02）。#192 docs |
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
-| `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | **現行アクティブ**。内容 GO（2026-08-02）。#195 承認 |
+| `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
-| `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
+| `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | **現行アクティブ**。Phase 2 Codex GO。#197 @ `dc5b3ff`。Phase 3 停止 |
 
 ### 読取手順（「作業完了」時）
 
@@ -72,17 +72,17 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 16:24:00 JST |
+| 最終更新 | 2026-08-02 18:28:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `release-decision` |
-| ワークフロー状態 | `APPROVED_FOR_PUBLICATION`（内容承認済み・**未公開**） |
-| 現在の担当 | ユーザー（公開実行の明示指示） |
-| 現在のTask | 告知内容 GO。公開は **ユーザー明示指示後**（リリースノート先行 → SNS 推奨） |
+| アクティブ案件ID | `admin-student-access` |
+| ワークフロー状態 | `PHASE2_COMPLETE`（Codex GO・#197 マージ予定） |
+| 現在の担当 | ユーザー |
+| 現在のTask | Phase 2 完了。Phase 3 / 告知公開はユーザー指示後 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`770e3c5` + 本 PR） |
+| 作業ブランチ | `cursor/admin-student-access-phase2-258b` → PR #197（head `dc5b3ff`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | 公開実行待ち（ユーザー明示指示後）。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
@@ -142,9 +142,9 @@
 ## Cursorが次に行う作業
 
 1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **アクティブ案件 `release-decision`:** 告知内容 **GO / APPROVED_FOR_PUBLICATION**。**公開・deploy・タグ/Release はユーザー明示指示まで停止。**
-3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
-4. 告知文では **Local-First Stage 5 完了** と **AI 診断 Milestone A 止まり（Phase 4+ 未）** を区別して書く。
+2. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**（Codex GO / #197）。Phase 3 は **停止**。
+3. **`release-decision`:** `APPROVED_FOR_PUBLICATION` で停止。公開はユーザー明示指示後のみ。
+4. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5646,4 +5646,84 @@ Stage 5:
 
 重要: 内容承認であり、公開・タグ・GitHub Release・deploy の実行指示ではない。
 実際の公開はユーザー明示指示後に Cursor が実行する。
+```
+
+### 2026-08-02 17:15:00 JST — Cursor（admin-student-access Phase 2 実装）
+
+```text
+案件ID: admin-student-access
+状態: READY_FOR_CODEX_REVIEW
+次の担当: Codex
+
+base SHA: eb0d035
+head SHA: efa1840
+
+実装概要:
+1. POST /api/student/grant → HttpOnly syncratch_student_grant（8h TTL）
+2. 交換後 history.replaceState で /s/{token} → /s
+3. GET /api/student/policy — grant から link を毎回再検証（revoke/期限/policy disabled）
+4. /s HTML に Referrer-Policy: no-referrer
+5. /admin — 有効期限入力・再発行 UI
+6. 不正/過去 expiresAt → API 400
+7. editor.allowExtensions（新規 false、Phase 1 DB migration 既定 true）
+8. 設計 / DEPLOYMENT / README / 台帳 同期
+
+テスト（ローカル）:
+- @blocksync/classroom-access: 9 passed + typecheck OK
+- @blocksync/collab-host: 18 passed + typecheck OK（grant/revoke/expiry/migration）
+- @blocksync/editor-web: 新規 student-surface/surface-mode 含む（vendor VM 未 init 環境では rewind integration 12件 skip 相当 — CI gate0 で全件）
+
+git diff --check: PASS（提出前確認）
+
+既知の制限:
+- grant TTL 固定 8h（環境変数化なし）
+- policy-by-token レガシー GET は exchange 前のみ（意図的）
+- 複数タブ grant は独立（link 失効で全 grant 拒否）
+- Phase 3 / AI Phase 4+ 未着手
+
+禁止遵守: 公開/deploy/タグ/Release/token 再掲 — なし
+提出: PR 作成・CI 待ち・**自動マージしない**
+```
+
+### 2026-08-02 18:08:00 JST — Cursor（Phase 2 Codex CHANGES_REQUESTED 修正）
+
+```text
+案件ID: admin-student-access
+状態: READY_FOR_CODEX_REVIEW
+次の担当: Codex
+PR: #197
+
+Codex 指摘対応:
+1. replaceStudentUrlWithoutToken — location.search / location.hash を維持
+   回帰: /base/s/{token}?x=1#invite... → /base/s?x=1#invite...
+2. reissueLink — 旧 expires_at コピーを廃止。API/UI から新 expiresAt を受け取り
+   リンク作成と同じ検証。未指定時は新リンク期限なし（null）
+
+head SHA: ac5f928
+
+テスト:
+- @blocksync/classroom-access: 9 passed + typecheck OK
+- @blocksync/collab-host: 19 passed + typecheck OK（reissue 期限切れ回帰追加）
+- @blocksync/editor-web: student-surface URL 回帰 + typecheck OK
+- git diff --check: PASS
+- CI gate0: 提出後確認
+
+自動マージ: 禁止（維持）
+```
+
+### 2026-08-02 18:28:00 JST — Codex（admin-student-access Phase 2 GO）
+
+```text
+案件ID: admin-student-access
+状態: PHASE2_COMPLETE
+次の担当: ユーザー
+
+Codex再レビュー: GO
+PR: #197
+head SHA: dc5b3ff
+Phase 2: Codex承認済み（grant 交換・URL query/hash 保持・reissue 期限修正）
+Phase 3: 未着手・停止維持
+
+次: Cursor が台帳更新 → CI green → #197 main マージ
+禁止: 公開/deploy/タグ/Release/token/Phase 3/AI Phase 4+
 ```

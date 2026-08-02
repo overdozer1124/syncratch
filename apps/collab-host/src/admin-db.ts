@@ -19,6 +19,7 @@ import {
   type StudentLinkListItem,
   type StudentPolicyView,
 } from "@blocksync/classroom-access";
+import {createGrantId, STUDENT_GRANT_TTL_MS} from "./student-grant.js";
 
 export interface AdminDb {
   upsertAdminFromLogin(input: {
@@ -43,7 +44,20 @@ export interface AdminDb {
     expiresAt?: string | null;
   }): StudentLink | null;
   revokeLink(linkId: string, ownerAdminId: string): StudentLinkListItem | null;
-  reissueLink(linkId: string, ownerAdminId: string): StudentLink | null;
+  reissueLink(
+    linkId: string,
+    ownerAdminId: string,
+    expiresAt?: string | null,
+  ): StudentLink | null;
+  createStudentGrant(
+    token: string,
+    grantTtlMs?: number,
+    nowIso?: string,
+  ): {grantId: string; expiresAt: string} | null;
+  resolveStudentPolicyByGrant(
+    grantId: string,
+    nowIso?: string,
+  ): StudentPolicyView | null;
   resolveStudentPolicy(
     token: string,
     nowIso?: string,
@@ -62,6 +76,7 @@ interface PolicyRow {
   editor_show_settings: number;
   editor_allow_sb3_export: number;
   editor_allow_sb3_import: number;
+  editor_allow_extensions: number;
   collab_allow: number;
   drive_allow: number;
   created_at: string;
@@ -94,6 +109,15 @@ function configureSqlite(db: Database.Database): void {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.pragma("busy_timeout = 5000");
+}
+
+function tableHasColumn(
+  db: Database.Database,
+  table: string,
+  column: string,
+): boolean {
+  const rows = db.pragma(`table_info(${table})`) as Array<{name: string}>;
+  return rows.some(row => row.name === column);
 }
 
 function migrate(db: Database.Database): void {
@@ -147,6 +171,26 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_links_token
       ON student_links(token);
   `);
+
+  if (!tableHasColumn(db, "classroom_policies", "editor_allow_extensions")) {
+    db.exec(`
+      ALTER TABLE classroom_policies
+      ADD COLUMN editor_allow_extensions INTEGER NOT NULL DEFAULT 1
+    `);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS student_grants (
+      grant_id TEXT PRIMARY KEY,
+      link_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (link_id) REFERENCES student_links(link_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_grants_link
+      ON student_grants(link_id);
+  `);
 }
 
 function rowToAdmin(row: AdminRow): AdminAccount {
@@ -176,6 +220,7 @@ function rowToPolicy(row: PolicyRow): ClassroomPolicy {
       showSettingsPanel: Boolean(row.editor_show_settings),
       allowSb3Export: Boolean(row.editor_allow_sb3_export),
       allowSb3Import: Boolean(row.editor_allow_sb3_import),
+      allowExtensions: Boolean(row.editor_allow_extensions ?? 1),
     },
     collab: {allow: Boolean(row.collab_allow)},
     drive: {allow: Boolean(row.drive_allow)},
@@ -227,11 +272,13 @@ export function openAdminDb(dbPath: string): AdminDb {
       policy_id, owner_admin_id, title, status,
       ai_enabled, ai_level, ai_allow_student_api_key,
       editor_show_settings, editor_allow_sb3_export, editor_allow_sb3_import,
+      editor_allow_extensions,
       collab_allow, drive_allow, created_at, updated_at
     ) VALUES (
       @policy_id, @owner_admin_id, @title, @status,
       @ai_enabled, @ai_level, @ai_allow_student_api_key,
       @editor_show_settings, @editor_allow_sb3_export, @editor_allow_sb3_import,
+      @editor_allow_extensions,
       @collab_allow, @drive_allow, @created_at, @updated_at
     )
   `);
@@ -246,6 +293,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_show_settings = @editor_show_settings,
       editor_allow_sb3_export = @editor_allow_sb3_export,
       editor_allow_sb3_import = @editor_allow_sb3_import,
+      editor_allow_extensions = @editor_allow_extensions,
       collab_allow = @collab_allow,
       drive_allow = @drive_allow,
       updated_at = @updated_at
@@ -264,6 +312,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_show_settings: policy.editor.showSettingsPanel ? 1 : 0,
       editor_allow_sb3_export: policy.editor.allowSb3Export ? 1 : 0,
       editor_allow_sb3_import: policy.editor.allowSb3Import ? 1 : 0,
+      editor_allow_extensions: policy.editor.allowExtensions ? 1 : 0,
       collab_allow: policy.collab.allow ? 1 : 0,
       drive_allow: policy.drive.allow ? 1 : 0,
       created_at: policy.createdAt,
@@ -434,7 +483,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       );
     },
 
-    reissueLink(linkId, ownerAdminId) {
+    reissueLink(linkId, ownerAdminId, expiresAt = null) {
       const row = db
         .prepare(
           `SELECT * FROM student_links
@@ -447,7 +496,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         ownerAdminId,
         policyId: row.policy_id,
         label: row.label,
-        expiresAt: row.expires_at,
+        expiresAt,
       });
     },
 
@@ -457,7 +506,8 @@ export function openAdminDb(dbPath: string): AdminDb {
           `SELECT l.*, p.status AS policy_status,
                   p.title, p.ai_enabled, p.ai_level, p.ai_allow_student_api_key,
                   p.editor_show_settings, p.editor_allow_sb3_export,
-                  p.editor_allow_sb3_import, p.collab_allow, p.drive_allow,
+                  p.editor_allow_sb3_import, p.editor_allow_extensions,
+                  p.collab_allow, p.drive_allow,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
            FROM student_links l
@@ -474,6 +524,7 @@ export function openAdminDb(dbPath: string): AdminDb {
             editor_show_settings: number;
             editor_allow_sb3_export: number;
             editor_allow_sb3_import: number;
+            editor_allow_extensions: number;
             collab_allow: number;
             drive_allow: number;
             p_policy_id: string;
@@ -497,6 +548,97 @@ export function openAdminDb(dbPath: string): AdminDb {
         editor_show_settings: row.editor_show_settings,
         editor_allow_sb3_export: row.editor_allow_sb3_export,
         editor_allow_sb3_import: row.editor_allow_sb3_import,
+        editor_allow_extensions: row.editor_allow_extensions,
+        collab_allow: row.collab_allow,
+        drive_allow: row.drive_allow,
+        created_at: row.p_created,
+        updated_at: row.p_updated,
+      });
+      return toStudentPolicyView(policy);
+    },
+
+    createStudentGrant(token, grantTtlMs = STUDENT_GRANT_TTL_MS, now = nowIso()) {
+      const row = db
+        .prepare(
+          `SELECT link_id FROM student_links
+           WHERE token = ? AND status = 'active'
+             AND (expires_at IS NULL OR expires_at > ?)`,
+        )
+        .get(token, now) as {link_id: string} | undefined;
+      if (!row) return null;
+      const policyRow = db
+        .prepare(
+          `SELECT p.status AS policy_status
+           FROM student_links l
+           JOIN classroom_policies p ON p.policy_id = l.policy_id
+           WHERE l.link_id = ?`,
+        )
+        .get(row.link_id) as {policy_status: string} | undefined;
+      if (!policyRow || policyRow.policy_status !== "active") return null;
+
+      const grantId = createGrantId();
+      const grantExpires = new Date(Date.parse(now) + grantTtlMs).toISOString();
+      db.prepare(
+        `INSERT INTO student_grants (grant_id, link_id, expires_at, created_at)
+         VALUES (?, ?, ?, ?)`,
+      ).run(grantId, row.link_id, grantExpires, now);
+      return {grantId, expiresAt: grantExpires};
+    },
+
+    resolveStudentPolicyByGrant(grantId, now = nowIso()) {
+      const grant = db
+        .prepare(`SELECT link_id, expires_at FROM student_grants WHERE grant_id = ?`)
+        .get(grantId) as {link_id: string; expires_at: string} | undefined;
+      if (!grant || grant.expires_at <= now) return null;
+
+      const row = db
+        .prepare(
+          `SELECT l.*, p.status AS policy_status,
+                  p.title, p.ai_enabled, p.ai_level, p.ai_allow_student_api_key,
+                  p.editor_show_settings, p.editor_allow_sb3_export,
+                  p.editor_allow_sb3_import, p.editor_allow_extensions,
+                  p.collab_allow, p.drive_allow,
+                  p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
+                  p.created_at AS p_created, p.updated_at AS p_updated
+           FROM student_links l
+           JOIN classroom_policies p ON p.policy_id = l.policy_id
+           WHERE l.link_id = ?`,
+        )
+        .get(grant.link_id) as
+        | (LinkRow & {
+            policy_status: string;
+            title: string;
+            ai_enabled: number;
+            ai_level: number;
+            ai_allow_student_api_key: number;
+            editor_show_settings: number;
+            editor_allow_sb3_export: number;
+            editor_allow_sb3_import: number;
+            editor_allow_extensions: number;
+            collab_allow: number;
+            drive_allow: number;
+            p_policy_id: string;
+            p_owner: string;
+            p_created: string;
+            p_updated: string;
+          })
+        | undefined;
+      if (!row) return null;
+      if (row.status !== "active") return null;
+      if (row.policy_status !== "active") return null;
+      if (row.expires_at && row.expires_at <= now) return null;
+      const policy = rowToPolicy({
+        policy_id: row.p_policy_id,
+        owner_admin_id: row.p_owner,
+        title: row.title,
+        status: row.policy_status,
+        ai_enabled: row.ai_enabled,
+        ai_level: row.ai_level,
+        ai_allow_student_api_key: row.ai_allow_student_api_key,
+        editor_show_settings: row.editor_show_settings,
+        editor_allow_sb3_export: row.editor_allow_sb3_export,
+        editor_allow_sb3_import: row.editor_allow_sb3_import,
+        editor_allow_extensions: row.editor_allow_extensions,
         collab_allow: row.collab_allow,
         drive_allow: row.drive_allow,
         created_at: row.p_created,

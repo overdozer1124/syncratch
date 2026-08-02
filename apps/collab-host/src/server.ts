@@ -4,7 +4,9 @@
  * - POST /ai/chat → optional AI advice proxy (API key from client Authorization)
  * - /oauth/google/* → Drive authorization-code + refresh-token sessions
  * - /api/admin/* → classroom admin auth + policy/link CRUD (allowlist)
- * - /api/student/policy-by-token/* → public student policy resolve
+ * - /api/student/grant → exchange link token for HttpOnly grant cookie
+ * - /api/student/policy → policy resolve via grant (re-validates link each time)
+ * - /api/student/policy-by-token/* → legacy token resolve (pre-exchange)
  * - GET /ice → ephemeral Open Relay TURN credentials (HMAC static-auth)
  * - WS /signal → @blocksync/collab-signaling
  *

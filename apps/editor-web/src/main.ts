@@ -352,7 +352,12 @@ import {
   studentPolicyBlocksAiPersist,
 } from "./classroom-policy-apply.js";
 import {detectEditorSurfaceMode} from "./surface-mode.js";
-import {fetchStudentPolicy, showStudentLinkError} from "./student-surface.js";
+import {
+  exchangeStudentGrant,
+  fetchStudentPolicyFromGrant,
+  replaceStudentUrlWithoutToken,
+  showStudentLinkError,
+} from "./student-surface.js";
 import {
   aiModeOptionsForLevel,
   aiPanelHidden,
@@ -2615,6 +2620,21 @@ function syncScratchNativeMenuControls(): void {
   );
 }
 
+function installStudentExtensionBlock(state: EditorGuiState): void {
+  let intercepting = false;
+  state.store.subscribe?.(() => {
+    if (intercepting) return;
+    if (!isExtensionLibraryOpen(state.store.getState())) return;
+    intercepting = true;
+    try {
+      state.store.dispatch(closeExtensionLibraryAction());
+      appToast.show("このリンクでは拡張機能を追加できません");
+    } finally {
+      intercepting = false;
+    }
+  });
+}
+
 function installScratchNativeMenus(
   state: EditorGuiState,
   scratchVm: ScratchVm,
@@ -2625,7 +2645,13 @@ function installScratchNativeMenus(
     syncScratchNativeMenuControls();
   });
   ensureBlockUndoKeepAlive();
-  installDefaultExtensionGallery(state, scratchVm);
+  const extensionsAllowed =
+    !studentPolicy || studentPolicy.editor.allowExtensions;
+  if (extensionsAllowed) {
+    installDefaultExtensionGallery(state, scratchVm);
+  } else {
+    installStudentExtensionBlock(state);
+  }
 }
 
 let executionController: ExecutionController | null = null;
@@ -4434,7 +4460,18 @@ async function startEditorSurface(): Promise<void> {
   }
 
   if (SURFACE_MODE.kind === "student") {
-    const policy = await fetchStudentPolicy(SURFACE_MODE.token);
+    let policy: StudentPolicyView | null = null;
+    if (SURFACE_MODE.token) {
+      const exchanged = await exchangeStudentGrant(SURFACE_MODE.token);
+      if (!exchanged) {
+        if (studentErrorShell) showStudentLinkError(studentErrorShell);
+        return;
+      }
+      replaceStudentUrlWithoutToken();
+      policy = await fetchStudentPolicyFromGrant();
+    } else {
+      policy = await fetchStudentPolicyFromGrant();
+    }
     if (!policy) {
       if (studentErrorShell) showStudentLinkError(studentErrorShell);
       return;

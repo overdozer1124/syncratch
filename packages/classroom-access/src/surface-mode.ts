@@ -25,6 +25,8 @@ export function resolveSurfaceMode(
 
   if (path === "/admin") return {kind: "admin"};
 
+  if (path === "/s") return {kind: "student"};
+
   const studentMatch = /^\/s\/([^/]+)$/.exec(path);
   if (studentMatch) {
     const token = decodeURIComponent(studentMatch[1] ?? "");

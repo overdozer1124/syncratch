@@ -1,6 +1,6 @@
 # Syncratch 管理者 / 児童生徒アクセス分離
 
-**Status:** Phase 1 implemented (allowlist admin + policy-locked student links)
+**Status:** Phase 2 implemented (grant exchange, expiry/reissue, `editor.allowExtensions`)
 
 **Date:** 2026-07-30
 
@@ -137,6 +137,7 @@
 | `editor.showSettingsPanel` | boolean | 既定 `false`（生徒）。管理者は常に可 |
 | `editor.allowSb3Export` | boolean | `.sb3` 書き出し |
 | `editor.allowSb3Import` | boolean | `.sb3` 読み込み |
+| `editor.allowExtensions` | boolean | 拡張機能ギャラリー（Scratch 標準 + Syncratch 独自）。新規ポリシー既定 `false` |
 | `collab.allow` | boolean | 共同編集開始・参加 UI |
 | `drive.allow` | boolean | Drive 連携 UI |
 | `createdAt` / `updatedAt` | timestamp | |
@@ -174,7 +175,7 @@
 ### 8.2 ライフサイクル
 
 1. 管理者がポリシーを選び「リンク作成」→ token 生成 → URL を一度表示・コピー可能にする。
-2. 再発行: 旧 token を `revoked` にし、新 token を発行（授業の切り替わり・漏洩時）。
+2. 再発行: 旧 token を `revoked` にし、新 token を発行（授業の切り替わり・漏洩時）。`expiresAt` 未指定時は新リンクの期限なし（`null`）。指定時はリンク作成と同じ未来日時検証。
 3. 失効: `revoked` またはポリシー `disabled`、または `expiresAt` 超過。
 4. 一覧: label / 状態 / 有効期限。token の恒久表示は必須ではない。
 
@@ -270,12 +271,13 @@ collab-host (or thin admin API)
 - `/s/{token}` で policy 適用付きエディター
 - AI / 設定パネルのロック（最優先の教室価値）
 
-### Phase 2 — 運用品質
+### Phase 2 — 運用品質（実装済み）
 
-- リンク失効・再発行・有効期限
-- ログの token 秘匿
-- 生徒面からの grant 交換（URL 秘匿強化）
-- ポリシー項目の追加（拡張機能など）
+- リンク失効・再発行・有効期限（管理 UI + API 400 検証）
+- ログ / レスポンスの token 秘匿（grant 交換後は URL から token 除去）
+- `POST /api/student/grant` → HttpOnly grant → `GET /api/student/policy`
+- HTML `Referrer-Policy: no-referrer` on `/s` navigations
+- `editor.allowExtensions`（Phase 1 DB は migration で既定 `true` 維持）
 
 ### Phase 3 — 任意の発展（別仕様）
 

@@ -31,6 +31,7 @@ export const DEFAULT_CLASSROOM_POLICY_INPUT: NormalizedClassroomPolicyFields = {
     showSettingsPanel: false,
     allowSb3Export: true,
     allowSb3Import: true,
+    allowExtensions: false,
   },
   collab: {allow: true},
   drive: {allow: false},
@@ -74,6 +75,9 @@ export function normalizeClassroomPolicyInput(
       ),
       allowSb3Import: Boolean(
         input?.editor?.allowSb3Import ?? base.editor.allowSb3Import,
+      ),
+      allowExtensions: Boolean(
+        input?.editor?.allowExtensions ?? base.editor.allowExtensions,
       ),
     },
     collab: {

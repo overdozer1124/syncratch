@@ -41,6 +41,9 @@ export {
   ADMIN_POLICIES_PATH,
   ADMIN_SURFACE_PATH,
   STUDENT_POLICY_BY_TOKEN_PREFIX,
+  STUDENT_GRANT_PATH,
+  STUDENT_POLICY_PATH,
+  STUDENT_SURFACE_SESSION_PATH,
   adminLinkPath,
   adminLinkReissuePath,
   adminLinkRevokePath,
@@ -51,6 +54,11 @@ export {
 } from "./paths.js";
 
 export {resolveSurfaceMode} from "./surface-mode.js";
+
+export {
+  isLinkExpiresAtInPast,
+  parseLinkExpiresAt,
+} from "./link-expiry.js";
 
 export {
   isEmailAllowlisted,
