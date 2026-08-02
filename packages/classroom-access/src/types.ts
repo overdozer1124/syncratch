@@ -17,6 +17,8 @@ export interface ClassroomEditorPolicy {
   showSettingsPanel: boolean;
   allowSb3Export: boolean;
   allowSb3Import: boolean;
+  /** When false, block Scratch standard and Syncratch extension galleries. */
+  allowExtensions: boolean;
 }
 
 export interface ClassroomCollabPolicy {
@@ -104,4 +106,5 @@ export interface AdminAccount {
 export type SurfaceMode =
   | {kind: "community"}
   | {kind: "admin"}
-  | {kind: "student"; token: string};
+  /** Student surface. `token` present on `/s/{token}` before grant exchange; absent on `/s`. */
+  | {kind: "student"; token?: string};

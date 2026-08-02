@@ -4,6 +4,7 @@ import {join} from "node:path";
 import {describe, expect, it} from "vitest";
 import {
   contentTypeFor,
+  isStudentSurfaceNavigation,
   resolveSafePath,
   shouldGzipFile,
   wantsGzip,
@@ -32,5 +33,11 @@ describe("collab-host static helpers", () => {
     expect(shouldGzipFile("bundle.js", 20_000)).toBe(true);
     expect(shouldGzipFile("bundle.js", 100)).toBe(false);
     expect(shouldGzipFile("photo.png", 20_000)).toBe(false);
+  });
+
+  it("detects student surface navigations for /s paths", () => {
+    expect(isStudentSurfaceNavigation("/s")).toBe(true);
+    expect(isStudentSurfaceNavigation("/s/token-here")).toBe(true);
+    expect(isStudentSurfaceNavigation("/")).toBe(false);
   });
 });

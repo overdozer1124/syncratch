@@ -8,6 +8,8 @@ import {
   ADMIN_AUTH_STATUS_PATH,
   ADMIN_ME_PATH,
   ADMIN_POLICIES_PATH,
+  adminLinkReissuePath,
+  adminLinkRevokePath,
   type ClassroomPolicy,
   type StudentLinkListItem,
 } from "@blocksync/classroom-access";
@@ -255,7 +257,9 @@ async function renderPolicyCard(
       {class: "admin-muted"},
       `AI: ${policy.aiAssist.enabled ? "オン" : "オフ"} / 設定パネル: ${
         policy.editor.showSettingsPanel ? "表示" : "非表示"
-      } / 状態: ${policy.status}`,
+      } / 拡張機能: ${policy.editor.allowExtensions ? "許可" : "禁止"} / 状態: ${
+        policy.status
+      }`,
     ),
   );
 
@@ -268,6 +272,13 @@ async function renderPolicyCard(
   const settingsCheck = el("input", {type: "checkbox"}) as HTMLInputElement;
   settingsCheck.checked = policy.editor.showSettingsPanel;
   settingsToggle.append(settingsCheck, document.createTextNode(" 生徒に設定パネルを出す"));
+  const extensionsToggle = el("label", {}, "");
+  const extensionsCheck = el("input", {type: "checkbox"}) as HTMLInputElement;
+  extensionsCheck.checked = policy.editor.allowExtensions;
+  extensionsToggle.append(
+    extensionsCheck,
+    document.createTextNode(" 拡張機能ギャラリーを許可"),
+  );
   const save = el("button", {type: "button", class: "admin-button"}, "設定を保存");
   save.addEventListener("click", async () => {
     await api(`${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`, {
@@ -275,12 +286,15 @@ async function renderPolicyCard(
       csrfToken: getCsrf(),
       body: JSON.stringify({
         aiAssist: {enabled: aiCheck.checked, allowStudentApiKey: false},
-        editor: {showSettingsPanel: settingsCheck.checked},
+        editor: {
+          showSettingsPanel: settingsCheck.checked,
+          allowExtensions: extensionsCheck.checked,
+        },
       }),
     });
     await refresh();
   });
-  toggles.append(aiToggle, settingsToggle, save);
+  toggles.append(aiToggle, settingsToggle, extensionsToggle, save);
   card.append(toggles);
 
   const linkBtn = el(
@@ -288,20 +302,31 @@ async function renderPolicyCard(
     {type: "button", class: "admin-button primary", "data-testid": "admin-create-link"},
     "生徒用リンクを作る",
   );
+  const expiryInput = el("input", {
+    type: "datetime-local",
+    class: "admin-expiry-input",
+    "data-testid": "admin-link-expiry",
+  }) as HTMLInputElement;
+  const expiryLabel = el("label", {class: "admin-expiry-label"}, "");
+  expiryLabel.append(document.createTextNode(" 有効期限（任意） "), expiryInput);
   const linkOut = el("p", {
     class: "admin-link-out",
     "data-testid": "admin-link-out",
   });
   linkBtn.addEventListener("click", async () => {
     const label = window.prompt("リンクのメモ", "授業用") || "授業用";
+    const expiresAt = expiryInput.value
+      ? new Date(expiryInput.value).toISOString()
+      : null;
     const res = await api<{
       ok: boolean;
       link?: StudentLinkListItem & {studentUrl?: string; token?: string};
       message?: string;
+      code?: string;
     }>(`${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}/links`, {
       method: "POST",
       csrfToken: getCsrf(),
-      body: JSON.stringify({label}),
+      body: JSON.stringify({label, expiresAt}),
     });
     if (!res.ok || !res.link?.studentUrl) {
       linkOut.textContent = res.message || "リンクを作れませんでした。";
@@ -316,7 +341,7 @@ async function renderPolicyCard(
     }
     await refreshLinks();
   });
-  card.append(linkBtn, linkOut);
+  card.append(expiryLabel, linkBtn, linkOut);
 
   const linksBox = el("ul", {class: "admin-links"});
   card.append(linksBox);
@@ -329,17 +354,42 @@ async function renderPolicyCard(
     if (!res.ok) return;
     for (const link of res.links) {
       const item = el("li", {});
-      item.textContent = `${link.label} — ${link.status} — ${link.createdAt}`;
+      const expiryText = link.expiresAt
+        ? ` / 期限: ${link.expiresAt}`
+        : " / 期限: なし";
+      item.textContent = `${link.label} — ${link.status} — ${link.createdAt}${expiryText}`;
       if (link.status === "active") {
         const revoke = el("button", {type: "button", class: "admin-button"}, "失効");
         revoke.addEventListener("click", async () => {
-          await api(`/api/admin/links/${encodeURIComponent(link.linkId)}/revoke`, {
+          await api(adminLinkRevokePath(link.linkId), {
             method: "POST",
             csrfToken: getCsrf(),
           });
           await refreshLinks();
         });
-        item.append(" ", revoke);
+        const reissue = el("button", {type: "button", class: "admin-button"}, "再発行");
+        reissue.addEventListener("click", async () => {
+          const reissueRes = await api<{
+            ok: boolean;
+            link?: StudentLinkListItem & {studentUrl?: string};
+            message?: string;
+          }>(adminLinkReissuePath(link.linkId), {
+            method: "POST",
+            csrfToken: getCsrf(),
+          });
+          if (reissueRes.ok && reissueRes.link?.studentUrl) {
+            linkOut.textContent = `${reissueRes.link.studentUrl}（再発行・コピー推奨）`;
+            try {
+              await navigator.clipboard.writeText(reissueRes.link.studentUrl);
+            } catch {
+              // ignore
+            }
+          } else {
+            linkOut.textContent = reissueRes.message || "再発行に失敗しました。";
+          }
+          await refreshLinks();
+        });
+        item.append(" ", revoke, " ", reissue);
       }
       linksBox.append(item);
     }

@@ -6,8 +6,12 @@ import {
   ADMIN_API_PREFIX,
   ADMIN_LINKS_PATH,
   ADMIN_POLICIES_PATH,
+  STUDENT_GRANT_PATH,
   STUDENT_POLICY_BY_TOKEN_PREFIX,
+  STUDENT_POLICY_PATH,
+  isLinkExpiresAtInPast,
   isPlausibleStudentToken,
+  parseLinkExpiresAt,
   studentSurfacePath,
   type ClassroomPolicyInput,
 } from "@blocksync/classroom-access";
@@ -19,6 +23,12 @@ import {
   readAdminSession,
   requireAdminCsrf,
 } from "./admin-auth.js";
+import {
+  clearStudentGrantCookie,
+  readStudentGrantId,
+  setStudentGrantCookie,
+  STUDENT_GRANT_TTL_MS,
+} from "./student-grant.js";
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -64,15 +74,100 @@ export interface CreateAdminApiHandlerOptions {
   db: AdminDb;
   config: AdminAuthConfig | null;
   sessions?: AdminSessionStore;
+  /** When true, student grant cookie gets Secure flag (production). */
+  studentGrantCookieSecure?: boolean;
 }
 
 export function createAdminApiHandler(
   options: CreateAdminApiHandlerOptions,
 ): (req: IncomingMessage, res: ServerResponse) => Promise<boolean> {
   const sessions = options.sessions ?? createMemoryAdminSessionStore();
+  const grantCookieSecure =
+    options.studentGrantCookieSecure ??
+    options.config?.cookieSecure ??
+    process.env.NODE_ENV === "production";
 
   return async (req, res) => {
     const urlPath = pathOnly(req.url ?? "/");
+
+    if (urlPath === STUDENT_GRANT_PATH) {
+      if (req.method !== "POST") {
+        sendJson(res, 405, {
+          ok: false,
+          code: "METHOD_NOT_ALLOWED",
+          message: "POST required",
+        });
+        return true;
+      }
+      let body: unknown;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        sendJson(res, 400, {ok: false, code: "BAD_REQUEST", message: "JSON required"});
+        return true;
+      }
+      const token =
+        body &&
+        typeof body === "object" &&
+        typeof (body as {token?: unknown}).token === "string"
+          ? (body as {token: string}).token.trim()
+          : "";
+      if (!isPlausibleStudentToken(token)) {
+        sendJson(res, 404, {
+          ok: false,
+          code: "LINK_NOT_FOUND",
+          message: "このリンクは使えません。",
+        });
+        return true;
+      }
+      const grant = options.db.createStudentGrant(token);
+      if (!grant) {
+        sendJson(res, 404, {
+          ok: false,
+          code: "LINK_NOT_FOUND",
+          message: "このリンクは使えません。",
+        });
+        return true;
+      }
+      setStudentGrantCookie(res, grant.grantId, {
+        secure: grantCookieSecure,
+        maxAgeSeconds: Math.floor(STUDENT_GRANT_TTL_MS / 1000),
+      });
+      sendJson(res, 200, {ok: true});
+      return true;
+    }
+
+    if (urlPath === STUDENT_POLICY_PATH) {
+      if (req.method !== "GET") {
+        sendJson(res, 405, {
+          ok: false,
+          code: "METHOD_NOT_ALLOWED",
+          message: "GET required",
+        });
+        return true;
+      }
+      const grantId = readStudentGrantId(req);
+      if (!grantId) {
+        sendJson(res, 401, {
+          ok: false,
+          code: "GRANT_REQUIRED",
+          message: "このリンクは使えません。",
+        });
+        return true;
+      }
+      const policy = options.db.resolveStudentPolicyByGrant(grantId);
+      if (!policy) {
+        clearStudentGrantCookie(res, grantCookieSecure);
+        sendJson(res, 404, {
+          ok: false,
+          code: "LINK_NOT_FOUND",
+          message: "このリンクは使えません。",
+        });
+        return true;
+      }
+      sendJson(res, 200, {ok: true, policy});
+      return true;
+    }
 
     if (urlPath.startsWith(`${STUDENT_POLICY_BY_TOKEN_PREFIX}/`)) {
       if (req.method !== "GET") {
@@ -228,17 +323,36 @@ export function createAdminApiHandler(
           typeof (body as {label?: unknown}).label === "string"
             ? (body as {label: string}).label
             : "生徒用リンク";
-        const expiresAt =
-          body &&
-          typeof body === "object" &&
-          typeof (body as {expiresAt?: unknown}).expiresAt === "string"
-            ? (body as {expiresAt: string}).expiresAt
-            : null;
+        const expiresRaw =
+          body && typeof body === "object"
+            ? (body as {expiresAt?: unknown}).expiresAt
+            : undefined;
+        const parsedExpiry = parseLinkExpiresAt(expiresRaw);
+        if (!parsedExpiry.ok) {
+          sendJson(res, 400, {
+            ok: false,
+            code: parsedExpiry.code,
+            message: "有効期限の形式が正しくありません。",
+          });
+          return true;
+        }
+        const nowIso = new Date().toISOString();
+        if (
+          parsedExpiry.expiresAt &&
+          isLinkExpiresAtInPast(parsedExpiry.expiresAt, nowIso)
+        ) {
+          sendJson(res, 400, {
+            ok: false,
+            code: "EXPIRES_AT_IN_PAST",
+            message: "有効期限は未来の日時を指定してください。",
+          });
+          return true;
+        }
         const link = options.db.createLink({
           ownerAdminId: session.adminId,
           policyId,
           label,
-          expiresAt,
+          expiresAt: parsedExpiry.expiresAt,
         });
         if (!link) {
           sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "policy not found"});

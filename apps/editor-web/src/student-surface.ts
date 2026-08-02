@@ -1,13 +1,21 @@
 import {
-  studentPolicyByTokenPath,
+  STUDENT_GRANT_PATH,
+  STUDENT_POLICY_PATH,
+  STUDENT_SURFACE_SESSION_PATH,
   type StudentPolicyView,
 } from "@blocksync/classroom-access";
 
+function normalizeBasePath(basePath: string): string {
+  if (!basePath || basePath === "/") return "";
+  return basePath.endsWith("/") ? basePath.slice(0, -1) : basePath;
+}
+
+/** @deprecated Phase 2: use grant exchange + fetchStudentPolicyFromGrant. */
 export async function fetchStudentPolicy(
   token: string,
 ): Promise<StudentPolicyView | null> {
   try {
-    const response = await fetch(studentPolicyByTokenPath(token), {
+    const response = await fetch(`/api/student/policy-by-token/${encodeURIComponent(token)}`, {
       credentials: "same-origin",
       headers: {accept: "application/json"},
     });
@@ -21,6 +29,52 @@ export async function fetchStudentPolicy(
   } catch {
     return null;
   }
+}
+
+export async function exchangeStudentGrant(token: string): Promise<boolean> {
+  try {
+    const response = await fetch(STUDENT_GRANT_PATH, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({token}),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchStudentPolicyFromGrant(): Promise<StudentPolicyView | null> {
+  try {
+    const response = await fetch(STUDENT_POLICY_PATH, {
+      credentials: "same-origin",
+      headers: {accept: "application/json"},
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      ok?: boolean;
+      policy?: StudentPolicyView;
+    };
+    if (!body.ok || !body.policy) return null;
+    return body.policy;
+  } catch {
+    return null;
+  }
+}
+
+/** Replace `/s/{token}` with token-less `/s` after grant exchange. */
+export function replaceStudentUrlWithoutToken(
+  basePath = typeof import.meta !== "undefined"
+    ? String(import.meta.env?.BASE_URL ?? "/")
+    : "/",
+): void {
+  const base = normalizeBasePath(basePath);
+  const nextPath = `${base}${STUDENT_SURFACE_SESSION_PATH}`;
+  history.replaceState(null, "", nextPath);
 }
 
 export function showStudentLinkError(root: HTMLElement): void {

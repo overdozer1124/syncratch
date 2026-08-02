@@ -8,6 +8,9 @@ export const ADMIN_POLICIES_PATH = `${ADMIN_API_PREFIX}/policies`;
 export const ADMIN_LINKS_PATH = `${ADMIN_API_PREFIX}/links`;
 
 export const STUDENT_POLICY_BY_TOKEN_PREFIX = "/api/student/policy-by-token";
+export const STUDENT_GRANT_PATH = "/api/student/grant";
+export const STUDENT_POLICY_PATH = "/api/student/policy";
+export const STUDENT_SURFACE_SESSION_PATH = "/s";
 
 export function adminPolicyPath(policyId: string): string {
   return `${ADMIN_POLICIES_PATH}/${encodeURIComponent(policyId)}`;

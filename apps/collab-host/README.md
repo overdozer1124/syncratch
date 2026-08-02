@@ -4,8 +4,8 @@ Same-origin verification host for Syncratch:
 
 - serves `apps/editor-web/dist` over HTTP
 - attaches `@blocksync/collab-signaling` at `WS /signal`
-- optional classroom admin API (`/api/admin/*`) + student policy resolve
-  (`/api/student/policy-by-token/*`) when admin env is configured
+- optional classroom admin API (`/api/admin/*`) + student grant/policy API
+  (`/api/student/grant`, `/api/student/policy`, legacy `/api/student/policy-by-token/*`)
 
 Intended for **Railway** (or any always-on Node host). This is not TURN and not a
 central project store — Yjs / assets still travel over encrypted WebRTC data
@@ -57,7 +57,7 @@ Endpoints when configured:
 Refresh tokens never leave the server process. Current store is in-memory (single
 Railway instance); a process restart clears sessions and users reconnect once.
 
-## Classroom admin (Phase 1)
+## Classroom admin (Phase 1 + 2)
 
 Optional layer for allowlisted teachers. Spec:
 `docs/superpowers/specs/2026-07-30-admin-student-access-design.md`.
@@ -75,12 +75,15 @@ mounted at `/app/data` (do not add a Docker `VOLUME` instruction — Railway rej
 
 Surfaces (SPA via static fallback):
 
-- `/admin` — allowlisted Google login, policy edit, student link issue/revoke
-- `/s/{token}` — student editor with locked ClassroomPolicy
+- `/admin` — allowlisted Google login, policy edit, link issue/revoke/reissue, expiry
+- `/s/{token}` — first load exchanges token → HttpOnly grant → URL becomes `/s`
+- `/s` — student editor session (grant cookie; policy via `/api/student/policy`)
 - `/` — unchanged Community editor
 
-Admin cookie `syncratch_admin_session` is separate from Drive
-`syncratch_drive_session`.
+Student grant cookie `syncratch_student_grant` (HttpOnly, short TTL) is separate
+from admin `syncratch_admin_session` and Drive `syncratch_drive_session`.
+
+HTML responses for `/s` navigations include `Referrer-Policy: no-referrer`.
 
 ## Health
 

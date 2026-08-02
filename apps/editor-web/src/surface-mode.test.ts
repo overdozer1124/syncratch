@@ -10,6 +10,7 @@ describe("detectEditorSurfaceMode", () => {
       kind: "student",
       token,
     });
+    expect(detectEditorSurfaceMode("/s", "/")).toEqual({kind: "student"});
     expect(detectEditorSurfaceMode("/", "/")).toEqual({kind: "community"});
   });
 });

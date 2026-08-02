@@ -20,6 +20,7 @@ function policy(overrides: Partial<StudentPolicyView> = {}): StudentPolicyView {
       showSettingsPanel: false,
       allowSb3Export: true,
       allowSb3Import: true,
+      allowExtensions: true,
     },
     collab: {allow: true},
     drive: {allow: false},

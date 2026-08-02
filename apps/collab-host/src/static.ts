@@ -68,6 +68,12 @@ export function shouldGzipFile(filePath: string, size: number): boolean {
   return size >= GZIP_MIN_BYTES && GZIP_EXT.has(extname(filePath).toLowerCase());
 }
 
+/** Student surface navigations (/s, /s/...) — apply no-referrer on HTML. */
+export function isStudentSurfaceNavigation(urlPath: string): boolean {
+  const path = urlPath.split("?")[0] ?? "/";
+  return path === "/s" || path.startsWith("/s/");
+}
+
 export function createStaticRequestHandler(rootDir: string) {
   return function handleStatic(
     req: IncomingMessage,
@@ -113,6 +119,11 @@ export function createStaticRequestHandler(rootDir: string) {
       shouldGzipFile(filePath, size);
     const cacheControl =
       filePath.endsWith("index.html") ? "no-cache" : "public, max-age=3600";
+    const studentHtml =
+      filePath.endsWith("index.html") && isStudentSurfaceNavigation(urlPath);
+    const extraHeaders: Record<string, string> = studentHtml
+      ? {"referrer-policy": "no-referrer"}
+      : {};
 
     if (useGzip) {
       res.writeHead(200, {
@@ -120,6 +131,7 @@ export function createStaticRequestHandler(rootDir: string) {
         "content-encoding": "gzip",
         vary: "Accept-Encoding",
         "cache-control": cacheControl,
+        ...extraHeaders,
       });
       if (method === "HEAD") {
         res.end();
@@ -133,6 +145,7 @@ export function createStaticRequestHandler(rootDir: string) {
       "content-type": type,
       "content-length": size,
       "cache-control": cacheControl,
+      ...extraHeaders,
     });
     if (method === "HEAD") {
       res.end();

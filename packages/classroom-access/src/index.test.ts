@@ -19,9 +19,10 @@ function fixedRandom(seed: number): (length: number) => Uint8Array {
 }
 
 describe("resolveSurfaceMode", () => {
-  it("maps /admin and /s/{token}", () => {
+  it("maps /admin, /s, and /s/{token}", () => {
     expect(resolveSurfaceMode("/admin")).toEqual({kind: "admin"});
     expect(resolveSurfaceMode("/admin/")).toEqual({kind: "admin"});
+    expect(resolveSurfaceMode("/s")).toEqual({kind: "student"});
     const token = createStudentLinkToken(fixedRandom(3));
     expect(resolveSurfaceMode(`/s/${token}`)).toEqual({
       kind: "student",
@@ -55,6 +56,7 @@ describe("policy normalize + student view", () => {
     expect(normalized.aiAssist.enabled).toBe(false);
     expect(normalized.aiAssist.allowStudentApiKey).toBe(false);
     expect(normalized.editor.showSettingsPanel).toBe(false);
+    expect(normalized.editor.allowExtensions).toBe(false);
 
     const policy: ClassroomPolicy = {
       policyId: "p1",
