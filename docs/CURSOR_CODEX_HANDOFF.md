@@ -5778,6 +5778,31 @@ PR 1 実装:
 次: Codex PR 1 レビュー → GO 後 PR 2 着手
 ```
 
+### 2026-08-02 21:11:00 JST — Hermes（PR #198 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #198 @921a37d
+判定: NO-GO（差し戻し）
+Reviewer: Hermes（Codex 代行）
+Blocker: N-1 / N-2  Major: M-1 / M-2 / M-3
+次の担当: Cursor
+```
+
+### 2026-08-02 21:20:00 JST — Cursor（PR #198 差し戻し修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #198 head ae5c4ea
+修正: N-1 transaction + rollback test / N-2 phase1_legacy 削除
+        M-1 flag 起動配線 / M-2 DDL checksum / M-3 XLSX 採用保留
+Minor: m-2 ??0 削除 / m-4 PR3 relax_quotes:false 方針 / m-5 CI は PR Checks
+検証: classroom-access 13 / collab-host 33 / editor-web typecheck PASS
+禁止: 自動マージ / PR 2 以降未着手
+```
+
 
 ### 2026-08-02 21:05:00 JST — Cursor（classroom-roster-drive-submissions PR 1）
 
@@ -5807,5 +5832,30 @@ PR 1 実装:
 
 禁止維持: UI/公開 API 有効化なし / PR 2 以降未着手 / 自動マージしない
 次: Codex PR 1 レビュー → GO 後 PR 2 着手
+```
+
+### 2026-08-02 21:11:00 JST — Hermes（PR #198 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #198 @921a37d
+判定: NO-GO（差し戻し）
+Reviewer: Hermes（Codex 代行）
+Blocker: N-1 / N-2  Major: M-1 / M-2 / M-3
+次の担当: Cursor
+```
+
+### 2026-08-02 21:20:00 JST — Cursor（PR #198 差し戻し修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #198 head ae5c4ea
+修正: N-1 transaction + rollback test / N-2 phase1_legacy 削除
+        M-1 flag 起動配線 / M-2 DDL checksum / M-3 XLSX 採用保留
+Minor: m-2 ??0 削除 / m-4 PR3 relax_quotes:false 方針 / m-5 CI は PR Checks
+検証: classroom-access 13 / collab-host 33 / editor-web typecheck PASS
+禁止: 自動マージ / PR 2 以降未着手
 ```
 
