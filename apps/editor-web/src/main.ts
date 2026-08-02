@@ -187,7 +187,7 @@ import {
   isDriveAutosaveEligible,
   type DriveAutosave,
 } from "./drive-autosave.js";
-import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
+import {persistDriveFileIdAndSyncCurrent, clearDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
 import {prepareCommittedDriveExport} from "./drive-export.js";
 import {
   createInvite,
@@ -3414,6 +3414,21 @@ async function persistDriveFileId(
   });
 }
 
+async function clearDriveFileId(
+  localProjectId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clearDriveFileIdAndSyncCurrent({
+    store,
+    localProjectId,
+    signal,
+    getCurrent: () => hasCurrent ? current : undefined,
+    setCurrent: saved => {
+      if (hasCurrent) current = saved;
+    },
+  });
+}
+
 async function setupDriveIntegration(): Promise<EditorDriveIntegration> {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ?? "";
   const apiKey = import.meta.env.VITE_GOOGLE_API_KEY?.trim() ?? "";
@@ -3478,6 +3493,7 @@ async function setupDriveIntegration(): Promise<EditorDriveIntegration> {
     }),
     importAsNewLocal: importProject,
     persistDriveFileId,
+    clearDriveFileId,
     hashBytes: async bytes => sha256Hex(bytes),
     createSnapshotId: () => crypto.randomUUID(),
     onStatus: renderDriveStatus,
