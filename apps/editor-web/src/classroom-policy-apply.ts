@@ -3,6 +3,10 @@ import {
   DEFAULT_AI_SETTINGS,
   type AiAssistSettings,
 } from "@blocksync/ai-assist";
+import {
+  CLASSROOM_DRIVE_BLOCKED_HELP,
+  CLASSROOM_DRIVE_BLOCKED_STATUS,
+} from "./ui-copy.js";
 
 export interface ClassroomDomHooks {
   settingsPanel: HTMLElement | null;
@@ -21,9 +25,27 @@ export interface ClassroomDomHooks {
   joinRoomButton: HTMLElement | null;
   copyInviteButton: HTMLElement | null;
   collabInviteInput: HTMLElement | null;
+  driveStatus?: HTMLElement | null;
+  driveSectionHelp?: HTMLElement | null;
+  driveControls?: HTMLElement | null;
   drivePanel?: HTMLElement | null;
   collabPanel?: HTMLElement | null;
   filePanel?: HTMLElement | null;
+}
+
+/**
+ * Hide Drive CTAs only when both Drive and collab are disallowed.
+ * Collab-enabled student links still need Drive controls for the host
+ * (Stage 5 A5: only the invite creator writes Drive).
+ */
+export function shouldHideStudentDriveControls(
+  policy: StudentPolicyView,
+): boolean {
+  return !policy.drive.allow && !policy.collab.allow;
+}
+
+export function isStudentDriveFullyBlocked(policy: StudentPolicyView): boolean {
+  return shouldHideStudentDriveControls(policy);
 }
 
 /**
@@ -47,6 +69,23 @@ function closeDetails(el: HTMLElement): void {
   el.hidden = true;
   if ("open" in el) {
     (el as HTMLDetailsElement).open = false;
+  }
+}
+
+function applyStudentDrivePolicyMessaging(
+  policy: StudentPolicyView,
+  dom: ClassroomDomHooks,
+): void {
+  if (!shouldHideStudentDriveControls(policy)) return;
+  if (dom.driveStatus) {
+    dom.driveStatus.textContent = CLASSROOM_DRIVE_BLOCKED_STATUS;
+    dom.driveStatus.title = CLASSROOM_DRIVE_BLOCKED_STATUS;
+  }
+  if (dom.driveSectionHelp) {
+    dom.driveSectionHelp.textContent = CLASSROOM_DRIVE_BLOCKED_HELP;
+  }
+  if (dom.driveControls) {
+    dom.driveControls.hidden = true;
   }
 }
 
@@ -84,7 +123,7 @@ export function applyStudentPolicyToDom(
     if (dom.fileInput) dom.fileInput.hidden = true;
   }
 
-  if (!policy.drive.allow) {
+  if (shouldHideStudentDriveControls(policy)) {
     for (const el of [
       dom.connectGoogleButton,
       dom.openDriveButton,
@@ -94,6 +133,7 @@ export function applyStudentPolicyToDom(
     ]) {
       if (el) el.hidden = true;
     }
+    applyStudentDrivePolicyMessaging(policy, dom);
   }
 
   if (!policy.collab.allow) {

@@ -116,6 +116,13 @@ export const INVITE_LINK_COPIED_TOAST =
 export const INVITE_LINK_COPY_FAILED_TOAST =
   "コピーできませんでした。リンクを選んでコピーしてください。";
 
+/** ClassroomPolicy blocked Drive entirely (no collab escape hatch). */
+export const CLASSROOM_DRIVE_BLOCKED_STATUS =
+  "この教室では Google ドライブは使えません";
+
+export const CLASSROOM_DRIVE_BLOCKED_HELP =
+  "先生が教室設定で Google ドライブを有効にすると、ここにボタンが表示されます。";
+
 export const drivePanelStatusText: Record<
   | "not-configured"
   | "disconnected"
