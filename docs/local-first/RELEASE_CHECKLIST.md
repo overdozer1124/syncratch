@@ -57,13 +57,13 @@ Drive deploy evidence (2026-07-23): Railway production bundle includes
 - [x] OAuth consent shows `drive.file`, not broad Drive scopes.
 - [x] Picker opens only an explicitly selected SB3.
 - [x] Two different Google test users can access the same shared Drive file.
-- [ ] Only the room creator (invite host) attempts the normal Drive snapshot
+- [x] Only the room creator (invite host) attempts the normal Drive snapshot
       while collaborating（ゲストは Drive 上書き役にならない。手順は
-      `STAGE5_MANUAL_GATES.md` A5 かんたん版）。
-- [ ] Revoking one user's permission stops that user's Drive write without
-      stopping local save or SB3 export.
-- [ ] A concurrent Drive change causes safe conflict stop; it does not silently
-      overwrite or create a replacement file.
+      `STAGE5_MANUAL_GATES.md` A5 かんたん版）。2026-08-02 PASS
+- [x] Revoking one user's permission stops that user's Drive write without
+      stopping local save or SB3 export. 2026-08-02 PASS（STAGE5 §C.1.2）
+- [x] A concurrent Drive change causes safe conflict stop; it does not silently
+      overwrite or create a replacement file. 2026-08-02 PASS（STAGE5 §C.1.2）
 
 Automated support (not a substitute for the consent-screen / real-Drive checks):
 
@@ -91,11 +91,13 @@ Automated support (not a substitute for the consent-screen / real-Drive checks):
 
 ### Still require human confirmation（`STAGE5_MANUAL_GATES.md` §B）
 
-- [ ] Disconnect a peer: no UI claims its unseen changes are synchronized.
+- [x] Disconnect a peer: no UI claims its unseen changes are synchronized.
+      2026-08-02 PASS（STAGE5 §C.1.2）
 - [x] Disable Apps Script (or leave unset): solo, direct invite, existing P2P,
       Drive, and export remain usable.（Apps Script 未導入のまま Railway で Drive 連携成功）
-- [ ] Inspect IndexedDB, SB3, Y.Doc, logs, signaling frames, and classroom
+- [x] Inspect IndexedDB, SB3, Y.Doc, logs, signaling frames, and classroom
       Sheets: no Google access/refresh/Picker token is present.
+      2026-08-02 PASS（STAGE5 §C.1.2）
 
 ## Scope statement
 

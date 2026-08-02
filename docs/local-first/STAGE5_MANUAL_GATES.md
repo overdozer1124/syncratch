@@ -229,6 +229,37 @@ A5 / A6 / A7 / B1 / B3: 未実施（ユーザー実機）
 総合: Stage 5 手動ゲート 未完了（残り A5–A7 / B1 / B3）
 ```
 
+### C.1.2 完了記録（2026-08-02 ユーザー実機）
+
+```text
+実施日 (JST): 2026-08-02
+実施者: ユーザー（本番 Railway 実機）+ Cursor（Drive UI / ポリシー / A6 復旧 PR）
+git tip（検証時 main）: 6267f5935727a887147b3582dfd5ffd22dcb2ad4
+検証 origin: https://syncratch-production.up.railway.app/
+             https://syncratch-production.up.railway.app/s/sw2QhLBhFnzwy9ERVaOH4g
+Google Cloud project: syncratch（APP_ID 863099193805）
+ブラウザ: Chrome（2880×1800、通常 + シークレット）
+
+A1 Solo without login:        PASS — 2026-07-23 記録を維持
+A2 OAuth drive.file only:     PASS — 2026-07-23 記録を維持
+A3 Picker explicit select:    PASS — 2026-07-23 記録を維持
+A4 Two users same file:       PASS — 2026-07-23 記録を維持
+A5 Creator-only Drive write:  PASS — ホスト/ゲストで Drive CTA・ステータスが役割どおり
+A6 Revoke keeps local/SB3:    PASS — 連携解除後もローカル保存・SB3 DL可、Drive 別名増殖なし
+A7 Conflict safe stop:        PASS — 外更新後に競合検知、黙って上書きしない
+
+B1 Peer disconnect honesty:   PASS — B 切断後 A に切断表示、誤った同期完了表示なし
+B2 Apps Script disabled OK:   PASS — Apps Script 未導入（2026-07-23 記録を維持）
+B3 No persisted tokens:       PASS — IndexedDB / SB3 に access token 残存なし（DevTools）
+
+メモ:
+- 生徒リンク `/s/…` は ClassroomPolicy `collab.allow=true` 時に Drive UI を表示（PR #190）
+- A6 後の stale driveFileId は保存時に新規 Drive ファイルへ復旧（PR #191）
+- ローカル保存完了は toolbar アイコン tooltip（sr-only テキスト）で確認
+
+総合: Stage 5 手動ゲート **完了**
+```
+
 ### C.2 空白テンプレート
 
 ```text
