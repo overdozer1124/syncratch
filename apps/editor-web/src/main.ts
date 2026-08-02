@@ -3347,11 +3347,15 @@ function renderDriveStatus(
   // Host: keep Save enabled during conflict for explicit retry after re-baseline.
   // Guest: always disabled — only the invite creator may write Drive.
   saveDriveButton.disabled = controls.saveDisabled;
+  // Disconnected: emphasize Connect. Connected (and allowed to write): always
+  // emphasize Save so it cannot blend into the gray Drive card.
+  connectGoogleButton.classList.toggle(
+    "drive-connect-primary",
+    !controls.connectDisabled && status === "disconnected",
+  );
   saveDriveButton.classList.toggle(
     "drive-save-primary",
-    !controls.saveDisabled &&
-      !controls.guestDriveBlocked &&
-      (status === "unsynced" || status === "conflict"),
+    !controls.saveDisabled && !controls.guestDriveBlocked,
   );
   disconnectGoogleButton.disabled = controls.disconnectDisabled;
   if (conflictAction === "report") collabSession?.reportDriveConflict();

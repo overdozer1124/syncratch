@@ -326,15 +326,52 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   gap: 8px;
 }
 
+/*
+ * Drive section is a gray card (#f4f7fb). Default disabled chrome (#eef1f5)
+ * nearly disappears on it, so users report "Drive save button is missing".
+ * Force solid white chips with a real border for every Drive control.
+ */
+.toolbar .panel-content .drive-controls button,
 .drive-controls button {
-  min-height: 38px !important;
+  min-height: 40px !important;
   padding: 0 12px !important;
   border-radius: 10px !important;
   font-size: 13px !important;
   font-weight: 700 !important;
+  background: #ffffff !important;
+  color: var(--sc-ink, #1b2b3a) !important;
+  border: 1.5px solid #c5d4e3 !important;
+  opacity: 1 !important;
 }
 
-/* When local and Drive differ, make the matching save CTA unmistakable. */
+.toolbar .panel-content .drive-controls button:hover:not(:disabled),
+.drive-controls button:hover:not(:disabled) {
+  background: #f3f8fd !important;
+}
+
+.toolbar .panel-content .drive-controls button:disabled,
+.drive-controls button:disabled {
+  color: #6b7c8f !important;
+  background: #ffffff !important;
+  border-color: #d3deea !important;
+  opacity: 1 !important;
+}
+
+/* Connect is the only action while disconnected. */
+.drive-controls #connect-google.drive-connect-primary {
+  order: -1;
+  flex: 1 1 100%;
+  min-height: 44px !important;
+  background: var(--sc-accent, #1a73e8) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
+
+.drive-controls #connect-google.drive-connect-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+/* Explicit Drive save stays a full-width primary whenever writing is allowed. */
 .drive-controls #save-drive.drive-save-primary {
   order: -1;
   flex: 1 1 100%;
@@ -349,7 +386,9 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 }
 
 .drive-controls #save-drive.drive-save-primary:disabled {
-  opacity: 0.55;
+  background: #ffffff !important;
+  color: #6b7c8f !important;
+  border-color: #d3deea !important;
   filter: none;
 }
 
@@ -987,9 +1026,16 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 
 .drive-section-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 10px;
+}
+
+.drive-section-header .panel-status {
+  flex: 1 1 100%;
+  margin-left: 0;
+  margin-top: 2px;
 }
 
 .drive-section-logo {
@@ -1003,10 +1049,6 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   font-size: 14px;
   font-weight: 800;
   color: var(--sc-ink);
-}
-
-.drive-section-header .panel-status {
-  margin-left: auto;
 }
 
 .settings-ai-heading {
