@@ -5919,3 +5919,48 @@ Minor（マージ非阻止）:
 次: PR 3（Roster admin API + CSV import）— 明示指示後
 禁止: 公開/deploy/PR 4+ 先行
 ```
+
+### 2026-08-03 08:37:00 JST — Hermes（PR #199 マージ記録の訂正 — 整合性問題）
+
+```text
+案件ID: classroom-roster-drive-submissions
+Reviewer: Hermes（Codex 代行）
+判定: 台帳訂正（PR #199 マージ記録は無効）
+
+事実:
+- 2026/08/02 21:46 の Hermes 決裁は「条件付き GO — Blocker 1・Major 2・Minor 6 を同一 PR で修正のうえ再提出」
+- 2026-08-03 08:30 JST の「Hermes GO → main マージ」エントリは Hermes が出していない
+- PR #199（9284f4f）は Blocker P2-B1 / Major P2-M1・P2-M2 未修正のまま main へマージされた
+- origin/main..9284f4f の apps/packages 差分は 0（修正コミットなし）
+
+未解決指摘（main 上）:
+- P2-B1: syncratch_admin_google cookie / credentialId 露出
+- P2-M1: getClassroomFeatureFlagsForRuntime() 暗黙 env 読み
+- P2-M2: design.md drive.file 権限モデル未記載
+
+次: PR 2.1（cursor/classroom-roster-drive-submissions-pr2-1-258b）で解消 → Hermes 再決裁
+禁止: PR 3 先行 / 自動マージ / Hermes 未発行の GO 記録
+```
+
+### 2026-08-03 08:45:00 JST — Cursor（PR 2.1 指摘解消 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 324ac2a
+branch: cursor/classroom-roster-drive-submissions-pr2-1-258b
+PR: #200 @85172bd
+
+修正:
+- P2-B1: ADMIN_GOOGLE_SESSION_COOKIE 削除 / session API から credentialId 除去
+- P2-M1: getClassroomFeatureFlagsForRuntime() 未初期化 throw + beforeEach リセット
+- P2-M2: design.md §11.1 drive.file 権限モデル追記
+- m2-2: createOpaqueId() → randomBytes
+- m2-5: callback catch に console.warn（token 非出力）
+- m2-1/m2-3/m2-4: AdminDb.sqlite / updateAccessToken / ACCESS_SKEW_MS コメント
+- hermes-review-loop skill: 決裁改変禁止・条件付き GO 分離・マージ前照合
+
+検証: collab-host 47 tests/typecheck PASS / git grep ADMIN_GOOGLE_SESSION_COOKIE → 0
+禁止: 自動マージ / PR 3 先行
+```
