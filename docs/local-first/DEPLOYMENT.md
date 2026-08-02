@@ -94,6 +94,36 @@ link revoke/expiry on every request). See
 Build-time `VITE_GOOGLE_CLIENT_ID` is required for the `/admin` Google button.
 Admin sessions use cookie `syncratch_admin_session` (never reuse Drive session).
 Student grants use separate HttpOnly cookie `syncratch_student_grant`.
+
+#### Teacher Google credential (classroom roster PR 2+, optional)
+
+When `SYNCRATCH_CLASSROOM_ROSTER_ENABLED=1` and
+`SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED=1`, allowlisted admins can connect a
+**separate** teacher Google OAuth session for server-side `drive.file` access
+(Sheet sync and Drive submissions in later PRs). This is **not** the editor Drive
+session (`syncratch_drive_session`) and **not** implied by admin login alone.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_CLASSROOM_ROSTER_ENABLED` | `1` / `true` — master flag |
+| `SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED` | `1` / `true` — requires roster flag |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Same OAuth client as editor Drive |
+| `SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON` | JSON map of key id → base64 AES-256 key (32 bytes) |
+| `SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID` | Active key id for new ciphertext |
+| `ADMIN_GOOGLE_OAUTH_REDIRECT_URI` | Optional override; default `https://<host>/oauth/admin-google/callback` |
+| `ADMIN_GOOGLE_OAUTH_COOKIE_SECURE` | `true` on HTTPS (default when `NODE_ENV=production`) |
+
+Register **Authorized redirect URI** e.g.
+`https://syncratch-production.up.railway.app/oauth/admin-google/callback`.
+
+Flow: admin logs in → `GET /api/admin/google/oauth/start` → Google consent
+(`drive.file` only) → `/oauth/admin-google/callback` stores an AES-256-GCM
+encrypted refresh token in SQLite and sets HttpOnly cookie
+`syncratch_admin_google`. Status: `GET /api/admin/google/oauth/session`.
+Disconnect: `POST /api/admin/google/oauth/disconnect` (CSRF required).
+
+When flags are OFF, these routes return **404** and no teacher credential cookie
+is issued.
 HTML for `/s` navigations sets `Referrer-Policy: no-referrer`.
 
 To persist the admin DB across redeploys, add a **Railway Volume** mounted at
