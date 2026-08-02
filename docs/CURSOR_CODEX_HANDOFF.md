@@ -5699,7 +5699,7 @@ Codex 指摘対応:
 2. reissueLink — 旧 expires_at コピーを廃止。API/UI から新 expiresAt を受け取り
    リンク作成と同じ検証。未指定時は新リンク期限なし（null）
 
-head SHA: （本 push 後）
+head SHA: 8d4e66d
 
 テスト:
 - @blocksync/classroom-access: 9 passed + typecheck OK
