@@ -77,6 +77,7 @@ import {
   shouldGateCollabOnGoogle,
 } from "./collab-oauth-gate.js";
 import {
+  CLASSROOM_DRIVE_BLOCKED_STATUS,
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
@@ -347,6 +348,7 @@ import {startAdminSurface} from "./admin-surface.js";
 import {
   aiSettingsFromStudentPolicy,
   applyStudentPolicyToDom,
+  isStudentDriveFullyBlocked,
   studentPolicyBlocksAiPersist,
 } from "./classroom-policy-apply.js";
 import {detectEditorSurfaceMode} from "./surface-mode.js";
@@ -552,6 +554,8 @@ const saveDriveButton = requiredElement<HTMLButtonElement>("save-drive");
 const disconnectGoogleButton =
   requiredElement<HTMLButtonElement>("disconnect-google");
 const driveStatus = requiredElement<HTMLElement>("drive-status");
+const driveSectionHelp = requiredElement<HTMLElement>("drive-section-help");
+const driveControls = requiredElement<HTMLElement>("drive-controls");
 const createRoomButton = requiredElement<HTMLButtonElement>("create-room");
 const joinRoomButton = requiredElement<HTMLButtonElement>("join-room");
 const copyInviteButton = requiredElement<HTMLButtonElement>("copy-invite");
@@ -3303,6 +3307,22 @@ function renderDriveStatus(
   status: EditorDriveStatus,
   message?: string,
 ): void {
+  if (studentPolicy && isStudentDriveFullyBlocked(studentPolicy)) {
+    driveStatus.textContent = CLASSROOM_DRIVE_BLOCKED_STATUS;
+    driveStatus.title = CLASSROOM_DRIVE_BLOCKED_STATUS;
+    connectGoogleButton.hidden = true;
+    openDriveButton.hidden = true;
+    saveDriveButton.hidden = true;
+    disconnectGoogleButton.hidden = true;
+    driveControls.hidden = true;
+    return;
+  }
+  driveControls.hidden = false;
+  connectGoogleButton.hidden = false;
+  openDriveButton.hidden = false;
+  saveDriveButton.hidden = false;
+  disconnectGoogleButton.hidden = false;
+
   const previousStatus = lastDriveStatus;
   const conflictAction = driveConflictAction(status);
   if (
@@ -4426,6 +4446,9 @@ async function startEditorSurface(): Promise<void> {
       joinRoomButton,
       copyInviteButton,
       collabInviteInput,
+      driveStatus,
+      driveSectionHelp,
+      driveControls,
       drivePanel: document.querySelector<HTMLElement>(
         '[data-testid="drive-panel"]',
       ),

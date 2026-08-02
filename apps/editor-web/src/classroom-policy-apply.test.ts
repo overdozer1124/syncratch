@@ -3,8 +3,13 @@ import type {StudentPolicyView} from "@blocksync/classroom-access";
 import {
   aiSettingsFromStudentPolicy,
   applyStudentPolicyToDom,
+  shouldHideStudentDriveControls,
   studentPolicyBlocksAiPersist,
 } from "./classroom-policy-apply.js";
+import {
+  CLASSROOM_DRIVE_BLOCKED_HELP,
+  CLASSROOM_DRIVE_BLOCKED_STATUS,
+} from "./ui-copy.js";
 
 function policy(overrides: Partial<StudentPolicyView> = {}): StudentPolicyView {
   return {
@@ -59,11 +64,64 @@ describe("classroom policy apply", () => {
     expect(aiPanel.hidden).toBe(true);
   });
 
-  it("hides Drive CTAs when drive.allow is false (intentional student lock)", () => {
+  it("hides Drive CTAs only when both drive and collab are disallowed", () => {
+    expect(shouldHideStudentDriveControls(policy({drive: {allow: false}}))).toBe(
+      false,
+    );
+    expect(
+      shouldHideStudentDriveControls(
+        policy({drive: {allow: false}, collab: {allow: false}}),
+      ),
+    ).toBe(true);
+    expect(shouldHideStudentDriveControls(policy({drive: {allow: true}}))).toBe(
+      false,
+    );
+  });
+
+  it("shows policy-blocked messaging when Drive and collab are both off", () => {
     const connectGoogleButton = {hidden: false} as HTMLElement;
     const openDriveButton = {hidden: false} as HTMLElement;
     const saveDriveButton = {hidden: false} as HTMLElement;
     const disconnectGoogleButton = {hidden: false} as HTMLElement;
+    const driveStatus = {textContent: "", title: ""} as HTMLElement;
+    const driveSectionHelp = {textContent: "old"} as HTMLElement;
+    const driveControls = {hidden: false} as HTMLElement;
+    applyStudentPolicyToDom(
+      policy({drive: {allow: false}, collab: {allow: false}}),
+      {
+        settingsPanel: null,
+        aiPanel: null,
+        aiEnabledInput: null,
+        aiApiKeyInput: null,
+        aiSettingsSaveButton: null,
+        downloadButton: null,
+        openButton: null,
+        fileInput: null,
+        connectGoogleButton,
+        openDriveButton,
+        saveDriveButton,
+        disconnectGoogleButton,
+        createRoomButton: null,
+        joinRoomButton: null,
+        copyInviteButton: null,
+        collabInviteInput: null,
+        driveStatus,
+        driveSectionHelp,
+        driveControls,
+      },
+    );
+    expect(connectGoogleButton.hidden).toBe(true);
+    expect(openDriveButton.hidden).toBe(true);
+    expect(saveDriveButton.hidden).toBe(true);
+    expect(disconnectGoogleButton.hidden).toBe(true);
+    expect(driveControls.hidden).toBe(true);
+    expect(driveStatus.textContent).toBe(CLASSROOM_DRIVE_BLOCKED_STATUS);
+    expect(driveSectionHelp.textContent).toBe(CLASSROOM_DRIVE_BLOCKED_HELP);
+  });
+
+  it("keeps Drive CTAs visible when collab is allowed even if drive.allow is false", () => {
+    const saveDriveButton = {hidden: false} as HTMLElement;
+    const connectGoogleButton = {hidden: false} as HTMLElement;
     applyStudentPolicyToDom(policy({drive: {allow: false}}), {
       settingsPanel: null,
       aiPanel: null,
@@ -74,18 +132,16 @@ describe("classroom policy apply", () => {
       openButton: null,
       fileInput: null,
       connectGoogleButton,
-      openDriveButton,
+      openDriveButton: {hidden: false} as HTMLElement,
       saveDriveButton,
-      disconnectGoogleButton,
+      disconnectGoogleButton: {hidden: false} as HTMLElement,
       createRoomButton: null,
       joinRoomButton: null,
       copyInviteButton: null,
       collabInviteInput: null,
     });
-    expect(connectGoogleButton.hidden).toBe(true);
-    expect(openDriveButton.hidden).toBe(true);
-    expect(saveDriveButton.hidden).toBe(true);
-    expect(disconnectGoogleButton.hidden).toBe(true);
+    expect(connectGoogleButton.hidden).toBe(false);
+    expect(saveDriveButton.hidden).toBe(false);
   });
 
   it("keeps Drive CTAs visible when drive.allow is true", () => {
