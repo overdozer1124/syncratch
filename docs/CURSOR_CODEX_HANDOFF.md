@@ -59,7 +59,7 @@
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
-| `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | **現行アクティブ**。Phase 2 Codex GO。#197 @ `dc5b3ff`。Phase 3 停止 |
+| `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 
 ### 読取手順（「作業完了」時）
 
@@ -75,14 +75,14 @@
 | 最終更新 | 2026-08-02 18:28:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `admin-student-access` |
-| ワークフロー状態 | `PHASE2_COMPLETE`（Codex GO・#197 マージ予定） |
+| ワークフロー状態 | `PHASE2_COMPLETE`（Codex GO・#197 main マージ済み @ `24a0778`） |
 | 現在の担当 | ユーザー |
 | 現在のTask | Phase 2 完了。Phase 3 / 告知公開はユーザー指示後 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/admin-student-access-phase2-258b` → PR #197（head `dc5b3ff`） |
+| 作業ブランチ | `main` @ `24a0778`（#197 マージ） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | 公開実行待ち（ユーザー明示指示後）。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
@@ -5725,5 +5725,22 @@ Phase 2: Codex承認済み（grant 交換・URL query/hash 保持・reissue 期�
 Phase 3: 未着手・停止維持
 
 次: Cursor が台帳更新 → CI green → #197 main マージ
+禁止: 公開/deploy/タグ/Release/token/Phase 3/AI Phase 4+
+```
+
+### 2026-08-02 18:39:00 JST — Cursor（#197 main マージ）
+
+```text
+案件ID: admin-student-access
+状態: PHASE2_COMPLETE
+次の担当: ユーザー
+
+PR #197: MERGED（merge commit 24a0778）
+base: eb0d035
+feature head: dc5b3ff / 台帳 tip: ef138b5
+mergedAt: 2026-08-02T09:39:38Z
+CI gate0: green（台帳更新後・マージ前確認済み）
+
+Phase 3: 未着手・停止維持
 禁止: 公開/deploy/タグ/Release/token/Phase 3/AI Phase 4+
 ```
