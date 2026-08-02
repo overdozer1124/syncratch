@@ -46,10 +46,10 @@
 |---|---|
 | **アクティブ案件ID** | `release-decision` |
 | 案件名 | Stage 5 完了後のリリース告知・スコープ境界の判断 |
-| 現在の状態 | `READY_FOR_USER_APPROVAL` |
+| 現在の状態 | `APPROVED_FOR_PUBLICATION` |
 | 次の担当 | ユーザー |
-| 次の作業 | 編集済み告知ドラフト `docs/local-first/STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md` の最終承認・公開チャネル決定 |
-| 禁止 | **公開** / deploy / git 履歴 scrub / token 再掲 / AI Phase 4 着手 / 旧 A5 再検証ループ |
+| 次の作業 | **公開実行はユーザー明示指示後のみ。** 推奨順: リリースノート → SNS（リリースノート URL 案内） |
+| 禁止 | **公開実行** / deploy / タグ / GitHub Release / git 履歴 scrub / token 再掲 / AI Phase 4 着手 / 旧 A5 再検証ループ（内容承認済みだが、公開は未指示） |
 
 ### 案件レジストリ
 
@@ -57,7 +57,7 @@
 |---|---|---|---|---|
 | `stage5-manual-gates` | `COMPLETE` | — | — | A1–A7 / B1–B3 PASS（2026-08-02）。#192 docs |
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
-| `release-decision` | `READY_FOR_USER_APPROVAL` | ユーザー | 告知ドラフト最終承認 | **現行アクティブ**。ドラフト: `STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md`（編集反映済み） |
+| `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | **現行アクティブ**。内容 GO（2026-08-02）。#195 承認 |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
@@ -72,20 +72,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-02 16:11:00 JST |
+| 最終更新 | 2026-08-02 16:24:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `release-decision` |
-| ワークフロー状態 | `READY_FOR_USER_APPROVAL`（告知ドラフト編集反映済み・未公開） |
-| 現在の担当 | ユーザー（最終承認） |
-| 現在のTask | `STAGE5_RELEASE_ANNOUNCEMENT_DRAFT.md` の承認。承認後のみ公開 |
+| ワークフロー状態 | `APPROVED_FOR_PUBLICATION`（内容承認済み・**未公開**） |
+| 現在の担当 | ユーザー（公開実行の明示指示） |
+| 現在のTask | 告知内容 GO。公開は **ユーザー明示指示後**（リリースノート先行 → SNS 推奨） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`3d396b4` + 本 PR） |
+| 作業ブランチ | `main`（`770e3c5` + 本 PR） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | 告知判断のみ。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
+| 次Task | 公開実行待ち（ユーザー明示指示後）。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -142,7 +142,7 @@
 ## Cursorが次に行う作業
 
 1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **アクティブ案件 `release-decision`:** 告知ドラフト編集は反映済み。**`READY_FOR_USER_APPROVAL` で停止。** ユーザー承認まで公開・追加編集に着手しない。
+2. **アクティブ案件 `release-decision`:** 告知内容 **GO / APPROVED_FOR_PUBLICATION**。**公開・deploy・タグ/Release はユーザー明示指示まで停止。**
 3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
 4. 告知文では **Local-First Stage 5 完了** と **AI 診断 Milestone A 止まり（Phase 4+ 未）** を区別して書く。
 
@@ -5627,4 +5627,23 @@ Stage 5:
 禁止遵守: 公開・deploy・タグ/Release・token 再掲・git scrub・AI Phase 4+ 着手 — なし
 
 次: ユーザー最終承認 → 承認後のみ公開チャネル決定・配信
+```
+
+### 2026-08-02 16:24:00 JST — ユーザー（release-decision 内容承認 GO）
+
+```text
+案件ID: release-decision
+状態: APPROVED_FOR_PUBLICATION
+次の担当: ユーザー（公開実行の明示指示時）
+
+最終判定: GO / 内容承認（PR #195・最終ドラフト確認済み）
+
+承認チェック:
+- スコープ表現: 承認
+- 既知の限界のトーン: 承認
+- 公開チャネル: リリースノート先行 → SNS でリリースノート URL 案内（推奨）
+- 公開対象: 見出し・本文・SNS 案のみ（内部メモ・承認チェックリスト除外）
+
+重要: 内容承認であり、公開・タグ・GitHub Release・deploy の実行指示ではない。
+実際の公開はユーザー明示指示後に Cursor が実行する。
 ```
