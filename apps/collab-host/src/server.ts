@@ -42,12 +42,26 @@ import {
 } from "./drive-oauth.js";
 import {handleIceCredentials} from "./ice-endpoint.js";
 import {createStaticRequestHandler} from "./static.js";
-import {resolveClassroomFeatureFlagsForStartup} from "./classroom-feature-flags-runtime.js";
+import {
+  getClassroomFeatureFlagsForRuntime,
+  resolveClassroomFeatureFlagsForStartup,
+} from "./classroom-feature-flags-runtime.js";
+import {
+  createAdminGoogleOAuthHandler,
+  parseAdminGoogleCryptoKeysFromEnv,
+  readAdminGoogleOAuthConfigFromEnv,
+} from "./admin-google-oauth.js";
 
 export interface StartCollabHostAdminOptions {
   db?: AdminDb;
   config?: AdminAuthConfig | null;
   sessions?: AdminSessionStore;
+  /** Override startup-bound classroom flags (tests). */
+  classroomFlags?: {
+    classroomRosterEnabled: boolean;
+    adminGoogleCredentialEnabled: boolean;
+  };
+  adminGoogleOAuthEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -76,6 +90,12 @@ export async function startCollabHost(
   options: StartCollabHostOptions = {},
 ): Promise<CollabHostHandle> {
   resolveClassroomFeatureFlagsForStartup(process.env);
+  const runtimeClassroomFlags =
+    options.admin?.classroomFlags ?? getClassroomFeatureFlagsForRuntime();
+  const adminGoogleOAuthEnabled =
+    options.admin?.adminGoogleOAuthEnabled ??
+    (runtimeClassroomFlags.classroomRosterEnabled &&
+      runtimeClassroomFlags.adminGoogleCredentialEnabled);
 
   const port = options.port ?? Number(process.env.PORT ?? 8080);
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
@@ -112,9 +132,19 @@ export async function startCollabHost(
     config: adminConfig,
     sessions: adminSessions,
   });
+  const adminGoogleCryptoKeys = parseAdminGoogleCryptoKeysFromEnv();
+  const handleAdminGoogleOAuth = createAdminGoogleOAuthHandler({
+    enabled: adminGoogleOAuthEnabled,
+    db: adminDb.sqlite,
+    adminConfig,
+    adminSessions,
+    oauthConfig: readAdminGoogleOAuthConfigFromEnv(),
+    cryptoKeys: adminGoogleCryptoKeys,
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
+      if (await handleAdminGoogleOAuth(req, res)) return;
       if (await handleAdminAuth(req, res)) return;
       if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;

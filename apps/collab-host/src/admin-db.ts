@@ -26,6 +26,7 @@ import {
 } from "./admin-db-migrations/index.js";
 
 export interface AdminDb {
+  readonly sqlite: Database.Database;
   upsertAdminFromLogin(input: {
     subject: string;
     email: string;
@@ -263,6 +264,7 @@ export function openAdminDb(dbPath: string): AdminDb {
   }
 
   return {
+    sqlite: db,
     upsertAdminFromLogin(input) {
       const email = normalizeEmail(input.email);
       const existing = db

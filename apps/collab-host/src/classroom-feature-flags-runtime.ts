@@ -4,6 +4,12 @@ import {
   type ClassroomFeatureFlags,
 } from "@blocksync/classroom-access";
 
+let cachedStartupFlags: ResolvedClassroomFeatureFlags | null = null;
+
+export function resetClassroomFeatureFlagsCacheForTests(): void {
+  cachedStartupFlags = null;
+}
+
 const ALL_FLAGS_OFF: ClassroomFeatureFlags = {
   classroomRosterEnabled: false,
   adminGoogleCredentialEnabled: false,
@@ -25,18 +31,27 @@ export function resolveClassroomFeatureFlagsForStartup(
     console.warn(message);
   },
 ): ResolvedClassroomFeatureFlags {
+  if (cachedStartupFlags) {
+    return cachedStartupFlags;
+  }
   const parsed = parseClassroomFeatureFlags(env);
   const issues = validateClassroomFeatureFlagDependencies(parsed);
   if (issues.length === 0) {
-    return {flags: parsed, dependencyIssues: [], degradedToOff: false};
+    cachedStartupFlags = {flags: parsed, dependencyIssues: [], degradedToOff: false};
+    return cachedStartupFlags;
   }
   for (const issue of issues) {
     warn(`[collab-host] classroom feature flag dependency invalid: ${issue}`);
   }
   warn("[collab-host] degrading all classroom feature flags to OFF");
-  return {
+  cachedStartupFlags = {
     flags: ALL_FLAGS_OFF,
     dependencyIssues: issues,
     degradedToOff: true,
   };
+  return cachedStartupFlags;
+}
+
+export function getClassroomFeatureFlagsForRuntime(): ClassroomFeatureFlags {
+  return resolveClassroomFeatureFlagsForStartup().flags;
 }
