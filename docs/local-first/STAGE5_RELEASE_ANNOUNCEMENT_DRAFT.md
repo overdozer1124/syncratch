@@ -1,6 +1,7 @@
 # Syncratch Local-First Stage 5 リリース告知（ドラフト）
 
 > **ステータス: DRAFT — ユーザー承認前。公開・配信・デプロイ操作は行わない。**
+> **公開時は「内部メモ」「承認チェックリスト」を転載しない**（本文・見出し・SNS 案のみ公開対象）。
 
 | 項目 | 値 |
 |---|---|
@@ -8,7 +9,7 @@
 | 対象 | Community 版 Syncratch（シンクラッチ） |
 | 検証 URL | https://syncratch-production.up.railway.app/ |
 | 受け入れ根拠 | `FINAL_ACCEPTANCE_REPORT.md` / `STAGE5_MANUAL_GATES.md` §C.1.2 |
-| main tip（告知起草時） | `9685439` 以降 |
+| main tip（告知起草時） | `3d396b4` |
 
 ---
 
@@ -21,7 +22,7 @@
 ## 本文（案）
 
 Syncratch（シンクラッチ）Community 版について、Local-First ロードマップ **Stage 5** の受け入れ試験を完了しました。  
-本告知が示すのは **ブラウザ上の作品編集・保存・共同編集・Google ドライブ連携** までを対象とした基盤の完成です。
+本告知が示すのは **ブラウザ上の作品編集・保存・共同編集・Google ドライブ連携** までを対象とした **Local-First 基盤の Stage 5 受け入れ完了** です（製品全体の完成ではありません）。
 
 ### このリリースでできること
 
@@ -63,11 +64,13 @@ Syncratch（シンクラッチ）Community 版について、Local-First ロー�
 
 ## 短い告知（SNS / お知らせ1段落用・案）
 
-Syncratch Community 版で、Local-First 基盤の Stage 5 受け入れが完了しました。ログインなしの編集、端末内保存、`.sb3` 書き出し、任意の Google ドライブ連携（`drive.file`）、ホスト限定の Drive 保存付き共同編集までを本番で確認済みです。**AI 作品診断の Phase 4 以降や TURN 等は今回の範囲外**です。詳細: https://syncratch-production.up.railway.app/
+Syncratch Community 版で、Local-First 基盤の Stage 5 受け入れが完了しました。ログインなしの編集、端末内保存、`.sb3` 書き出し、任意の Google ドライブ連携（`drive.file`）、ホスト限定の Drive 保存付き共同編集までを本番で確認済みです。**AI 作品診断の Phase 4 以降や TURN 等は今回の範囲外**です。利用はこちら: https://syncratch-production.up.railway.app/
+
+> **SNS 案の URL:** リリースノート公開後は、上記をリリースノート URL へ差し替え可能（本番アプリ URL のままでも可）。
 
 ---
 
-## 内部メモ（公開文にそのまま載せない）
+## 内部メモ（公開文にそのまま載せない — 転載禁止）
 
 - ローカル保存完了メッセージは sr-only + アイコン tooltip 設計（「このパソコンに保存しました」はホバーで確認）
 - 受け入れ記録: `docs/local-first/STAGE5_MANUAL_GATES.md` §C.1.2
@@ -75,7 +78,7 @@ Syncratch Community 版で、Local-First 基盤の Stage 5 受け入れが完了
 
 ---
 
-## 承認チェックリスト（ユーザー）
+## 承認チェックリスト（ユーザー — 公開文に転載しない）
 
 - [ ] スコープ表現（Local-First 完了 vs AI Milestone A 止まり）が意図どおりか
 - [ ] 既知の限界（TURN / NAT / Drive best-effort）のトーンが許容範囲か
