@@ -44,23 +44,21 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `file-panel-drive-cta-visibility` |
-| 案件名 | ファイルパネル Drive 保存 CTA 不可視 / スクロール不能（Stage 5 A5 阻塞） |
-| 現在の状態 | `MERGED` |
-| 次の担当 | ユーザー |
-| 次の作業 | 本番反映後にハードリロードし、Stage 5 A5（Drive 保存 CTA 可視 + ホスト保存）を再検証 |
-| 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
-| Codex判定 | `GO / ROOT_CAUSE_CONFIRMED` |
-| 修正PR | #185 → main @ `4054345` |
-| 禁止 | local-diagnostics Phase 4 / Transformers.js / Drive concurrency 再設計への逸脱 |
+| **アクティブ案件ID** | `release-decision`（明示的次案件。待機のみなら「なし」） |
+| 案件名 | Stage 5 完了後のリリース告知・スコープ境界の判断 |
+| 現在の状態 | `WAITING_OPERATOR` |
+| 次の担当 | ユーザー / 運用者 |
+| 次の作業 | 告知文ドラフト（Local-First 完了 vs AI 診断 Milestone A 止まりを明記）。新しい生徒リンクが必要なら `/admin` で再発行 |
+| 禁止 | 旧 A5 再検証ループへの誤ルーティング / local-diagnostics Phase 4 への無指示着手 |
 
 ### 案件レジストリ
 
 | 案件ID | 現在の状態 | 次の担当 | 次の作業 | メモ |
 |---|---|---|---|---|
-| `file-panel-drive-cta-visibility` | `MERGED` | ユーザー | A5 再検証 | **現行アクティブ**（検証待ち）。#185 main |
-| `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | 一時停止。Phase 1–3 = #177–#179 main 済み |
-| `stage5-manual-gates` | `WAITING_USER` | ユーザー | A5–A7 / B1 / B3 | A5 再検証待ち。アクティブではない |
+| `stage5-manual-gates` | `COMPLETE` | — | — | A1–A7 / B1–B3 PASS（2026-08-02）。#192 docs |
+| `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
+| `release-decision` | `WAITING_OPERATOR` | ユーザー | 告知可否・スコープ明記 | **現行アクティブ**（待機） |
+| `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE1_MERGED` | — | Phase 2 は指示があるまで停止 | `/admin`・`/s/{token}` Phase 1 は main 済み |
 
 ### 読取手順（「作業完了」時）
@@ -74,24 +72,23 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-01 20:03:40 JST |
+| 最終更新 | 2026-08-02 14:15:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `file-panel-drive-cta-visibility`（上表が正） |
-| ワークフロー状態 | `MERGED` / `WAITING_USER` |
-| 現在の担当 | ユーザー（A5 再検証） |
-| 現在のTask | A5 再検証中。OAuth アカウント選択ループ修正を別PRで投入 |
+| アクティブ案件ID | `release-decision`（待機。作業指示がなければ「なし」扱い） |
+| ワークフロー状態 | Stage 5 **COMPLETE** / リリース告知前ゲート（トークン redact 済み） |
+| 現在の担当 | ユーザー / 運用者（告知判断） |
+| 現在のTask | リリース告知可否。Local-First Stage 5 完了 vs AI 診断 Milestone A 止まりの区別を告知文へ明記 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（PR #10 以降の Community 系 + AI 助言試作を含む） |
-| Stage 5 | 自動 PASS / A1–A4・B2 PASS / A5 再検証待ち（#185）/ A6–A7・B1・B3 残り |
+| Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
+| Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main`（`4054345`） |
+| 作業ブランチ | `main`（`e8198c9` + 本修正 PR 予定） |
 | 作業worktree | `/workspace`（cloud agent） |
-| 調査依頼 | `docs/superpowers/reviews/2026-08-01-codex-file-panel-drive-cta-investigation.md` |
-| Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection。`File.version` / `headRevisionId` による atomic CAS・厳密lock・即時/全競合検出は保証しない |
-| 次Task | ユーザー A5 再検証。local-diagnostics Phase 4 は停止維持 |
-| Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory（AI 助言試作は main にマージ済み・下記一覧） |
+| Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
+| 次Task | 告知判断のみ。local-diagnostics Phase 4 / Transformers.js / 外部AI成人向け分離は **後続・未着手** |
+| Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
-| local-diagnostics | Milestone A main 済み。Phase 4 停止中 |
+| local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
 
 ## Codex向け: 実装済み AI 助言ブランチ一覧（main 取り込み済み）
 
@@ -144,10 +141,10 @@
 
 ## Cursorが次に行う作業
 
-1. **アクティブ案件は `file-panel-drive-cta-visibility`（#185 MERGED）。** ユーザーの A5 再検証結果を待つ。
-2. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは停止維持。
-3. Stage 5 の A6–A7 / B1 / B3 は A5 PASS 後にユーザー検証へ戻す。
-4. 既存 `@blocksync/ai-assist` と `/ai/chat` の contract は変更しない。
+1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
+2. **アクティブ案件は `release-decision`（待機）。** ユーザーから告知・次フェーズ指示があるまで新規実装に着手しない。
+3. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
+4. 告知文では **Local-First Stage 5 完了** と **AI 診断 Milestone A 止まり（Phase 4+ 未）** を区別して書く。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -5581,4 +5578,35 @@ local-diagnostics: Milestone A / Phase 4 停止維持
 - peekPendingHostCreate で成功時のみ consume
 
 次: PR → main → ユーザー再検証
+```
+
+### 2026-08-02 14:15:00 JST — Cursor（Stage 5 COMPLETE / トークン redact / 台帳同期）
+
+```text
+案件ID: stage5-manual-gates / file-panel-drive-cta-visibility / release-decision
+状態: COMPLETE（機能受け入れ） / WAITING_OPERATOR（告知前）
+
+Stage 5:
+- ユーザー実機 A5–A7 / B1 / B3 PASS
+- PR #189–#192 main マージ済み
+- FINAL_ACCEPTANCE_REPORT / RELEASE_CHECKLIST / STAGE5 §C.1.2 更新済み（#192）
+
+セキュリティ（生徒リンク token）:
+- STAGE5 §C.1.2 に載っていた `/s/{token}` を `<redacted>` へ置換
+- 本番確認: GET /api/student/policy-by-token/<当該token> → LINK_NOT_FOUND（2026-08-02 時点で無効）
+- 運用: 新しい検証用リンクは /admin で再発行。git 履歴 #192 以前に token 文字列が残るため、必要なら履歴 scrub を別途検討
+
+台帳同期:
+- stage5-manual-gates: COMPLETE
+- file-panel-drive-cta-visibility: COMPLETE
+- アクティブ案件: release-decision（待機。作業なしなら「なし」）
+- local-diagnostics-ai-routing: Milestone A MERGED / Phase 4 停止維持
+
+告知境界（必須明記）:
+- Stage 5 完了 = Local-First Community 基盤の受け入れ完了
+- AI 診断 = Milestone A まで。外部AI成人向け分離 / Transformers.js Phase 4+ は後続
+
+判定:
+- 機能受け入れ: Stage 5 COMPLETE
+- リリース運用: トークン redact + 台帳同期後に告知可能
 ```

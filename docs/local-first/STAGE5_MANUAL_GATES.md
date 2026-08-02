@@ -236,7 +236,7 @@ A5 / A6 / A7 / B1 / B3: 未実施（ユーザー実機）
 実施者: ユーザー（本番 Railway 実機）+ Cursor（Drive UI / ポリシー / A6 復旧 PR）
 git tip（検証時 main）: 6267f5935727a887147b3582dfd5ffd22dcb2ad4
 検証 origin: https://syncratch-production.up.railway.app/
-             https://syncratch-production.up.railway.app/s/sw2QhLBhFnzwy9ERVaOH4g
+             https://syncratch-production.up.railway.app/s/<redacted>
 Google Cloud project: syncratch（APP_ID 863099193805）
 ブラウザ: Chrome（2880×1800、通常 + シークレット）
 
