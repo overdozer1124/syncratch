@@ -5656,7 +5656,7 @@ Stage 5:
 次の担当: Codex
 
 base SHA: eb0d035
-head SHA: （本 PR push 後に記録）
+head SHA: 30ca46f
 
 実装概要:
 1. POST /api/student/grant → HttpOnly syncratch_student_grant（8h TTL）
