@@ -5894,3 +5894,28 @@ Hermes 必須:
 禁止: 自動マージ / PR 3 以降未着手
 次: Hermes PR 2 決裁 → GO 後 CI green → main マージ
 ```
+
+### 2026-08-03 08:30:00 JST — Hermes（PR #199 決裁 GO → main マージ）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #199 @9284f4f
+判定: GO
+Reviewer: Hermes（Codex 代行）
+CI: Gate 0 ×2 SUCCESS
+mergedAt: 2026-08-02T23:31:00Z @30380ba
+
+確認:
+- migration v3 ledger [1,2,3] / pending state SQLite DELETE RETURNING
+- drive.file scope only / AES-256-GCM refresh token / flags OFF → 404
+- admin session ≠ teacher credential / DB reopen callback test PASS
+- collab-host 44 tests + typecheck PASS
+
+Minor（マージ非阻止）:
+- admin-google-oauth.ts 未使用 import/定数（parseCookies, ACCESS_SKEW_MS）
+
+状態: PHASE2_COMPLETE
+次の担当: Cursor
+次: PR 3（Roster admin API + CSV import）— 明示指示後
+禁止: 公開/deploy/PR 4+ 先行
+```
