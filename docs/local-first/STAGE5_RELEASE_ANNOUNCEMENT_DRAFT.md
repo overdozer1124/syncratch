@@ -1,7 +1,7 @@
 # Syncratch Local-First Stage 5 リリース告知（ドラフト）
 
-> **ステータス: DRAFT — ユーザー承認前。公開・配信・デプロイ操作は行わない。**
-> **公開時は「内部メモ」「承認チェックリスト」を転載しない**（本文・見出し・SNS 案のみ公開対象）。
+> **ステータス: APPROVED_FOR_PUBLICATION — 内容承認済み（2026-08-02）。公開・配信・デプロイ・タグ・GitHub Release はユーザー明示指示後のみ。**
+> **公開対象:** 見出し・本文・SNS 案のみ。「内部メモ」「承認チェックリスト」は転載しない。
 
 | 項目 | 値 |
 |---|---|
@@ -9,7 +9,9 @@
 | 対象 | Community 版 Syncratch（シンクラッチ） |
 | 検証 URL | https://syncratch-production.up.railway.app/ |
 | 受け入れ根拠 | `FINAL_ACCEPTANCE_REPORT.md` / `STAGE5_MANUAL_GATES.md` §C.1.2 |
-| main tip（告知起草時） | `3d396b4` |
+| main tip（告知起草時） | `3d396b4`（承認時 main: `770e3c5` / PR #195） |
+| 内容承認 | 2026-08-02 — GO（ユーザー最終判定） |
+| 推奨公開順 | **1.** リリースノート **2.** SNS（リリースノート URL を案内） |
 
 ---
 
@@ -66,7 +68,7 @@ Syncratch（シンクラッチ）Community 版について、Local-First ロー�
 
 Syncratch Community 版で、Local-First 基盤の Stage 5 受け入れが完了しました。ログインなしの編集、端末内保存、`.sb3` 書き出し、任意の Google ドライブ連携（`drive.file`）、ホスト限定の Drive 保存付き共同編集までを本番で確認済みです。**AI 作品診断の Phase 4 以降や TURN 等は今回の範囲外**です。利用はこちら: https://syncratch-production.up.railway.app/
 
-> **SNS 案の URL:** リリースノート公開後は、上記をリリースノート URL へ差し替え可能（本番アプリ URL のままでも可）。
+> **SNS 案の URL:** リリースノート公開後、SNS 案内は **リリースノート URL** へ差し替え推奨（本番アプリ URL のままでも可）。
 
 ---
 
@@ -80,7 +82,7 @@ Syncratch Community 版で、Local-First 基盤の Stage 5 受け入れが完了
 
 ## 承認チェックリスト（ユーザー — 公開文に転載しない）
 
-- [ ] スコープ表現（Local-First 完了 vs AI Milestone A 止まり）が意図どおりか
-- [ ] 既知の限界（TURN / NAT / Drive best-effort）のトーンが許容範囲か
-- [ ] 公開チャネル（ブログ / リリースノート / SNS）を決定
-- [ ] 承認後にのみ公開・配信する
+- [x] スコープ表現（Local-First 完了 vs AI Milestone A 止まり）が意図どおりか — **承認（2026-08-02）**
+- [x] 既知の限界（TURN / NAT / Drive best-effort）のトーンが許容範囲か — **承認（2026-08-02）**
+- [x] 公開チャネル（ブログ / リリースノート / SNS）を決定 — **リリースノート先行 → SNS でリリースノート URL 案内（推奨）**
+- [x] 承認後にのみ公開・配信する — **内容承認済み。実際の公開はユーザー明示指示後**
