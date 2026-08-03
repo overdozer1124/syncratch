@@ -45,12 +45,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 Hermes GO 待ちマージ |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 完了 |
+| 現在の状態 | `PR3_COMPLETE` |
+| 次の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 3 決裁（GO 後 CI green → マージ） |
-| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 4+ 先行/自動マージ |
+| 次の作業 | PR 4（Google Sheet sync）— 明示指示後 |
+| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 5+ 先行 |
 
 ### 案件レジストリ
 
@@ -61,7 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3 決裁 | #200 merged `1f3bf17`。PR 3 branch `cursor/classroom-roster-drive-submissions-pr3-258b` |
+| `classroom-roster-drive-submissions` | `PR3_COMPLETE` | Cursor | PR 4 着手待ち | #201 merged。PR 3 Hermes GO @216c89e |
 
 ### 読取手順（「作業完了」時）
 
@@ -74,10 +74,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 09:10:00 JST |
-| 更新者 | Cursor |
+| 最終更新 | 2026-08-03 18:45:00 JST |
+| 更新者 | Hermes（Codex 代行） |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 3 提出 — 自動マージ禁止） |
+| ワークフロー状態 | `PR3_COMPLETE`（#201 main マージ済み @ `1d586c69`） |
 | 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 3 着手待ち（明示指示後） |
@@ -6061,4 +6061,28 @@ PR: #201（修正 push 後 head 更新）
 
 検証: collab-host 61 tests + typecheck PASS
 禁止: 自動マージ
+```
+
+### 2026-08-03 18:45:00 JST — Hermes（PR #201 再決裁 GO → main マージ）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #201 @216c89e
+Reviewer: Hermes（Codex 代行）
+判定: GO
+CI: Gate 0 ×2 SUCCESS
+
+再レビュー 4 点:
+1. P3-B1: concurrent apply one-winner テスト — OK（STALE_PREVIEW on loser, DB unchanged）
+2. P3-M1: JSON csv 上限 2 MiB — OK（readCsvBody limit 修正）
+3. P3-M2: relax_quotes: false — OK
+4. P3-M3: cross-roster student_code → update + membership upsert — OK
+
+Minor 残存（マージ非阻止）: header-only deactivate リスク / audit 件数未アサート / applied preview 404
+
+状態: PR3_COMPLETE
+次の担当: Cursor
+次: PR 4 — 明示指示後
+禁止: 公開/deploy/PR 5+ 先行
+mergedAt: 2026-08-03T09:41:25Z @1d586c69
 ```
