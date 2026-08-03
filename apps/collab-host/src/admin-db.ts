@@ -26,6 +26,7 @@ import {
 } from "./admin-db-migrations/index.js";
 
 export interface AdminDb {
+  /** Infrastructure wiring only — do not write business queries against this. */
   readonly sqlite: Database.Database;
   upsertAdminFromLogin(input: {
     subject: string;

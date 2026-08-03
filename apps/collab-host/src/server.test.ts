@@ -1,12 +1,17 @@
 import {mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {afterEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {WebSocket} from "ws";
+import {resetClassroomFeatureFlagsCacheForTests} from "./classroom-feature-flags-runtime.js";
 import {startCollabHost, type CollabHostHandle} from "./server.js";
 
 const TOPIC = "c".repeat(43);
 let handle: CollabHostHandle | undefined;
+
+beforeEach(() => {
+  resetClassroomFeatureFlagsCacheForTests();
+});
 
 afterEach(async () => {
   await handle?.close();

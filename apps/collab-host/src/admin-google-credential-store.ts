@@ -1,4 +1,4 @@
-import {createHash} from "node:crypto";
+import {createHash, randomBytes} from "node:crypto";
 import type Database from "better-sqlite3";
 import {
   decryptAdminGoogleSecret,
@@ -47,6 +47,7 @@ export interface AdminGoogleCredentialStore {
   }): AdminGoogleCredentialRecord;
   getCredentialByAdminId(adminId: string): AdminGoogleCredentialRecord | null;
   deleteCredentialByAdminId(adminId: string): boolean;
+  /** Reserved for PR 4 Sheet sync / token refresh paths. */
   updateAccessToken(
     credentialId: string,
     accessToken: string | null,
@@ -80,10 +81,7 @@ interface CredentialRow {
 }
 
 function createOpaqueId(prefix: string): string {
-  return `${prefix}_${createHash("sha256")
-    .update(`${Date.now()}-${Math.random()}`)
-    .digest("hex")
-    .slice(0, 24)}`;
+  return `${prefix}_${createHash("sha256").update(randomBytes(16)).digest("hex").slice(0, 24)}`;
 }
 
 function encryptOptionalAccessToken(

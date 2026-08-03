@@ -52,6 +52,18 @@ export function resolveClassroomFeatureFlagsForStartup(
   return cachedStartupFlags;
 }
 
+export class ClassroomFeatureFlagsNotInitializedError extends Error {
+  constructor() {
+    super(
+      "Classroom feature flags cache is not initialized; call resolveClassroomFeatureFlagsForStartup() at process startup first",
+    );
+    this.name = "ClassroomFeatureFlagsNotInitializedError";
+  }
+}
+
 export function getClassroomFeatureFlagsForRuntime(): ClassroomFeatureFlags {
-  return resolveClassroomFeatureFlagsForStartup().flags;
+  if (!cachedStartupFlags) {
+    throw new ClassroomFeatureFlagsNotInitializedError();
+  }
+  return cachedStartupFlags.flags;
 }

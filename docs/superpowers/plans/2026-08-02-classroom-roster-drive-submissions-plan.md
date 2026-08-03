@@ -229,7 +229,7 @@ These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
 
 **Status:** NOT STARTED
 
-**Scope:** Separate teacher Google credential session (`syncratch_admin_google` proposed) with **`drive.file` scope only**. Connect/disconnect/status APIs gated by `SYNCRATCH_CLASSROOM_ROSTER_ENABLED` + `SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED`. Store encrypted refresh token server-side. Fail closed on flag dependency violations at collab-host startup.
+**Scope:** Separate teacher Google credential (server-side SQLite; **no browser cookie**) with **`drive.file` scope only**. Connect/disconnect/status APIs gated by `SYNCRATCH_CLASSROOM_ROSTER_ENABLED` + `SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED`. Store encrypted refresh token server-side. Fail closed on flag dependency violations at collab-host startup.
 
 ### Files (expected)
 
@@ -253,7 +253,7 @@ These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
 
 ### Verification
 
-- Flag OFF → routes 404/501; no `syncratch_admin_google` cookie.
+- Flag OFF → routes 404/501; no teacher credential browser cookie.
 - Flag ON + valid admin session → OAuth round-trip stores credential; scope request contains only `drive.file`.
 - Admin login cookie alone does **not** imply teacher credential.
 - Migration v3 applies cleanly from v2; ledger `[1,2,3]`.
