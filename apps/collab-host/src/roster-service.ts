@@ -221,6 +221,12 @@ export function createRosterService(db: Database.Database): RosterService {
     ORDER BY s.student_code ASC
   `);
 
+  const listOwnerStudentsStmt = db.prepare(`
+    SELECT * FROM classroom_students
+    WHERE owner_admin_id = ?
+    ORDER BY student_code ASC
+  `);
+
   function requireRoster(
     rosterId: string,
     ownerAdminId: string,
@@ -388,12 +394,16 @@ export function createRosterService(db: Database.Database): RosterService {
     createImportFromCsv(rosterId, ownerAdminId, csvText) {
       const roster = requireRoster(rosterId, ownerAdminId);
       const parsedRows = parseRosterCsv(csvText);
-      const existingRows = listExistingStudentsStmt.all(
+      const rosterMemberRows = listExistingStudentsStmt.all(
         rosterId,
         ownerAdminId,
       ) as StudentRow[];
-      const existingStudents = existingRows.map(existingFromRow);
-      const drafts = buildImportPreviewRows({parsedRows, existingStudents});
+      const ownerRows = listOwnerStudentsStmt.all(ownerAdminId) as StudentRow[];
+      const drafts = buildImportPreviewRows({
+        parsedRows,
+        existingStudents: ownerRows.map(existingFromRow),
+        rosterMembers: rosterMemberRows.map(existingFromRow),
+      });
       const previewHash = computePreviewHash({
         baseRosterRevision: roster.rosterRevision,
         rows: drafts,
@@ -651,6 +661,34 @@ export function createRosterService(db: Database.Database): RosterService {
               draft.studentId,
               input.ownerAdminId,
             );
+            const existingMembership = db
+              .prepare(
+                `SELECT membership_id FROM classroom_roster_memberships
+                 WHERE roster_id = ? AND student_id = ?`,
+              )
+              .get(input.rosterId, draft.studentId) as
+              | {membership_id: string}
+              | undefined;
+            if (existingMembership) {
+              db.prepare(
+                `UPDATE classroom_roster_memberships SET
+                  active = 1, updated_at = ?
+                 WHERE roster_id = ? AND student_id = ?`,
+              ).run(ts, input.rosterId, draft.studentId);
+            } else {
+              db.prepare(
+                `INSERT INTO classroom_roster_memberships (
+                  membership_id, roster_id, student_id, active,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, 1, ?, ?)`,
+              ).run(
+                createOpaqueId(),
+                input.rosterId,
+                draft.studentId,
+                ts,
+                ts,
+              );
+            }
             insertAudit.run(
               createOpaqueId(),
               input.ownerAdminId,

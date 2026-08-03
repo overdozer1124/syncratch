@@ -132,7 +132,7 @@ export function parseRosterCsv(csvText: string): ParsedRosterCsvRow[] {
     columns: true,
     skip_empty_lines: true,
     bom: true,
-    relax_quotes: true,
+    relax_quotes: false,
   }) as Array<Record<string, string>>;
 
   if (records.length > MAX_ROSTER_CSV_ROWS) {
@@ -157,8 +157,12 @@ function rowsEqual(a: NormalizedRosterRow, b: ExistingRosterStudent): boolean {
 
 export function buildImportPreviewRows(input: {
   parsedRows: ParsedRosterCsvRow[];
+  /** All owner students for student_code lookup. */
   existingStudents: ExistingRosterStudent[];
+  /** Roster members used for implicit deactivate when absent from CSV. */
+  rosterMembers?: ExistingRosterStudent[];
 }): PreviewRowDraft[] {
+  const rosterMembers = input.rosterMembers ?? input.existingStudents;
   const byCode = new Map(
     input.existingStudents.map(student => [student.studentCode, student]),
   );
@@ -314,7 +318,7 @@ export function buildImportPreviewRows(input: {
     });
   }
 
-  for (const existing of input.existingStudents) {
+  for (const existing of rosterMembers) {
     if (!existing.active || csvCodes.has(existing.studentCode)) continue;
     drafts.push({
       rowNumber: 0,

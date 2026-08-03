@@ -64,7 +64,7 @@ async function readJsonBody(
 async function readCsvBody(req: IncomingMessage): Promise<string> {
   const contentType = req.headers["content-type"]?.split(";")[0]?.trim() ?? "";
   if (contentType === "application/json") {
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, MAX_ROSTER_CSV_BYTES + 4096);
     if (
       body &&
       typeof body === "object" &&

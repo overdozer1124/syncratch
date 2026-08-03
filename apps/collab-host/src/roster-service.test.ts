@@ -75,9 +75,108 @@ describe("roster-service", () => {
       }),
     ).toThrow(RosterServiceError);
 
-    const studentCount = service.listStudents(roster.rosterId, admin.adminId);
-    expect(studentCount).toHaveLength(0);
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(0);
     expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(0);
+    db.close();
+  });
+
+  it("allows only one apply winner per roster revision", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-concurrent",
+      email: "teacher-concurrent@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "名簿"});
+    const previewA = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,A,true"].join("\n"),
+    );
+    const previewB = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S002,佐藤,02,s,B,true"].join("\n"),
+    );
+
+    const applied = service.applyImport({
+      rosterId: roster.rosterId,
+      importId: previewA.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: previewA.previewHash,
+      baseRosterRevision: previewA.baseRosterRevision,
+    });
+    expect(applied.roster.rosterRevision).toBe(1);
+
+    let loserCode = "";
+    try {
+      service.applyImport({
+        rosterId: roster.rosterId,
+        importId: previewB.import.importId,
+        ownerAdminId: admin.adminId,
+        previewHash: previewB.previewHash,
+        baseRosterRevision: previewB.baseRosterRevision,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(RosterServiceError);
+      loserCode = (error as RosterServiceError).code;
+    }
+    expect(["STALE_PREVIEW", "REVISION_CONFLICT"]).toContain(loserCode);
+
+    const students = service.listStudents(roster.rosterId, admin.adminId);
+    expect(students).toHaveLength(1);
+    expect(students[0]?.studentCode).toBe("S001");
+    expect(
+      service.getImport(roster.rosterId, previewB.import.importId, admin.adminId)
+        ?.status,
+    ).toBe("preview_ready");
+    db.close();
+  });
+
+  it("links existing owner student_code into another roster on apply", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-cross",
+      email: "teacher-cross@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const rosterA = service.createRoster(admin.adminId, {title: "A組"});
+    const rosterB = service.createRoster(admin.adminId, {title: "B組"});
+    const seed = service.createImportFromCsv(
+      rosterA.rosterId,
+      admin.adminId,
+      [header(), "S001,共有,01,shared,A,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: rosterA.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+    });
+
+    const linkPreview = service.createImportFromCsv(
+      rosterB.rosterId,
+      admin.adminId,
+      [header(), "S001,共有更新,01,shared,A,true"].join("\n"),
+    );
+    expect(linkPreview.rows.some(row => row.category === "add")).toBe(false);
+    expect(linkPreview.rows.some(row => row.category === "update")).toBe(true);
+
+    service.applyImport({
+      rosterId: rosterB.rosterId,
+      importId: linkPreview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: linkPreview.previewHash,
+      baseRosterRevision: linkPreview.baseRosterRevision,
+    });
+
+    expect(service.listStudents(rosterB.rosterId, admin.adminId)).toHaveLength(1);
+    expect(
+      service.listStudents(rosterB.rosterId, admin.adminId)[0]?.displayName,
+    ).toBe("共有更新");
     db.close();
   });
 
