@@ -47,10 +47,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3.1 提出（#201 無効マージ是正） |
-| 現在の状態 | `PR3_1_APPROVED_PENDING_CI` |
-| 次の担当 | Cursor（CI green 確認 → マージ） |
+| 現在の状態 | `PR3_COMPLETE` |
+| 次の担当 | Cursor（PR 4 着手 — 明示指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR #202 CI green 確認 → main マージ |
+| 次の作業 | PR 4 着手待ち（明示指示後） |
 | 禁止 | 自動マージ / PR 4+ 先行 |
 
 ### 案件レジストリ
@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR3_1_APPROVED_PENDING_CI` | Cursor | CI green → #202 マージ | Hermes GO @19:02 / #202 @1db1d8a。CI 待ち |
+| `classroom-roster-drive-submissions` | `PR3_COMPLETE` | Cursor | PR 4 着手（明示指示後） | #202 merged @cb5a5c2。Hermes GO @19:02 |
 
 ### 読取手順（「作業完了」時）
 
@@ -75,21 +75,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 19:02:00 JST |
-| 更新者 | Hermes |
+| 最終更新 | 2026-08-03 19:28:00 JST |
+| 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR3_1_APPROVED_PENDING_CI`（PR #202 Hermes GO — CI green 後マージ可） |
+| ワークフロー状態 | `PR3_COMPLETE`（PR #202 main マージ済み） |
 | 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 3 着手待ち（明示指示後） |
+| 現在のTask | PR 4 着手待ち（明示指示後） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main` @ `1f3bf17`（#200 マージ） |
+| 作業ブランチ | `main` @ `cb5a5c2`（#202 マージ） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 3 着手待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 4 着手待ち（明示指示後）。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
