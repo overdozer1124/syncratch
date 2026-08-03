@@ -10,6 +10,7 @@ import {
   adminRosterImportApplyPath,
   adminRosterImportPreviewPath,
   adminRosterImportsPath,
+  adminRosterPath,
   adminRosterStudentsPath,
 } from "@blocksync/classroom-access";
 import {
@@ -168,6 +169,7 @@ describe("roster admin routes", () => {
       import: {importId: string};
       previewHash: string;
       baseRosterRevision: number;
+      deactivateMissing: boolean;
     };
 
     const preview = await fetch(
@@ -194,6 +196,7 @@ describe("roster admin routes", () => {
         body: JSON.stringify({
           previewHash: importBody.previewHash,
           baseRosterRevision: importBody.baseRosterRevision,
+          deactivateMissing: importBody.deactivateMissing,
         }),
       },
     );
@@ -272,9 +275,40 @@ describe("roster admin routes", () => {
         body: JSON.stringify({
           previewHash: "0".repeat(64),
           baseRosterRevision: 0,
+          deactivateMissing: false,
         }),
       },
     );
     expect(stale.status).toBe(409);
+  });
+
+  it("does not expose DELETE /api/admin/rosters/:id", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-no-delete-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-no-delete"),
+    };
+    const {handle: h} = await boot(config, dbPath, root, true);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "名簿"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    const deleted = await fetch(new URL(adminRosterPath(roster.rosterId), h.url), {
+      method: "DELETE",
+      headers: {cookie, "x-csrf-token": csrfToken},
+    });
+    expect(deleted.status).toBe(405);
   });
 });

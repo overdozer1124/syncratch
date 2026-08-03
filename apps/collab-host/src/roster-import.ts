@@ -19,6 +19,14 @@ export const BLOCKING_PREVIEW_CATEGORIES = new Set<RosterImportPreviewCategory>(
   "rejected_row",
 ]);
 
+const BLOCKING_ISSUE_CODES = new Set([
+  "MISSING_STUDENT_CODE",
+  "MISSING_DISPLAY_NAME",
+  "INVALID_ACTIVE",
+  "INACTIVE_ADD",
+  "CSV_PARSE_ERROR",
+]);
+
 export interface ParsedRosterCsvRow {
   rowNumber: number;
   raw: Record<string, string>;
@@ -51,17 +59,31 @@ export interface PreviewRowDraft {
   issues: RosterImportRowIssue[];
 }
 
-function parseActive(raw: string | undefined): boolean | null {
-  if (raw === undefined || raw.trim() === "") return null;
+export interface ImportPreviewBuildResult {
+  rows: PreviewRowDraft[];
+  ignoredColumns: string[];
+  missingFromCsvCount: number;
+}
+
+export class RosterCsvParseError extends Error {
+  constructor(readonly rejectedRows: PreviewRowDraft[]) {
+    super("CSV parse failed");
+    this.name = "RosterCsvParseError";
+  }
+}
+
+type ActiveParseResult = boolean | "invalid";
+
+function parseActive(raw: string | undefined): ActiveParseResult {
+  if (raw === undefined || raw.trim() === "") return true;
   const value = raw.trim().toLowerCase();
   if (value === "true" || value === "1" || value === "yes") return true;
   if (value === "false" || value === "0" || value === "no") return false;
-  return null;
+  return "invalid";
 }
 
 function normalizeRow(
   raw: Record<string, string>,
-  rowNumber: number,
 ): {row?: NormalizedRosterRow; issues: RosterImportRowIssue[]} {
   const issues: RosterImportRowIssue[] = [];
   const extraColumns = Object.keys(raw).filter(
@@ -70,7 +92,7 @@ function normalizeRow(
   if (extraColumns.length > 0) {
     issues.push({
       code: "UNKNOWN_COLUMN",
-      message: `Unknown columns: ${extraColumns.join(", ")}`,
+      message: `Unknown columns ignored: ${extraColumns.join(", ")}`,
     });
   }
 
@@ -93,16 +115,17 @@ function normalizeRow(
   }
 
   const activeParsed = parseActive(raw.active);
-  if (activeParsed === null) {
+  if (activeParsed === "invalid") {
     issues.push({
       code: "INVALID_ACTIVE",
-      message: 'active must be "true" or "false"',
+      message: 'active must be "true" or "false" when provided',
       field: "active",
     });
   }
 
-  if (issues.length > 0) {
-    return {issues};
+  const blockingIssues = issues.filter(issue => BLOCKING_ISSUE_CODES.has(issue.code));
+  if (blockingIssues.length > 0) {
+    return {issues: blockingIssues.concat(issues.filter(i => !BLOCKING_ISSUE_CODES.has(i.code)))};
   }
 
   const attendanceRaw = raw.attendance_number?.trim() ?? "";
@@ -116,10 +139,22 @@ function normalizeRow(
       attendanceNumber: attendanceRaw ? attendanceRaw : null,
       loginName: loginRaw || studentCode,
       groupLabel: groupRaw ? groupRaw : null,
-      active: activeParsed!,
+      active: activeParsed as boolean,
     },
     issues,
   };
+}
+
+export function collectIgnoredColumns(parsedRows: ParsedRosterCsvRow[]): string[] {
+  const cols = new Set<string>();
+  for (const parsed of parsedRows) {
+    for (const key of Object.keys(parsed.raw)) {
+      if (!ROSTER_SHEET_COLUMNS.includes(key as (typeof ROSTER_SHEET_COLUMNS)[number])) {
+        cols.add(key);
+      }
+    }
+  }
+  return [...cols].sort();
 }
 
 export function parseRosterCsv(csvText: string): ParsedRosterCsvRow[] {
@@ -128,12 +163,38 @@ export function parseRosterCsv(csvText: string): ParsedRosterCsvRow[] {
     throw new Error(`CSV exceeds ${MAX_ROSTER_CSV_BYTES} bytes`);
   }
 
-  const records = parse(csvText, {
-    columns: true,
-    skip_empty_lines: true,
-    bom: true,
-    relax_quotes: false,
-  }) as Array<Record<string, string>>;
+  let records: Array<Record<string, string>>;
+  try {
+    records = parse(csvText, {
+      columns: true,
+      skip_empty_lines: true,
+      bom: true,
+      relax_quotes: false,
+    }) as Array<Record<string, string>>;
+  } catch (error) {
+    const lineNumber =
+      error &&
+      typeof error === "object" &&
+      "lines" in error &&
+      typeof (error as {lines?: unknown}).lines === "number"
+        ? (error as {lines: number}).lines
+        : 1;
+    throw new RosterCsvParseError([
+      {
+        rowNumber: lineNumber,
+        category: "rejected_row",
+        studentId: null,
+        proposed: {},
+        issues: [
+          {
+            code: "CSV_PARSE_ERROR",
+            message:
+              error instanceof Error ? error.message : "Malformed CSV row",
+          },
+        ],
+      },
+    ]);
+  }
 
   if (records.length > MAX_ROSTER_CSV_ROWS) {
     throw new Error(`CSV exceeds ${MAX_ROSTER_CSV_ROWS} data rows`);
@@ -161,8 +222,11 @@ export function buildImportPreviewRows(input: {
   existingStudents: ExistingRosterStudent[];
   /** Roster members used for implicit deactivate when absent from CSV. */
   rosterMembers?: ExistingRosterStudent[];
-}): PreviewRowDraft[] {
+  /** When true, active roster members missing from CSV become deactivate rows. Default false. */
+  deactivateMissing?: boolean;
+}): ImportPreviewBuildResult {
   const rosterMembers = input.rosterMembers ?? input.existingStudents;
+  const deactivateMissing = input.deactivateMissing ?? false;
   const byCode = new Map(
     input.existingStudents.map(student => [student.studentCode, student]),
   );
@@ -172,7 +236,7 @@ export function buildImportPreviewRows(input: {
   const drafts: PreviewRowDraft[] = [];
 
   for (const parsed of input.parsedRows) {
-    const normalized = normalizeRow(parsed.raw, parsed.rowNumber);
+    const normalized = normalizeRow(parsed.raw);
     if (!normalized.row) {
       drafts.push({
         rowNumber: parsed.rowNumber,
@@ -259,7 +323,7 @@ export function buildImportPreviewRows(input: {
           category: "deactivate",
           studentId: existing.studentId,
           proposed: {...row},
-          issues: [],
+          issues: normalized.issues,
         });
         continue;
       }
@@ -267,10 +331,10 @@ export function buildImportPreviewRows(input: {
       if (rowsEqual(row, existing)) {
         drafts.push({
           rowNumber: parsed.rowNumber,
-          category: "update",
+          category: "unchanged",
           studentId: existing.studentId,
           proposed: {...row},
-          issues: [],
+          issues: normalized.issues,
         });
         continue;
       }
@@ -280,7 +344,7 @@ export function buildImportPreviewRows(input: {
         category: "update",
         studentId: existing.studentId,
         proposed: {...row},
-        issues: [],
+        issues: normalized.issues,
       });
       continue;
     }
@@ -313,34 +377,48 @@ export function buildImportPreviewRows(input: {
       studentId: null,
       proposed: {...row},
       issues: row.active
-        ? []
-        : [{code: "INACTIVE_ADD", message: "Cannot add inactive student", field: "active"}],
+        ? normalized.issues
+        : [
+            ...normalized.issues,
+            {code: "INACTIVE_ADD", message: "Cannot add inactive student", field: "active"},
+          ],
     });
   }
 
-  for (const existing of rosterMembers) {
-    if (!existing.active || csvCodes.has(existing.studentCode)) continue;
-    drafts.push({
-      rowNumber: 0,
-      category: "deactivate",
-      studentId: existing.studentId,
-      proposed: {
-        studentCode: existing.studentCode,
-        displayName: existing.displayName,
-        attendanceNumber: existing.attendanceNumber,
-        loginName: existing.loginName,
-        groupLabel: existing.groupLabel,
-        active: false,
-      },
-      issues: [],
-    });
+  const missingFromCsvCount = rosterMembers.filter(
+    member => member.active && !csvCodes.has(member.studentCode),
+  ).length;
+
+  if (deactivateMissing) {
+    for (const existing of rosterMembers) {
+      if (!existing.active || csvCodes.has(existing.studentCode)) continue;
+      drafts.push({
+        rowNumber: 0,
+        category: "deactivate",
+        studentId: existing.studentId,
+        proposed: {
+          studentCode: existing.studentCode,
+          displayName: existing.displayName,
+          attendanceNumber: existing.attendanceNumber,
+          loginName: existing.loginName,
+          groupLabel: existing.groupLabel,
+          active: false,
+        },
+        issues: [],
+      });
+    }
   }
 
-  return drafts.sort((a, b) => a.rowNumber - b.rowNumber);
+  return {
+    rows: drafts.sort((a, b) => a.rowNumber - b.rowNumber),
+    ignoredColumns: collectIgnoredColumns(input.parsedRows),
+    missingFromCsvCount,
+  };
 }
 
 export function computePreviewHash(input: {
   baseRosterRevision: number;
+  deactivateMissing: boolean;
   rows: readonly Pick<
     PreviewRowDraft,
     "rowNumber" | "category" | "studentId" | "proposed"
@@ -348,6 +426,7 @@ export function computePreviewHash(input: {
 }): string {
   const canonical = {
     baseRosterRevision: input.baseRosterRevision,
+    deactivateMissing: input.deactivateMissing,
     rows: input.rows.map(row => ({
       rowNumber: row.rowNumber,
       category: row.category,

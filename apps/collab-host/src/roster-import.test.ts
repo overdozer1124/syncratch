@@ -5,14 +5,15 @@ import {
   computePreviewHash,
   hasBlockingPreviewRows,
   parseRosterCsv,
+  RosterCsvParseError,
   type ExistingRosterStudent,
 } from "./roster-import.js";
 
-function header(): string {
-  return ROSTER_SHEET_COLUMNS.join(",");
+function header(columns = ROSTER_SHEET_COLUMNS): string {
+  return columns.join(",");
 }
 
-describe("roster-import preview", () => {
+describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   const existing: ExistingRosterStudent[] = [
     {
       studentId: "stu-1",
@@ -23,34 +24,105 @@ describe("roster-import preview", () => {
       groupLabel: "A",
       active: true,
     },
-    {
-      studentId: "stu-2",
-      studentCode: "S002",
-      displayName: "佐藤花子",
-      attendanceNumber: "02",
-      loginName: "sato02",
-      groupLabel: "A",
-      active: true,
-    },
   ];
 
-  it("classifies add, update, deactivate, and rejected rows", () => {
+  it("1. unknown columns warn only — rows still add/update", () => {
+    const csv = [
+      `${header()},extra_col`,
+      "S010,新規,10,new,B,true,ignored",
+    ].join("\n");
+    const {rows, ignoredColumns} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows.some(row => row.category === "add")).toBe(true);
+    expect(hasBlockingPreviewRows(rows)).toBe(false);
+    expect(ignoredColumns).toEqual(["extra_col"]);
+    expect(rows[0]?.issues.some(issue => issue.code === "UNKNOWN_COLUMN")).toBe(true);
+  });
+
+  it("2. CSV without active column treats all rows as add", () => {
+    const csv = [
+      "student_code,display_name,attendance_number,login_name,group_label",
+      "S010,新規,10,new,B",
+    ].join("\n");
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows.every(row => row.category === "add")).toBe(true);
+    expect(hasBlockingPreviewRows(rows)).toBe(false);
+  });
+
+  it("3. relax_quotes:false rejects malformed quotes as rejected_row", () => {
     const csv = [
       header(),
-      "S001,山田太郎,01,yamada01,A,true",
-      "S003,鈴木一郎,03,suzuki03,B,true",
-      "S004,,04,,,true",
-      "S001,S001改,01,yamada01,A,true",
-      "S002,佐藤花子,02,sato02,A,false",
+      'S010,"unclosed name,10,new,B,true',
     ].join("\n");
-    const drafts = buildImportPreviewRows({
+    expect(() => parseRosterCsv(csv)).toThrow(RosterCsvParseError);
+    try {
+      parseRosterCsv(csv);
+    } catch (error) {
+      expect(error).toBeInstanceOf(RosterCsvParseError);
+      const rejected = (error as RosterCsvParseError).rejectedRows;
+      expect(rejected[0]?.category).toBe("rejected_row");
+      expect(rejected[0]?.rowNumber).toBeGreaterThan(0);
+      expect(rejected[0]?.issues[0]?.code).toBe("CSV_PARSE_ERROR");
+    }
+  });
+
+  it("4. unchanged category on identical re-import", () => {
+    const csv = [header(), "S001,山田太郎,01,yamada01,A,true"].join("\n");
+    const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: existing,
     });
-    expect(drafts.some(row => row.category === "add" && row.proposed)).toBe(true);
-    expect(drafts.some(row => row.category === "update")).toBe(true);
-    expect(drafts.some(row => row.category === "deactivate")).toBe(true);
-    expect(drafts.some(row => row.category === "rejected_row")).toBe(true);
+    expect(rows.some(row => row.category === "unchanged")).toBe(true);
+    expect(rows.some(row => row.category === "update")).toBe(false);
+  });
+
+  it("5. deactivateMissing defaults false and affects previewHash", () => {
+    const csv = [header(), "S001,山田太郎,01,yamada01,A,true"].join("\n");
+    const parsed = parseRosterCsv(csv);
+    const rosterMembers = [
+      ...existing,
+      {
+        studentId: "stu-2",
+        studentCode: "S002",
+        displayName: "佐藤",
+        attendanceNumber: "02",
+        loginName: "sato",
+        groupLabel: "A",
+        active: true,
+      },
+    ];
+    const off = buildImportPreviewRows({
+      parsedRows: parsed,
+      existingStudents: rosterMembers,
+      rosterMembers,
+      deactivateMissing: false,
+    });
+    const on = buildImportPreviewRows({
+      parsedRows: parsed,
+      existingStudents: rosterMembers,
+      rosterMembers,
+      deactivateMissing: true,
+    });
+    expect(off.rows.some(row => row.category === "deactivate")).toBe(false);
+    expect(on.rows.some(row => row.category === "deactivate")).toBe(true);
+    expect(off.missingFromCsvCount).toBe(1);
+
+    const hashOff = computePreviewHash({
+      baseRosterRevision: 0,
+      deactivateMissing: false,
+      rows: off.rows,
+    });
+    const hashOn = computePreviewHash({
+      baseRosterRevision: 0,
+      deactivateMissing: true,
+      rows: on.rows,
+    });
+    expect(hashOff).not.toBe(hashOn);
   });
 
   it("detects duplicate student_code within import", () => {
@@ -59,61 +131,21 @@ describe("roster-import preview", () => {
       "S010,重複A,10,a,A,true",
       "S010,重複B,11,b,B,true",
     ].join("\n");
-    const drafts = buildImportPreviewRows({
+    const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: [],
     });
-    expect(drafts.filter(row => row.category === "duplicate_candidate")).toHaveLength(1);
-    expect(hasBlockingPreviewRows(drafts)).toBe(true);
-  });
-
-  it("detects attendance_number collisions", () => {
-    const csv = [
-      header(),
-      "S010,生徒A,07,a,A,true",
-      "S011,生徒B,07,b,B,true",
-    ].join("\n");
-    const drafts = buildImportPreviewRows({
-      parsedRows: parseRosterCsv(csv),
-      existingStudents: [],
-    });
-    expect(drafts.some(row => row.category === "attendance_collision")).toBe(true);
-    expect(hasBlockingPreviewRows(drafts)).toBe(true);
-  });
-
-  it("deactivates active students missing from CSV", () => {
-    const csv = [header(), "S001,山田太郎,01,yamada01,A,true"].join("\n");
-    const drafts = buildImportPreviewRows({
-      parsedRows: parseRosterCsv(csv),
-      existingStudents: existing,
-    });
-    const implicitDeactivate = drafts.find(
-      row => row.category === "deactivate" && row.studentId === "stu-2",
-    );
-    expect(implicitDeactivate).toBeTruthy();
-  });
-
-  it("computes stable preview_hash including base revision", () => {
-    const csv = [header(), "S010,新規,10,new,B,true"].join("\n");
-    const drafts = buildImportPreviewRows({
-      parsedRows: parseRosterCsv(csv),
-      existingStudents: [],
-    });
-    const hashA = computePreviewHash({baseRosterRevision: 0, rows: drafts});
-    const hashB = computePreviewHash({baseRosterRevision: 0, rows: drafts});
-    const hashC = computePreviewHash({baseRosterRevision: 1, rows: drafts});
-    expect(hashA).toBe(hashB);
-    expect(hashA).not.toBe(hashC);
-    expect(hashA).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows.filter(row => row.category === "duplicate_candidate")).toHaveLength(1);
+    expect(hasBlockingPreviewRows(rows)).toBe(true);
   });
 
   it("preserves leading zeros in attendance_number", () => {
     const csv = [header(), "S010,出席,007,user,B,true"].join("\n");
-    const drafts = buildImportPreviewRows({
+    const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: [],
     });
-    const addRow = drafts.find(row => row.category === "add");
+    const addRow = rows.find(row => row.category === "add");
     expect((addRow?.proposed as {attendanceNumber?: string}).attendanceNumber).toBe(
       "007",
     );

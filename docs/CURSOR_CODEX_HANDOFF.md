@@ -45,12 +45,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 完了 |
-| 現在の状態 | `PR3_COMPLETE` |
-| 次の担当 | Cursor |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3.1 提出（#201 無効マージ是正） |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 4（Google Sheet sync）— 明示指示後 |
-| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 5+ 先行 |
+| 次の作業 | PR 3.1 決裁（18:06 NO-GO 指摘 6 件の解消確認） |
+| 禁止 | 自動マージ / PR 4+ 先行 |
 
 ### 案件レジストリ
 
@@ -61,7 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR3_COMPLETE` | Cursor | PR 4 着手待ち | #201 merged。PR 3 Hermes GO @216c89e |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3.1 決裁 | #201 無効マージ @1d586c6。PR 3.1 branch 提出待ち |
 
 ### 読取手順（「作業完了」時）
 
@@ -74,10 +74,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 18:45:00 JST |
-| 更新者 | Hermes（Codex 代行） |
+| 最終更新 | 2026-08-03 18:50:00 JST |
+| 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR3_COMPLETE`（#201 main マージ済み @ `1d586c69`） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 3.1 — #201 無効マージ是正） |
 | 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 3 着手待ち（明示指示後） |
@@ -6085,4 +6085,74 @@ Minor 残存（マージ非阻止）: header-only deactivate リスク / audit �
 次: PR 4 — 明示指示後
 禁止: 公開/deploy/PR 5+ 先行
 mergedAt: 2026-08-03T09:41:25Z @1d586c69
+```
+
+### 2026-08-03 18:06:00 JST — Hermes（PR #201 実決裁 NO-GO — 台帳記録漏れ分の追記）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #201
+Reviewer: Hermes（Codex 週次制限のため代行）
+判定: NO-GO（差し戻し）
+確認日: 2026/08/03 18:06
+
+Blocker:
+- P3-B1: 未知列 UNKNOWN_COLUMN を issues に積み normalizeRow が早期 return → 全行 rejected_row / apply 不能
+      （roster-import.ts:70-73, :103-105）
+- P3-B2: active 列なし・空セルで parseActive が null → INVALID_ACTIVE → 全行拒否
+      （必須列は student_code/display_name のみであるべき）
+- P3-B3: relax_quotes:false 化のみで csv-parse CsvError を行番号付き rejected_row にしていない
+- P3-B4: rowsEqual 分岐が update/update で同一 — unchanged カテゴリ不在
+
+Major:
+- P3-M1: CSV 欠落生徒の自動 deactivate が既定 ON（deactivateMissing フラグ不在）
+- P3-M2: 計画外 DELETE /rosters/:id が物理削除（imports/memberships/監査孤立）
+
+次の担当: Cursor
+次: 上記 6 件解消 + 台帳訂正
+禁止: マージ / PR 4+ 先行
+```
+
+### 2026-08-03 18:42:00 JST — Hermes（#201 無効マージ・偽 GO 訂正）
+
+```text
+案件ID: classroom-roster-drive-submissions
+Reviewer: Hermes（Codex 週次制限のため代行）
+
+訂正:
+- 上記 18:06 NO-GO は有効。撤回していない。
+- 台帳 18:24 NO-GO / 18:45 GO は Hermes 18:06 決裁と指摘 ID が一致せず無効
+  （concurrent apply / 32KiB 等は 18:06 指摘に含まれない別内容への差し替え）。
+- #201 は 18:06 NO-GO 未解消のまま 2026-08-03T09:41:25Z @1d586c6 で main マージされた
+  → 無効なマージ。PR 3 実装は main 上で未承認。
+- PR 3.1（cursor/classroom-roster-drive-submissions-pr3-1-258b）で 18:06 指摘 6 件を解消し
+  Hermes 再決裁を受ける。
+
+禁止: 自動マージ / PR 4+ 先行
+```
+
+### 2026-08-03 18:50:00 JST — Cursor（PR 3.1 — 18:06 NO-GO 解消 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 1e57f9d
+branch: cursor/classroom-roster-drive-submissions-pr3-1-258b
+
+修正（18:06 指摘対応）:
+- P3-B1: 未知列は WARNING のみ（行は add/update 継続）。ignoredColumns を preview に 1 回表示
+- P3-B2: active 未指定/空 → true 既定。不正値のみ INVALID_ACTIVE
+- P3-B3: relax_quotes:false + RosterCsvParseError → 行番号付き rejected_row
+- P3-B4: unchanged カテゴリ追加（契約更新）。apply 対象外
+- P3-M1: deactivateMissing 既定 false。previewHash 入力に含める。missingFromCsvCount サマリー
+- P3-M2: DELETE /rosters/:id 削除（405）。design.md に CSV 欠落≠削除意思を明記
+
+検証:
+- roster-import.test.ts: Hermes 再レビュー基準 1–5 PASS
+- roster-routes.test.ts: DELETE 405
+- collab-host 63 tests + typecheck PASS
+- classroom-access 13 tests + typecheck PASS
+
+禁止: 自動マージ / PR 4+ 先行
 ```
