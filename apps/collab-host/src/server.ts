@@ -51,6 +51,7 @@ import {
   parseAdminGoogleCryptoKeysFromEnv,
   readAdminGoogleOAuthConfigFromEnv,
 } from "./admin-google-oauth.js";
+import {createAdminGoogleCredentialStore} from "./admin-google-credential-store.js";
 import {createRosterRoutesHandler} from "./roster-routes.js";
 
 export interface StartCollabHostAdminOptions {
@@ -61,9 +62,11 @@ export interface StartCollabHostAdminOptions {
   classroomFlags?: {
     classroomRosterEnabled: boolean;
     adminGoogleCredentialEnabled: boolean;
+    rosterSheetsEnabled?: boolean;
   };
   adminGoogleOAuthEnabled?: boolean;
   classroomRosterEnabled?: boolean;
+  rosterSheetsEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -101,6 +104,14 @@ export async function startCollabHost(
   const classroomRosterEnabled =
     options.admin?.classroomRosterEnabled ??
     runtimeClassroomFlags.classroomRosterEnabled;
+  const rosterSheetsEnabled = Boolean(
+    options.admin?.rosterSheetsEnabled ??
+      options.admin?.classroomFlags?.rosterSheetsEnabled ??
+      (runtimeClassroomFlags.classroomRosterEnabled &&
+        runtimeClassroomFlags.adminGoogleCredentialEnabled &&
+        runtimeClassroomFlags.rosterSheetsEnabled),
+  );
+  const adminGoogleOAuthConfig = readAdminGoogleOAuthConfigFromEnv();
 
   const port = options.port ?? Number(process.env.PORT ?? 8080);
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
@@ -138,19 +149,35 @@ export async function startCollabHost(
     sessions: adminSessions,
   });
   const adminGoogleCryptoKeys = parseAdminGoogleCryptoKeysFromEnv();
+  const adminGoogleCredentialStore =
+    adminGoogleCryptoKeys != null
+      ? createAdminGoogleCredentialStore(adminDb.sqlite, adminGoogleCryptoKeys)
+      : null;
   const handleAdminGoogleOAuth = createAdminGoogleOAuthHandler({
     enabled: adminGoogleOAuthEnabled,
     db: adminDb.sqlite,
     adminConfig,
     adminSessions,
-    oauthConfig: readAdminGoogleOAuthConfigFromEnv(),
+    oauthConfig: adminGoogleOAuthConfig,
     cryptoKeys: adminGoogleCryptoKeys,
+    store: adminGoogleCredentialStore ?? undefined,
   });
+  const rosterSheetSync =
+    rosterSheetsEnabled &&
+    adminGoogleOAuthConfig &&
+    adminGoogleCredentialStore
+      ? {
+          oauthConfig: adminGoogleOAuthConfig,
+          credentialStore: adminGoogleCredentialStore,
+        }
+      : null;
   const handleRosterRoutes = createRosterRoutesHandler({
     enabled: classroomRosterEnabled,
+    sheetsEnabled: rosterSheetsEnabled,
     db: adminDb.sqlite,
     adminConfig,
     adminSessions,
+    sheetSync: rosterSheetSync,
   });
   const httpServer = createServer((req, res) => {
     void (async () => {

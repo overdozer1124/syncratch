@@ -46,12 +46,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3.1 提出（#201 無効マージ是正） |
-| 現在の状態 | `PR3_COMPLETE` |
-| 次の担当 | Cursor（PR 4 着手 — 明示指示後） |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 4 Google Sheet sync |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 4 着手待ち（明示指示後） |
-| 禁止 | 自動マージ / PR 4+ 先行 |
+| 次の作業 | PR 4 決裁 |
+| 禁止 | 自動マージ / PR 5+ 先行 |
 
 ### 案件レジストリ
 
@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR3_COMPLETE` | Cursor | PR 4 着手（明示指示後） | #202 merged @cb5a5c2。Hermes GO @19:02 |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 4 決裁 | #204 PR 4 Sheet sync 提出 |
 
 ### 読取手順（「作業完了」時）
 
@@ -75,21 +75,20 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 19:28:00 JST |
+| 最終更新 | 2026-08-03 19:45:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR3_COMPLETE`（PR #202 main マージ済み） |
-| 現在の担当 | Cursor |
-| レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 4 着手待ち（明示指示後） |
-| Primary track | Local-First Community runtime |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 4 — Google Sheet sync） |
+| 現在の担当 | Hermes |
+| 現在のTask | PR 4 Hermes 決裁待ち |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr4-258b` |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
 | 作業ブランチ | `main` @ `cb5a5c2`（#202 マージ） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 4 着手待ち（明示指示後）。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 4 Hermes 決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -6212,4 +6211,30 @@ CI の実結果確認。PR #202 の Checks が全 green（Gate 0 含む）であ
 次の担当: Cursor（CI green 確認 → マージ）
 次: CI green 後 main マージ → PR3_COMPLETE
 禁止: CI 未確認でのマージ / PR 4+ 先行
+```
+
+### 2026-08-03 19:45:00 JST — Cursor（PR 4 — Google Sheet sync → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ d0717b4
+branch: cursor/classroom-roster-drive-submissions-pr4-258b
+
+実装（PR 4）:
+- roster-sheet-sync.ts: teacher credential refresh, Sheets API fetch, sheetValuesToParsedRows
+- POST /api/admin/rosters/{rosterId}/sync（SYNCRATCH_ROSTER_SHEETS_ENABLED 時のみ）
+- syncRosterFromSheet: Sheet → buildImportPreviewRows(deactivateMissing=true) → apply + revision CAS
+- sync_status: success → active / failure → sync_required + audit roster.sheet.synced|sync_required
+- roster-routes: 409 credential missing, 503 not configured, flag OFF → 404
+
+検証:
+- roster-sheet-sync.test.ts: range A1, header contract, token refresh, 403 mapping
+- roster-service.test.ts: full sheet sync + deactivate missing row
+- roster-routes.test.ts: sync 404 flag OFF, sync 409 no credential
+- collab-host 72 tests + typecheck PASS
+- classroom-access 13 tests PASS
+
+禁止: 自動マージ / PR 5+ 先行 / webhook・cron・Sheet 書き戻し
 ```
