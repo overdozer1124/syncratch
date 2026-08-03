@@ -6280,6 +6280,7 @@ CI: 未検証（Hermes は GitHub API 不可）。再提出時に test/typecheck
 base: main @ d0717b4
 branch: cursor/classroom-roster-drive-submissions-pr4-258b
 PR: #204
+Head: 8183b21
 
 Hermes 19:48 NO-GO 指摘対応:
 - P4-B1: sync preview の deactivateMissing 既定 false（明示 true のみ deactivate 行生成）
