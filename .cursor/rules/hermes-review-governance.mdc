@@ -38,6 +38,7 @@ alwaysApply: true
 5. GO エントリが **ユーザー/Hermes 由来**であること（エージェントが敵対レビューから自作した GO ではないこと）。
 
 ## 台帳記録
+- **決裁の自己記録は Hermes の責務（台帳 運用ルール 13）**: Hermes は GO/NO-GO をチャットに出した直後に、**自ら台帳へ同一内容を逐語記録**する。チャット出力のみで「出した」とみなさない（PR #204 事案の是正）。
 
 - Hermes NO-GO/GO は **Hermes 出力の逐語コピー**（見出しに JST タイムスタンプ + `Reviewer: Hermes`）。
 - Cursor は `READY_FOR_HERMES_REVIEW` まで。`PHASEn_COMPLETE` / `mergedAt` は **マージ成功後** のみ。
