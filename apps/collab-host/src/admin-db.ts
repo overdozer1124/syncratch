@@ -25,6 +25,15 @@ import {
   runAdminDbMigrations,
 } from "./admin-db-migrations/index.js";
 
+export interface AdminDbPolicyOptions {
+  classroomRosterEnabled?: boolean;
+}
+
+export type PolicyWriteResult =
+  | {ok: true; policy: ClassroomPolicy}
+  | {ok: false; kind: "not_found"}
+  | {ok: false; kind: "bad_request"; code: string; message: string};
+
 export interface AdminDb {
   /** Infrastructure wiring only — do not write business queries against this. */
   readonly sqlite: Database.Database;
@@ -36,12 +45,17 @@ export interface AdminDb {
   getAdminById(adminId: string): AdminAccount | null;
   listPolicies(ownerAdminId: string): ClassroomPolicy[];
   getPolicy(policyId: string, ownerAdminId?: string): ClassroomPolicy | null;
-  createPolicy(ownerAdminId: string, input: ClassroomPolicyInput): ClassroomPolicy;
+  createPolicy(
+    ownerAdminId: string,
+    input: ClassroomPolicyInput,
+    options?: AdminDbPolicyOptions,
+  ): PolicyWriteResult;
   updatePolicy(
     policyId: string,
     ownerAdminId: string,
     patch: ClassroomPolicyInput,
-  ): ClassroomPolicy | null;
+    options?: AdminDbPolicyOptions,
+  ): PolicyWriteResult;
   listLinks(ownerAdminId: string, policyId?: string): StudentLinkListItem[];
   createLink(input: {
     ownerAdminId: string;
@@ -63,10 +77,12 @@ export interface AdminDb {
   resolveStudentPolicyByGrant(
     grantId: string,
     nowIso?: string,
+    options?: AdminDbPolicyOptions,
   ): StudentPolicyView | null;
   resolveStudentPolicy(
     token: string,
     nowIso?: string,
+    options?: AdminDbPolicyOptions,
   ): StudentPolicyView | null;
   close(): void;
 }
@@ -193,6 +209,11 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function stripRosterPolicyPatch(patch: ClassroomPolicyInput): ClassroomPolicyInput {
+  const {rosterId: _rosterId, studentAuth: _studentAuth, ...rest} = patch;
+  return rest;
+}
+
 export function openAdminDb(dbPath: string): AdminDb {
   if (dbPath !== ":memory:") {
     mkdirSync(dirname(dbPath), {recursive: true});
@@ -240,6 +261,51 @@ export function openAdminDb(dbPath: string): AdminDb {
       updated_at = @updated_at
     WHERE policy_id = @policy_id AND owner_admin_id = @owner_admin_id
   `);
+
+  const rosterOwnedByAdminStmt = db.prepare(`
+    SELECT 1 AS ok FROM classroom_rosters
+    WHERE roster_id = ? AND owner_admin_id = ?
+    LIMIT 1
+  `);
+
+  function rosterOwnedByAdmin(rosterId: string, ownerAdminId: string): boolean {
+    return rosterOwnedByAdminStmt.get(rosterId, ownerAdminId) != null;
+  }
+
+  function validateRosterPatchOwnership(
+    patch: ClassroomPolicyInput,
+    ownerAdminId: string,
+    classroomRosterEnabled: boolean,
+  ): PolicyWriteResult | {ok: true} {
+    if (!classroomRosterEnabled) return {ok: true};
+    if (patch.rosterId === undefined || patch.rosterId === null) return {ok: true};
+    if (!rosterOwnedByAdmin(patch.rosterId, ownerAdminId)) {
+      return {ok: false, kind: "not_found"};
+    }
+    return {ok: true};
+  }
+
+  function validateRosterPolicyFields(
+    policy: ClassroomPolicy,
+    classroomRosterEnabled: boolean,
+  ): PolicyWriteResult | {ok: true} {
+    if (!classroomRosterEnabled) return {ok: true};
+    if (policy.studentAuth.required && !policy.rosterId) {
+      return {
+        ok: false,
+        kind: "bad_request",
+        code: "AUTH_REQUIRES_ROSTER",
+        message: "studentAuth.required には rosterId が必要です。",
+      };
+    }
+    return {ok: true};
+  }
+
+  function studentViewOptions(
+    options?: AdminDbPolicyOptions,
+  ): {classroomRosterEnabled: boolean} {
+    return {classroomRosterEnabled: options?.classroomRosterEnabled ?? false};
+  }
 
   function bindPolicy(policy: ClassroomPolicy): Record<string, unknown> {
     return {
@@ -334,8 +400,18 @@ export function openAdminDb(dbPath: string): AdminDb {
       return row ? rowToPolicy(row) : null;
     },
 
-    createPolicy(ownerAdminId, input) {
-      const normalized = normalizeClassroomPolicyInput(input);
+    createPolicy(ownerAdminId, input, options) {
+      const classroomRosterEnabled = options?.classroomRosterEnabled ?? false;
+      const effectiveInput = classroomRosterEnabled
+        ? input
+        : stripRosterPolicyPatch(input);
+      const ownership = validateRosterPatchOwnership(
+        effectiveInput,
+        ownerAdminId,
+        classroomRosterEnabled,
+      );
+      if (!ownership.ok) return ownership;
+      const normalized = normalizeClassroomPolicyInput(effectiveInput);
       const ts = nowIso();
       const policy: ClassroomPolicy = {
         policyId: createOpaqueId(),
@@ -344,16 +420,30 @@ export function openAdminDb(dbPath: string): AdminDb {
         updatedAt: ts,
         ...normalized,
       };
+      const validation = validateRosterPolicyFields(policy, classroomRosterEnabled);
+      if (!validation.ok) return validation;
       insertPolicy.run(bindPolicy(policy));
-      return policy;
+      return {ok: true, policy};
     },
 
-    updatePolicy(policyId, ownerAdminId, patch) {
+    updatePolicy(policyId, ownerAdminId, patch, options) {
+      const classroomRosterEnabled = options?.classroomRosterEnabled ?? false;
       const existing = this.getPolicy(policyId, ownerAdminId);
-      if (!existing) return null;
-      const next = mergeClassroomPolicy(existing, patch, nowIso());
+      if (!existing) return {ok: false, kind: "not_found"};
+      const effectivePatch = classroomRosterEnabled
+        ? patch
+        : stripRosterPolicyPatch(patch);
+      const ownership = validateRosterPatchOwnership(
+        effectivePatch,
+        ownerAdminId,
+        classroomRosterEnabled,
+      );
+      if (!ownership.ok) return ownership;
+      const next = mergeClassroomPolicy(existing, effectivePatch, nowIso());
+      const validation = validateRosterPolicyFields(next, classroomRosterEnabled);
+      if (!validation.ok) return validation;
       updatePolicyStmt.run(bindPolicy(next));
-      return next;
+      return {ok: true, policy: next};
     },
 
     listLinks(ownerAdminId, policyId) {
@@ -445,7 +535,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       });
     },
 
-    resolveStudentPolicy(token, now = nowIso()) {
+    resolveStudentPolicy(token, now = nowIso(), options) {
       const row = db
         .prepare(
           `SELECT l.*, p.status AS policy_status,
@@ -506,7 +596,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         created_at: row.p_created,
         updated_at: row.p_updated,
       });
-      return toStudentPolicyView(policy);
+      return toStudentPolicyView(policy, studentViewOptions(options));
     },
 
     createStudentGrant(token, grantTtlMs = STUDENT_GRANT_TTL_MS, now = nowIso()) {
@@ -537,7 +627,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       return {grantId, expiresAt: grantExpires};
     },
 
-    resolveStudentPolicyByGrant(grantId, now = nowIso()) {
+    resolveStudentPolicyByGrant(grantId, now = nowIso(), options) {
       const grant = db
         .prepare(`SELECT link_id, expires_at FROM student_grants WHERE grant_id = ?`)
         .get(grantId) as {link_id: string; expires_at: string} | undefined;
@@ -603,7 +693,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         created_at: row.p_created,
         updated_at: row.p_updated,
       });
-      return toStudentPolicyView(policy);
+      return toStudentPolicyView(policy, studentViewOptions(options));
     },
 
     close() {

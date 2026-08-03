@@ -353,6 +353,11 @@ import {
 } from "./classroom-policy-apply.js";
 import {detectEditorSurfaceMode} from "./surface-mode.js";
 import {
+  hideStudentAuthShell,
+  shouldShowStudentAuthGate,
+  showStudentAuthShell,
+} from "./student-auth-gate.js";
+import {
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
   replaceStudentUrlWithoutToken,
@@ -642,6 +647,9 @@ const appMain = document.querySelector<HTMLElement>("#app");
 const adminShell = document.querySelector<HTMLElement>("#admin-shell");
 const studentErrorShell = document.querySelector<HTMLElement>(
   "#student-error-shell",
+);
+const studentAuthShell = document.querySelector<HTMLElement>(
+  "#student-auth-shell",
 );
 const SURFACE_MODE = detectEditorSurfaceMode();
 // Pin before loadScratchGui / Blocks media resolve (nested /s/{token} routes).
@@ -4477,6 +4485,12 @@ async function startEditorSurface(): Promise<void> {
       return;
     }
     studentPolicy = policy;
+    if (shouldShowStudentAuthGate(policy)) {
+      if (studentAuthShell) showStudentAuthShell(studentAuthShell);
+      if (appMain) appMain.hidden = true;
+      return;
+    }
+    if (studentAuthShell) hideStudentAuthShell(studentAuthShell);
     aiSettings = aiSettingsFromStudentPolicy(policy);
     applyAiSettingsToForm(aiSettings);
     renderAiUi(aiSettings);

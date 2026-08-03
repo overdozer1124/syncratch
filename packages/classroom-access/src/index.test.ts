@@ -5,6 +5,7 @@ import {
   isPlausibleStudentToken,
   normalizeClassroomPolicyInput,
   parseAdminEmailAllowlist,
+  resolveStudentAccessMode,
   resolveSurfaceMode,
   toStudentPolicyView,
   type ClassroomPolicy,
@@ -75,6 +76,49 @@ describe("policy normalize + student view", () => {
     expect(view.aiAssist.enabled).toBe(false);
     expect(view.studentAuth.required).toBe(false);
     expect(view.submission.enabled).toBe(false);
+  });
+
+  it("resolveStudentAccessMode gates roster-login on rosterId + required auth", () => {
+    expect(
+      resolveStudentAccessMode({
+        rosterId: null,
+        studentAuth: {required: false},
+      }),
+    ).toBe("shared-anonymous");
+    expect(
+      resolveStudentAccessMode({
+        rosterId: "r1",
+        studentAuth: {required: false},
+      }),
+    ).toBe("shared-anonymous");
+    expect(
+      resolveStudentAccessMode({
+        rosterId: "r1",
+        studentAuth: {required: true},
+      }),
+    ).toBe("roster-login");
+    expect(
+      resolveStudentAccessMode(
+        {rosterId: "r1", studentAuth: {required: true}},
+        {classroomRosterEnabled: false},
+      ),
+    ).toBe("shared-anonymous");
+  });
+
+  it("toStudentPolicyView forces studentAuth.required false when roster flag off", () => {
+    const policy: ClassroomPolicy = {
+      policyId: "p1",
+      ownerAdminId: "a1",
+      createdAt: "t0",
+      updatedAt: "t1",
+      ...normalizeClassroomPolicyInput({
+        rosterId: "r1",
+        studentAuth: {required: true},
+      }),
+    };
+    const view = toStudentPolicyView(policy, {classroomRosterEnabled: false});
+    expect(view).not.toHaveProperty("rosterId");
+    expect(view.studentAuth.required).toBe(false);
   });
 });
 

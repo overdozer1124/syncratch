@@ -1,3 +1,4 @@
+import type {StudentAccessMode} from "./roster-types.js";
 import type {
   ClassroomAiAssistPolicy,
   ClassroomAiLevel,
@@ -9,6 +10,11 @@ import type {
   ClassroomPolicyStatus,
   StudentPolicyView,
 } from "./types.js";
+
+export interface StudentPolicyViewOptions {
+  /** When false, student clients always see shared-anonymous (Phase 2 compat). */
+  classroomRosterEnabled?: boolean;
+}
 
 export interface NormalizedClassroomPolicyFields {
   title: string;
@@ -138,12 +144,28 @@ export function mergeClassroomPolicy(
   };
 }
 
+export function resolveStudentAccessMode(
+  policy: Pick<ClassroomPolicy, "rosterId" | "studentAuth">,
+  options?: StudentPolicyViewOptions,
+): StudentAccessMode {
+  if (options?.classroomRosterEnabled === false) return "shared-anonymous";
+  if (policy.rosterId && policy.studentAuth.required) return "roster-login";
+  return "shared-anonymous";
+}
+
 /** Strip privileged fields before sending to student clients. */
-export function toStudentPolicyView(policy: ClassroomPolicy): StudentPolicyView {
+export function toStudentPolicyView(
+  policy: ClassroomPolicy,
+  options?: StudentPolicyViewOptions,
+): StudentPolicyView {
+  const studentAuth =
+    options?.classroomRosterEnabled === false
+      ? {required: false}
+      : {...policy.studentAuth};
   return {
     policyId: policy.policyId,
     title: policy.title,
-    studentAuth: {...policy.studentAuth},
+    studentAuth,
     submission: {...policy.submission},
     aiAssist: {...policy.aiAssist},
     editor: {...policy.editor},

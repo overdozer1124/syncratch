@@ -360,7 +360,7 @@ These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
 
 # PR 5 — Policy ↔ roster binding and student surface gate
 
-**Status:** NOT STARTED
+**Status:** READY_FOR_HERMES_REVIEW (Cursor)
 
 **Scope:** Admin can set `ClassroomPolicy.rosterId` and `studentAuth.required`. Student surface after grant exchange shows login/activate **shell UI** when required (no identity cookie yet). `shared-anonymous` mode unchanged when `rosterId` null or `studentAuth.required === false`.
 
