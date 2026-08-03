@@ -45,12 +45,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 2.1 完了 |
-| 現在の状態 | `PHASE2_COMPLETE` |
-| 次の担当 | Cursor |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 Hermes GO 待ちマージ |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 3（Roster admin API + CSV import）— 明示指示後 |
-| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 3 以外の先行 |
+| 次の作業 | PR 3 決裁（GO 後 CI green → マージ） |
+| 禁止 | 公開/deploy/タグ/Release/token 再掲/PR 4+ 先行/自動マージ |
 
 ### 案件レジストリ
 
@@ -61,7 +61,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PHASE2_COMPLETE` | Cursor | PR 3 着手待ち | #200 merged `1f3bf17`。PR 2.1 Hermes GO @8c8ef5f |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3 決裁 | #200 merged `1f3bf17`。PR 3 branch `cursor/classroom-roster-drive-submissions-pr3-258b` |
 
 ### 読取手順（「作業完了」時）
 
@@ -74,10 +74,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 09:05:00 JST |
-| 更新者 | Hermes（Codex 代行） |
+| 最終更新 | 2026-08-03 09:10:00 JST |
+| 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PHASE2_COMPLETE`（#200 PR 2.1 main マージ済み @ `1f3bf17`） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 3 提出 — 自動マージ禁止） |
 | 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 3 着手待ち（明示指示後） |
@@ -5987,4 +5987,78 @@ mergedAt: 2026-08-03T00:05:17Z @1f3bf17
 次の担当: Cursor
 次: PR 3 — 明示指示後
 禁止: 公開/deploy/PR 4+ 先行
+```
+
+### 2026-08-03 09:10:00 JST — Cursor（PR 3 Roster admin API + CSV import → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 8b7d67f
+branch: cursor/classroom-roster-drive-submissions-pr3-258b
+PR: #201 @9390ad6
+
+実装:
+- roster-import.ts: CSV parse / preview categories / preview_hash（csv-parse@7.0.1）
+- roster-service.ts: roster CRUD / import preview 永続化 / apply トランザクション（revision CAS + audit）
+- roster-routes.ts: admin session + CSRF / GET|POST rosters / students / imports / preview / apply
+- server.ts: SYNCRATCH_CLASSROOM_ROSTER_ENABLED 時のみ handler 登録
+
+検証:
+- flag OFF → roster routes 404（admin-api 回帰テスト維持）
+- preview: add/update/deactivate/duplicate/attendance_collision/rejected_row
+- apply: preview_hash + base_roster_revision CAS（stale → 409）
+- attendance_number 先頭ゼロ保持（007）
+- classroom_audit_events を apply トランザクション内に記録
+- collab-host 59 tests + typecheck PASS
+- classroom-access 13 tests + typecheck PASS
+- git diff --check PASS
+
+禁止: 自動マージ / Sheet sync（PR 4）/ student auth（PR 6）/ XLSX upload
+```
+
+### 2026-08-03 18:24:00 JST — Hermes（PR #201 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #201 @530523d
+Reviewer: Hermes（Codex 代行）
+判定: NO-GO（差し戻し）
+CI: Gate 0 ×2 SUCCESS
+
+Blocker:
+- P3-B1: concurrent apply「one winner」テスト欠落（REVISION_CONFLICT / STALE_PREVIEW 未検証）
+
+Major:
+- P3-M1: JSON `{csv}` upload が 32 KiB 上限（2 MiB 契約と不一致）— roster-routes.ts readCsvBody
+- P3-M2: relax_quotes: true が PR 3 目標（false + rejected_row）から逸脱
+- P3-M3: 別 roster 既存 student_code を add と誤分類 → UNIQUE 制約で opaque 400
+
+Minor（マージ非阻止）:
+- header-only CSV で全員 deactivate リスク
+- audit per-mutation 件数未アサート
+- applied 後 preview 404
+
+次の担当: Cursor
+次: Blocker + Major 修正 → 再提出
+禁止: マージ / PR 4+ 先行
+```
+
+### 2026-08-03 18:30:00 JST — Cursor（PR 3 指摘解消 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #201（修正 push 後 head 更新）
+
+修正:
+- P3-B1: concurrent apply one-winner テスト追加（2 import @ rev0 → 1 成功 / 1 STALE_PREVIEW）
+- P3-M1: readCsvBody JSON 上限を MAX_ROSTER_CSV_BYTES + 4096 に修正
+- P3-M2: relax_quotes: false
+- P3-M3: owner 全 student で preview lookup / update 時 membership upsert / rosterMembers で deactivate 分離
+
+検証: collab-host 61 tests + typecheck PASS
+禁止: 自動マージ
 ```

@@ -1,0 +1,768 @@
+/**
+ * Classroom roster CRUD and CSV import preview/apply (SQLite).
+ */
+import type Database from "better-sqlite3";
+import {
+  createOpaqueId,
+  type ClassroomRoster,
+  type ClassroomRosterInput,
+  type ClassroomRosterListItem,
+  type ClassroomStudentListItem,
+  type RosterImport,
+  type RosterImportPreview,
+  type RosterImportPreviewCategory,
+  type RosterImportStatus,
+} from "@blocksync/classroom-access";
+import {
+  buildImportPreviewRows,
+  computePreviewHash,
+  hasBlockingPreviewRows,
+  parseRosterCsv,
+  previewRowsToContract,
+  type ExistingRosterStudent,
+  type PreviewRowDraft,
+} from "./roster-import.js";
+
+export class RosterServiceError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "RosterServiceError";
+  }
+}
+
+interface RosterRow {
+  roster_id: string;
+  owner_admin_id: string;
+  title: string;
+  sheet_spreadsheet_id: string | null;
+  sheet_tab_name: string | null;
+  sheet_range: string | null;
+  sync_status: string;
+  roster_revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StudentRow {
+  student_id: string;
+  owner_admin_id: string;
+  student_code: string;
+  display_name: string;
+  attendance_number: string | null;
+  login_name: string | null;
+  group_label: string | null;
+  active: number;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ImportRow {
+  import_id: string;
+  roster_id: string;
+  status: string;
+  uploaded_at: string;
+  preview_hash: string | null;
+  base_roster_revision: number | null;
+  applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ImportPreviewRow {
+  row_id: string;
+  import_id: string;
+  row_number: number;
+  category: string;
+  student_id: string | null;
+  proposed_json: string;
+  issues_json: string;
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+function rowToRoster(row: RosterRow): ClassroomRoster {
+  return {
+    rosterId: row.roster_id,
+    ownerAdminId: row.owner_admin_id,
+    title: row.title,
+    sheetSpreadsheetId: row.sheet_spreadsheet_id,
+    sheetTabName: row.sheet_tab_name,
+    sheetRange: row.sheet_range,
+    syncStatus: row.sync_status === "sync_required" ? "sync_required" : "active",
+    rosterRevision: row.roster_revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToImport(row: ImportRow): RosterImport {
+  return {
+    importId: row.import_id,
+    rosterId: row.roster_id,
+    status: row.status as RosterImportStatus,
+    uploadedAt: row.uploaded_at,
+    previewHash: row.preview_hash,
+    baseRosterRevision: row.base_roster_revision,
+    appliedAt: row.applied_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
+  return {
+    studentId: row.student_id,
+    studentCode: row.student_code,
+    displayName: row.display_name,
+    attendanceNumber: row.attendance_number,
+    loginName: row.login_name,
+    groupLabel: row.group_label,
+    active: Boolean(row.active),
+    accountStatus: null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function existingFromRow(row: StudentRow): ExistingRosterStudent {
+  return {
+    studentId: row.student_id,
+    studentCode: row.student_code,
+    displayName: row.display_name,
+    attendanceNumber: row.attendance_number,
+    loginName: row.login_name,
+    groupLabel: row.group_label,
+    active: Boolean(row.active),
+  };
+}
+
+function proposedChanged(
+  draft: PreviewRowDraft,
+  existing: ExistingRosterStudent | undefined,
+): boolean {
+  if (draft.category === "add" || draft.category === "deactivate") return true;
+  if (draft.category !== "update" || !existing) return false;
+  const proposed = draft.proposed as {
+    studentCode?: string;
+    displayName?: string;
+    attendanceNumber?: string | null;
+    loginName?: string;
+    groupLabel?: string | null;
+    active?: boolean;
+  };
+  return !(
+    proposed.displayName === existing.displayName &&
+    proposed.attendanceNumber === existing.attendanceNumber &&
+    (proposed.loginName ?? proposed.studentCode ?? existing.studentCode) ===
+      (existing.loginName ?? existing.studentCode) &&
+    proposed.groupLabel === existing.groupLabel &&
+    proposed.active === existing.active
+  );
+}
+
+export interface RosterService {
+  listRosters(ownerAdminId: string): ClassroomRosterListItem[];
+  createRoster(
+    ownerAdminId: string,
+    input: ClassroomRosterInput,
+  ): ClassroomRoster;
+  getRoster(rosterId: string, ownerAdminId: string): ClassroomRoster | null;
+  updateRoster(
+    rosterId: string,
+    ownerAdminId: string,
+    patch: ClassroomRosterInput,
+  ): ClassroomRoster | null;
+  deleteRoster(rosterId: string, ownerAdminId: string): boolean;
+  listStudents(
+    rosterId: string,
+    ownerAdminId: string,
+  ): ClassroomStudentListItem[];
+  createImportFromCsv(
+    rosterId: string,
+    ownerAdminId: string,
+    csvText: string,
+  ): RosterImportPreview;
+  getImport(
+    rosterId: string,
+    importId: string,
+    ownerAdminId: string,
+  ): RosterImport | null;
+  getImportPreview(
+    rosterId: string,
+    importId: string,
+    ownerAdminId: string,
+  ): RosterImportPreview | null;
+  applyImport(input: {
+    rosterId: string;
+    importId: string;
+    ownerAdminId: string;
+    previewHash: string;
+    baseRosterRevision: number;
+  }): {roster: ClassroomRoster; import: RosterImport};
+}
+
+export function createRosterService(db: Database.Database): RosterService {
+  const getRosterStmt = db.prepare(`
+    SELECT * FROM classroom_rosters
+    WHERE roster_id = ? AND owner_admin_id = ?
+  `);
+
+  const listExistingStudentsStmt = db.prepare(`
+    SELECT s.*
+    FROM classroom_students s
+    INNER JOIN classroom_roster_memberships m ON m.student_id = s.student_id
+    WHERE m.roster_id = ? AND s.owner_admin_id = ?
+    ORDER BY s.student_code ASC
+  `);
+
+  const listOwnerStudentsStmt = db.prepare(`
+    SELECT * FROM classroom_students
+    WHERE owner_admin_id = ?
+    ORDER BY student_code ASC
+  `);
+
+  function requireRoster(
+    rosterId: string,
+    ownerAdminId: string,
+  ): ClassroomRoster {
+    const row = getRosterStmt.get(rosterId, ownerAdminId) as
+      | RosterRow
+      | undefined;
+    if (!row) {
+      throw new RosterServiceError("ROSTER_NOT_FOUND", "Roster not found");
+    }
+    return rowToRoster(row);
+  }
+
+  function loadPreviewDrafts(importId: string): PreviewRowDraft[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM roster_import_rows
+         WHERE import_id = ?
+         ORDER BY row_number ASC, row_id ASC`,
+      )
+      .all(importId) as ImportPreviewRow[];
+    return rows.map(row => ({
+      rowNumber: row.row_number,
+      category: row.category as RosterImportPreviewCategory,
+      studentId: row.student_id,
+      proposed: JSON.parse(row.proposed_json) as Record<string, unknown>,
+      issues: JSON.parse(row.issues_json) as PreviewRowDraft["issues"],
+    }));
+  }
+
+  return {
+    listRosters(ownerAdminId) {
+      const rows = db
+        .prepare(
+          `SELECT r.*,
+                  COUNT(CASE WHEN m.active = 1 THEN 1 END) AS student_count
+           FROM classroom_rosters r
+           LEFT JOIN classroom_roster_memberships m
+             ON m.roster_id = r.roster_id
+           WHERE r.owner_admin_id = ?
+           GROUP BY r.roster_id
+           ORDER BY r.created_at DESC`,
+        )
+        .all(ownerAdminId) as Array<RosterRow & {student_count: number}>;
+      return rows.map(row => ({
+        rosterId: row.roster_id,
+        title: row.title,
+        syncStatus:
+          row.sync_status === "sync_required" ? "sync_required" : "active",
+        rosterRevision: row.roster_revision,
+        studentCount: row.student_count,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    },
+
+    createRoster(ownerAdminId, input) {
+      const ts = nowIso();
+      const roster: ClassroomRoster = {
+        rosterId: createOpaqueId(),
+        ownerAdminId,
+        title: input.title?.trim() || "名簿",
+        sheetSpreadsheetId: input.sheetSpreadsheetId ?? null,
+        sheetTabName: input.sheetTabName ?? null,
+        sheetRange: input.sheetRange ?? null,
+        syncStatus: "active",
+        rosterRevision: 0,
+        createdAt: ts,
+        updatedAt: ts,
+      };
+      db.prepare(
+        `INSERT INTO classroom_rosters (
+          roster_id, owner_admin_id, title,
+          sheet_spreadsheet_id, sheet_tab_name, sheet_range,
+          sync_status, roster_revision, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        roster.rosterId,
+        roster.ownerAdminId,
+        roster.title,
+        roster.sheetSpreadsheetId,
+        roster.sheetTabName,
+        roster.sheetRange,
+        roster.syncStatus,
+        roster.rosterRevision,
+        roster.createdAt,
+        roster.updatedAt,
+      );
+      return roster;
+    },
+
+    getRoster(rosterId, ownerAdminId) {
+      const row = getRosterStmt.get(rosterId, ownerAdminId) as
+        | RosterRow
+        | undefined;
+      return row ? rowToRoster(row) : null;
+    },
+
+    updateRoster(rosterId, ownerAdminId, patch) {
+      const existing = this.getRoster(rosterId, ownerAdminId);
+      if (!existing) return null;
+      const ts = nowIso();
+      const next: ClassroomRoster = {
+        ...existing,
+        title: patch.title !== undefined ? patch.title.trim() || existing.title : existing.title,
+        sheetSpreadsheetId:
+          patch.sheetSpreadsheetId !== undefined
+            ? patch.sheetSpreadsheetId
+            : existing.sheetSpreadsheetId,
+        sheetTabName:
+          patch.sheetTabName !== undefined
+            ? patch.sheetTabName
+            : existing.sheetTabName,
+        sheetRange:
+          patch.sheetRange !== undefined ? patch.sheetRange : existing.sheetRange,
+        updatedAt: ts,
+      };
+      db.prepare(
+        `UPDATE classroom_rosters SET
+          title = ?, sheet_spreadsheet_id = ?, sheet_tab_name = ?, sheet_range = ?,
+          updated_at = ?
+         WHERE roster_id = ? AND owner_admin_id = ?`,
+      ).run(
+        next.title,
+        next.sheetSpreadsheetId,
+        next.sheetTabName,
+        next.sheetRange,
+        next.updatedAt,
+        rosterId,
+        ownerAdminId,
+      );
+      return next;
+    },
+
+    deleteRoster(rosterId, ownerAdminId) {
+      const existing = this.getRoster(rosterId, ownerAdminId);
+      if (!existing) return false;
+      const tx = db.transaction(() => {
+        db.prepare(`DELETE FROM roster_import_rows WHERE import_id IN (
+          SELECT import_id FROM roster_imports WHERE roster_id = ?
+        )`).run(rosterId);
+        db.prepare(`DELETE FROM roster_imports WHERE roster_id = ?`).run(
+          rosterId,
+        );
+        db.prepare(
+          `DELETE FROM classroom_roster_memberships WHERE roster_id = ?`,
+        ).run(rosterId);
+        db.prepare(
+          `DELETE FROM classroom_rosters WHERE roster_id = ? AND owner_admin_id = ?`,
+        ).run(rosterId, ownerAdminId);
+      });
+      tx();
+      return true;
+    },
+
+    listStudents(rosterId, ownerAdminId) {
+      requireRoster(rosterId, ownerAdminId);
+      const rows = listExistingStudentsStmt.all(
+        rosterId,
+        ownerAdminId,
+      ) as StudentRow[];
+      return rows.map(rowToStudentListItem);
+    },
+
+    createImportFromCsv(rosterId, ownerAdminId, csvText) {
+      const roster = requireRoster(rosterId, ownerAdminId);
+      const parsedRows = parseRosterCsv(csvText);
+      const rosterMemberRows = listExistingStudentsStmt.all(
+        rosterId,
+        ownerAdminId,
+      ) as StudentRow[];
+      const ownerRows = listOwnerStudentsStmt.all(ownerAdminId) as StudentRow[];
+      const drafts = buildImportPreviewRows({
+        parsedRows,
+        existingStudents: ownerRows.map(existingFromRow),
+        rosterMembers: rosterMemberRows.map(existingFromRow),
+      });
+      const previewHash = computePreviewHash({
+        baseRosterRevision: roster.rosterRevision,
+        rows: drafts,
+      });
+      const importId = createOpaqueId();
+      const ts = nowIso();
+      const rowIds = drafts.map(() => createOpaqueId());
+
+      const tx = db.transaction(() => {
+        db.prepare(
+          `INSERT INTO roster_imports (
+            import_id, roster_id, status, uploaded_at,
+            preview_hash, base_roster_revision, applied_at,
+            created_at, updated_at
+          ) VALUES (?, ?, 'preview_ready', ?, ?, ?, NULL, ?, ?)`,
+        ).run(
+          importId,
+          rosterId,
+          ts,
+          previewHash,
+          roster.rosterRevision,
+          ts,
+          ts,
+        );
+        const insertRow = db.prepare(
+          `INSERT INTO roster_import_rows (
+            row_id, import_id, row_number, category, student_id,
+            proposed_json, issues_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        );
+        for (let i = 0; i < drafts.length; i++) {
+          const draft = drafts[i]!;
+          insertRow.run(
+            rowIds[i],
+            importId,
+            draft.rowNumber,
+            draft.category,
+            draft.studentId,
+            JSON.stringify(draft.proposed),
+            JSON.stringify(draft.issues),
+          );
+        }
+      });
+      tx();
+
+      const importRecord = rowToImport(
+        db
+          .prepare(`SELECT * FROM roster_imports WHERE import_id = ?`)
+          .get(importId) as ImportRow,
+      );
+      return {
+        import: importRecord,
+        rows: previewRowsToContract(importId, drafts, rowIds),
+        previewHash,
+        baseRosterRevision: roster.rosterRevision,
+      };
+    },
+
+    getImport(rosterId, importId, ownerAdminId) {
+      requireRoster(rosterId, ownerAdminId);
+      const row = db
+        .prepare(
+          `SELECT * FROM roster_imports
+           WHERE import_id = ? AND roster_id = ?`,
+        )
+        .get(importId, rosterId) as ImportRow | undefined;
+      return row ? rowToImport(row) : null;
+    },
+
+    getImportPreview(rosterId, importId, ownerAdminId) {
+      const importRecord = this.getImport(rosterId, importId, ownerAdminId);
+      if (!importRecord || importRecord.status !== "preview_ready") return null;
+      const drafts = loadPreviewDrafts(importId);
+      const rowIds = (
+        db
+          .prepare(
+            `SELECT row_id FROM roster_import_rows
+             WHERE import_id = ?
+             ORDER BY row_number ASC, row_id ASC`,
+          )
+          .all(importId) as Array<{row_id: string}>
+      ).map(row => row.row_id);
+      return {
+        import: importRecord,
+        rows: previewRowsToContract(importId, drafts, rowIds),
+        previewHash: importRecord.previewHash!,
+        baseRosterRevision: importRecord.baseRosterRevision!,
+      };
+    },
+
+    applyImport(input) {
+      const roster = requireRoster(input.rosterId, input.ownerAdminId);
+      const importRecord = this.getImport(
+        input.rosterId,
+        input.importId,
+        input.ownerAdminId,
+      );
+      if (!importRecord) {
+        throw new RosterServiceError("IMPORT_NOT_FOUND", "Import not found");
+      }
+      if (importRecord.status !== "preview_ready") {
+        throw new RosterServiceError(
+          "IMPORT_NOT_APPLICABLE",
+          "Import is not ready to apply",
+        );
+      }
+      if (
+        importRecord.previewHash !== input.previewHash ||
+        importRecord.baseRosterRevision !== input.baseRosterRevision
+      ) {
+        throw new RosterServiceError(
+          "STALE_PREVIEW",
+          "Preview hash or roster revision is stale",
+        );
+      }
+      if (input.baseRosterRevision !== roster.rosterRevision) {
+        throw new RosterServiceError(
+          "STALE_PREVIEW",
+          "Roster revision changed since preview",
+        );
+      }
+
+      const drafts = loadPreviewDrafts(input.importId);
+      if (hasBlockingPreviewRows(drafts)) {
+        throw new RosterServiceError(
+          "BLOCKING_PREVIEW",
+          "Import preview contains blocking rows",
+        );
+      }
+
+      const applicable = drafts.filter(draft => {
+        if (
+          draft.category === "duplicate_candidate" ||
+          draft.category === "attendance_collision" ||
+          draft.category === "rejected_row"
+        ) {
+          return false;
+        }
+        if (draft.category === "update") {
+          const existing = draft.studentId
+            ? (db
+                .prepare(`SELECT * FROM classroom_students WHERE student_id = ?`)
+                .get(draft.studentId) as StudentRow | undefined)
+            : undefined;
+          return proposedChanged(
+            draft,
+            existing ? existingFromRow(existing) : undefined,
+          );
+        }
+        return true;
+      });
+
+      const ts = nowIso();
+      const insertAudit = db.prepare(
+        `INSERT INTO classroom_audit_events (
+          event_id, owner_admin_id, roster_id, student_id,
+          event_type, payload_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+
+      const tx = db.transaction(() => {
+        const bump = db
+          .prepare(
+            `UPDATE classroom_rosters SET
+              roster_revision = roster_revision + 1,
+              updated_at = ?
+             WHERE roster_id = ? AND owner_admin_id = ?
+               AND roster_revision = ?`,
+          )
+          .run(
+            ts,
+            input.rosterId,
+            input.ownerAdminId,
+            input.baseRosterRevision,
+          );
+        if (bump.changes === 0) {
+          throw new RosterServiceError(
+            "REVISION_CONFLICT",
+            "Concurrent roster update",
+          );
+        }
+
+        for (const draft of applicable) {
+          const proposed = draft.proposed as {
+            studentCode: string;
+            displayName: string;
+            attendanceNumber?: string | null;
+            loginName?: string;
+            groupLabel?: string | null;
+            active?: boolean;
+          };
+
+          if (draft.category === "add") {
+            const studentId = createOpaqueId();
+            const membershipId = createOpaqueId();
+            db.prepare(
+              `INSERT INTO classroom_students (
+                student_id, owner_admin_id, student_code, display_name,
+                attendance_number, login_name, group_label, active,
+                archived_at, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+            ).run(
+              studentId,
+              input.ownerAdminId,
+              proposed.studentCode,
+              proposed.displayName,
+              proposed.attendanceNumber ?? null,
+              proposed.loginName ?? proposed.studentCode,
+              proposed.groupLabel ?? null,
+              ts,
+              ts,
+            );
+            db.prepare(
+              `INSERT INTO classroom_roster_memberships (
+                membership_id, roster_id, student_id, active,
+                created_at, updated_at
+              ) VALUES (?, ?, ?, 1, ?, ?)`,
+            ).run(membershipId, input.rosterId, studentId, ts, ts);
+            insertAudit.run(
+              createOpaqueId(),
+              input.ownerAdminId,
+              input.rosterId,
+              studentId,
+              "roster.student.added",
+              JSON.stringify({
+                importId: input.importId,
+                studentCode: proposed.studentCode,
+                category: draft.category,
+              }),
+              ts,
+            );
+            continue;
+          }
+
+          if (draft.category === "update" && draft.studentId) {
+            db.prepare(
+              `UPDATE classroom_students SET
+                display_name = ?,
+                attendance_number = ?,
+                login_name = ?,
+                group_label = ?,
+                active = ?,
+                archived_at = CASE WHEN ? = 0 THEN ? ELSE NULL END,
+                updated_at = ?
+               WHERE student_id = ? AND owner_admin_id = ?`,
+            ).run(
+              proposed.displayName,
+              proposed.attendanceNumber ?? null,
+              proposed.loginName ?? proposed.studentCode,
+              proposed.groupLabel ?? null,
+              proposed.active ? 1 : 0,
+              proposed.active ? 1 : 0,
+              ts,
+              ts,
+              draft.studentId,
+              input.ownerAdminId,
+            );
+            const existingMembership = db
+              .prepare(
+                `SELECT membership_id FROM classroom_roster_memberships
+                 WHERE roster_id = ? AND student_id = ?`,
+              )
+              .get(input.rosterId, draft.studentId) as
+              | {membership_id: string}
+              | undefined;
+            if (existingMembership) {
+              db.prepare(
+                `UPDATE classroom_roster_memberships SET
+                  active = 1, updated_at = ?
+                 WHERE roster_id = ? AND student_id = ?`,
+              ).run(ts, input.rosterId, draft.studentId);
+            } else {
+              db.prepare(
+                `INSERT INTO classroom_roster_memberships (
+                  membership_id, roster_id, student_id, active,
+                  created_at, updated_at
+                ) VALUES (?, ?, ?, 1, ?, ?)`,
+              ).run(
+                createOpaqueId(),
+                input.rosterId,
+                draft.studentId,
+                ts,
+                ts,
+              );
+            }
+            insertAudit.run(
+              createOpaqueId(),
+              input.ownerAdminId,
+              input.rosterId,
+              draft.studentId,
+              "roster.student.updated",
+              JSON.stringify({
+                importId: input.importId,
+                studentCode: proposed.studentCode,
+                category: draft.category,
+              }),
+              ts,
+            );
+            continue;
+          }
+
+          if (draft.category === "deactivate" && draft.studentId) {
+            db.prepare(
+              `UPDATE classroom_students SET
+                active = 0, archived_at = ?, updated_at = ?
+               WHERE student_id = ? AND owner_admin_id = ?`,
+            ).run(ts, ts, draft.studentId, input.ownerAdminId);
+            db.prepare(
+              `UPDATE classroom_roster_memberships SET
+                active = 0, updated_at = ?
+               WHERE roster_id = ? AND student_id = ?`,
+            ).run(ts, input.rosterId, draft.studentId);
+            insertAudit.run(
+              createOpaqueId(),
+              input.ownerAdminId,
+              input.rosterId,
+              draft.studentId,
+              "roster.student.deactivated",
+              JSON.stringify({
+                importId: input.importId,
+                studentCode: proposed.studentCode,
+                category: draft.category,
+              }),
+              ts,
+            );
+          }
+        }
+
+        insertAudit.run(
+          createOpaqueId(),
+          input.ownerAdminId,
+          input.rosterId,
+          null,
+          "roster.import.applied",
+          JSON.stringify({
+            importId: input.importId,
+            previewHash: input.previewHash,
+            baseRosterRevision: input.baseRosterRevision,
+            mutationCount: applicable.length,
+          }),
+          ts,
+        );
+
+        db.prepare(
+          `UPDATE roster_imports SET
+            status = 'applied', applied_at = ?, updated_at = ?
+           WHERE import_id = ?`,
+        ).run(ts, ts, input.importId);
+      });
+
+      tx();
+
+      const nextRoster = this.getRoster(input.rosterId, input.ownerAdminId)!;
+      const nextImport = this.getImport(
+        input.rosterId,
+        input.importId,
+        input.ownerAdminId,
+      )!;
+      return {roster: nextRoster, import: nextImport};
+    },
+  };
+}
