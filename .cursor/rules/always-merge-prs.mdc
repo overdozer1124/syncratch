@@ -1,5 +1,5 @@
 ---
-description: 作業完了後は必ず PR を main にマージしてから終了する
+description: 作業完了後は必ず PR を main にマージしてから終了する（Hermes 案件は GO 後のみ）
 alwaysApply: true
 ---
 
@@ -7,7 +7,16 @@ alwaysApply: true
 
 PR を作成・更新した作業は、**マージして `main` に取り込むまで未完了**とみなす。ユーザーにマージを任せず、エージェントが必ず実行する。
 
-## 必須フロー
+## Hermes レビュー案件 — 本ルールの適用条件
+
+`docs/CURSOR_CODEX_HANDOFF.md` のレビュー主体が **Hermes** の場合、または `.cursor/skills/hermes-review-loop/SKILL.md` が適用される場合:
+
+- **`.cursor/rules/hermes-review-governance.mdc` が優先**する。
+- **Hermes の無条件 GO（または `APPROVED_PENDING_CI`）と `scripts/hermes-merge-preflight.sh` 成功前はマージしない。**
+- 「CI green だからマージ」「台帳に GO と書いたからマージ」は **禁止**（PR #201 無効マージの教訓）。
+- `READY_FOR_HERMES_REVIEW` でターンを終えることは、Hermes 案件では **正常な完了**である。
+
+## 必須フロー（通常案件）
 
 作業内容が完成し、テスト・CI が通ったら:
 
@@ -19,9 +28,10 @@ PR を作成・更新した作業は、**マージして `main` に取り込む�
 
 ## 禁止
 
-- マージ可能な PR を開いたまま終了すること
+- マージ可能な PR を開いたまま終了すること **（Hermes 案件で GO 前は該当しない — 正しい停止）**
 - 「マージしてください」とユーザーに依頼して終了すること
 - CI 未確認のままマージすること
+- **Hermes 案件で、Hermes 未 GO / preflight 未 PASS / 指摘 ID 未照合のままマージすること**
 
 ## その他
 
