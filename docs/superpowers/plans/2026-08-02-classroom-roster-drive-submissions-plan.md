@@ -319,9 +319,11 @@ These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
 
 # PR 4 — Google Sheet sync
 
-**Status:** NOT STARTED
+**Status:** IN REVIEW (Hermes NO-GO @ 19:48 → 2-stage resubmission)
 
-**Scope:** Bind roster to `sheetSpreadsheetId`, `sheetTabName`, `sheetRange`. Manual `POST .../sync` pulls Sheet via teacher credential, diffs against SQLite mirror, bumps `roster_revision`, sets `sync_status` (`active` | `sync_required`). Gated by `SYNCRATCH_ROSTER_SHEETS_ENABLED`.
+**Scope:** Bind roster to `sheetSpreadsheetId`, `sheetTabName`, `sheetRange`. Manual sync pulls Sheet via teacher credential, **preview then apply** (same 2-stage model as CSV import), bumps `roster_revision`, sets `sync_status` (`active` | `sync_required`). Gated by `SYNCRATCH_ROSTER_SHEETS_ENABLED`.
+
+**Sheet binding (M2):** PR 4 accepts `sheetSpreadsheetId` via PATCH for wiring/tests. **PR 6** adds Google Picker–mediated binding so admins cannot paste arbitrary spreadsheet IDs without selecting an accessible file.
 
 ### Files (expected)
 
@@ -329,21 +331,23 @@ These are **not PR 1 scope** but mandatory acceptance gates for later PRs:
 |---|---|
 | `apps/collab-host/src/roster-sheet-sync.ts` | Create |
 | `apps/collab-host/src/roster-sheet-sync.test.ts` | Create |
-| `apps/collab-host/src/roster-routes.ts` | Modify — sync endpoint |
+| `apps/collab-host/src/roster-routes.ts` | Modify — sync preview + apply endpoints |
 
 ### APIs
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/admin/rosters/{rosterId}/sync` | Pull Sheet → SQLite mirror |
+| POST | `/api/admin/rosters/{rosterId}/sync` | Pull Sheet → **preview only** (`deactivateMissing` default false) |
+| POST | `/api/admin/rosters/{rosterId}/sync/apply` | Apply preview (`previewHash` + `baseRosterRevision` + optional `deactivateMissing`) |
 
 ### Verification
 
 - Requires teacher credential (PR 2); returns 409/503 when credential missing.
 - Sheet columns match `ROSTER_SHEET_COLUMNS`; unknown columns ignored or rejected per design.
-- Revision CAS on concurrent sync.
+- **`deactivateMissing` default false** on sync preview (PR 3.1 M1 parity); explicit opt-in only.
+- Revision CAS on concurrent sync apply.
 - **`SYNC_REQUIRED` recovery (Hermes):** re-sync API + admin UI status + audit event when mirror/Sheet diverge.
-- Flag OFF → sync route unavailable.
+- Flag OFF → sync routes unavailable.
 - No webhook/cron in this PR (manual sync only).
 
 ### Prohibitions

@@ -1,7 +1,17 @@
-import {describe, expect, it} from "vitest";
+import {describe, expect, it, vi} from "vitest";
 import {ROSTER_SHEET_COLUMNS} from "@blocksync/classroom-access";
+import {DRIVE_FILE_SCOPE} from "@blocksync/google-drive-sync";
 import {openAdminDb} from "./admin-db.js";
-import {createRosterService, RosterServiceError} from "./roster-service.js";
+import {
+  createAdminGoogleCredentialStore,
+} from "./admin-google-credential-store.js";
+import {testAdminGoogleCryptoKeys} from "./admin-google-oauth.js";
+import {
+  applySheetSync,
+  createRosterService,
+  createSheetSyncPreview,
+  RosterServiceError,
+} from "./roster-service.js";
 
 function header(): string {
   return ROSTER_SHEET_COLUMNS.join(",");
@@ -213,6 +223,188 @@ describe("roster-service", () => {
       }),
     ).toThrow(RosterServiceError);
 
+    db.close();
+  });
+
+  it("sheet sync preview defaults deactivateMissing false and apply is two-stage", async () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-sheet",
+      email: "teacher-sheet@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "Sheet roster"});
+    service.updateRoster(roster.rosterId, admin.adminId, {
+      sheetSpreadsheetId: "sheet-123",
+      sheetTabName: "Roster",
+      sheetRange: null,
+    });
+
+    const seed = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,A,true", "S002,佐藤,02,s,B,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const store = createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys());
+    store.upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      accessToken: "access-1",
+      accessExpiresAt: Date.now() + 3_600_000,
+      nowIso: new Date().toISOString(),
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/values/")) {
+        return new Response(
+          JSON.stringify({
+            values: [
+              header().split(","),
+              ["S001", "山田更新", "01", "y", "A", "true"],
+            ],
+          }),
+          {status: 200},
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const preview = await createSheetSyncPreview(
+      db.sqlite,
+      {
+        oauthConfig: {clientId: "client", clientSecret: "secret", fetch: fetchMock},
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      roster.rosterId,
+      admin.adminId,
+    );
+    expect(preview.deactivateMissing).toBe(false);
+    expect(preview.rows.some(row => row.category === "deactivate")).toBe(false);
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(2);
+
+    const result = applySheetSync(db.sqlite, {
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    expect(result.sync.syncStatus).toBe("active");
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S001",
+      )?.displayName,
+    ).toBe("山田更新");
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S002",
+      )?.active,
+    ).toBe(true);
+
+    const syncedAudit = db.sqlite
+      .prepare(
+        `SELECT payload_json FROM classroom_audit_events
+         WHERE roster_id = ? AND event_type = 'roster.sheet.synced'`,
+      )
+      .get(roster.rosterId) as {payload_json: string};
+    expect(JSON.parse(syncedAudit.payload_json).deactivateCount).toBe(0);
+    db.close();
+  });
+
+  it("sheet sync deactivateMissing true deactivates missing rows on apply", async () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-sheet-deact",
+      email: "teacher-sheet-deact@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "Sheet roster"});
+    service.updateRoster(roster.rosterId, admin.adminId, {
+      sheetSpreadsheetId: "sheet-123",
+      sheetTabName: "Roster",
+    });
+    const seed = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,A,true", "S002,佐藤,02,s,B,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const store = createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys());
+    store.upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      accessToken: "access-1",
+      accessExpiresAt: Date.now() + 3_600_000,
+      nowIso: new Date().toISOString(),
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/values/")) {
+        return new Response(
+          JSON.stringify({
+            values: [header().split(","), ["S001", "山田", "01", "y", "A", "true"]],
+          }),
+          {status: 200},
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const preview = await createSheetSyncPreview(
+      db.sqlite,
+      {
+        oauthConfig: {clientId: "c", clientSecret: "s", fetch: fetchMock},
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      roster.rosterId,
+      admin.adminId,
+      {deactivateMissing: true},
+    );
+    expect(preview.deactivateMissing).toBe(true);
+    expect(preview.rows.some(row => row.category === "deactivate")).toBe(true);
+
+    applySheetSync(db.sqlite, {
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: true,
+    });
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S002",
+      )?.active,
+    ).toBe(false);
     db.close();
   });
 });

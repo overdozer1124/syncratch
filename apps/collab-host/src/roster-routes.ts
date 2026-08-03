@@ -10,6 +10,8 @@ import {
   adminRosterImportsPath,
   adminRosterPath,
   adminRosterStudentsPath,
+  adminRosterSyncPath,
+  adminRosterSyncApplyPath,
 } from "@blocksync/classroom-access";
 import {
   readAdminSession,
@@ -18,9 +20,13 @@ import {
   type AdminSessionStore,
 } from "./admin-auth.js";
 import {
+  applySheetSync,
   createRosterService,
+  createSheetSyncPreview,
   RosterServiceError,
+  SheetSyncError,
   type RosterService,
+  type RosterSheetSyncEnvironment,
 } from "./roster-service.js";
 import {MAX_ROSTER_CSV_BYTES} from "./roster-import.js";
 import type Database from "better-sqlite3";
@@ -97,7 +103,9 @@ export interface ParsedRosterRoute {
     | "imports"
     | "import"
     | "preview"
-    | "apply";
+    | "apply"
+    | "sync"
+    | "sync_apply";
 }
 
 export function parseRosterAdminPath(urlPath: string): ParsedRosterRoute | null {
@@ -116,6 +124,14 @@ export function parseRosterAdminPath(urlPath: string): ParsedRosterRoute | null 
   }
   if (segments[1] === "students" && segments.length === 2) {
     return {rosterId, action: "students"};
+  }
+  if (segments[1] === "sync") {
+    if (segments.length === 2) {
+      return {rosterId, action: "sync"};
+    }
+    if (segments.length === 3 && segments[2] === "apply") {
+      return {rosterId, action: "sync_apply"};
+    }
   }
   if (segments[1] === "imports") {
     if (segments.length === 2) {
@@ -142,6 +158,25 @@ export function isRosterAdminPath(urlPath: string): boolean {
 }
 
 function mapServiceError(error: unknown): {status: number; body: unknown} {
+  if (error instanceof SheetSyncError) {
+    switch (error.code) {
+      case "CREDENTIAL_MISSING":
+        return {status: 409, body: {ok: false, code: error.code, message: error.message}};
+      case "CREDENTIAL_REFRESH_FAILED":
+        return {status: 503, body: {ok: false, code: error.code, message: error.message}};
+      case "SHEET_NOT_BOUND":
+        return {status: 400, body: {ok: false, code: error.code, message: error.message}};
+      case "SHEET_HEADER_INVALID":
+        return {status: 422, body: {ok: false, code: error.code, message: error.message}};
+      case "SHEET_TOO_LARGE":
+        return {status: 413, body: {ok: false, code: error.code, message: error.message}};
+      case "SHEET_INACCESSIBLE":
+      case "SHEET_FETCH_FAILED":
+        return {status: 409, body: {ok: false, code: error.code, message: error.message}};
+      default:
+        return {status: 400, body: {ok: false, code: error.code, message: error.message}};
+    }
+  }
   if (error instanceof RosterServiceError) {
     switch (error.code) {
       case "ROSTER_NOT_FOUND":
@@ -154,6 +189,9 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
         return {status: 422, body: {ok: false, code: error.code, message: error.message}};
       case "IMPORT_NOT_APPLICABLE":
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
+      case "NOT_CONFIGURED":
+      case "SHEET_NOT_BOUND":
+        return {status: 503, body: {ok: false, code: error.code, message: error.message}};
       default:
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
     }
@@ -169,9 +207,11 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
 
 export interface CreateRosterRoutesHandlerOptions {
   enabled: boolean;
+  sheetsEnabled: boolean;
   db: Database.Database;
   adminConfig: AdminAuthConfig | null;
   adminSessions: AdminSessionStore;
+  sheetSync?: RosterSheetSyncEnvironment | null;
   service?: RosterService;
   now?: () => number;
 }
@@ -302,6 +342,102 @@ export function createRosterRoutesHandler(
         return true;
       }
 
+      if (route.action === "sync") {
+        if (!options.sheetsEnabled) {
+          sendJson(res, 404, {ok: false, code: "NOT_FOUND"});
+          return true;
+        }
+        if (req.method !== "POST") {
+          sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
+          return true;
+        }
+        if (!requireAdminCsrf(req, adminSession)) {
+          sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
+          return true;
+        }
+        if (!options.sheetSync) {
+          sendJson(res, 503, {
+            ok: false,
+            code: "NOT_CONFIGURED",
+            message: "Sheet sync is not configured",
+          });
+          return true;
+        }
+        const body = await readJsonBody(req);
+        const deactivateMissing = Boolean(
+          body &&
+            typeof body === "object" &&
+            (body as {deactivateMissing?: unknown}).deactivateMissing === true,
+        );
+        const preview = await createSheetSyncPreview(
+          options.db,
+          options.sheetSync,
+          route.rosterId,
+          adminSession.adminId,
+          {deactivateMissing},
+        );
+        sendJson(res, 201, {ok: true, ...preview});
+        return true;
+      }
+
+      if (route.action === "sync_apply") {
+        if (!options.sheetsEnabled) {
+          sendJson(res, 404, {ok: false, code: "NOT_FOUND"});
+          return true;
+        }
+        if (req.method !== "POST") {
+          sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
+          return true;
+        }
+        if (!requireAdminCsrf(req, adminSession)) {
+          sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
+          return true;
+        }
+        const body = await readJsonBody(req);
+        const importId =
+          body &&
+          typeof body === "object" &&
+          typeof (body as {importId?: unknown}).importId === "string"
+            ? (body as {importId: string}).importId
+            : "";
+        const previewHash =
+          body &&
+          typeof body === "object" &&
+          typeof (body as {previewHash?: unknown}).previewHash === "string"
+            ? (body as {previewHash: string}).previewHash
+            : "";
+        const baseRosterRevision =
+          body &&
+          typeof body === "object" &&
+          typeof (body as {baseRosterRevision?: unknown}).baseRosterRevision ===
+            "number"
+            ? (body as {baseRosterRevision: number}).baseRosterRevision
+            : NaN;
+        const deactivateMissing = Boolean(
+          body &&
+            typeof body === "object" &&
+            (body as {deactivateMissing?: unknown}).deactivateMissing === true,
+        );
+        if (!importId || !previewHash || !Number.isInteger(baseRosterRevision)) {
+          sendJson(res, 400, {
+            ok: false,
+            code: "BAD_REQUEST",
+            message: "importId, previewHash, and baseRosterRevision required",
+          });
+          return true;
+        }
+        const result = applySheetSync(options.db, {
+          rosterId: route.rosterId,
+          importId,
+          ownerAdminId: adminSession.adminId,
+          previewHash,
+          baseRosterRevision,
+          deactivateMissing,
+        });
+        sendJson(res, 200, {ok: true, ...result});
+        return true;
+      }
+
       if (route.action === "imports") {
         if (req.method !== "POST") {
           sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
@@ -428,4 +564,6 @@ export {
   adminRosterImportsPath,
   adminRosterPath,
   adminRosterStudentsPath,
+  adminRosterSyncPath,
+  adminRosterSyncApplyPath,
 };

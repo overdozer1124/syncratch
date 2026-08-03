@@ -12,6 +12,7 @@ import {
   adminRosterImportsPath,
   adminRosterPath,
   adminRosterStudentsPath,
+  adminRosterSyncPath,
 } from "@blocksync/classroom-access";
 import {
   ADMIN_SESSION_COOKIE,
@@ -68,6 +69,7 @@ async function boot(
   dbPath: string,
   root: string,
   classroomRosterEnabled: boolean,
+  rosterSheetsEnabled = false,
 ) {
   const sessions = createMemoryAdminSessionStore();
   const db = openAdminDb(dbPath);
@@ -75,7 +77,21 @@ async function boot(
     host: "127.0.0.1",
     port: 0,
     staticRoot: root,
-    admin: {db, config, sessions, classroomRosterEnabled},
+    admin: {
+      db,
+      config,
+      sessions,
+      classroomRosterEnabled,
+      rosterSheetsEnabled,
+      classroomFlags: rosterSheetsEnabled
+        ? {
+            classroomRosterEnabled: true,
+            adminGoogleCredentialEnabled: true,
+            rosterSheetsEnabled: true,
+          }
+        : undefined,
+      adminGoogleOAuthEnabled: rosterSheetsEnabled,
+    },
   });
   return {handle: handle!, db, sessions};
 }
@@ -310,5 +326,87 @@ describe("roster admin routes", () => {
       headers: {cookie, "x-csrf-token": csrfToken},
     });
     expect(deleted.status).toBe(405);
+  });
+
+  it("returns 404 for sync when rosterSheets flag is OFF", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-sync-off-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-sync-off"),
+    };
+    const {handle: h} = await boot(config, dbPath, root, true, false);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "名簿"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    const sync = await fetch(new URL(adminRosterSyncPath(roster.rosterId), h.url), {
+      method: "POST",
+      headers: {cookie, "x-csrf-token": csrfToken},
+    });
+    expect(sync.status).toBe(404);
+  });
+
+  it("returns 409 for sync when teacher credential is missing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-sync-no-cred-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-sync-no-cred"),
+    };
+    process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID = "test-key";
+    process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON = JSON.stringify({
+      "test-key": Buffer.alloc(32, 7).toString("base64"),
+    });
+    process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+    const {handle: h} = await boot(config, dbPath, root, true, true);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "名簿"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    await fetch(new URL(adminRosterPath(roster.rosterId), h.url), {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({
+        sheetSpreadsheetId: "sheet-123",
+        sheetTabName: "Roster",
+      }),
+    });
+    const sync = await fetch(new URL(adminRosterSyncPath(roster.rosterId), h.url), {
+      method: "POST",
+      headers: {cookie, "x-csrf-token": csrfToken},
+    });
+    expect(sync.status).toBe(409);
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID;
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
   });
 });
