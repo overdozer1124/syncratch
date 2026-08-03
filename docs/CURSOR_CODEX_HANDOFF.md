@@ -45,7 +45,7 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 提出 |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3 Hermes GO 待ちマージ |
 | 現在の状態 | `READY_FOR_HERMES_REVIEW` |
 | 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
@@ -6016,4 +6016,49 @@ PR: #201 @9390ad6
 - git diff --check PASS
 
 禁止: 自動マージ / Sheet sync（PR 4）/ student auth（PR 6）/ XLSX upload
+```
+
+### 2026-08-03 18:24:00 JST — Hermes（PR #201 初回決裁 NO-GO）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #201 @530523d
+Reviewer: Hermes（Codex 代行）
+判定: NO-GO（差し戻し）
+CI: Gate 0 ×2 SUCCESS
+
+Blocker:
+- P3-B1: concurrent apply「one winner」テスト欠落（REVISION_CONFLICT / STALE_PREVIEW 未検証）
+
+Major:
+- P3-M1: JSON `{csv}` upload が 32 KiB 上限（2 MiB 契約と不一致）— roster-routes.ts readCsvBody
+- P3-M2: relax_quotes: true が PR 3 目標（false + rejected_row）から逸脱
+- P3-M3: 別 roster 既存 student_code を add と誤分類 → UNIQUE 制約で opaque 400
+
+Minor（マージ非阻止）:
+- header-only CSV で全員 deactivate リスク
+- audit per-mutation 件数未アサート
+- applied 後 preview 404
+
+次の担当: Cursor
+次: Blocker + Major 修正 → 再提出
+禁止: マージ / PR 4+ 先行
+```
+
+### 2026-08-03 18:30:00 JST — Cursor（PR 3 指摘解消 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+PR: #201（修正 push 後 head 更新）
+
+修正:
+- P3-B1: concurrent apply one-winner テスト追加（2 import @ rev0 → 1 成功 / 1 STALE_PREVIEW）
+- P3-M1: readCsvBody JSON 上限を MAX_ROSTER_CSV_BYTES + 4096 に修正
+- P3-M2: relax_quotes: false
+- P3-M3: owner 全 student で preview lookup / update 時 membership upsert / rosterMembers で deactivate 分離
+
+検証: collab-host 61 tests + typecheck PASS
+禁止: 自動マージ
 ```
