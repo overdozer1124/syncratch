@@ -51,6 +51,7 @@ import {
   parseAdminGoogleCryptoKeysFromEnv,
   readAdminGoogleOAuthConfigFromEnv,
 } from "./admin-google-oauth.js";
+import {createRosterRoutesHandler} from "./roster-routes.js";
 
 export interface StartCollabHostAdminOptions {
   db?: AdminDb;
@@ -62,6 +63,7 @@ export interface StartCollabHostAdminOptions {
     adminGoogleCredentialEnabled: boolean;
   };
   adminGoogleOAuthEnabled?: boolean;
+  classroomRosterEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -96,6 +98,9 @@ export async function startCollabHost(
     options.admin?.adminGoogleOAuthEnabled ??
     (runtimeClassroomFlags.classroomRosterEnabled &&
       runtimeClassroomFlags.adminGoogleCredentialEnabled);
+  const classroomRosterEnabled =
+    options.admin?.classroomRosterEnabled ??
+    runtimeClassroomFlags.classroomRosterEnabled;
 
   const port = options.port ?? Number(process.env.PORT ?? 8080);
   const host = options.host ?? process.env.HOST ?? "0.0.0.0";
@@ -141,10 +146,17 @@ export async function startCollabHost(
     oauthConfig: readAdminGoogleOAuthConfigFromEnv(),
     cryptoKeys: adminGoogleCryptoKeys,
   });
+  const handleRosterRoutes = createRosterRoutesHandler({
+    enabled: classroomRosterEnabled,
+    db: adminDb.sqlite,
+    adminConfig,
+    adminSessions,
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
       if (await handleAdminGoogleOAuth(req, res)) return;
+      if (await handleRosterRoutes(req, res)) return;
       if (await handleAdminAuth(req, res)) return;
       if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
