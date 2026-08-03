@@ -6303,6 +6303,7 @@ Hermes 19:48 NO-GO 指摘対応:
 ### 2026-08-03 21:42:00 JST — Hermes（PR #204 再決裁 GO — PR 4 @3fb1989）
 
 ```text
+案件ID  : classroom-roster-drive-submissions
 Reviewer: Hermes
 判定: GO（マージ可） — 残条件: CI green 確認
 PR #204 / head SHA: 3fb1989（再提出。fix commit 6c3599e 含む）
