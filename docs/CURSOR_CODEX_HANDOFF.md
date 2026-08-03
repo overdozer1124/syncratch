@@ -5988,3 +5988,32 @@ mergedAt: 2026-08-03T00:05:17Z @1f3bf17
 次: PR 3 — 明示指示後
 禁止: 公開/deploy/PR 4+ 先行
 ```
+
+### 2026-08-03 09:10:00 JST — Cursor（PR 3 Roster admin API + CSV import → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 8b7d67f
+branch: cursor/classroom-roster-drive-submissions-pr3-258b
+PR: #201 @9390ad6
+
+実装:
+- roster-import.ts: CSV parse / preview categories / preview_hash（csv-parse@7.0.1）
+- roster-service.ts: roster CRUD / import preview 永続化 / apply トランザクション（revision CAS + audit）
+- roster-routes.ts: admin session + CSRF / GET|POST rosters / students / imports / preview / apply
+- server.ts: SYNCRATCH_CLASSROOM_ROSTER_ENABLED 時のみ handler 登録
+
+検証:
+- flag OFF → roster routes 404（admin-api 回帰テスト維持）
+- preview: add/update/deactivate/duplicate/attendance_collision/rejected_row
+- apply: preview_hash + base_roster_revision CAS（stale → 409）
+- attendance_number 先頭ゼロ保持（007）
+- classroom_audit_events を apply トランザクション内に記録
+- collab-host 59 tests + typecheck PASS
+- classroom-access 13 tests + typecheck PASS
+- git diff --check PASS
+
+禁止: 自動マージ / Sheet sync（PR 4）/ student auth（PR 6）/ XLSX upload
+```
