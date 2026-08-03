@@ -81,7 +81,7 @@
 | ワークフロー状態 | `PR4_COMPLETE`（PR 4 — main マージ済み @cce1885） |
 | 現在の担当 | ユーザー（PR 5 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 4 Hermes 再決裁待ち |
+| 現在のTask | PR 4 完了待機（PR 5 は指示後） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
