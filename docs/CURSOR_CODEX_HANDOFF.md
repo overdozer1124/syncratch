@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3.1 決裁 | #201 無効マージ @1d586c6。PR 3.1 branch 提出待ち |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3.1 決裁 | #202 @213d2cc。18:06 NO-GO 解消 + 統治強化。preflight FAIL=正 |
 
 ### 読取手順（「作業完了」時）
 
@@ -6140,7 +6140,7 @@ Reviewer: Hermes（Codex 週次制限のため代行）
 次の担当: Hermes
 base: main @ 1e57f9d
 branch: cursor/classroom-roster-drive-submissions-pr3-1-258b
-PR: #202 @e01427d
+PR: #202 @213d2cc（統治強化 4899390 / 213d2cc 含む）
 
 修正（18:06 指摘対応）:
 - P3-B1: 未知列は WARNING のみ（行は add/update 継続）。ignoredColumns を preview に 1 回表示
