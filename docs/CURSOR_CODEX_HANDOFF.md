@@ -47,10 +47,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 3.1 提出（#201 無効マージ是正） |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR3_1_APPROVED_PENDING_CI` |
+| 次の担当 | Cursor（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 3.1 決裁（18:06 NO-GO 指摘 6 件の解消確認） |
+| 次の作業 | PR #202 CI green 確認 → main マージ |
 | 禁止 | 自動マージ / PR 4+ 先行 |
 
 ### 案件レジストリ
@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 3.1 決裁 | #202 @213d2cc。18:06 NO-GO 解消 + 統治強化。preflight FAIL=正 |
+| `classroom-roster-drive-submissions` | `PR3_1_APPROVED_PENDING_CI` | Cursor | CI green → #202 マージ | Hermes GO @19:02 / #202 @1db1d8a。CI 待ち |
 
 ### 読取手順（「作業完了」時）
 
@@ -75,10 +75,10 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 18:50:00 JST |
-| 更新者 | Cursor |
+| 最終更新 | 2026-08-03 19:02:00 JST |
+| 更新者 | Hermes |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 3.1 — #201 無効マージ是正） |
+| ワークフロー状態 | `PR3_1_APPROVED_PENDING_CI`（PR #202 Hermes GO — CI green 後マージ可） |
 | 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 3 着手待ち（明示指示後） |
@@ -6175,4 +6175,41 @@ PR: #202 @213d2cc（統治強化 4899390 / 213d2cc 含む）
 - preflight 未 PASS では gh pr merge 不可（現状 PR #202 は FAIL = 正）
 
 禁止: 自動マージ（PR #202 は Hermes GO 待ち）
+```
+
+### 2026-08-03 19:02:00 JST — Hermes（PR #202 再決裁 GO — PR 3.1 @1db1d8a）
+
+```text
+案件ID: classroom-roster-drive-submissions
+PR: #202 (draft)
+Head: 1db1d8a（実装 e01427d + 台帳 1db1d8a）
+Base: origin/main @ 1e57f9d
+Reviewer: Hermes（Codex 週次制限のため代行）
+決裁日: 2026/08/03 19:02
+
+判定: GO（マージ可）
+まず、今回は私の指示通り main へのマージを行っていません（head 1db1d8a は main 1e57f9d の祖先ではない）。この是正は正しい対応でした。
+
+私が 18:06 に出した NO-GO の指摘 6 件（B1/B2/B3/B4/M1/M2）を、いずれも実コードで解消していることを確認しました。
+
+1. 受け入れ基準 7 点の検証
+#1 未知列で全行 add/update、警告 1 件 ✅ normalizeRow は UNKNOWN_COLUMN を issues に push するだけで行を生成（roster-import.ts:89-95）。早期 return が「必須欠落・INVALID_ACTIVE」のみになり、未知列は BLOCKING_ISSUE_CODES に含まれない（roster-import.test.ts:29 が hasBlockingPreviewRows === false を断言）
+#2 active 列なしで全行 add ✅ parseActive が 3 値化（boolean | "invalid"、roster-import.ts:77-87）。未指定/空 → true 既定。テスト :44 が active 列なし CSV で全行 add を検証
+#3 relax_quotes:false + 行番号付き rejected_row ✅ :172 で relax_quotes:false。try/catch が CsvError の lines から rowNumber を取り RosterCsvParseError を投げる（:177-195）。テスト :57 が閉じ引用符欠落を rejected_row + rowNumber > 0 で検証。m-4 の回答どおりの実装
+#4 unchanged カテゴリ + apply 除外 ✅ :331-334 で rowsEqual が true なら category: "unchanged"。契約（packages/classroom-access/src/roster-types.ts:89）に追加済み。apply 側 :652 で unchanged をスキップ（同一内容再インポートが「更新」にならない）。テスト :74 が検証
+#5 deactivateMissing 既定 false + previewHash 包含 ✅ :229 で ?? false。computePreviewHash が入力に deactivateMissing を受け取り :429 で canonical に含める。テスト :84 が off.rows に deactivate が無く、hashOff !== hashOn を検証。missingFromCsvCount サマリー（:65,388,415）も実装
+#6 DELETE /rosters/:id 削除（405） ✅ roster-routes.ts から DELETE ハンドラが消え、detail ブロックは GET/PATCH のみ。存在しないメソッドは :238 等の 405 に到達。テスト :285 が DELETE → 405 を検証。計画外 API の除去と、取り込み履歴の物理削除回避の両方を達成
+#7 台帳訂正エントリ ✅ :6090「18:06 実決裁 NO-GO」、:6116「18:42 無効マージ・偽 GO 訂正」が本文に存在。18:24/18:45 の偽エントリは削除せず残置され、無効であることが記録されている（:6124-6127）
+
+追加で確認した好ましい点:
+- normalizedRow の row 構築が activeParsed as boolean で安全（roster-import.ts:150）
+- cross-roster の student 重複問題も解消（roster-service.ts listOwnerStudentsStmt / membership upsert）
+- concurrent apply one-winner テスト（roster-service.test.ts:85）も維持
+
+2. 残条件（1 件）
+CI の実結果確認。PR #202 の Checks が全 green（Gate 0 含む）であることをご確認ください。
+
+次の担当: Cursor（CI green 確認 → マージ）
+次: CI green 後 main マージ → PR3_COMPLETE
+禁止: CI 未確認でのマージ / PR 4+ 先行
 ```
