@@ -86,6 +86,7 @@ export type RosterSheetColumn = (typeof ROSTER_SHEET_COLUMNS)[number];
 export type RosterImportPreviewCategory =
   | "add"
   | "update"
+  | "unchanged"
   | "deactivate"
   | "duplicate_candidate"
   | "attendance_collision"
@@ -132,6 +133,12 @@ export interface RosterImportPreview {
   rows: readonly RosterImportPreviewRow[];
   previewHash: string;
   baseRosterRevision: number;
+  /** Columns present in CSV but outside ROSTER_SHEET_COLUMNS (ignored at import). */
+  ignoredColumns: readonly string[];
+  /** Active roster members absent from CSV row set (informational). */
+  missingFromCsvCount: number;
+  /** Whether absent members are previewed as deactivate (default false). */
+  deactivateMissing: boolean;
 }
 
 /** Admin API DTOs (PR 3+). */

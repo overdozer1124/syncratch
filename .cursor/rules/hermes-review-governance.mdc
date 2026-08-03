@@ -1,0 +1,49 @@
+---
+description: Hermes レビュー案件では決裁改変・自己 GO・無照合マージを禁止する（PR #201 再発防止）
+alwaysApply: true
+---
+
+# Hermes レビュー統治（決裁改変・無効マージの再発防止）
+
+`docs/CURSOR_CODEX_HANDOFF.md` の **レビュー主体が Hermes** の案件、または `.cursor/skills/hermes-review-loop/SKILL.md` が適用される案件では、本ルールが **`always-merge-prs` より優先**する。
+
+## 絶対禁止（PR #201 教訓）
+
+1. **エージェントが Hermes の代わりに GO/NO-GO を出すこと** — 敵対的コードレビュー結果を Hermes 決裁として台帳に書かない。
+2. **Hermes 決裁の要約・差し替え** — Blocker/Major ID や文言を別内容に置き換えない（決裁改変）。
+3. **台帳に GO を書いただけでマージすること** — GO は **ユーザー/Hermes がチャットまたは台帳に明示したもの** のみ有効。
+4. **実決裁の台帳記録漏れのままマージすること** — マージ前に対象 PR の Hermes エントリが台帳に存在すること。
+5. **NO-GO 指摘 ID と diff の対応確認なしでマージすること** — 各 Blocker/Major が解消されたことを file:line またはテストで確認する。
+
+## 役割分離
+
+| 役割 | 担当 | してはいけないこと |
+|---|---|---|
+| 実装 | Cursor | Hermes GO の記載、マージ（GO 前） |
+| 決裁 | Hermes（ユーザー/Codex 代行） | — |
+| マージ | Cursor | Hermes 未 GO、照合未完了での merge |
+
+**同一ターンで「レビュー → GO 記載 → マージ」まで一気通貫しない。** ユーザーが「作業完了」と言った場合、Cursor は `READY_FOR_HERMES_REVIEW` で止まり、**Hermes の決裁メッセージを待つ**。
+
+## マージ前の必須照合（1 回）
+
+`scripts/hermes-merge-preflight.sh` を実行し **exit 0** であること。失敗時は **マージしない**。
+
+手動でも次をすべて満たすこと:
+
+1. 台帳の対象案件について **最新の Hermes エントリ** が `判定: GO` または `APPROVED_PENDING_CI`（無条件）。
+2. その GO より **後** に、同一 PR 向け `判定: NO-GO` が台帳に無いこと。
+3. GO エントリの Blocker/Major 一覧と **現在の PR diff** が ID 単位で対応していること。
+4. `gh pr checks` / Gate 0 が green。
+5. GO エントリが **ユーザー/Hermes 由来**であること（エージェントが敵対レビューから自作した GO ではないこと）。
+
+## 台帳記録
+
+- Hermes NO-GO/GO は **Hermes 出力の逐語コピー**（見出しに JST タイムスタンプ + `Reviewer: Hermes`）。
+- Cursor は `READY_FOR_HERMES_REVIEW` まで。`PHASEn_COMPLETE` / `mergedAt` は **マージ成功後** のみ。
+- 無効と判明した GO/NO-GO は削除せず **訂正エントリ** で無効化理由を残す（PR #201 参照）。
+
+## always-merge-prs との関係
+
+Hermes 案件: **Hermes GO + preflight PASS + CI green 後**にのみ `main` へマージする。  
+それまでは「マージ可能な PR を開いたまま」は **正しい停止状態**であり、違反ではない。

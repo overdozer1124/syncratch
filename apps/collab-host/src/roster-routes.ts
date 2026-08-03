@@ -61,7 +61,9 @@ async function readJsonBody(
   return JSON.parse(raw) as unknown;
 }
 
-async function readCsvBody(req: IncomingMessage): Promise<string> {
+async function readCsvImportBody(
+  req: IncomingMessage,
+): Promise<{csv: string; deactivateMissing: boolean}> {
   const contentType = req.headers["content-type"]?.split(";")[0]?.trim() ?? "";
   if (contentType === "application/json") {
     const body = await readJsonBody(req, MAX_ROSTER_CSV_BYTES + 4096);
@@ -70,11 +72,18 @@ async function readCsvBody(req: IncomingMessage): Promise<string> {
       typeof body === "object" &&
       typeof (body as {csv?: unknown}).csv === "string"
     ) {
-      return (body as {csv: string}).csv;
+      return {
+        csv: (body as {csv: string}).csv,
+        deactivateMissing:
+          (body as {deactivateMissing?: unknown}).deactivateMissing === true,
+      };
     }
     throw new Error("JSON body must include csv string");
   }
-  return (await readBody(req)).toString("utf8");
+  return {
+    csv: (await readBody(req)).toString("utf8"),
+    deactivateMissing: false,
+  };
 }
 
 export interface ParsedRosterRoute {
@@ -274,19 +283,6 @@ export function createRosterRoutesHandler(
           sendJson(res, 200, {ok: true, roster});
           return true;
         }
-        if (req.method === "DELETE") {
-          if (!requireAdminCsrf(req, adminSession)) {
-            sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
-            return true;
-          }
-          const deleted = service.deleteRoster(route.rosterId, adminSession.adminId);
-          if (!deleted) {
-            sendJson(res, 404, {ok: false, code: "ROSTER_NOT_FOUND"});
-            return true;
-          }
-          sendJson(res, 200, {ok: true});
-          return true;
-        }
         sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
         return true;
       }
@@ -315,11 +311,12 @@ export function createRosterRoutesHandler(
           sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
           return true;
         }
-        const csvText = await readCsvBody(req);
+        const {csv: csvText, deactivateMissing} = await readCsvImportBody(req);
         const preview = service.createImportFromCsv(
           route.rosterId,
           adminSession.adminId,
           csvText,
+          {deactivateMissing},
         );
         sendJson(res, 201, {ok: true, ...preview});
         return true;
@@ -389,6 +386,11 @@ export function createRosterRoutesHandler(
             "number"
             ? (body as {baseRosterRevision: number}).baseRosterRevision
             : NaN;
+        const deactivateMissing = Boolean(
+          body &&
+            typeof body === "object" &&
+            (body as {deactivateMissing?: unknown}).deactivateMissing === true,
+        );
         if (!previewHash || !Number.isInteger(baseRosterRevision)) {
           sendJson(res, 400, {
             ok: false,
@@ -403,6 +405,7 @@ export function createRosterRoutesHandler(
           ownerAdminId: adminSession.adminId,
           previewHash,
           baseRosterRevision,
+          deactivateMissing,
         });
         sendJson(res, 200, {ok: true, ...result});
         return true;

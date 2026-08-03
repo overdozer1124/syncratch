@@ -118,7 +118,7 @@ Phase 2 admin-student-access では:
 | `attendance_number` | | string | 出席番号。**先頭ゼロを保持**（数値化しない） |
 | `login_name` | | string | ローカルログイン ID。空なら `student_code` をログイン名として扱う（PR 6） |
 | `group_label` | | string | 組・グループ表示用 |
-| `active` | ✓ | boolean | `true` / `false`（CSV では `"true"` / `"false"` 文字列） |
+| `active` | | boolean | `true` / `false`（CSV では `"true"` / `"false"` 文字列）。**列省略・空セルは `true` 既定**（PR 3.1 import） |
 
 定数: `ROSTER_SHEET_COLUMNS` in `@blocksync/classroom-access`.
 
@@ -128,10 +128,13 @@ Phase 2 admin-student-access では:
 |---|---|
 | `add` | 新規生徒 |
 | `update` | 既存生徒のフィールド更新 |
-| `deactivate` | `active=false` または行削除相当 |
+| `unchanged` | 既存生徒と CSV 行が同一（apply 対象外） |
+| `deactivate` | `active=false` または **`deactivateMissing=true` かつ CSV 欠落** |
 | `duplicate_candidate` | 同一 import 内または既存との重複疑い |
 | `attendance_collision` | 同一 roster 内で attendance_number 衝突 |
 | `rejected_row` | 必須欠落・型不正等で拒否 |
+
+**CSV 欠落は削除意思とみなさない（PR 3.1）:** 名簿 import の既定は **部分 CSV を追加・更新のみ**とする。`deactivateMissing` フラグが明示 `true` のときだけ、CSV に無い在籍生徒を `deactivate` プレビュー行として生成する。`preview_hash` 入力に `deactivateMissing` を含める。
 
 適用は **preview_hash + base_roster_revision** の CAS で行う（PR 3+ API）。
 

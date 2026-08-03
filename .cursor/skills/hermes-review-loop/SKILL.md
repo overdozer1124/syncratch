@@ -97,34 +97,43 @@ Blocker: N-* / Major: M-*
 次の担当: Cursor | （GO 時）Cursor（マージ実行）
 ```
 
-## GO 後 — Cursor マージ担当
-
-workspace ルール `always-merge-prs` に従う:
-
-1. PR が draft なら **ready for review**
-2. CI green になるまで待つ（失敗時は修正して再 push）
-3. **`main` へマージ**（`gh pr merge --merge` 等）
-4. `mergedAt` 確認
-5. `git checkout main && git pull origin main`
-6. 台帳を `PHASEn_COMPLETE` / `PR N MERGED` に更新
-
-**禁止:** マージ可能な PR を開いたまま終了、「マージしてください」とユーザーに依頼して終了。
-
 ## Engineering Integrity — 台帳・決裁の改変禁止
 
-1. **Hermes 決裁エントリは逐語コピーする。** `docs/CURSOR_CODEX_HANDOFF.md` への Hermes 判定は、Hermes 出力を要約・取捨選択して書かない。Blocker を Minor だけ残して GO に書き換える等は **決裁の改変** であり禁止。
-2. **「条件付き GO」≠ マージ許可。** 状態名は Hermes の判定語をそのまま使う（例: `PR2_CHANGES_REQUESTED`、`CONDITIONAL_GO`）。`GO` / `APPROVED_PENDING_CI` 以外ではマージしない。
-3. **マージ前に決裁照合を 1 回行う。** 台帳の最新 Hermes エントリが無条件 `GO` または `APPROVED_PENDING_CI` であることを確認し、Blocker / Major の未解消がないことを diff で検証してから `gh pr merge` する。
+1. **Hermes 決裁エントリは逐語コピーする。** Hermes 判定を要約・取捨選択・差し替えしない。
+2. **「条件付き GO」≠ マージ許可。** `GO` / `APPROVED_PENDING_CI` 以外ではマージしない。
+3. **マージ前に決裁照合を 1 回行う。** 最新 Hermes エントリ + Blocker/Major と diff の ID 対応を確認。
+4. **`bash scripts/hermes-merge-preflight.sh <case-id> <pr#>` が exit 0 であること。**
+5. **エージェントは Hermes 決裁者にならない。** 敵対レビュー結果を `Reviewer: Hermes` として台帳に書かない。
+
+## 再発防止 — PR #201 無効マージ
+
+- **「作業完了」≠ マージ許可** — Cursor は `READY_FOR_HERMES_REVIEW` で止める。
+- **同一ターンで** レビュー → GO 記載 → マージ **をしない**。
+- **指摘 ID** が Hermes 決裁と diff で一致していることをマージ前に確認。
+
+## GO 後 — Cursor マージ担当
+
+**前提:** ユーザー/Hermes の **明示 GO** が台帳に逐語記録済み。
+
+1. `bash scripts/hermes-merge-preflight.sh <case-id> <pr#>`
+2. Blocker/Major ID と PR diff を照合
+3. CI green
+4. `gh pr merge` → `mergedAt` 確認 → 台帳更新
+
+**禁止:** preflight 失敗、NO-GO 最新、自己 GO、指摘 ID 不一致でのマージ。
 
 ## NO-GO 後 — Cursor 修正
 
-1. Hermes の Blocker/Major を 1 件ずつ対応
+1. Hermes の Blocker/Major を **ID 単位で** 1 件ずつ対応（別 ID の修正で GO とみなさない）
 2. 同一ルーブリックで自己レビュー 2 周
-3. 再 push → `READY_FOR_HERMES_REVIEW` → Hermes 再決裁
+3. 再 push → `READY_FOR_HERMES_REVIEW` → **Hermes 再決裁を待つ**（Cursor は GO を書かない）
 
 ## 参照
 
 - 台帳: `docs/CURSOR_CODEX_HANDOFF.md`
+- 統治ルール: `.cursor/rules/hermes-review-governance.mdc`
+- マージ preflight: `scripts/hermes-merge-preflight.sh`
 - 設計: `docs/superpowers/specs/2026-08-02-classroom-roster-drive-submissions-design.md`
 - 計画: `docs/superpowers/plans/2026-08-02-classroom-roster-drive-submissions-plan.md`
 - Cursor 自己レビュー: 台帳「Cursor 内レビュー・ルーブリック」節
+- 教訓: 台帳「2026-08-03 18:42 #201 無効マージ・偽 GO 訂正」

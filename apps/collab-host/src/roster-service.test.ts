@@ -35,6 +35,7 @@ describe("roster-service", () => {
       ownerAdminId: admin.adminId,
       previewHash: preview.previewHash,
       baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
     });
     expect(result.roster.rosterRevision).toBe(1);
     expect(result.import.status).toBe("applied");
@@ -72,6 +73,7 @@ describe("roster-service", () => {
         ownerAdminId: admin.adminId,
         previewHash: "deadbeef".padEnd(64, "0"),
         baseRosterRevision: preview.baseRosterRevision,
+        deactivateMissing: preview.deactivateMissing,
       }),
     ).toThrow(RosterServiceError);
 
@@ -106,6 +108,7 @@ describe("roster-service", () => {
       ownerAdminId: admin.adminId,
       previewHash: previewA.previewHash,
       baseRosterRevision: previewA.baseRosterRevision,
+      deactivateMissing: previewA.deactivateMissing,
     });
     expect(applied.roster.rosterRevision).toBe(1);
 
@@ -117,6 +120,7 @@ describe("roster-service", () => {
         ownerAdminId: admin.adminId,
         previewHash: previewB.previewHash,
         baseRosterRevision: previewB.baseRosterRevision,
+        deactivateMissing: previewB.deactivateMissing,
       });
     } catch (error) {
       expect(error).toBeInstanceOf(RosterServiceError);
@@ -155,6 +159,7 @@ describe("roster-service", () => {
       ownerAdminId: admin.adminId,
       previewHash: seed.previewHash,
       baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
     });
 
     const linkPreview = service.createImportFromCsv(
@@ -171,6 +176,7 @@ describe("roster-service", () => {
       ownerAdminId: admin.adminId,
       previewHash: linkPreview.previewHash,
       baseRosterRevision: linkPreview.baseRosterRevision,
+      deactivateMissing: linkPreview.deactivateMissing,
     });
 
     expect(service.listStudents(rosterB.rosterId, admin.adminId)).toHaveLength(1);
@@ -203,6 +209,7 @@ describe("roster-service", () => {
         ownerAdminId: admin.adminId,
         previewHash: preview.previewHash,
         baseRosterRevision: preview.baseRosterRevision,
+        deactivateMissing: preview.deactivateMissing,
       }),
     ).toThrow(RosterServiceError);
 

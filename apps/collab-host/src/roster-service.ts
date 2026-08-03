@@ -17,6 +17,7 @@ import {
   buildImportPreviewRows,
   computePreviewHash,
   hasBlockingPreviewRows,
+  RosterCsvParseError,
   parseRosterCsv,
   previewRowsToContract,
   type ExistingRosterStudent,
@@ -178,7 +179,6 @@ export interface RosterService {
     ownerAdminId: string,
     patch: ClassroomRosterInput,
   ): ClassroomRoster | null;
-  deleteRoster(rosterId: string, ownerAdminId: string): boolean;
   listStudents(
     rosterId: string,
     ownerAdminId: string,
@@ -187,6 +187,7 @@ export interface RosterService {
     rosterId: string,
     ownerAdminId: string,
     csvText: string,
+    options?: {deactivateMissing?: boolean},
   ): RosterImportPreview;
   getImport(
     rosterId: string,
@@ -204,7 +205,88 @@ export interface RosterService {
     ownerAdminId: string;
     previewHash: string;
     baseRosterRevision: number;
+    deactivateMissing: boolean;
   }): {roster: ClassroomRoster; import: RosterImport};
+}
+
+function ignoredColumnsFromDrafts(drafts: PreviewRowDraft[]): string[] {
+  const cols = new Set<string>();
+  for (const draft of drafts) {
+    for (const issue of draft.issues) {
+      if (issue.code !== "UNKNOWN_COLUMN") continue;
+      const prefix = "Unknown columns ignored: ";
+      if (issue.message.startsWith(prefix)) {
+        for (const col of issue.message.slice(prefix.length).split(", ")) {
+          if (col) cols.add(col);
+        }
+      }
+    }
+  }
+  return [...cols].sort();
+}
+
+function csvCodesFromDrafts(drafts: PreviewRowDraft[]): Set<string> {
+  const codes = new Set<string>();
+  for (const draft of drafts) {
+    if (draft.rowNumber <= 0 || draft.category === "rejected_row") continue;
+    const code = (draft.proposed as {studentCode?: string}).studentCode;
+    if (code) codes.add(code);
+  }
+  return codes;
+}
+
+function missingFromCsvCount(
+  rosterMembers: ExistingRosterStudent[],
+  drafts: PreviewRowDraft[],
+): number {
+  const csvCodes = csvCodesFromDrafts(drafts);
+  return rosterMembers.filter(
+    member => member.active && !csvCodes.has(member.studentCode),
+  ).length;
+}
+
+function resolveDeactivateMissing(
+  importRecord: RosterImport,
+  drafts: PreviewRowDraft[],
+): boolean {
+  for (const flag of [false, true] as const) {
+    const hash = computePreviewHash({
+      baseRosterRevision: importRecord.baseRosterRevision!,
+      deactivateMissing: flag,
+      rows: drafts,
+    });
+    if (hash === importRecord.previewHash) return flag;
+  }
+  throw new RosterServiceError(
+    "STALE_PREVIEW",
+    "Import preview hash does not match stored rows",
+  );
+}
+
+function buildPreviewResponse(input: {
+  importRecord: RosterImport;
+  drafts: PreviewRowDraft[];
+  rowIds: string[];
+  rosterMembers: ExistingRosterStudent[];
+  deactivateMissing: boolean;
+  ignoredColumns: string[];
+  missingCount: number;
+  previewHash: string;
+  baseRosterRevision: number;
+}): RosterImportPreview {
+  return {
+    import: input.importRecord,
+    rows: previewRowsToContract(
+      input.importRecord.importId,
+      input.drafts,
+      input.rowIds,
+    ),
+    previewHash: input.previewHash,
+    baseRosterRevision: input.baseRosterRevision,
+    ignoredColumns: input.ignoredColumns,
+    missingFromCsvCount: input.missingCount,
+    deactivateMissing: input.deactivateMissing,
+  };
 }
 
 export function createRosterService(db: Database.Database): RosterService {
@@ -361,27 +443,6 @@ export function createRosterService(db: Database.Database): RosterService {
       return next;
     },
 
-    deleteRoster(rosterId, ownerAdminId) {
-      const existing = this.getRoster(rosterId, ownerAdminId);
-      if (!existing) return false;
-      const tx = db.transaction(() => {
-        db.prepare(`DELETE FROM roster_import_rows WHERE import_id IN (
-          SELECT import_id FROM roster_imports WHERE roster_id = ?
-        )`).run(rosterId);
-        db.prepare(`DELETE FROM roster_imports WHERE roster_id = ?`).run(
-          rosterId,
-        );
-        db.prepare(
-          `DELETE FROM classroom_roster_memberships WHERE roster_id = ?`,
-        ).run(rosterId);
-        db.prepare(
-          `DELETE FROM classroom_rosters WHERE roster_id = ? AND owner_admin_id = ?`,
-        ).run(rosterId, ownerAdminId);
-      });
-      tx();
-      return true;
-    },
-
     listStudents(rosterId, ownerAdminId) {
       requireRoster(rosterId, ownerAdminId);
       const rows = listExistingStudentsStmt.all(
@@ -391,21 +452,42 @@ export function createRosterService(db: Database.Database): RosterService {
       return rows.map(rowToStudentListItem);
     },
 
-    createImportFromCsv(rosterId, ownerAdminId, csvText) {
+    createImportFromCsv(rosterId, ownerAdminId, csvText, options = {}) {
       const roster = requireRoster(rosterId, ownerAdminId);
-      const parsedRows = parseRosterCsv(csvText);
+      const deactivateMissing = options.deactivateMissing ?? false;
       const rosterMemberRows = listExistingStudentsStmt.all(
         rosterId,
         ownerAdminId,
       ) as StudentRow[];
+      const rosterMembers = rosterMemberRows.map(existingFromRow);
       const ownerRows = listOwnerStudentsStmt.all(ownerAdminId) as StudentRow[];
-      const drafts = buildImportPreviewRows({
-        parsedRows,
-        existingStudents: ownerRows.map(existingFromRow),
-        rosterMembers: rosterMemberRows.map(existingFromRow),
-      });
+
+      let buildResult;
+      try {
+        const parsedRows = parseRosterCsv(csvText);
+        buildResult = buildImportPreviewRows({
+          parsedRows,
+          existingStudents: ownerRows.map(existingFromRow),
+          rosterMembers,
+          deactivateMissing,
+        });
+      } catch (error) {
+        if (error instanceof RosterCsvParseError) {
+          buildResult = {
+            rows: error.rejectedRows,
+            ignoredColumns: [] as string[],
+            missingFromCsvCount: missingFromCsvCount(rosterMembers, error.rejectedRows),
+          };
+        } else {
+          throw error;
+        }
+      }
+
+      const {rows: drafts, ignoredColumns, missingFromCsvCount: missingCount} =
+        buildResult;
       const previewHash = computePreviewHash({
         baseRosterRevision: roster.rosterRevision,
+        deactivateMissing,
         rows: drafts,
       });
       const importId = createOpaqueId();
@@ -454,12 +536,17 @@ export function createRosterService(db: Database.Database): RosterService {
           .prepare(`SELECT * FROM roster_imports WHERE import_id = ?`)
           .get(importId) as ImportRow,
       );
-      return {
-        import: importRecord,
-        rows: previewRowsToContract(importId, drafts, rowIds),
+      return buildPreviewResponse({
+        importRecord,
+        drafts,
+        rowIds,
+        rosterMembers,
+        deactivateMissing,
+        ignoredColumns,
+        missingCount,
         previewHash,
         baseRosterRevision: roster.rosterRevision,
-      };
+      });
     },
 
     getImport(rosterId, importId, ownerAdminId) {
@@ -486,12 +573,23 @@ export function createRosterService(db: Database.Database): RosterService {
           )
           .all(importId) as Array<{row_id: string}>
       ).map(row => row.row_id);
-      return {
-        import: importRecord,
-        rows: previewRowsToContract(importId, drafts, rowIds),
+      const rosterMemberRows = listExistingStudentsStmt.all(
+        rosterId,
+        ownerAdminId,
+      ) as StudentRow[];
+      const rosterMembers = rosterMemberRows.map(existingFromRow);
+      const deactivateMissing = resolveDeactivateMissing(importRecord, drafts);
+      return buildPreviewResponse({
+        importRecord,
+        drafts,
+        rowIds,
+        rosterMembers,
+        deactivateMissing,
+        ignoredColumns: ignoredColumnsFromDrafts(drafts),
+        missingCount: missingFromCsvCount(rosterMembers, drafts),
         previewHash: importRecord.previewHash!,
         baseRosterRevision: importRecord.baseRosterRevision!,
-      };
+      });
     },
 
     applyImport(input) {
@@ -519,6 +617,19 @@ export function createRosterService(db: Database.Database): RosterService {
           "Preview hash or roster revision is stale",
         );
       }
+
+      const drafts = loadPreviewDrafts(input.importId);
+      const hashWithFlag = computePreviewHash({
+        baseRosterRevision: input.baseRosterRevision,
+        deactivateMissing: input.deactivateMissing,
+        rows: drafts,
+      });
+      if (hashWithFlag !== input.previewHash) {
+        throw new RosterServiceError(
+          "STALE_PREVIEW",
+          "deactivateMissing does not match import preview",
+        );
+      }
       if (input.baseRosterRevision !== roster.rosterRevision) {
         throw new RosterServiceError(
           "STALE_PREVIEW",
@@ -526,7 +637,6 @@ export function createRosterService(db: Database.Database): RosterService {
         );
       }
 
-      const drafts = loadPreviewDrafts(input.importId);
       if (hasBlockingPreviewRows(drafts)) {
         throw new RosterServiceError(
           "BLOCKING_PREVIEW",
@@ -538,7 +648,8 @@ export function createRosterService(db: Database.Database): RosterService {
         if (
           draft.category === "duplicate_candidate" ||
           draft.category === "attendance_collision" ||
-          draft.category === "rejected_row"
+          draft.category === "rejected_row" ||
+          draft.category === "unchanged"
         ) {
           return false;
         }
