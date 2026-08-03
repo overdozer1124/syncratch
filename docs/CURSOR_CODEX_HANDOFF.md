@@ -47,11 +47,11 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 4 Google Sheet sync |
-| 現在の状態 | `PR4_APPROVED_PENDING_CI` |
-| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| 現在の状態 | `PR4_COMPLETE` |
+| 次の担当 | ユーザー（PR 5 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 4 GO 済み。CI green 確認後 main マージ → PR4_COMPLETE |
-| 禁止 | 自動マージ / PR 5+ 先行 |
+| 次の作業 | PR 4 完了（main マージ済み @cce1885）。PR 5 は指示後 |
+| 禁止 | PR 5+ 先行（指示なし） |
 
 ### 案件レジストリ
 
@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR4_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 4 GO 済み。CI green 確認後マージ → PR4_COMPLETE | #204 PR 4 Sheet sync @3fb1989。Hermes 21:42 GO（B1/M1/M2 解消・再レビュー基準 5/5 PASS） |
+| `classroom-roster-drive-submissions` | `PR4_COMPLETE` | ユーザー（PR 5 は指示後） | PR 4 完了（main @cce1885）。PR 5 は指示後 | #204 PR 4 Sheet sync。Hermes 21:42 GO → main マージ済み。B1/M1/M2 解消・再レビュー基準 5/5 PASS |
 
 ### 読取手順（「作業完了」時）
 
@@ -78,8 +78,8 @@
 | 最終更新 | 2026-08-03 21:30:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR4_APPROVED_PENDING_CI`（PR 4 — Hermes GO 済み、CI green 待ち → マージ） |
-| 現在の担当 | ユーザー（CI green 確認後マージ） |
+| ワークフロー状態 | `PR4_COMPLETE`（PR 4 — main マージ済み @cce1885） |
+| 現在の担当 | ユーザー（PR 5 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 4 Hermes 再決裁待ち |
 | Primary track | Local-First Community runtime |
