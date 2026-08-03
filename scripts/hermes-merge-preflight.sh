@@ -42,6 +42,7 @@ fi
 
 LAST_VERDICT=""
 LAST_HEADER=""
+LAST_START_LINE=0
 
 while IFS= read -r start_line; do
   if [[ "$start_line" -le "$AFTER_LINE" ]]; then
@@ -56,6 +57,7 @@ while IFS= read -r start_line; do
   if [[ -n "$verdict" ]]; then
     LAST_VERDICT="$verdict"
     LAST_HEADER="$header"
+    LAST_START_LINE=$start_line
   fi
 done < <(grep -n '^### .* Hermes' "$HANDOFF" | cut -d: -f1)
 
@@ -79,8 +81,8 @@ if ! echo "$LAST_VERDICT" | grep -qE '^GO|^APPROVED_PENDING_CI'; then
   exit 1
 fi
 
-if [[ -n "$PR_NUMBER" ]]; then
-  chunk_after=$(sed -n "${start_line},$((start_line + 45))p" "$HANDOFF")
+if [[ -n "$PR_NUMBER" && "$LAST_START_LINE" -gt 0 ]]; then
+  chunk_after=$(sed -n "${LAST_START_LINE},$((LAST_START_LINE + 45))p" "$HANDOFF")
   if ! echo "$chunk_after" | grep -qE "PR: #${PR_NUMBER}|PR #${PR_NUMBER}"; then
     echo "WARN: GO entry may not reference PR #${PR_NUMBER} — verify manually" >&2
   fi
