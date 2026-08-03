@@ -6367,6 +6367,8 @@ PR #204（PR 4 Sheet sync）は main マージ済み（cce1885）、台帳 PR4_C
 次の担当: Hermes
 base: main @ 7ba98a3
 branch: cursor/classroom-roster-drive-submissions-pr5-258b
+PR: #207
+Head: 1d46ae8
 
 実装（PR 5）:
 - resolveStudentAccessMode + toStudentPolicyView flag gate（classroom-access）
