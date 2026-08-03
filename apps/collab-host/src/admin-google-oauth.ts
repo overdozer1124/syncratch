@@ -34,7 +34,7 @@ import {
 export const ADMIN_GOOGLE_OAUTH_RETURN_FLAG = "admin_google_oauth";
 
 const PENDING_TTL_MS = 10 * 60_000;
-/** Reserved for PR 4 access-token refresh skew checks. */
+/** Reserved for PR 4 access-token refresh skew checks (see roster-sheet-sync). */
 const ACCESS_SKEW_MS = 60_000;
 void ACCESS_SKEW_MS;
 

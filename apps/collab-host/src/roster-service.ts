@@ -551,6 +551,9 @@ function applyDraftsToRoster(input: {
         ts,
       );
     } else {
+      const deactivateCount = applicable.filter(
+        draft => draft.category === "deactivate",
+      ).length;
       insertAudit.run(
         createOpaqueId(),
         input.ownerAdminId,
@@ -560,6 +563,7 @@ function applyDraftsToRoster(input: {
         JSON.stringify({
           baseRosterRevision: input.baseRosterRevision,
           mutationCount: applicable.length,
+          deactivateCount,
         }),
         ts,
       );
@@ -596,6 +600,82 @@ function markRosterSyncRequired(
       event_type, payload_json, created_at
     ) VALUES (?, ?, ?, NULL, 'roster.sheet.sync_required', ?, ?)`,
   ).run(createOpaqueId(), ownerAdminId, rosterId, JSON.stringify({reason}), ts);
+}
+
+function storeImportPreview(input: {
+  db: Database.Database;
+  rosterId: string;
+  rosterRevision: number;
+  rosterMembers: ExistingRosterStudent[];
+  drafts: PreviewRowDraft[];
+  deactivateMissing: boolean;
+  ignoredColumns: string[];
+  missingCount: number;
+}): RosterImportPreview {
+  const previewHash = computePreviewHash({
+    baseRosterRevision: input.rosterRevision,
+    deactivateMissing: input.deactivateMissing,
+    rows: input.drafts,
+  });
+  const importId = createOpaqueId();
+  const ts = nowIso();
+  const rowIds = input.drafts.map(() => createOpaqueId());
+
+  const tx = input.db.transaction(() => {
+    input.db
+      .prepare(
+        `INSERT INTO roster_imports (
+          import_id, roster_id, status, uploaded_at,
+          preview_hash, base_roster_revision, applied_at,
+          created_at, updated_at
+        ) VALUES (?, ?, 'preview_ready', ?, ?, ?, NULL, ?, ?)`,
+      )
+      .run(
+        importId,
+        input.rosterId,
+        ts,
+        previewHash,
+        input.rosterRevision,
+        ts,
+        ts,
+      );
+    const insertRow = input.db.prepare(
+      `INSERT INTO roster_import_rows (
+        row_id, import_id, row_number, category, student_id,
+        proposed_json, issues_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (let i = 0; i < input.drafts.length; i++) {
+      const draft = input.drafts[i]!;
+      insertRow.run(
+        rowIds[i],
+        importId,
+        draft.rowNumber,
+        draft.category,
+        draft.studentId,
+        JSON.stringify(draft.proposed),
+        JSON.stringify(draft.issues),
+      );
+    }
+  });
+  tx();
+
+  const importRecord = rowToImport(
+    input.db
+      .prepare(`SELECT * FROM roster_imports WHERE import_id = ?`)
+      .get(importId) as ImportRow,
+  );
+  return buildPreviewResponse({
+    importRecord,
+    drafts: input.drafts,
+    rowIds,
+    rosterMembers: input.rosterMembers,
+    deactivateMissing: input.deactivateMissing,
+    ignoredColumns: input.ignoredColumns,
+    missingCount: input.missingCount,
+    previewHash,
+    baseRosterRevision: input.rosterRevision,
+  });
 }
 
 export function createRosterService(db: Database.Database): RosterService {
@@ -794,67 +874,15 @@ export function createRosterService(db: Database.Database): RosterService {
 
       const {rows: drafts, ignoredColumns, missingFromCsvCount: missingCount} =
         buildResult;
-      const previewHash = computePreviewHash({
-        baseRosterRevision: roster.rosterRevision,
-        deactivateMissing,
-        rows: drafts,
-      });
-      const importId = createOpaqueId();
-      const ts = nowIso();
-      const rowIds = drafts.map(() => createOpaqueId());
-
-      const tx = db.transaction(() => {
-        db.prepare(
-          `INSERT INTO roster_imports (
-            import_id, roster_id, status, uploaded_at,
-            preview_hash, base_roster_revision, applied_at,
-            created_at, updated_at
-          ) VALUES (?, ?, 'preview_ready', ?, ?, ?, NULL, ?, ?)`,
-        ).run(
-          importId,
-          rosterId,
-          ts,
-          previewHash,
-          roster.rosterRevision,
-          ts,
-          ts,
-        );
-        const insertRow = db.prepare(
-          `INSERT INTO roster_import_rows (
-            row_id, import_id, row_number, category, student_id,
-            proposed_json, issues_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        );
-        for (let i = 0; i < drafts.length; i++) {
-          const draft = drafts[i]!;
-          insertRow.run(
-            rowIds[i],
-            importId,
-            draft.rowNumber,
-            draft.category,
-            draft.studentId,
-            JSON.stringify(draft.proposed),
-            JSON.stringify(draft.issues),
-          );
-        }
-      });
-      tx();
-
-      const importRecord = rowToImport(
-        db
-          .prepare(`SELECT * FROM roster_imports WHERE import_id = ?`)
-          .get(importId) as ImportRow,
-      );
-      return buildPreviewResponse({
-        importRecord,
-        drafts,
-        rowIds,
+      return storeImportPreview({
+        db,
+        rosterId,
+        rosterRevision: roster.rosterRevision,
         rosterMembers,
+        drafts,
         deactivateMissing,
         ignoredColumns,
         missingCount,
-        previewHash,
-        baseRosterRevision: roster.rosterRevision,
       });
     },
 
@@ -986,12 +1014,13 @@ export function createRosterService(db: Database.Database): RosterService {
   };
 }
 
-export async function syncRosterFromSheet(
+export async function createSheetSyncPreview(
   db: Database.Database,
   sheetSync: RosterSheetSyncEnvironment,
   rosterId: string,
   ownerAdminId: string,
-): Promise<RosterSyncResult> {
+  options: {deactivateMissing?: boolean} = {},
+): Promise<RosterImportPreview> {
   const getRosterStmt = db.prepare(`
     SELECT * FROM classroom_rosters
     WHERE roster_id = ? AND owner_admin_id = ?
@@ -1021,6 +1050,7 @@ export async function syncRosterFromSheet(
     );
   }
 
+  const deactivateMissing = options.deactivateMissing ?? false;
   const rosterMembers = (
     listExistingStudentsStmt.all(rosterId, ownerAdminId) as StudentRow[]
   ).map(existingFromRow);
@@ -1045,43 +1075,159 @@ export async function syncRosterFromSheet(
     throw error;
   }
 
-  const {rows: drafts} = buildImportPreviewRows({
-    parsedRows,
-    existingStudents: ownerStudents,
-    rosterMembers,
-    deactivateMissing: true,
-  });
+  const {rows: drafts, ignoredColumns, missingFromCsvCount: missingCount} =
+    buildImportPreviewRows({
+      parsedRows,
+      existingStudents: ownerStudents,
+      rosterMembers,
+      deactivateMissing,
+    });
 
+  return storeImportPreview({
+    db,
+    rosterId,
+    rosterRevision: roster.rosterRevision,
+    rosterMembers,
+    drafts,
+    deactivateMissing,
+    ignoredColumns,
+    missingCount,
+  });
+}
+
+export function applySheetSync(
+  db: Database.Database,
+  input: {
+    rosterId: string;
+    importId: string;
+    ownerAdminId: string;
+    previewHash: string;
+    baseRosterRevision: number;
+    deactivateMissing: boolean;
+  },
+): {roster: ClassroomRoster; import: RosterImport; sync: RosterSyncResult} {
+  const getRosterStmt = db.prepare(`
+    SELECT * FROM classroom_rosters
+    WHERE roster_id = ? AND owner_admin_id = ?
+  `);
+  const loadPreviewDrafts = (importId: string): PreviewRowDraft[] => {
+    const rows = db
+      .prepare(
+        `SELECT * FROM roster_import_rows
+         WHERE import_id = ?
+         ORDER BY row_number ASC, row_id ASC`,
+      )
+      .all(importId) as ImportPreviewRow[];
+    return rows.map(row => ({
+      rowNumber: row.row_number,
+      category: row.category as RosterImportPreviewCategory,
+      studentId: row.student_id,
+      proposed: JSON.parse(row.proposed_json) as Record<string, unknown>,
+      issues: JSON.parse(row.issues_json) as PreviewRowDraft["issues"],
+    }));
+  };
+
+  const row = getRosterStmt.get(input.rosterId, input.ownerAdminId) as
+    | RosterRow
+    | undefined;
+  if (!row) {
+    throw new RosterServiceError("ROSTER_NOT_FOUND", "Roster not found");
+  }
+  const roster = rowToRoster(row);
+
+  const importRow = db
+    .prepare(
+      `SELECT * FROM roster_imports
+       WHERE import_id = ? AND roster_id = ?`,
+    )
+    .get(input.importId, input.rosterId) as ImportRow | undefined;
+  if (!importRow) {
+    throw new RosterServiceError("IMPORT_NOT_FOUND", "Import not found");
+  }
+  const importRecord = rowToImport(importRow);
+  if (importRecord.status !== "preview_ready") {
+    throw new RosterServiceError(
+      "IMPORT_NOT_APPLICABLE",
+      "Import is not ready to apply",
+    );
+  }
+  if (
+    importRecord.previewHash !== input.previewHash ||
+    importRecord.baseRosterRevision !== input.baseRosterRevision
+  ) {
+    throw new RosterServiceError(
+      "STALE_PREVIEW",
+      "Preview hash or roster revision is stale",
+    );
+  }
+
+  const drafts = loadPreviewDrafts(input.importId);
+  const hashWithFlag = computePreviewHash({
+    baseRosterRevision: input.baseRosterRevision,
+    deactivateMissing: input.deactivateMissing,
+    rows: drafts,
+  });
+  if (hashWithFlag !== input.previewHash) {
+    throw new RosterServiceError(
+      "STALE_PREVIEW",
+      "deactivateMissing does not match import preview",
+    );
+  }
+  if (input.baseRosterRevision !== roster.rosterRevision) {
+    throw new RosterServiceError(
+      "STALE_PREVIEW",
+      "Roster revision changed since preview",
+    );
+  }
   if (hasBlockingPreviewRows(drafts)) {
-    markRosterSyncRequired(db, rosterId, ownerAdminId, "BLOCKING_PREVIEW");
+    markRosterSyncRequired(db, input.rosterId, input.ownerAdminId, "BLOCKING_PREVIEW");
     throw new RosterServiceError(
       "BLOCKING_PREVIEW",
       "Sheet sync preview contains blocking rows",
     );
   }
 
+  const ts = nowIso();
   try {
-    const nextRoster = applyDraftsToRoster({
-      db,
-      rosterId,
-      ownerAdminId,
-      baseRosterRevision: roster.rosterRevision,
-      drafts,
-      audit: {source: "sheet_sync"},
-      syncStatus: "active",
+    const tx = db.transaction(() => {
+      const nextRoster = applyDraftsToRoster({
+        db,
+        rosterId: input.rosterId,
+        ownerAdminId: input.ownerAdminId,
+        baseRosterRevision: input.baseRosterRevision,
+        drafts,
+        audit: {source: "sheet_sync"},
+        syncStatus: "active",
+      });
+      db.prepare(
+        `UPDATE roster_imports SET
+          status = 'applied', applied_at = ?, updated_at = ?
+         WHERE import_id = ?`,
+      ).run(ts, ts, input.importId);
+      return nextRoster;
     });
+    const nextRoster = tx();
+    const nextImport = rowToImport(
+      db
+        .prepare(`SELECT * FROM roster_imports WHERE import_id = ?`)
+        .get(input.importId) as ImportRow,
+    );
     return {
-      rosterId: nextRoster.rosterId,
-      rosterRevision: nextRoster.rosterRevision,
-      syncStatus: nextRoster.syncStatus,
-      syncedAt: nextRoster.updatedAt,
+      roster: nextRoster,
+      import: nextImport,
+      sync: {
+        rosterId: nextRoster.rosterId,
+        rosterRevision: nextRoster.rosterRevision,
+        syncStatus: nextRoster.syncStatus,
+        syncedAt: nextRoster.updatedAt,
+      },
     };
   } catch (error) {
     if (
       error instanceof RosterServiceError &&
       error.code === "REVISION_CONFLICT"
     ) {
-      markRosterSyncRequired(db, rosterId, ownerAdminId, error.code);
+      markRosterSyncRequired(db, input.rosterId, input.ownerAdminId, error.code);
     }
     throw error;
   }

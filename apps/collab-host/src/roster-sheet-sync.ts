@@ -16,6 +16,7 @@ import {
 } from "./roster-import.js";
 
 const ACCESS_SKEW_MS = 60_000;
+export {ACCESS_SKEW_MS};
 const SHEETS_VALUES_URL =
   "https://sheets.googleapis.com/v4/spreadsheets";
 

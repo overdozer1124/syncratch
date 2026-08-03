@@ -98,6 +98,7 @@ export {
   adminRosterPath,
   adminRosterStudentsPath,
   adminRosterSyncPath,
+  adminRosterSyncApplyPath,
   adminStudentEnrollmentCodePath,
   adminStudentPath,
   adminStudentResetCodePath,

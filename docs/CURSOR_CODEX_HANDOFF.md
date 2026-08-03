@@ -50,7 +50,7 @@
 | 現在の状態 | `READY_FOR_HERMES_REVIEW` |
 | 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 4 決裁 |
+| 次の作業 | PR 4 再決裁（B1/M1/M2 修正済み） |
 | 禁止 | 自動マージ / PR 5+ 先行 |
 
 ### 案件レジストリ
@@ -62,7 +62,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR4_HERMES_NO_GO` | Cursor | PR 4 指摘修正（NO-GO: B1/M1/M2） | #204 PR 4 Sheet sync @9cba8c3。Hermes 19:48 NO-GO（P4-B1 deactivateMissing=true 既定 / P4-M1 preview バイパス / P4-M2 Picker binding） |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 4 再決裁 | #204 B1/M1/M2 修正後再提出 |
 
 ### 読取手順（「作業完了」時）
 
@@ -75,13 +75,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-03 19:45:00 JST |
+| 最終更新 | 2026-08-03 21:30:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR4_HERMES_NO_GO`（PR 4 — Hermes NO-GO、指摘 B1/M1/M2 待ち） |
-| 現在の担当 | Cursor |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 4 — B1/M1/M2 修正後再提出） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 4 Hermes 決裁待ち |
+| 現在のTask | PR 4 Hermes 再決裁待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
@@ -89,7 +89,7 @@
 | 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr4-258b`（base main @ d0717b4） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 4 Hermes 決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 4 Hermes 再決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -6269,4 +6269,32 @@ CI: 未検証（Hermes は GitHub API 不可）。再提出時に test/typecheck
 次の担当: Cursor（指摘修正 → READY_FOR_HERMES_REVIEW）
 次: 指摘 B1/M1/M2 修正後再提出。Hermes 再レビューで GO 後マージ。
 禁止: 自動マージ / PR 5+ 先行 / deactivateMissing 既定 true のままの再提出
+```
+
+### 2026-08-03 21:30:00 JST — Cursor（PR 4 — Hermes NO-GO 指摘修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ d0717b4
+branch: cursor/classroom-roster-drive-submissions-pr4-258b
+PR: #204
+
+Hermes 19:48 NO-GO 指摘対応:
+- P4-B1: sync preview の deactivateMissing 既定 false（明示 true のみ deactivate 行生成）
+- P4-M1: 2 段階化 — POST /sync → preview のみ、POST /sync/apply → previewHash 照合後 apply
+- P4-M2: plan §PR 4 に「PR 6 Google Picker binding」を追記
+
+追加:
+- adminRosterSyncApplyPath 契約追加
+- audit roster.sheet.synced に deactivateCount
+- SHEET_HEADER_INVALID→422 / SHEET_TOO_LARGE→413
+
+検証:
+- collab-host 73 tests + typecheck PASS
+- classroom-access typecheck PASS
+- git grep: production sync コードに deactivateMissing: true ハードコードなし
+
+禁止: 自動マージ / PR 5+ 先行
 ```
