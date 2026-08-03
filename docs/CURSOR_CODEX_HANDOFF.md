@@ -6139,6 +6139,7 @@ Reviewer: Hermes（Codex 週次制限のため代行）
 次の担当: Hermes
 base: main @ 1e57f9d
 branch: cursor/classroom-roster-drive-submissions-pr3-1-258b
+PR: #202 @e01427d
 
 修正（18:06 指摘対応）:
 - P3-B1: 未知列は WARNING のみ（行は add/update 継続）。ignoredColumns を preview に 1 回表示
