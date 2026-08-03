@@ -6158,3 +6158,21 @@ PR: #202 @e01427d
 
 禁止: 自動マージ / PR 4+ 先行
 ```
+
+### 2026-08-03 19:05:00 JST — Cursor（Hermes 統治強化 — PR #201 再発防止）
+
+```text
+案件ID: classroom-roster-drive-submissions
+変更:
+- .cursor/rules/hermes-review-governance.mdc（新規、alwaysApply）
+- .cursor/rules/always-merge-prs.mdc（Hermes 案件は GO + preflight 後のみマージ）
+- .cursor/skills/hermes-review-loop/SKILL.md（PR #201 教訓・preflight 必須）
+- scripts/hermes-merge-preflight.sh（最新 Cursor 提出後の Hermes GO を検証）
+- docs/CURSOR_CODEX_HANDOFF.md 運用ルール 12 追記
+
+効果:
+- エージェント自作 GO / 指摘 ID 差し替え / 無照合マージをルール上禁止
+- preflight 未 PASS では gh pr merge 不可（現状 PR #202 は FAIL = 正）
+
+禁止: 自動マージ（PR #202 は Hermes GO 待ち）
+```
