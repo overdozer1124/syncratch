@@ -80,12 +80,13 @@
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
 | ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 4 — Google Sheet sync） |
 | 現在の担当 | Hermes |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 4 Hermes 決裁待ち |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr4-258b` |
+| Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `main` @ `cb5a5c2`（#202 マージ） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr4-258b`（base main @ d0717b4） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | PR 4 Hermes 決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
