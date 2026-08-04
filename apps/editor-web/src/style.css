@@ -3251,6 +3251,15 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   font-size: 0.82rem;
 }
 
+/* Admin console: allow scrolling past the editor shell's overflow:hidden. */
+html.admin-console-mode,
+body.admin-console-mode {
+  overflow-x: hidden;
+  overflow-y: auto;
+  height: auto;
+  min-height: 100%;
+}
+
 /* Classroom admin / student shells (Phase 1) */
 .admin-shell,
 .student-error-shell,

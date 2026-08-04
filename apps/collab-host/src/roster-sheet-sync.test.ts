@@ -2,6 +2,7 @@ import {describe, expect, it, vi} from "vitest";
 import {ROSTER_SHEET_COLUMNS} from "@blocksync/classroom-access";
 import {
   buildSheetRangeA1,
+  createRosterTemplateSpreadsheet,
   ensureAdminAccessToken,
   fetchSheetValues,
   sheetValuesToParsedRows,
@@ -128,5 +129,84 @@ describe("fetchSheetValues", () => {
         },
       ),
     ).rejects.toMatchObject({code: "SHEET_INACCESSIBLE"});
+  });
+});
+
+describe("createRosterTemplateSpreadsheet", () => {
+  it("creates spreadsheet and writes header row", async () => {
+    const nowMs = 1_700_000_000_000;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("oauth2.googleapis.com/token")) {
+        return new Response(
+          JSON.stringify({access_token: "access-new", expires_in: 3600}),
+          {status: 200},
+        );
+      }
+      if (url === "https://sheets.googleapis.com/v4/spreadsheets" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            spreadsheetId: "sheet-template-1",
+            spreadsheetUrl: "https://docs.google.com/spreadsheets/d/sheet-template-1/edit",
+            sheets: [{properties: {title: "Sheet1"}}],
+          }),
+          {status: 200},
+        );
+      }
+      if (
+        url.includes("/spreadsheets/sheet-template-1/values/") &&
+        init?.method === "PUT"
+      ) {
+        const body = JSON.parse(String(init.body)) as {values?: string[][]};
+        expect(body.values?.[0]).toEqual([...ROSTER_SHEET_COLUMNS]);
+        return new Response(JSON.stringify({updatedCells: 6}), {status: 200});
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const store: AdminGoogleCredentialStore = {
+      putPendingOAuth: () => {},
+      takePendingOAuth: () => null,
+      purgeExpiredPendingOAuth: () => 0,
+      upsertCredential: () => {
+        throw new Error("not used");
+      },
+      getCredentialByAdminId: () => ({
+        credentialId: "agc_test",
+        adminId: "admin-1",
+        googleSubject: "sub",
+        googleEmail: "teacher@school.example",
+        scope: "drive.file",
+        refreshToken: "refresh-1",
+        accessToken: "access-old",
+        accessExpiresAt: nowMs + 3600_000,
+        createdAt: new Date(nowMs).toISOString(),
+        updatedAt: new Date(nowMs).toISOString(),
+      }),
+      deleteCredentialByAdminId: () => false,
+      updateAccessToken: () => {},
+    };
+
+    const result = await createRosterTemplateSpreadsheet(
+      {
+        oauthConfig: {
+          clientId: "client",
+          clientSecret: "secret",
+          now: () => nowMs,
+          fetch: fetchMock,
+        },
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      "admin-1",
+      "2026年度 3年A組",
+    );
+
+    expect(result).toEqual({
+      spreadsheetId: "sheet-template-1",
+      spreadsheetUrl: "https://docs.google.com/spreadsheets/d/sheet-template-1/edit",
+      sheetTabName: "Sheet1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

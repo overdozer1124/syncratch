@@ -10,6 +10,7 @@ import {
   adminRosterImportApplyPath,
   adminRosterImportsPath,
   adminRosterPath,
+  adminRosterSheetTemplatePath,
   adminRosterStudentsPath,
   adminRosterSyncApplyPath,
   adminRosterSyncPath,
@@ -334,11 +335,79 @@ async function mountRosterCard(
       value: roster.sheetRange ?? "",
     }) as HTMLInputElement;
     sheetForm.append(
+      el(
+        "p",
+        {class: "admin-muted"},
+        "空の Sheet でも構いません。「テンプレート Sheet を作成」でヘッダー行入りのスプレッドシートを自動作成できます。",
+      ),
       el("p", {class: "admin-muted"}, `列: ${ROSTER_SHEET_COLUMNS.join(", ")}`),
       sheetId,
       tabName,
       sheetRange,
     );
+    const templateLink = el("p", {
+      class: "admin-roster-sheet-link admin-muted",
+      hidden: "true",
+    });
+    const createTemplateBtn = el(
+      "button",
+      {type: "button", class: "admin-button primary"},
+      "テンプレート Sheet を作成",
+    );
+    createTemplateBtn.addEventListener("click", () => {
+      void (async () => {
+        feedback.hidden = true;
+        templateLink.hidden = true;
+        const res = await adminFetch<{
+          ok: boolean;
+          message?: string;
+          code?: string;
+          template?: {
+            spreadsheetId: string;
+            spreadsheetUrl: string;
+            sheetTabName: string;
+          };
+          roster?: ClassroomRoster;
+        }>(adminRosterSheetTemplatePath(roster.rosterId), {
+          method: "POST",
+          csrfToken: getCsrf(),
+        });
+        if (!res.ok || !res.template) {
+          feedback.hidden = false;
+          feedback.textContent =
+            res.message ||
+            (res.code === "CREDENTIAL_MISSING"
+              ? "教員 Google 連携が必要です。"
+              : res.code === "SHEET_CREATE_FAILED"
+                ? "スプレッドシートの作成に失敗しました。Google Sheets API が有効か確認してください。"
+                : "テンプレート Sheet の作成に失敗しました。");
+          feedback.classList.add("is-error");
+          return;
+        }
+        sheetId.value = res.template.spreadsheetId;
+        tabName.value = res.template.sheetTabName;
+        sheetRange.value = "";
+        templateLink.hidden = false;
+        templateLink.replaceChildren();
+        templateLink.append(
+          document.createTextNode("作成しました: "),
+          el(
+            "a",
+            {
+              href: res.template.spreadsheetUrl,
+              target: "_blank",
+              rel: "noopener noreferrer",
+            },
+            "スプレッドシートを開く",
+          ),
+        );
+        feedback.hidden = false;
+        feedback.textContent =
+          "テンプレート Sheet を作成し、名簿に紐づけました。2行目以降に生徒データを入力してください。";
+        feedback.classList.remove("is-error");
+        await onChanged();
+      })();
+    });
     const saveSheet = el(
       "button",
       {type: "button", class: "admin-button"},
@@ -371,7 +440,7 @@ async function mountRosterCard(
         await onChanged();
       })();
     });
-    sheetForm.append(saveSheet);
+    sheetForm.append(createTemplateBtn, templateLink, saveSheet);
 
     const previewHost = el("div", {class: "admin-roster-preview-host"});
     const syncBtn = el(
