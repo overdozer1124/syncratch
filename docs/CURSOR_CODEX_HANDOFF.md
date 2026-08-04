@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `PR5_HERMES_NO_GO` |
-| 次の担当 | Cursor |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 指摘修正（NO-GO: B1 コンフリクト解消） |
+| 次の作業 | PR 5 再決裁（B1 コンフリクト解消済み） |
 | 禁止 | 自動マージ / PR 6+ 先行 |
 
 ### 案件レジストリ
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR5_HERMES_NO_GO` | Cursor | PR 5 指摘修正（NO-GO: B1 コンフリクト解消） | PR 5 policy binding + student auth gate @f92120b。Hermes NO-GO（P5-B1 mergeable:CONFLICTING） |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 5 再決裁 | #207 B1 解消後再提出。base main @ 80a740a |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 08:35:00 JST |
+| 最終更新 | 2026-08-04 10:25:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR5_HERMES_NO_GO`（PR 5 — Hermes NO-GO、指摘 B1 コンフリクト解消待ち） |
-| 現在の担当 | Cursor |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 5 — B1 コンフリクト解消後再提出） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 5 Hermes 決裁待ち |
+| 現在のTask | PR 5 Hermes 再決裁待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr5-258b`（base main @ 7ba98a3） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr5-258b`（base main @ 80a740a） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 5 Hermes 決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 5 Hermes 再決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -6419,3 +6419,25 @@ CI: Gate 0 green（2 job SUCCESS）— コンフリクト解消後も維持さ�
 次の担当: Cursor（B1 コンフリクト解消 → 再提出）
 次: B1 解消後、台帳を READY_FOR_HERMES_REVIEW に戻し再提出。PR 6 は指示後。
 禁止: 自動マージ / PR 6+ 先行
+
+### 2026-08-04 10:25:00 JST — Cursor（PR 5 — Hermes NO-GO B1 修正 → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 80a740a
+branch: cursor/classroom-roster-drive-submissions-pr5-258b
+PR: #207
+
+Hermes 00:58 NO-GO 指摘対応:
+- P5-B1: origin/main (80a740a) を merge し docs/CURSOR_CODEX_HANDOFF.md コンフリクト解消
+
+検証:
+- mergeable: MERGEABLE（gh pr view 確認予定）
+- classroom-access 15 tests + typecheck PASS
+- collab-host 75 tests + typecheck PASS
+- editor-web student-auth-gate 2 tests PASS
+
+禁止: 自動マージ / PR 6+ 先行
+```
