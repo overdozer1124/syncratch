@@ -357,6 +357,7 @@ import {
   shouldShowStudentAuthGate,
   showStudentAuthShell,
 } from "./student-auth-gate.js";
+import {fetchStudentIdentitySession} from "./student-auth-ui.js";
 import {
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
@@ -4467,29 +4468,8 @@ async function startEditorSurface(): Promise<void> {
     return;
   }
 
-  if (SURFACE_MODE.kind === "student") {
-    let policy: StudentPolicyView | null = null;
-    if (SURFACE_MODE.token) {
-      const exchanged = await exchangeStudentGrant(SURFACE_MODE.token);
-      if (!exchanged) {
-        if (studentErrorShell) showStudentLinkError(studentErrorShell);
-        return;
-      }
-      replaceStudentUrlWithoutToken();
-      policy = await fetchStudentPolicyFromGrant();
-    } else {
-      policy = await fetchStudentPolicyFromGrant();
-    }
-    if (!policy) {
-      if (studentErrorShell) showStudentLinkError(studentErrorShell);
-      return;
-    }
+  const revealStudentEditor = (policy: StudentPolicyView) => {
     studentPolicy = policy;
-    if (shouldShowStudentAuthGate(policy)) {
-      if (studentAuthShell) showStudentAuthShell(studentAuthShell);
-      if (appMain) appMain.hidden = true;
-      return;
-    }
     if (studentAuthShell) hideStudentAuthShell(studentAuthShell);
     aiSettings = aiSettingsFromStudentPolicy(policy);
     applyAiSettingsToForm(aiSettings);
@@ -4527,6 +4507,53 @@ async function startEditorSurface(): Promise<void> {
       ),
     });
     if (appMain) appMain.hidden = false;
+  };
+
+  let studentBootStarted = false;
+  const startStudentBootOnce = async () => {
+    if (studentBootStarted) return;
+    studentBootStarted = true;
+    await boot();
+  };
+
+  if (SURFACE_MODE.kind === "student") {
+    let policy: StudentPolicyView | null = null;
+    if (SURFACE_MODE.token) {
+      const exchanged = await exchangeStudentGrant(SURFACE_MODE.token);
+      if (!exchanged) {
+        if (studentErrorShell) showStudentLinkError(studentErrorShell);
+        return;
+      }
+      replaceStudentUrlWithoutToken();
+      policy = await fetchStudentPolicyFromGrant();
+    } else {
+      policy = await fetchStudentPolicyFromGrant();
+    }
+    if (!policy) {
+      if (studentErrorShell) showStudentLinkError(studentErrorShell);
+      return;
+    }
+    if (shouldShowStudentAuthGate(policy)) {
+      const identity = await fetchStudentIdentitySession();
+      if (identity) {
+        revealStudentEditor(policy);
+        await startStudentBootOnce();
+        return;
+      }
+      if (studentAuthShell) {
+        showStudentAuthShell(studentAuthShell, {
+          onAuthenticated: () => {
+            revealStudentEditor(policy!);
+            void startStudentBootOnce();
+          },
+        });
+      }
+      if (appMain) appMain.hidden = true;
+      return;
+    }
+    revealStudentEditor(policy);
+    await startStudentBootOnce();
+    return;
   }
 
   await boot();

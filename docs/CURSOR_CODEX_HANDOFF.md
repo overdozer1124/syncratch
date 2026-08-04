@@ -48,12 +48,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `PR5_COMPLETE` |
-| 次の担当 | ユーザー（PR 6 は指示後） |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 6 Student local auth |
+| 現在の状態 | `PR6_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 完了（main マージ済み @680e49e）。PR 6 は指示後 |
-| 禁止 | PR 6+ 先行（指示なし） |
+| 次の作業 | PR 6 GO 済み。CI green 確認後 main マージ → PR6_COMPLETE |
+| 禁止 | 自動マージ / PR 7+ 先行（指示なし） |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR5_COMPLETE` | ユーザー（PR 6 は指示後） | PR 5 完了（main @680e49e）。PR 6 は指示後 | #207 PR 5 policy binding + student auth gate。Hermes GO → main マージ済み。B1 解消・mergeable MERGEABLE・CI green |
+| `classroom-roster-drive-submissions` | `PR6_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 6 GO 済み。CI green 確認後マージ → PR6_COMPLETE | #208 PR 6 student local auth @2f67bca。Hermes GO（scrypt 設定・検証項目満足・CI green。Minor: scrypt 測定 design 記録） |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 10:25:00 JST |
+| 最終更新 | 2026-08-04 12:50:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR5_COMPLETE`（PR 5 — main マージ済み @680e49e） |
-| 現在の担当 | ユーザー（PR 6 は指示後） |
+| ワークフロー状態 | `PR6_APPROVED_PENDING_CI`（PR 6 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 5 完了待機（PR 6 は指示後） |
+| 現在のTask | PR 6 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr5-258b`（base main @ 80a740a） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr6-258b`（base main @ 6f2f378） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 5 Hermes 再決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 6 Hermes 決裁 → main マージ。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -6472,3 +6472,67 @@ CI: Gate 0 green（2 job SUCCESS、gh pr view 207 確認済み）
 次の担当: ユーザー（CI green 確認済 → main マージ → PR5_COMPLETE）
 次: main マージ後、台帳を PR5_COMPLETE に更新。PR 6 は指示後。
 禁止: 自動マージ / PR 6+ 先行
+
+### 2026-08-04 12:50:00 JST — Cursor（PR 6 — Student local auth → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 6f2f378
+branch: cursor/classroom-roster-drive-submissions-pr6-258b
+PR: #208（作成予定）
+
+実装（PR 6）:
+- collab-host/student-auth.ts: scrypt (N=16384, maxmem=64MiB, concurrency queue 3),
+  enrollment code hash, signed syncratch_student_identity cookie (24h, grant-bound),
+  password_version session revoke epoch
+- collab-host/student-auth-routes.ts: activate/login/session/logout +
+  admin enrollment-code / reset-code / sessions/revoke
+- server.ts: SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED wiring
+- editor-web/student-auth-ui.ts: login/activate forms + session fetch
+- student-auth-gate.ts + main.ts: identity session check → editor reveal on auth
+
+検証:
+- classroom-access 15 tests + typecheck PASS
+- collab-host 82 tests (+7 student-auth) + typecheck PASS
+- editor-web student-auth-gate 2 tests + student-auth-ui 3 tests PASS
+- git diff --check PASS
+
+禁止: 自動マージ / PR 7+ 先行 / submission upload（PR 7）
+環境: SYNCRATCH_STUDENT_IDENTITY_SECRET 必須（student local auth ON 時）
+```
+
+### 2026-08-04 13:05:00 JST — Hermes（PR #208 決裁 GO — PR 6 @2f67bca）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #208 / head SHA: 2f67bca
+Base: origin/main @ 6f2f378
+決裁日: 2026-08/04 13:05
+
+受入れ条件（計画 PR 6）の検証結果:
+- scrypt 選択: maxmem=64MB 明示、concurrency queue=3（要件 2-4 内）、timingSafeEqual 定数時間比較 ✅
+- Flag OFF → 404（routes enabled=false 時 NOT_FOUND）✅
+- Identity without grant → 401 ✅（テスト: requires grant for identity session）
+- student_id not in policy roster → 403 ✅（roster_id JOIN 検証）
+- Grant expiry → identity invalid ✅（grant.expires_at <= now → null）
+- Login accepts login_name or fallback student_code ✅
+- 禁止事項: Google OAuth 不使用 ✅、平文コード/パスフレーズ非保持（hash のみ DB）✅、
+  identity cookie (syncratch_student_identity) と grant cookie (syncratch_student_grant) 分離 ✅、
+  submission upload なし（PR 7 スコープ外）✅
+- テスト: student-auth.test.ts 7 件（flag off/activate/grant+roster/grant expiry/revoke/scrypt hash/token）
+
+Minor:
+- m6-1（任意）: scrypt の「30-parallel peak RSS + p95 latency measurement」が design doc に記録されていない。
+  実装設定は正しいが、計画が求める測定結果の design 文書化が未了。別途スパイク PR で計測・記録を推奨。
+  （design doc line 322 に「未検証（別途スパイク PR で計測が必要）」とあるため、PR 6 の blocker とはしない）
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → PR6_COMPLETE）
+次: main マージ後、台帳を PR6_COMPLETE に更新。PR 7 は指示後。
+禁止: 自動マージ / PR 7+ 先行 / submission upload（PR 7）
