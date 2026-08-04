@@ -180,6 +180,8 @@ export async function startCollabHost(
     config: adminConfig,
     sessions: adminSessions,
     classroomRosterEnabled,
+    adminGoogleCredentialEnabled: adminGoogleOAuthEnabled,
+    rosterSheetsEnabled,
     teacherDriveSubmissionEnabled,
     submissionPreviewEnabled,
   });

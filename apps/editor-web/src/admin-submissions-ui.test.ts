@@ -28,6 +28,8 @@ describe("admin submissions ui", () => {
           ok: true,
           flags: {
             classroomRosterEnabled: true,
+            adminGoogleCredentialEnabled: true,
+            rosterSheetsEnabled: true,
             teacherDriveSubmissionEnabled: true,
             submissionPreviewEnabled: true,
           },
@@ -121,6 +123,8 @@ describe("admin submissions ui", () => {
       },
       {
         classroomRosterEnabled: true,
+        adminGoogleCredentialEnabled: false,
+        rosterSheetsEnabled: false,
         teacherDriveSubmissionEnabled: true,
         submissionPreviewEnabled: true,
       },

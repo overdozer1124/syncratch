@@ -11,6 +11,7 @@ import {
   adminLinkReissuePath,
   adminLinkRevokePath,
   type ClassroomPolicy,
+  type ClassroomRosterListItem,
   type StudentLinkListItem,
 } from "@blocksync/classroom-access";
 import {
@@ -18,6 +19,11 @@ import {
   mountPolicySubmissionsPanel,
   type AdminClassroomFlags,
 } from "./admin-submissions-ui.js";
+import {
+  fetchAdminRosterList,
+  mountAdminRostersSection,
+  mountPolicyRosterControls,
+} from "./admin-rosters-ui.js";
 
 declare global {
   interface Window {
@@ -212,9 +218,15 @@ async function renderConsole(
     "教室設定を作る",
   );
   const list = el("div", {class: "admin-policy-list", "data-testid": "admin-policy-list"});
-  body.append(logout, createBtn, list);
+  const rostersHost = el("div", {
+    class: "admin-rosters-host",
+    "data-testid": "admin-rosters-host",
+  });
+  body.append(logout, rostersHost, createBtn, list);
 
   const classroomFlags = await fetchAdminClassroomFlags();
+
+  await mountAdminRostersSection(rostersHost, getCsrf, classroomFlags);
 
   async function refresh(): Promise<void> {
     const res = await api<{ok: boolean; policies: ClassroomPolicy[]}>(
@@ -225,8 +237,19 @@ async function renderConsole(
       list.textContent = "設定一覧を取得できませんでした。";
       return;
     }
+    const rosters = classroomFlags?.classroomRosterEnabled
+      ? await fetchAdminRosterList()
+      : [];
     for (const policy of res.policies) {
-      list.append(await renderPolicyCard(policy, getCsrf, refresh, classroomFlags));
+      list.append(
+        await renderPolicyCard(
+          policy,
+          getCsrf,
+          refresh,
+          classroomFlags,
+          rosters,
+        ),
+      );
     }
     if (res.policies.length === 0) {
       list.textContent = "まだ教室設定がありません。";
@@ -256,6 +279,7 @@ async function renderPolicyCard(
   getCsrf: () => string,
   refresh: () => Promise<void>,
   classroomFlags: AdminClassroomFlags | null,
+  rosters: ClassroomRosterListItem[],
 ): Promise<HTMLElement> {
   const card = el("section", {class: "admin-policy-card"});
   card.append(el("h2", {}, policy.title));
@@ -407,6 +431,14 @@ async function renderPolicyCard(
     }
   }
   await refreshLinks();
+  mountPolicyRosterControls(
+    card,
+    policy,
+    rosters,
+    classroomFlags,
+    getCsrf,
+    refresh,
+  );
   await mountPolicySubmissionsPanel(card, policy, classroomFlags);
   return card;
 }

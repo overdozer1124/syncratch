@@ -3439,3 +3439,80 @@ body.admin-submission-preview-mode .toolbar .primary-controls > :not(.chrome-lef
   padding: 2rem 1rem;
   color: #b42318;
 }
+
+.admin-rosters-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #c9d7e6;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.admin-rosters-panel h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.admin-roster-toolbar,
+.admin-roster-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-roster-credential,
+.admin-roster-card,
+.admin-policy-roster {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #c9d7e6;
+}
+
+.admin-roster-card h3,
+.admin-roster-credential h3,
+.admin-policy-roster h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.admin-roster-sheet-form,
+.admin-roster-csv-form,
+.admin-roster-students {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-roster-input,
+.admin-roster-select,
+.admin-roster-file {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #c9d7e6;
+  border-radius: 4px;
+  font: inherit;
+}
+
+.admin-roster-preview-table,
+.admin-roster-student-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.admin-roster-preview-table th,
+.admin-roster-preview-table td,
+.admin-roster-student-table th,
+.admin-roster-student-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-roster-feedback.is-error {
+  color: #b42318;
+}

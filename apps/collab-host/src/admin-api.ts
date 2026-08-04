@@ -77,6 +77,10 @@ export interface CreateAdminApiHandlerOptions {
   sessions?: AdminSessionStore;
   /** When true, policy roster binding and student auth fields are active. */
   classroomRosterEnabled?: boolean;
+  /** When true, teacher Google credential OAuth is available. */
+  adminGoogleCredentialEnabled?: boolean;
+  /** When true, roster Google Sheet sync routes are available. */
+  rosterSheetsEnabled?: boolean;
   /** When true, submission folder binding is active on policy writes. */
   teacherDriveSubmissionEnabled?: boolean;
   /** When true, admin submission preview surface is available. */
@@ -94,6 +98,9 @@ export function createAdminApiHandler(
     options.config?.cookieSecure ??
     process.env.NODE_ENV === "production";
   const classroomRosterEnabled = options.classroomRosterEnabled ?? false;
+  const adminGoogleCredentialEnabled =
+    options.adminGoogleCredentialEnabled ?? false;
+  const rosterSheetsEnabled = options.rosterSheetsEnabled ?? false;
   const teacherDriveSubmissionEnabled =
     options.teacherDriveSubmissionEnabled ?? false;
   const submissionPreviewEnabled = options.submissionPreviewEnabled ?? false;
@@ -255,6 +262,8 @@ export function createAdminApiHandler(
         ok: true,
         flags: {
           classroomRosterEnabled,
+          adminGoogleCredentialEnabled,
+          rosterSheetsEnabled,
           teacherDriveSubmissionEnabled,
           submissionPreviewEnabled,
         },

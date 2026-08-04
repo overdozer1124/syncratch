@@ -14,6 +14,8 @@ export const ADMIN_GOOGLE_OAUTH_START_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/start
 export const ADMIN_GOOGLE_OAUTH_SESSION_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/session`;
 export const ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/disconnect`;
 export const ADMIN_GOOGLE_OAUTH_CALLBACK_PATH = "/oauth/admin-google/callback";
+/** Query param on /admin after OAuth redirect (`ok` | `error`). */
+export const ADMIN_GOOGLE_OAUTH_RETURN_FLAG = "admin_google_oauth";
 
 export const STUDENT_AUTH_PREFIX = "/api/student/auth";
 export const STUDENT_AUTH_ACTIVATE_PATH = `${STUDENT_AUTH_PREFIX}/activate`;
