@@ -74,6 +74,8 @@ export interface CreateAdminApiHandlerOptions {
   db: AdminDb;
   config: AdminAuthConfig | null;
   sessions?: AdminSessionStore;
+  /** When true, policy roster binding and student auth fields are active. */
+  classroomRosterEnabled?: boolean;
   /** When true, student grant cookie gets Secure flag (production). */
   studentGrantCookieSecure?: boolean;
 }
@@ -86,6 +88,8 @@ export function createAdminApiHandler(
     options.studentGrantCookieSecure ??
     options.config?.cookieSecure ??
     process.env.NODE_ENV === "production";
+  const classroomRosterEnabled = options.classroomRosterEnabled ?? false;
+  const policyOptions = {classroomRosterEnabled};
 
   return async (req, res) => {
     const urlPath = pathOnly(req.url ?? "/");
@@ -155,7 +159,7 @@ export function createAdminApiHandler(
         });
         return true;
       }
-      const policy = options.db.resolveStudentPolicyByGrant(grantId);
+      const policy = options.db.resolveStudentPolicyByGrant(grantId, undefined, policyOptions);
       if (!policy) {
         clearStudentGrantCookie(res, grantCookieSecure);
         sendJson(res, 404, {
@@ -189,7 +193,7 @@ export function createAdminApiHandler(
         });
         return true;
       }
-      const policy = options.db.resolveStudentPolicy(token);
+      const policy = options.db.resolveStudentPolicy(token, undefined, policyOptions);
       if (!policy) {
         sendJson(res, 404, {
           ok: false,
@@ -255,8 +259,20 @@ export function createAdminApiHandler(
         return true;
       }
       const input = (body ?? {}) as ClassroomPolicyInput;
-      const policy = options.db.createPolicy(session.adminId, input);
-      sendJson(res, 201, {ok: true, policy});
+      const created = options.db.createPolicy(session.adminId, input, policyOptions);
+      if (!created.ok) {
+        if (created.kind === "not_found") {
+          sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "policy not found"});
+          return true;
+        }
+        sendJson(res, 400, {
+          ok: false,
+          code: created.code,
+          message: created.message,
+        });
+        return true;
+      }
+      sendJson(res, 201, {ok: true, policy: created.policy});
       return true;
     }
 
@@ -280,16 +296,25 @@ export function createAdminApiHandler(
           sendJson(res, 400, {ok: false, code: "BAD_REQUEST", message: "JSON required"});
           return true;
         }
-        const policy = options.db.updatePolicy(
+        const updated = options.db.updatePolicy(
           policyId,
           session.adminId,
           (body ?? {}) as ClassroomPolicyInput,
+          policyOptions,
         );
-        if (!policy) {
-          sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "policy not found"});
+        if (!updated.ok) {
+          if (updated.kind === "not_found") {
+            sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "policy not found"});
+            return true;
+          }
+          sendJson(res, 400, {
+            ok: false,
+            code: updated.code,
+            message: updated.message,
+          });
           return true;
         }
-        sendJson(res, 200, {ok: true, policy});
+        sendJson(res, 200, {ok: true, policy: updated.policy});
         return true;
       }
     }

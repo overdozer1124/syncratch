@@ -48,8 +48,10 @@ export {
   DEFAULT_CLASSROOM_POLICY_INPUT,
   mergeClassroomPolicy,
   normalizeClassroomPolicyInput,
+  resolveStudentAccessMode,
   toStudentPolicyView,
   type NormalizedClassroomPolicyFields,
+  type StudentPolicyViewOptions,
 } from "./policy.js";
 
 export {

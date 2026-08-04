@@ -3253,7 +3253,8 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 
 /* Classroom admin / student shells (Phase 1) */
 .admin-shell,
-.student-error-shell {
+.student-error-shell,
+.student-auth-shell {
   min-height: 100vh;
   box-sizing: border-box;
   padding: 2.5rem 1.5rem 3rem;
@@ -3280,7 +3281,8 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 }
 
 .admin-shell h1,
-.student-error-shell h1 {
+.student-error-shell h1,
+.student-auth-shell h1 {
   margin: 0 0 0.75rem;
   font-size: 1.35rem;
   font-weight: 700;
@@ -3289,6 +3291,44 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
 .admin-status {
   margin: 0 0 1.25rem;
   color: var(--sc-muted);
+}
+
+.student-auth-shell-help {
+  margin: 0 0 1.25rem;
+  max-width: 36rem;
+  color: var(--sc-muted);
+  line-height: 1.6;
+}
+
+.student-auth-shell-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.student-auth-shell-tab {
+  border: 1px solid color-mix(in srgb, var(--sc-ink) 18%, transparent);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--sc-ink);
+  cursor: default;
+  font: inherit;
+  padding: 0.45rem 1rem;
+}
+
+.student-auth-shell-tab.is-active {
+  background: var(--syncratch-chrome-dark);
+  border-color: var(--syncratch-chrome-dark);
+  color: #fff;
+}
+
+.student-auth-shell-panel {
+  max-width: 36rem;
+  padding: 1rem 1.1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--sc-muted);
+  line-height: 1.6;
 }
 
 .admin-body {

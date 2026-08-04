@@ -2,14 +2,16 @@ import {mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import Database from "better-sqlite3";
-import {afterEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {
   ADMIN_AUTH_GOOGLE_PATH,
   ADMIN_ME_PATH,
   ADMIN_POLICIES_PATH,
+  ADMIN_ROSTERS_PATH,
   STUDENT_GRANT_PATH,
   STUDENT_POLICY_PATH,
   STUDENT_POLICY_BY_TOKEN_PREFIX,
+  adminPolicyPath,
   studentPolicyByTokenPath,
 } from "@blocksync/classroom-access";
 import {startCollabHost, type CollabHostHandle} from "./server.js";
@@ -21,8 +23,13 @@ import {
 import {STUDENT_GRANT_COOKIE} from "./student-grant.js";
 import {openAdminDb} from "./admin-db.js";
 import {AdminSchemaMigrationError} from "./admin-db-migrations/index.js";
+import {resetClassroomFeatureFlagsCacheForTests} from "./classroom-feature-flags-runtime.js";
 
 let handle: CollabHostHandle | undefined;
+
+beforeEach(() => {
+  resetClassroomFeatureFlagsCacheForTests();
+});
 
 afterEach(async () => {
   await handle?.close();
@@ -70,16 +77,30 @@ function claims(email: string, sub: string) {
   };
 }
 
-async function boot(config: AdminAuthConfig, dbPath: string, root: string) {
+async function boot(
+  config: AdminAuthConfig,
+  dbPath: string,
+  root: string,
+  classroomRosterEnabled = false,
+) {
   const sessions = createMemoryAdminSessionStore();
   const db = openAdminDb(dbPath);
   handle = await startCollabHost({
     host: "127.0.0.1",
     port: 0,
     staticRoot: root,
-    admin: {db, config, sessions},
+    admin: {
+      db,
+      config,
+      sessions,
+      classroomRosterEnabled,
+    },
   });
-  return handle;
+  return {handle: handle!, db};
+}
+
+async function bootLegacy(config: AdminAuthConfig, dbPath: string, root: string) {
+  return boot(config, dbPath, root, false);
 }
 
 describe("admin / student classroom API", () => {
@@ -87,7 +108,7 @@ describe("admin / student classroom API", () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-admin-deny-"));
     writeFileSync(join(root, "index.html"), "<html>host</html>");
     const dbPath = join(root, "admin.sqlite");
-    const h = await boot(
+    const {handle: h} = await bootLegacy(
       {
         clientId: "test-client.apps.googleusercontent.com",
         allowlist: new Set(["teacher@school.example"]),
@@ -119,7 +140,7 @@ describe("admin / student classroom API", () => {
         claims("teacher@school.example", "google-sub-1"),
     };
 
-    const h = await boot(config, dbPath, root);
+    const {handle: h} = await bootLegacy(config, dbPath, root);
     const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
       method: "POST",
       headers: {"content-type": "application/json"},
@@ -215,7 +236,7 @@ describe("admin / student classroom API", () => {
       verifyGoogleIdToken: async () =>
         claims("teacher@school.example", "google-sub-grant"),
     };
-    const h = await boot(config, dbPath, root);
+    const {handle: h} = await bootLegacy(config, dbPath, root);
 
     const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
       method: "POST",
@@ -294,7 +315,7 @@ describe("admin / student classroom API", () => {
       verifyGoogleIdToken: async () =>
         claims("teacher@school.example", "google-sub-exp"),
     };
-    const h = await boot(config, dbPath, root);
+    const {handle: h} = await bootLegacy(config, dbPath, root);
     const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
       method: "POST",
       headers: {"content-type": "application/json"},
@@ -361,7 +382,7 @@ describe("admin / student classroom API", () => {
       verifyGoogleIdToken: async () =>
         claims("teacher@school.example", "google-sub-reissue"),
     };
-    const h = await boot(config, dbPath, root);
+    const {handle: h} = await bootLegacy(config, dbPath, root);
     const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
       method: "POST",
       headers: {"content-type": "application/json"},
@@ -514,5 +535,229 @@ describe("admin / student classroom API", () => {
     legacy.close();
 
     expect(() => openAdminDb(dbPath)).toThrow(AdminSchemaMigrationError);
+  });
+
+  it("ignores roster binding patches when classroom roster flag is off", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-policy-flag-off-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-flag-off"),
+    };
+    const {handle: h} = await bootLegacy(config, dbPath, root);
+    const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({idToken: "tok"}),
+    });
+    const {cookie, csrfToken} = cookieJar(login);
+    const created = await fetch(new URL(ADMIN_POLICIES_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "flag off class"}),
+    });
+    const createdBody = (await created.json()) as {policy: {policyId: string}};
+    const rosterRes = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "ignored roster"}),
+    });
+    expect(rosterRes.status).toBe(404);
+
+    const patch = await fetch(
+      new URL(adminPolicyPath(createdBody.policy.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({
+          rosterId: "r-does-not-exist",
+          studentAuth: {required: true},
+        }),
+      },
+    );
+    expect(patch.status).toBe(200);
+    const patchBody = (await patch.json()) as {
+      policy: {rosterId: string | null; studentAuth: {required: boolean}};
+    };
+    expect(patchBody.policy.rosterId).toBeNull();
+    expect(patchBody.policy.studentAuth.required).toBe(false);
+  });
+
+  it("binds owned roster, gates student policy, and hides foreign rosters", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-policy-bind-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set([
+        "teacher@school.example",
+        "other@school.example",
+      ]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async idToken => {
+        if (idToken === "other") {
+          return claims("other@school.example", "google-sub-other");
+        }
+        return claims("teacher@school.example", "google-sub-bind");
+      },
+    };
+    const {handle: h, db} = await boot(config, dbPath, root, true);
+
+    const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({idToken: "tok"}),
+    });
+    const {cookie, csrfToken} = cookieJar(login);
+
+    const created = await fetch(new URL(ADMIN_POLICIES_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "auth class"}),
+    });
+    const createdBody = (await created.json()) as {policy: {policyId: string}};
+
+    const rosterRes = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "2026 A"}),
+    });
+    expect(rosterRes.status).toBe(201);
+    const rosterBody = (await rosterRes.json()) as {roster: {rosterId: string}};
+
+    const foreignPatch = await fetch(
+      new URL(adminPolicyPath(createdBody.policy.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({rosterId: "foreign-roster"}),
+      },
+    );
+    expect(foreignPatch.status).toBe(404);
+
+    const needsRoster = await fetch(
+      new URL(adminPolicyPath(createdBody.policy.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({studentAuth: {required: true}}),
+      },
+    );
+    expect(needsRoster.status).toBe(400);
+
+    const bound = await fetch(
+      new URL(adminPolicyPath(createdBody.policy.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({
+          rosterId: rosterBody.roster.rosterId,
+          studentAuth: {required: true},
+        }),
+      },
+    );
+    expect(bound.status).toBe(200);
+    const boundBody = (await bound.json()) as {
+      policy: {studentAuth: {required: boolean}};
+    };
+    expect(boundBody.policy.studentAuth.required).toBe(true);
+
+    const otherAdmin = db.upsertAdminFromLogin({
+      subject: "google-sub-other",
+      email: "other@school.example",
+      displayName: null,
+    });
+    const otherLogin = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({idToken: "other"}),
+    });
+    const otherSession = cookieJar(otherLogin);
+    const otherPolicy = db.createPolicy(otherAdmin.adminId, {title: "other"}, {
+      classroomRosterEnabled: true,
+    });
+    expect(otherPolicy.ok).toBe(true);
+    if (!otherPolicy.ok) throw new Error("policy create failed");
+    const crossAdmin = await fetch(
+      new URL(adminPolicyPath(otherPolicy.policy.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie: otherSession.cookie,
+          "x-csrf-token": otherSession.csrfToken,
+        },
+        body: JSON.stringify({rosterId: rosterBody.roster.rosterId}),
+      },
+    );
+    expect(crossAdmin.status).toBe(404);
+
+    const linkRes = await fetch(
+      new URL(
+        `${ADMIN_POLICIES_PATH}/${createdBody.policy.policyId}/links`,
+        h.url,
+      ),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({label: "auth gate"}),
+      },
+    );
+    const linkBody = (await linkRes.json()) as {link: {token: string}};
+    const grantRes = await fetch(new URL(STUDENT_GRANT_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({token: linkBody.link.token}),
+    });
+    expect(grantRes.status).toBe(200);
+    const grantId = readGrantCookie(grantRes);
+    const policyRes = await fetch(new URL(STUDENT_POLICY_PATH, h.url), {
+      headers: {cookie: `${STUDENT_GRANT_COOKIE}=${encodeURIComponent(grantId)}`},
+    });
+    const policyBody = (await policyRes.json()) as {
+      policy: Record<string, unknown> & {studentAuth: {required: boolean}};
+    };
+    expect(policyBody.policy.studentAuth.required).toBe(true);
+    expect(policyBody.policy).not.toHaveProperty("rosterId");
   });
 });

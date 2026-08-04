@@ -147,6 +147,7 @@ export async function startCollabHost(
     db: adminDb,
     config: adminConfig,
     sessions: adminSessions,
+    classroomRosterEnabled,
   });
   const adminGoogleCryptoKeys = parseAdminGoogleCryptoKeysFromEnv();
   const adminGoogleCredentialStore =
