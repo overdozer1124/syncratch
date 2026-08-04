@@ -125,8 +125,8 @@ describe("admin DB migrations", () => {
     const ledger = sqlite
       .prepare(`SELECT version, name FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number; name: string}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3]);
-    expect(sqlite.pragma("user_version", {simple: true})).toBe(3);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4]);
+    expect(sqlite.pragma("user_version", {simple: true})).toBe(4);
     const tables = sqlite
       .prepare(
         `SELECT name FROM sqlite_master
@@ -140,11 +140,12 @@ describe("admin DB migrations", () => {
       "classroom_roster_memberships",
       "classroom_rosters",
       "classroom_students",
+      "classroom_submissions",
     ]);
     sqlite.close();
   });
 
-  it("creates fresh DB at migration version 3", () => {
+  it("creates fresh DB at migration version 4", () => {
     const root = mkdtempSync(join(tmpdir(), "admin-db-fresh-"));
     const dbPath = join(root, "fresh.sqlite");
     const db = new Database(dbPath);
@@ -153,19 +154,20 @@ describe("admin DB migrations", () => {
     const ledger = db
       .prepare(`SELECT version FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3]);
-    expect(db.pragma("user_version", {simple: true})).toBe(3);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4]);
+    expect(db.pragma("user_version", {simple: true})).toBe(4);
     const tables = db
       .prepare(
         `SELECT name FROM sqlite_master
          WHERE type = 'table'
-           AND name IN ('admin_google_oauth_pending', 'admin_google_credentials')
+           AND name IN ('admin_google_oauth_pending', 'admin_google_credentials', 'classroom_submissions')
          ORDER BY name`,
       )
       .all() as Array<{name: string}>;
     expect(tables.map(row => row.name)).toEqual([
       "admin_google_credentials",
       "admin_google_oauth_pending",
+      "classroom_submissions",
     ]);
     db.close();
   });

@@ -39,6 +39,8 @@ export interface ClassroomPolicy {
   status: ClassroomPolicyStatus;
   /** Linked roster for roster-login mode (PR 5+). Null keeps shared-anonymous. */
   rosterId: string | null;
+  /** Teacher Drive folder for student submissions (admin-only; PR 7+). */
+  submissionDriveFolderId: string | null;
   studentAuth: StudentAuthPolicy;
   submission: SubmissionPolicy;
   aiAssist: ClassroomAiAssistPolicy;
@@ -54,6 +56,7 @@ export interface ClassroomPolicyInput {
   title?: string;
   status?: ClassroomPolicyStatus;
   rosterId?: string | null;
+  submissionDriveFolderId?: string | null;
   studentAuth?: Partial<StudentAuthPolicy>;
   submission?: Partial<SubmissionPolicy>;
   aiAssist?: Partial<ClassroomAiAssistPolicy>;

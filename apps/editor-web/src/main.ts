@@ -359,6 +359,11 @@ import {
 } from "./student-auth-gate.js";
 import {fetchStudentIdentitySession} from "./student-auth-ui.js";
 import {
+  hideStudentSubmissionUi,
+  mountStudentSubmissionUi,
+  showStudentSubmissionUi,
+} from "./student-submission-ui.js";
+import {
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
   replaceStudentUrlWithoutToken,
@@ -651,6 +656,9 @@ const studentErrorShell = document.querySelector<HTMLElement>(
 );
 const studentAuthShell = document.querySelector<HTMLElement>(
   "#student-auth-shell",
+);
+const studentSubmissionPanel = document.querySelector<HTMLElement>(
+  "#student-submission-panel",
 );
 const SURFACE_MODE = detectEditorSurfaceMode();
 // Pin before loadScratchGui / Blocks media resolve (nested /s/{token} routes).
@@ -4506,6 +4514,16 @@ async function startEditorSurface(): Promise<void> {
         '[data-testid="file-panel"]',
       ),
     });
+    if (policy.submission.enabled && studentSubmissionPanel) {
+      showStudentSubmissionUi(studentSubmissionPanel);
+      mountStudentSubmissionUi({
+        root: studentSubmissionPanel,
+        exportSb3: exportCurrentSb3,
+        getProjectTitle: () => titleInput.value,
+      });
+    } else if (studentSubmissionPanel) {
+      hideStudentSubmissionUi(studentSubmissionPanel);
+    }
     if (appMain) appMain.hidden = false;
   };
 

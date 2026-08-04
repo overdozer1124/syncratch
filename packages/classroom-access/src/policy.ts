@@ -20,6 +20,7 @@ export interface NormalizedClassroomPolicyFields {
   title: string;
   status: ClassroomPolicyStatus;
   rosterId: string | null;
+  submissionDriveFolderId: string | null;
   studentAuth: ClassroomPolicy["studentAuth"];
   submission: ClassroomPolicy["submission"];
   aiAssist: ClassroomAiAssistPolicy;
@@ -32,6 +33,7 @@ export const DEFAULT_CLASSROOM_POLICY_INPUT: NormalizedClassroomPolicyFields = {
   title: "新しい教室設定",
   status: "active",
   rosterId: null,
+  submissionDriveFolderId: null,
   studentAuth: {required: false},
   submission: {enabled: false},
   aiAssist: {
@@ -78,6 +80,15 @@ export function normalizeClassroomPolicyInput(
           ? null
           : typeof input.rosterId === "string" && input.rosterId.trim()
             ? input.rosterId.trim()
+            : null,
+    submissionDriveFolderId:
+      input?.submissionDriveFolderId === undefined
+        ? base.submissionDriveFolderId
+        : input.submissionDriveFolderId === null
+          ? null
+          : typeof input.submissionDriveFolderId === "string" &&
+              input.submissionDriveFolderId.trim()
+            ? input.submissionDriveFolderId.trim()
             : null,
     studentAuth: {
       required: Boolean(
@@ -128,6 +139,10 @@ export function mergeClassroomPolicy(
     title: patch.title ?? existing.title,
     status: patch.status ?? existing.status,
     rosterId: patch.rosterId !== undefined ? patch.rosterId : existing.rosterId,
+    submissionDriveFolderId:
+      patch.submissionDriveFolderId !== undefined
+        ? patch.submissionDriveFolderId
+        : existing.submissionDriveFolderId,
     studentAuth: {...existing.studentAuth, ...patch.studentAuth},
     submission: {...existing.submission, ...patch.submission},
     aiAssist: {...existing.aiAssist, ...patch.aiAssist},

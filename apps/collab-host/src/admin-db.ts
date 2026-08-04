@@ -27,6 +27,7 @@ import {
 
 export interface AdminDbPolicyOptions {
   classroomRosterEnabled?: boolean;
+  teacherDriveSubmissionEnabled?: boolean;
 }
 
 export type PolicyWriteResult =
@@ -104,6 +105,7 @@ interface PolicyRow {
   roster_id: string | null;
   student_auth_required: number;
   submission_enabled: number;
+  submission_drive_folder_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -172,6 +174,7 @@ function rowToPolicy(row: PolicyRow): ClassroomPolicy {
     collab: {allow: Boolean(row.collab_allow)},
     drive: {allow: Boolean(row.drive_allow)},
     rosterId: row.roster_id ?? null,
+    submissionDriveFolderId: row.submission_drive_folder_id ?? null,
     studentAuth: {required: Boolean(row.student_auth_required)},
     submission: {enabled: Boolean(row.submission_enabled)},
     createdAt: row.created_at,
@@ -214,6 +217,29 @@ function stripRosterPolicyPatch(patch: ClassroomPolicyInput): ClassroomPolicyInp
   return rest;
 }
 
+function stripSubmissionPolicyPatch(patch: ClassroomPolicyInput): ClassroomPolicyInput {
+  const {
+    submissionDriveFolderId: _folderId,
+    submission: _submission,
+    ...rest
+  } = patch;
+  return rest;
+}
+
+function effectivePolicyPatch(
+  patch: ClassroomPolicyInput,
+  options?: AdminDbPolicyOptions,
+): ClassroomPolicyInput {
+  let next = patch;
+  if (!options?.classroomRosterEnabled) {
+    next = stripRosterPolicyPatch(next);
+  }
+  if (!options?.teacherDriveSubmissionEnabled) {
+    next = stripSubmissionPolicyPatch(next);
+  }
+  return next;
+}
+
 export function openAdminDb(dbPath: string): AdminDb {
   if (dbPath !== ":memory:") {
     mkdirSync(dirname(dbPath), {recursive: true});
@@ -230,6 +256,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_allow_extensions,
       collab_allow, drive_allow,
       roster_id, student_auth_required, submission_enabled,
+      submission_drive_folder_id,
       created_at, updated_at
     ) VALUES (
       @policy_id, @owner_admin_id, @title, @status,
@@ -238,6 +265,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       @editor_allow_extensions,
       @collab_allow, @drive_allow,
       @roster_id, @student_auth_required, @submission_enabled,
+      @submission_drive_folder_id,
       @created_at, @updated_at
     )
   `);
@@ -258,6 +286,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       roster_id = @roster_id,
       student_auth_required = @student_auth_required,
       submission_enabled = @submission_enabled,
+      submission_drive_folder_id = @submission_drive_folder_id,
       updated_at = @updated_at
     WHERE policy_id = @policy_id AND owner_admin_id = @owner_admin_id
   `);
@@ -301,6 +330,22 @@ export function openAdminDb(dbPath: string): AdminDb {
     return {ok: true};
   }
 
+  function validateSubmissionPolicyFields(
+    policy: ClassroomPolicy,
+    teacherDriveSubmissionEnabled: boolean,
+  ): PolicyWriteResult | {ok: true} {
+    if (!teacherDriveSubmissionEnabled) return {ok: true};
+    if (policy.submission.enabled && !policy.submissionDriveFolderId) {
+      return {
+        ok: false,
+        kind: "bad_request",
+        code: "SUBMISSION_REQUIRES_FOLDER",
+        message: "submission.enabled には submissionDriveFolderId が必要です。",
+      };
+    }
+    return {ok: true};
+  }
+
   function studentViewOptions(
     options?: AdminDbPolicyOptions,
   ): {classroomRosterEnabled: boolean} {
@@ -325,6 +370,7 @@ export function openAdminDb(dbPath: string): AdminDb {
       roster_id: policy.rosterId,
       student_auth_required: policy.studentAuth.required ? 1 : 0,
       submission_enabled: policy.submission.enabled ? 1 : 0,
+      submission_drive_folder_id: policy.submissionDriveFolderId,
       created_at: policy.createdAt,
       updated_at: policy.updatedAt,
     };
@@ -402,9 +448,9 @@ export function openAdminDb(dbPath: string): AdminDb {
 
     createPolicy(ownerAdminId, input, options) {
       const classroomRosterEnabled = options?.classroomRosterEnabled ?? false;
-      const effectiveInput = classroomRosterEnabled
-        ? input
-        : stripRosterPolicyPatch(input);
+      const teacherDriveSubmissionEnabled =
+        options?.teacherDriveSubmissionEnabled ?? false;
+      const effectiveInput = effectivePolicyPatch(input, options);
       const ownership = validateRosterPatchOwnership(
         effectiveInput,
         ownerAdminId,
@@ -420,19 +466,27 @@ export function openAdminDb(dbPath: string): AdminDb {
         updatedAt: ts,
         ...normalized,
       };
-      const validation = validateRosterPolicyFields(policy, classroomRosterEnabled);
-      if (!validation.ok) return validation;
+      const rosterValidation = validateRosterPolicyFields(
+        policy,
+        classroomRosterEnabled,
+      );
+      if (!rosterValidation.ok) return rosterValidation;
+      const submissionValidation = validateSubmissionPolicyFields(
+        policy,
+        teacherDriveSubmissionEnabled,
+      );
+      if (!submissionValidation.ok) return submissionValidation;
       insertPolicy.run(bindPolicy(policy));
       return {ok: true, policy};
     },
 
     updatePolicy(policyId, ownerAdminId, patch, options) {
       const classroomRosterEnabled = options?.classroomRosterEnabled ?? false;
+      const teacherDriveSubmissionEnabled =
+        options?.teacherDriveSubmissionEnabled ?? false;
       const existing = this.getPolicy(policyId, ownerAdminId);
       if (!existing) return {ok: false, kind: "not_found"};
-      const effectivePatch = classroomRosterEnabled
-        ? patch
-        : stripRosterPolicyPatch(patch);
+      const effectivePatch = effectivePolicyPatch(patch, options);
       const ownership = validateRosterPatchOwnership(
         effectivePatch,
         ownerAdminId,
@@ -440,8 +494,16 @@ export function openAdminDb(dbPath: string): AdminDb {
       );
       if (!ownership.ok) return ownership;
       const next = mergeClassroomPolicy(existing, effectivePatch, nowIso());
-      const validation = validateRosterPolicyFields(next, classroomRosterEnabled);
-      if (!validation.ok) return validation;
+      const rosterValidation = validateRosterPolicyFields(
+        next,
+        classroomRosterEnabled,
+      );
+      if (!rosterValidation.ok) return rosterValidation;
+      const submissionValidation = validateSubmissionPolicyFields(
+        next,
+        teacherDriveSubmissionEnabled,
+      );
+      if (!submissionValidation.ok) return submissionValidation;
       updatePolicyStmt.run(bindPolicy(next));
       return {ok: true, policy: next};
     },
@@ -544,6 +606,7 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
                   p.roster_id, p.student_auth_required, p.submission_enabled,
+                  p.submission_drive_folder_id,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
            FROM student_links l
@@ -566,6 +629,7 @@ export function openAdminDb(dbPath: string): AdminDb {
             roster_id: string | null;
             student_auth_required: number;
             submission_enabled: number;
+            submission_drive_folder_id: string | null;
             p_policy_id: string;
             p_owner: string;
             p_created: string;
@@ -593,6 +657,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         roster_id: row.roster_id,
         student_auth_required: row.student_auth_required,
         submission_enabled: row.submission_enabled,
+        submission_drive_folder_id: row.submission_drive_folder_id ?? null,
         created_at: row.p_created,
         updated_at: row.p_updated,
       });
@@ -641,6 +706,7 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
                   p.roster_id, p.student_auth_required, p.submission_enabled,
+                  p.submission_drive_folder_id,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
            FROM student_links l
@@ -663,6 +729,7 @@ export function openAdminDb(dbPath: string): AdminDb {
             roster_id: string | null;
             student_auth_required: number;
             submission_enabled: number;
+            submission_drive_folder_id: string | null;
             p_policy_id: string;
             p_owner: string;
             p_created: string;
@@ -690,6 +757,7 @@ export function openAdminDb(dbPath: string): AdminDb {
         roster_id: row.roster_id,
         student_auth_required: row.student_auth_required,
         submission_enabled: row.submission_enabled,
+        submission_drive_folder_id: row.submission_drive_folder_id ?? null,
         created_at: row.p_created,
         updated_at: row.p_updated,
       });
