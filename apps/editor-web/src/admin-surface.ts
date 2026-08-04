@@ -13,6 +13,11 @@ import {
   type ClassroomPolicy,
   type StudentLinkListItem,
 } from "@blocksync/classroom-access";
+import {
+  fetchAdminClassroomFlags,
+  mountPolicySubmissionsPanel,
+  type AdminClassroomFlags,
+} from "./admin-submissions-ui.js";
 
 declare global {
   interface Window {
@@ -209,6 +214,8 @@ async function renderConsole(
   const list = el("div", {class: "admin-policy-list", "data-testid": "admin-policy-list"});
   body.append(logout, createBtn, list);
 
+  const classroomFlags = await fetchAdminClassroomFlags();
+
   async function refresh(): Promise<void> {
     const res = await api<{ok: boolean; policies: ClassroomPolicy[]}>(
       ADMIN_POLICIES_PATH,
@@ -219,7 +226,7 @@ async function renderConsole(
       return;
     }
     for (const policy of res.policies) {
-      list.append(await renderPolicyCard(policy, getCsrf, refresh));
+      list.append(await renderPolicyCard(policy, getCsrf, refresh, classroomFlags));
     }
     if (res.policies.length === 0) {
       list.textContent = "まだ教室設定がありません。";
@@ -248,6 +255,7 @@ async function renderPolicyCard(
   policy: ClassroomPolicy,
   getCsrf: () => string,
   refresh: () => Promise<void>,
+  classroomFlags: AdminClassroomFlags | null,
 ): Promise<HTMLElement> {
   const card = el("section", {class: "admin-policy-card"});
   card.append(el("h2", {}, policy.title));
@@ -399,5 +407,6 @@ async function renderPolicyCard(
     }
   }
   await refreshLinks();
+  await mountPolicySubmissionsPanel(card, policy, classroomFlags);
   return card;
 }

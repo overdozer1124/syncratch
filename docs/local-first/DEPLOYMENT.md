@@ -125,6 +125,24 @@ Disconnect: `POST /api/admin/google/oauth/disconnect` (CSRF required).
 When flags are OFF, these routes return **404**.
 HTML for `/s` navigations sets `Referrer-Policy: no-referrer`.
 
+#### Student submissions (classroom PR 6–8, optional)
+
+When roster, student local auth, and teacher Drive submission flags are enabled,
+students can upload SB3 via `POST /api/student/submissions` (metadata in SQLite,
+bytes in teacher Drive). Admins list submissions in `/admin` when
+`SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED=1`.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED` | `1` / `true` — requires roster |
+| `SYNCRATCH_STUDENT_IDENTITY_SECRET` | HMAC secret for student identity cookie (required when auth ON) |
+| `SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED` | `1` / `true` — requires student local auth + teacher Google credential |
+| `SYNCRATCH_SUBMISSION_MAX_BYTES` | Optional upload cap (default 5 MiB) |
+| `SYNCRATCH_SUBMISSION_PREVIEW_ENABLED` | `1` / `true` — enables `/admin/submissions/{id}/preview` read-only surface; requires teacher submission flag |
+
+Preview flag OFF: list/download in `/admin` still works when submission flag ON;
+preview URL returns **404**.
+
 To persist the admin DB across redeploys, add a **Railway Volume** mounted at
 `/app/data` in the service settings. Do not put a Docker `VOLUME` instruction in
 the Dockerfile — Railway fails the build with
