@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 8 Teacher submission list/preview UI |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR8_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 8 Hermes 決裁 → main マージ |
+| 次の作業 | PR 8 GO 済み。CI green 確認後 main マージ → PR8_COMPLETE |
 | 禁止 | 自動マージ |
 
 ### 案件レジストリ
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 8 Hermes 決裁 → CI green → main マージ | #211 PR 8 admin submissions list/detail + preview surface |
+| `classroom-roster-drive-submissions` | `PR8_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 8 GO 済み。CI green 確認後マージ → PR8_COMPLETE | #211 PR 8 admin submissions list/detail + preview surface @50b0194。Hermes GO（preview flag OFF→404・read-only・admin-only・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +80,8 @@
 | 最終更新 | 2026-08-04 15:30:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 8 — Teacher submission list/preview UI） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PR8_APPROVED_PENDING_CI`（PR 8 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 8 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
@@ -6698,3 +6698,31 @@ preflight: FAIL（Hermes GO 未記録 — マージ禁止）
 禁止: 自動マージ / Cursor による Hermes GO 記載
 次: Hermes 決裁 → preflight PASS → main マージ
 ```
+
+### 2026-08-04 15:35:00 JST — Hermes（PR #211 決裁 GO — PR 8 @50b0194）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #211 / head SHA: 50b0194
+Base: origin/main @ 3933705
+決裁日: 2026-08-04 15:35
+
+受入れ条件（計画 PR 8）の検証結果:
+- Preview flag OFF → 404（server.ts: isAdminSubmissionPreviewSurfacePath + !submissionPreviewEnabled → 404）✅
+- Preview read-only: titleInput.readOnly=true、drive-panel 非表示 chrome、write/persist なし ✅
+- Admin-only: fetchAdminSubmissionPreviewData は ADMIN_ME_PATH で admin 認証、admin PR7 API 使用（student アクセス不可）✅
+- Teacher without credential → admin API 側で 401/403、token leakage なし ✅
+- PR 7 独立保持: PR 8 は UI 層のみ追加、PR 7 API を使用（PR 7 を PR 8 に含めず）✅
+- DEPLOYMENT.md: SYNCRATCH_SUBMISSION_PREVIEW_ENABLED 説明、flag OFF→404 記載 ✅
+- テスト: server.test.ts（preview flag off→404）、admin-submissions-ui.test.ts（flags load / rows+preview link）
+
+禁止事項: No student access to preview ✅、No write/autosave from preview ✅、No merge of PR7 into PR8 ✅
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → PR8_COMPLETE）
+次: main マージ後、台帳を PR8_COMPLETE に更新。PR 9 は指示後（計画に PR 9 の定義なし → 案件完了検討）。
+禁止: 自動マージ
