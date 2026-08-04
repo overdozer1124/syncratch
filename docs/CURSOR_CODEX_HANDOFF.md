@@ -49,11 +49,11 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `PR5_APPROVED_PENDING_CI` |
-| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| 現在の状態 | `PR5_COMPLETE` |
+| 次の担当 | ユーザー（PR 6 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 GO 済み。CI green 確認後 main マージ → PR5_COMPLETE |
-| 禁止 | 自動マージ / PR 6+ 先行 |
+| 次の作業 | PR 5 完了（main マージ済み @680e49e）。PR 6 は指示後 |
+| 禁止 | PR 6+ 先行（指示なし） |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR5_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 5 GO 済み。CI green 確認後マージ → PR5_COMPLETE | #207 PR 5 policy binding + student auth gate @220c2fa。Hermes GO（B1 解消・mergeable MERGEABLE・CI green） |
+| `classroom-roster-drive-submissions` | `PR5_COMPLETE` | ユーザー（PR 6 は指示後） | PR 5 完了（main @680e49e）。PR 6 は指示後 | #207 PR 5 policy binding + student auth gate。Hermes GO → main マージ済み。B1 解消・mergeable MERGEABLE・CI green |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,10 +80,10 @@
 | 最終更新 | 2026-08-04 10:25:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR5_APPROVED_PENDING_CI`（PR 5 — Hermes GO 済み、CI green 待ち → マージ） |
-| 現在の担当 | ユーザー（CI green 確認後マージ） |
+| ワークフロー状態 | `PR5_COMPLETE`（PR 5 — main マージ済み @680e49e） |
+| 現在の担当 | ユーザー（PR 6 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 5 Hermes 再決裁待ち |
+| 現在のTask | PR 5 完了待機（PR 6 は指示後） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
