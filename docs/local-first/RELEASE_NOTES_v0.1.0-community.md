@@ -4,7 +4,7 @@
 |---|---|
 | Tag | `v0.1.0-community` |
 | Date | 2026-08-04 |
-| Commit | `81a290d`（main @ merge #212） |
+| Commit | `00d4338`（main @ PR #213 + tag `v0.1.0-community`） |
 | Product | Syncratch Community（シンクラッチ） |
 | Production URL | https://syncratch-production.up.railway.app/ |
 | Acceptance | `FINAL_ACCEPTANCE_REPORT.md` / `STAGE5_MANUAL_GATES.md` §C.1.2 |
