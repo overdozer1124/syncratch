@@ -11,6 +11,7 @@ import type {IncomingMessage, ServerResponse} from "node:http";
 import {
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
   ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH,
+  ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
   ADMIN_GOOGLE_OAUTH_START_PATH,
 } from "@blocksync/classroom-access";
@@ -31,7 +32,7 @@ import {
   type AdminGoogleCryptoKeys,
 } from "./admin-token-crypto.js";
 
-export const ADMIN_GOOGLE_OAUTH_RETURN_FLAG = "admin_google_oauth";
+export {ADMIN_GOOGLE_OAUTH_RETURN_FLAG};
 
 const PENDING_TTL_MS = 10 * 60_000;
 /** Reserved for PR 4 access-token refresh skew checks (see roster-sheet-sync). */

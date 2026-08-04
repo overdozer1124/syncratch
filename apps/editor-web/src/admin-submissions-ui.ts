@@ -1,5 +1,4 @@
 import {
-  ADMIN_CLASSROOM_FLAGS_PATH,
   adminPolicySubmissionsPath,
   adminSubmissionContentPath,
   adminSubmissionPath,
@@ -8,6 +7,13 @@ import {
   type SubmissionDetail,
   type SubmissionListItem,
 } from "@blocksync/classroom-access";
+import {
+  fetchAdminClassroomFlags,
+  type AdminClassroomFlags,
+} from "./admin-classroom-flags.js";
+
+export type {AdminClassroomFlags};
+export {fetchAdminClassroomFlags};
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -21,30 +27,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   }
   if (text !== undefined) node.textContent = text;
   return node;
-}
-
-export interface AdminClassroomFlags {
-  classroomRosterEnabled: boolean;
-  teacherDriveSubmissionEnabled: boolean;
-  submissionPreviewEnabled: boolean;
-}
-
-export async function fetchAdminClassroomFlags(): Promise<AdminClassroomFlags | null> {
-  try {
-    const response = await fetch(ADMIN_CLASSROOM_FLAGS_PATH, {
-      credentials: "same-origin",
-      headers: {accept: "application/json"},
-    });
-    if (!response.ok) return null;
-    const body = (await response.json()) as {
-      ok?: boolean;
-      flags?: AdminClassroomFlags;
-    };
-    if (!body.ok || !body.flags) return null;
-    return body.flags;
-  } catch {
-    return null;
-  }
 }
 
 function formatBytes(sizeBytes: number): string {
