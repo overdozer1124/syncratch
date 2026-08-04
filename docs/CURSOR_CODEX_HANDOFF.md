@@ -49,11 +49,11 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 7 Teacher Drive submission |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR7_COMPLETE` |
+| 次の担当 | ユーザー（PR 8 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 7.1 Hermes 決裁 → CI green → main マージ |
-| 禁止 | 自動マージ / PR 8+ 先行（指示なし） |
+| 次の作業 | PR 7 完了（#209 + #210 main 取り込み済み）。PR 8 は指示後 |
+| 禁止 | PR 8+ 先行（指示なし） |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 7.1 Hermes 決裁 → CI green → main マージ | #209 済み。@968b92c idempotency race + flag-off UI + identity gate 修正 |
+| `classroom-roster-drive-submissions` | `PR7_COMPLETE` | ユーザー（PR 8 は指示後） | PR 7 完了（#209 @b576e11 + #210 指摘修正）。PR 8 は指示後 | parallel idempotency + flag-off UI + identity gate 修正済み |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,13 +77,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 14:04:00 JST |
-| 更新者 | Cursor |
+| 最終更新 | 2026-08-04 14:15:03 JST |
+| 更新者 | Hermes |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 7.1 — PR #209 レビュー指摘修正） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PR7_COMPLETE`（PR 7 — #209 + #210 main 取り込み済み） |
+| 現在の担当 | ユーザー（PR 8 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 7.1 Hermes 決裁待ち |
+| 現在のTask | PR 7 完了。PR 8 は指示後 |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
@@ -6624,3 +6624,28 @@ PR: #210（作成予定）
 
 禁止: 自動マージ / PR 8+ 先行
 ```
+
+### 2026-08-04 14:15:03 JST — Hermes（PR #210 決裁 GO — PR 7.1 @1e4fed9）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #210 / head SHA: 1e4fed9
+Base: origin/main @ 4387d59
+決裁日: 2026-08-04 14:15
+
+受入れ条件（PR 7.1 修正）の検証結果:
+- Parallel idempotency: pending 行を transaction で予約 → Drive upload → submitted 更新。
+  並行 duplicate POST テストで同一 submissionId + Drive upload 1 回 ✅（m7-1 解消）
+- Flag OFF UI: toStudentPolicyView が teacherDriveSubmissionEnabled=false で submission.enabled=false ✅
+- Identity gate: revealStudentEditor が studentAuth.required 時のみ submit UI マウント ✅
+- migration v4 checksum 更新（pending status 追加）✅
+- テスト: submission.test.ts 5 件 + classroom-access index.test 1 件追加
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（PR 8 は指示後）
+次: PR 7 完了。PR 8 は指示後。
+禁止: PR 8+ 先行
