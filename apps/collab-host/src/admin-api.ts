@@ -76,6 +76,8 @@ export interface CreateAdminApiHandlerOptions {
   sessions?: AdminSessionStore;
   /** When true, policy roster binding and student auth fields are active. */
   classroomRosterEnabled?: boolean;
+  /** When true, submission folder binding is active on policy writes. */
+  teacherDriveSubmissionEnabled?: boolean;
   /** When true, student grant cookie gets Secure flag (production). */
   studentGrantCookieSecure?: boolean;
 }
@@ -89,7 +91,9 @@ export function createAdminApiHandler(
     options.config?.cookieSecure ??
     process.env.NODE_ENV === "production";
   const classroomRosterEnabled = options.classroomRosterEnabled ?? false;
-  const policyOptions = {classroomRosterEnabled};
+  const teacherDriveSubmissionEnabled =
+    options.teacherDriveSubmissionEnabled ?? false;
+  const policyOptions = {classroomRosterEnabled, teacherDriveSubmissionEnabled};
 
   return async (req, res) => {
     const urlPath = pathOnly(req.url ?? "/");

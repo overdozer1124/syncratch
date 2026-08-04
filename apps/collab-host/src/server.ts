@@ -54,6 +54,7 @@ import {
 import {createAdminGoogleCredentialStore} from "./admin-google-credential-store.js";
 import {createRosterRoutesHandler} from "./roster-routes.js";
 import {createStudentAuthRoutesHandler} from "./student-auth-routes.js";
+import {createSubmissionRoutesHandler} from "./submission-routes.js";
 
 export interface StartCollabHostAdminOptions {
   db?: AdminDb;
@@ -65,11 +66,13 @@ export interface StartCollabHostAdminOptions {
     adminGoogleCredentialEnabled: boolean;
     rosterSheetsEnabled?: boolean;
     studentLocalAuthEnabled?: boolean;
+    teacherDriveSubmissionEnabled?: boolean;
   };
   adminGoogleOAuthEnabled?: boolean;
   classroomRosterEnabled?: boolean;
   rosterSheetsEnabled?: boolean;
   studentLocalAuthEnabled?: boolean;
+  teacherDriveSubmissionEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -120,6 +123,13 @@ export async function startCollabHost(
       (runtimeClassroomFlags.classroomRosterEnabled &&
         runtimeClassroomFlags.studentLocalAuthEnabled),
   );
+  const teacherDriveSubmissionEnabled = Boolean(
+    options.admin?.teacherDriveSubmissionEnabled ??
+      options.admin?.classroomFlags?.teacherDriveSubmissionEnabled ??
+      (runtimeClassroomFlags.classroomRosterEnabled &&
+        runtimeClassroomFlags.studentLocalAuthEnabled &&
+        runtimeClassroomFlags.teacherDriveSubmissionEnabled),
+  );
   const adminGoogleOAuthConfig = readAdminGoogleOAuthConfigFromEnv();
 
   const port = options.port ?? Number(process.env.PORT ?? 8080);
@@ -157,6 +167,7 @@ export async function startCollabHost(
     config: adminConfig,
     sessions: adminSessions,
     classroomRosterEnabled,
+    teacherDriveSubmissionEnabled,
   });
   const adminGoogleCryptoKeys = parseAdminGoogleCryptoKeysFromEnv();
   const adminGoogleCredentialStore =
@@ -197,12 +208,29 @@ export async function startCollabHost(
     cookieSecure:
       adminConfig?.cookieSecure ?? process.env.NODE_ENV === "production",
   });
+  const submissionDriveEnv =
+    teacherDriveSubmissionEnabled &&
+    adminGoogleOAuthConfig &&
+    adminGoogleCredentialStore
+      ? {
+          oauthConfig: adminGoogleOAuthConfig,
+          credentialStore: adminGoogleCredentialStore,
+        }
+      : null;
+  const handleSubmissionRoutes = createSubmissionRoutesHandler({
+    enabled: teacherDriveSubmissionEnabled,
+    db: adminDb.sqlite,
+    adminConfig,
+    adminSessions,
+    driveEnv: submissionDriveEnv,
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
       if (await handleAdminGoogleOAuth(req, res)) return;
       if (await handleRosterRoutes(req, res)) return;
       if (await handleStudentAuthRoutes(req, res)) return;
+      if (await handleSubmissionRoutes(req, res)) return;
       if (await handleAdminAuth(req, res)) return;
       if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
