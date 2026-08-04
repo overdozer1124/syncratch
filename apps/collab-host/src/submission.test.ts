@@ -435,6 +435,46 @@ describe("teacher drive submissions", () => {
     expect(secondBody.submission.isResubmission).toBe(true);
   });
 
+  it("deduplicates parallel uploads with the same idempotency key", async () => {
+    const root = mkdtempSync(join(tmpdir(), "submission-parallel-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const {handle: h, db, fetchMock} = await bootSubmissionHost(root, dbPath);
+    const fixture = await seedSubmissionFixture(h, db);
+
+    const multipart = buildMultipartBody({
+      projectTitle: "Parallel",
+      idempotencyKey: "parallel-key",
+      sb3: Buffer.from("PARALLEL-SB3"),
+    });
+    const headers = {
+      cookie: `${fixture.grantCookie}; ${fixture.identityCookie}`,
+      "content-type": multipart.contentType,
+    };
+    const body = new Uint8Array(multipart.body);
+    const url = new URL(STUDENT_SUBMISSIONS_PATH, h.url);
+
+    const [first, second] = await Promise.all([
+      fetch(url, {method: "POST", headers, body}),
+      fetch(url, {method: "POST", headers, body}),
+    ]);
+
+    expect([first.status, second.status].sort()).toEqual([200, 201]);
+    const firstBody = (await first.json()) as {
+      submission: {submissionId: string};
+    };
+    const secondBody = (await second.json()) as {
+      submission: {submissionId: string};
+    };
+    expect(firstBody.submission.submissionId).toBe(
+      secondBody.submission.submissionId,
+    );
+    const uploadCalls = fetchMock.mock.calls.filter(([requestUrl]) =>
+      String(requestUrl).includes("upload/drive/v3/files"),
+    );
+    expect(uploadCalls).toHaveLength(1);
+  });
+
   it("rejects disabled submission policy and oversize payload", async () => {
     const root = mkdtempSync(join(tmpdir(), "submission-guards-"));
     writeFileSync(join(root, "index.html"), "<html></html>");

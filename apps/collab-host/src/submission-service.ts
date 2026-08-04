@@ -259,6 +259,37 @@ export function createSubmissionService(
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function isSqliteUniqueConstraint(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as {code?: string}).code === "SQLITE_CONSTRAINT_UNIQUE"
+  );
+}
+
+async function waitForSubmittedByIdempotency(
+  getExistingByIdempotency: Database.Statement,
+  accountId: string,
+  idempotencyKey: string,
+  deadlineMs: number,
+): Promise<(SubmissionRow & StudentJoinRow) | null> {
+  while (Date.now() < deadlineMs) {
+    const row = getExistingByIdempotency.get(accountId, idempotencyKey) as
+      | (SubmissionRow & StudentJoinRow)
+      | undefined;
+    if (!row) return null;
+    if (row.status === "submitted") return row;
+    if (row.status === "failed") return null;
+    await sleep(10);
+  }
+  return null;
+}
+
 async function uploadStudentSubmissionImpl(
   db: Database.Database,
   driveEnv: SubmissionDriveEnvironment | null,
@@ -316,21 +347,6 @@ async function uploadStudentSubmissionImpl(
     throw new SubmissionServiceError("IDENTITY_REQUIRED", "Identity required");
   }
 
-  const existing = stmts.getExistingByIdempotency.get(
-    account.account_id,
-    idempotencyKey,
-  ) as (SubmissionRow & StudentJoinRow) | undefined;
-  if (existing) {
-    return {
-      submission: rowToDetail(existing, {
-        student_code: existing.student_code,
-        display_name: existing.display_name,
-        attendance_number: existing.attendance_number,
-      }),
-      reused: true,
-    };
-  }
-
   if (input.bytes.length > maxBytes) {
     throw new SubmissionServiceError(
       "PAYLOAD_TOO_LARGE",
@@ -356,10 +372,91 @@ async function uploadStudentSubmissionImpl(
     identity.studentId,
   ) as {count: number};
   const isResubmission = prior.count > 0;
-  const submissionId = createOpaqueId();
   const ts = nowIso(nowMs);
   const fileName = sanitizeSb3FileName(projectTitle, identity.loginName);
 
+  type ReserveResult =
+    | {kind: "existing"; row: SubmissionRow & StudentJoinRow}
+    | {kind: "reserved"; submissionId: string};
+
+  const reserve = db.transaction((): ReserveResult => {
+    const row = stmts.getExistingByIdempotency.get(
+      account.account_id,
+      idempotencyKey,
+    ) as (SubmissionRow & StudentJoinRow) | undefined;
+    if (row?.status === "submitted" || row?.status === "pending") {
+      return {kind: "existing", row};
+    }
+    const submissionId = createOpaqueId();
+    try {
+      db.prepare(
+        `INSERT INTO classroom_submissions (
+          submission_id, policy_id, student_id, student_account_id,
+          drive_file_id, content_sha256, size_bytes, project_title,
+          status, is_resubmission, idempotency_key,
+          submitted_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      ).run(
+        submissionId,
+        input.grant.policyId,
+        identity.studentId,
+        account.account_id,
+        contentSha256,
+        input.bytes.length,
+        projectTitle,
+        isResubmission ? 1 : 0,
+        idempotencyKey,
+        ts,
+        ts,
+        ts,
+      );
+      return {kind: "reserved", submissionId};
+    } catch (error) {
+      if (isSqliteUniqueConstraint(error)) {
+        const raced = stmts.getExistingByIdempotency.get(
+          account.account_id,
+          idempotencyKey,
+        ) as (SubmissionRow & StudentJoinRow) | undefined;
+        if (raced) return {kind: "existing", row: raced};
+      }
+      throw error;
+    }
+  })();
+
+  if (reserve.kind === "existing") {
+    if (reserve.row.status === "pending") {
+      const submitted = await waitForSubmittedByIdempotency(
+        stmts.getExistingByIdempotency,
+        account.account_id,
+        idempotencyKey,
+        nowMs + 10_000,
+      );
+      if (!submitted) {
+        throw new SubmissionServiceError(
+          "CONFLICT",
+          "Submission is still in progress",
+        );
+      }
+      return {
+        submission: rowToDetail(submitted, {
+          student_code: submitted.student_code,
+          display_name: submitted.display_name,
+          attendance_number: submitted.attendance_number,
+        }),
+        reused: true,
+      };
+    }
+    return {
+      submission: rowToDetail(reserve.row, {
+        student_code: reserve.row.student_code,
+        display_name: reserve.row.display_name,
+        attendance_number: reserve.row.attendance_number,
+      }),
+      reused: true,
+    };
+  }
+
+  const submissionId = reserve.submissionId;
   let driveFileId: string | null = null;
   try {
     const uploaded = await uploadSb3ToTeacherFolder(driveEnv, {
@@ -370,6 +467,11 @@ async function uploadStudentSubmissionImpl(
     });
     driveFileId = uploaded.driveFileId;
   } catch (error) {
+    db.prepare(
+      `UPDATE classroom_submissions
+       SET status = 'failed', updated_at = ?
+       WHERE submission_id = ?`,
+    ).run(ts, submissionId);
     if (error instanceof SubmissionDriveError) {
       throw new SubmissionServiceError(error.code, error.message);
     }
@@ -377,27 +479,10 @@ async function uploadStudentSubmissionImpl(
   }
 
   db.prepare(
-    `INSERT INTO classroom_submissions (
-      submission_id, policy_id, student_id, student_account_id,
-      drive_file_id, content_sha256, size_bytes, project_title,
-      status, is_resubmission, idempotency_key,
-      submitted_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?)`,
-  ).run(
-    submissionId,
-    input.grant.policyId,
-    identity.studentId,
-    account.account_id,
-    driveFileId,
-    contentSha256,
-    input.bytes.length,
-    projectTitle,
-    isResubmission ? 1 : 0,
-    idempotencyKey,
-    ts,
-    ts,
-    ts,
-  );
+    `UPDATE classroom_submissions
+     SET drive_file_id = ?, status = 'submitted', updated_at = ?
+     WHERE submission_id = ?`,
+  ).run(driveFileId, ts, submissionId);
 
   db.prepare(
     `INSERT INTO classroom_audit_events (

@@ -348,8 +348,14 @@ export function openAdminDb(dbPath: string): AdminDb {
 
   function studentViewOptions(
     options?: AdminDbPolicyOptions,
-  ): {classroomRosterEnabled: boolean} {
-    return {classroomRosterEnabled: options?.classroomRosterEnabled ?? false};
+  ): {
+    classroomRosterEnabled: boolean;
+    teacherDriveSubmissionEnabled: boolean;
+  } {
+    return {
+      classroomRosterEnabled: options?.classroomRosterEnabled ?? false,
+      teacherDriveSubmissionEnabled: options?.teacherDriveSubmissionEnabled ?? false,
+    };
   }
 
   function bindPolicy(policy: ClassroomPolicy): Record<string, unknown> {

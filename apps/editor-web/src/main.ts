@@ -4514,7 +4514,11 @@ async function startEditorSurface(): Promise<void> {
         '[data-testid="file-panel"]',
       ),
     });
-    if (policy.submission.enabled && studentSubmissionPanel) {
+    if (
+      policy.submission.enabled &&
+      policy.studentAuth.required &&
+      studentSubmissionPanel
+    ) {
       showStudentSubmissionUi(studentSubmissionPanel);
       mountStudentSubmissionUi({
         root: studentSubmissionPanel,

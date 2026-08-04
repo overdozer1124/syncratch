@@ -125,6 +125,7 @@ function mapSubmissionError(error: unknown): {status: number; body: unknown} {
       case "FILE_INACCESSIBLE":
       case "DRIVE_UPLOAD_FAILED":
       case "DRIVE_DOWNLOAD_FAILED":
+      case "CONFLICT":
         return {status: 409, body: {ok: false, code: error.code, message: error.message}};
       default:
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
