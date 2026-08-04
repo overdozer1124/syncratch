@@ -77,6 +77,26 @@ function summarizePreview(preview: RosterImportPreview): string {
   return parts.join(" / ") || "変更なし";
 }
 
+export function buildSpreadsheetEditUrl(spreadsheetId: string): string {
+  const id = spreadsheetId.trim();
+  if (!id) return "";
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
+}
+
+function syncOpenSheetButton(
+  button: HTMLAnchorElement,
+  spreadsheetId: string,
+): void {
+  const id = spreadsheetId.trim();
+  if (!id) {
+    button.hidden = true;
+    button.removeAttribute("href");
+    return;
+  }
+  button.hidden = false;
+  button.href = buildSpreadsheetEditUrl(id);
+}
+
 function clearOAuthReturnQuery(): void {
   const url = new URL(window.location.href);
   if (
@@ -345,9 +365,20 @@ async function mountRosterCard(
       tabName,
       sheetRange,
     );
-    const templateLink = el("p", {
-      class: "admin-roster-sheet-link admin-muted",
-      hidden: "true",
+    const openSheetBtn = el(
+      "a",
+      {
+        class: "admin-button primary admin-roster-open-sheet",
+        "data-testid": "admin-roster-open-sheet",
+        target: "_blank",
+        rel: "noopener noreferrer",
+        hidden: "true",
+      },
+      "スプレッドシートを開く",
+    ) as HTMLAnchorElement;
+    syncOpenSheetButton(openSheetBtn, roster.sheetSpreadsheetId ?? "");
+    sheetId.addEventListener("input", () => {
+      syncOpenSheetButton(openSheetBtn, sheetId.value);
     });
     const createTemplateBtn = el(
       "button",
@@ -357,7 +388,6 @@ async function mountRosterCard(
     createTemplateBtn.addEventListener("click", () => {
       void (async () => {
         feedback.hidden = true;
-        templateLink.hidden = true;
         const res = await adminFetch<{
           ok: boolean;
           message?: string;
@@ -387,20 +417,7 @@ async function mountRosterCard(
         sheetId.value = res.template.spreadsheetId;
         tabName.value = res.template.sheetTabName;
         sheetRange.value = "";
-        templateLink.hidden = false;
-        templateLink.replaceChildren();
-        templateLink.append(
-          document.createTextNode("作成しました: "),
-          el(
-            "a",
-            {
-              href: res.template.spreadsheetUrl,
-              target: "_blank",
-              rel: "noopener noreferrer",
-            },
-            "スプレッドシートを開く",
-          ),
-        );
+        syncOpenSheetButton(openSheetBtn, res.template.spreadsheetId);
         feedback.hidden = false;
         feedback.textContent =
           "テンプレート Sheet を作成し、名簿に紐づけました。2行目以降に生徒データを入力してください。";
@@ -440,7 +457,9 @@ async function mountRosterCard(
         await onChanged();
       })();
     });
-    sheetForm.append(createTemplateBtn, templateLink, saveSheet);
+    const sheetActions = el("div", {class: "admin-roster-actions"});
+    sheetActions.append(createTemplateBtn, openSheetBtn, saveSheet);
+    sheetForm.append(sheetActions);
 
     const previewHost = el("div", {class: "admin-roster-preview-host"});
     const syncBtn = el(
