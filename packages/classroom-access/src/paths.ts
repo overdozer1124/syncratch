@@ -67,6 +67,10 @@ export function adminRosterSyncApplyPath(rosterId: string): string {
   return `${adminRosterSyncPath(rosterId)}/apply`;
 }
 
+export function adminRosterSheetTemplatePath(rosterId: string): string {
+  return `${adminRosterPath(rosterId)}/sheet-template`;
+}
+
 export function adminRosterImportsPath(rosterId: string): string {
   return `${adminRosterPath(rosterId)}/imports`;
 }

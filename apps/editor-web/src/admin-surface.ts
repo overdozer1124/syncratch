@@ -102,6 +102,8 @@ function loadGisScript(): Promise<void> {
 }
 
 export async function startAdminSurface(root: HTMLElement): Promise<void> {
+  document.documentElement.classList.add("admin-console-mode");
+  document.body.classList.add("admin-console-mode");
   root.hidden = false;
   root.replaceChildren();
   root.classList.add("admin-shell");

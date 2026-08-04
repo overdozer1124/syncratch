@@ -9,6 +9,7 @@ import {
   adminRosterImportPreviewPath,
   adminRosterImportsPath,
   adminRosterPath,
+  adminRosterSheetTemplatePath,
   adminRosterStudentsPath,
   adminRosterSyncPath,
   adminRosterSyncApplyPath,
@@ -28,6 +29,7 @@ import {
   type RosterService,
   type RosterSheetSyncEnvironment,
 } from "./roster-service.js";
+import {createRosterTemplateSpreadsheet} from "./roster-sheet-sync.js";
 import {MAX_ROSTER_CSV_BYTES} from "./roster-import.js";
 import type Database from "better-sqlite3";
 
@@ -105,7 +107,8 @@ export interface ParsedRosterRoute {
     | "preview"
     | "apply"
     | "sync"
-    | "sync_apply";
+    | "sync_apply"
+    | "sheet_template";
 }
 
 export function parseRosterAdminPath(urlPath: string): ParsedRosterRoute | null {
@@ -132,6 +135,9 @@ export function parseRosterAdminPath(urlPath: string): ParsedRosterRoute | null 
     if (segments.length === 3 && segments[2] === "apply") {
       return {rosterId, action: "sync_apply"};
     }
+  }
+  if (segments[1] === "sheet-template" && segments.length === 2) {
+    return {rosterId, action: "sheet_template"};
   }
   if (segments[1] === "imports") {
     if (segments.length === 2) {
@@ -172,6 +178,8 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
         return {status: 413, body: {ok: false, code: error.code, message: error.message}};
       case "SHEET_INACCESSIBLE":
       case "SHEET_FETCH_FAILED":
+      case "SHEET_CREATE_FAILED":
+      case "SHEET_TEMPLATE_WRITE_FAILED":
         return {status: 409, body: {ok: false, code: error.code, message: error.message}};
       default:
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
@@ -438,6 +446,50 @@ export function createRosterRoutesHandler(
         return true;
       }
 
+      if (route.action === "sheet_template") {
+        if (!options.sheetsEnabled) {
+          sendJson(res, 404, {ok: false, code: "NOT_FOUND"});
+          return true;
+        }
+        if (req.method !== "POST") {
+          sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
+          return true;
+        }
+        if (!requireAdminCsrf(req, adminSession)) {
+          sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
+          return true;
+        }
+        if (!options.sheetSync) {
+          sendJson(res, 503, {
+            ok: false,
+            code: "NOT_CONFIGURED",
+            message: "Sheet sync is not configured",
+          });
+          return true;
+        }
+        const roster = service.getRoster(route.rosterId, adminSession.adminId);
+        if (!roster) {
+          sendJson(res, 404, {ok: false, code: "ROSTER_NOT_FOUND"});
+          return true;
+        }
+        const template = await createRosterTemplateSpreadsheet(
+          options.sheetSync,
+          adminSession.adminId,
+          roster.title,
+        );
+        const updated = service.updateRoster(route.rosterId, adminSession.adminId, {
+          sheetSpreadsheetId: template.spreadsheetId,
+          sheetTabName: template.sheetTabName,
+          sheetRange: null,
+        });
+        sendJson(res, 201, {
+          ok: true,
+          template,
+          roster: updated ?? roster,
+        });
+        return true;
+      }
+
       if (route.action === "imports") {
         if (req.method !== "POST") {
           sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
@@ -563,6 +615,7 @@ export {
   adminRosterImportPreviewPath,
   adminRosterImportsPath,
   adminRosterPath,
+  adminRosterSheetTemplatePath,
   adminRosterStudentsPath,
   adminRosterSyncPath,
   adminRosterSyncApplyPath,

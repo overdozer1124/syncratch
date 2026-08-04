@@ -11,9 +11,13 @@ import {
   adminRosterImportPreviewPath,
   adminRosterImportsPath,
   adminRosterPath,
+  adminRosterSheetTemplatePath,
   adminRosterStudentsPath,
   adminRosterSyncPath,
 } from "@blocksync/classroom-access";
+import {
+  parseRosterAdminPath,
+} from "./roster-routes.js";
 import {
   ADMIN_SESSION_COOKIE,
   createMemoryAdminSessionStore,
@@ -105,6 +109,15 @@ async function loginAdmin(baseUrl: string, config: AdminAuthConfig) {
   expect(response.status).toBe(200);
   return cookieJar(response);
 }
+
+describe("parseRosterAdminPath", () => {
+  it("parses sheet-template route", () => {
+    expect(parseRosterAdminPath(adminRosterSheetTemplatePath("r1"))).toEqual({
+      rosterId: "r1",
+      action: "sheet_template",
+    });
+  });
+});
 
 describe("roster admin routes", () => {
   it("returns 404 when classroom roster flag is OFF", async () => {
@@ -404,6 +417,82 @@ describe("roster admin routes", () => {
       headers: {cookie, "x-csrf-token": csrfToken},
     });
     expect(sync.status).toBe(409);
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID;
+    delete process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+  });
+
+  it("returns 404 for sheet template when rosterSheets flag is OFF", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-template-off-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-template-off"),
+    };
+    const {handle: h} = await boot(config, dbPath, root, true, false);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "名簿"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    const template = await fetch(
+      new URL(adminRosterSheetTemplatePath(roster.rosterId), h.url),
+      {
+        method: "POST",
+        headers: {cookie, "x-csrf-token": csrfToken},
+      },
+    );
+    expect(template.status).toBe(404);
+  });
+
+  it("returns 409 for sheet template when teacher credential is missing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-template-no-cred-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-template-no-cred"),
+    };
+    process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID = "test-key";
+    process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON = JSON.stringify({
+      "test-key": Buffer.alloc(32, 7).toString("base64"),
+    });
+    process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+    const {handle: h} = await boot(config, dbPath, root, true, true);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "名簿"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    const template = await fetch(
+      new URL(adminRosterSheetTemplatePath(roster.rosterId), h.url),
+      {
+        method: "POST",
+        headers: {cookie, "x-csrf-token": csrfToken},
+      },
+    );
+    expect(template.status).toBe(409);
     delete process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID;
     delete process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON;
     delete process.env.GOOGLE_CLIENT_ID;

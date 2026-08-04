@@ -19,6 +19,7 @@ const ACCESS_SKEW_MS = 60_000;
 export {ACCESS_SKEW_MS};
 const SHEETS_VALUES_URL =
   "https://sheets.googleapis.com/v4/spreadsheets";
+const SHEETS_CREATE_URL = SHEETS_VALUES_URL;
 
 export class SheetSyncError extends Error {
   constructor(
@@ -235,4 +236,111 @@ export async function pullSheetParsedRows(
   const {accessToken} = await ensureAdminAccessToken(env, adminId);
   const values = await fetchSheetValues(env, accessToken, roster);
   return sheetValuesToParsedRows(values);
+}
+
+export interface RosterTemplateSpreadsheetResult {
+  spreadsheetId: string;
+  spreadsheetUrl: string;
+  sheetTabName: string;
+}
+
+const DEFAULT_TEMPLATE_TAB_NAME = "Sheet1";
+
+function buildTemplateSpreadsheetTitle(rosterTitle: string): string {
+  const suffix = " — Syncratch 名簿";
+  const maxLen = 100;
+  const trimmedTitle = rosterTitle.trim() || "名簿";
+  if (trimmedTitle.length + suffix.length <= maxLen) {
+    return `${trimmedTitle}${suffix}`;
+  }
+  return `${trimmedTitle.slice(0, maxLen - suffix.length)}${suffix}`;
+}
+
+export async function createRosterTemplateSpreadsheet(
+  env: RosterSheetSyncEnvironment,
+  adminId: string,
+  rosterTitle: string,
+): Promise<RosterTemplateSpreadsheetResult> {
+  const {accessToken} = await ensureAdminAccessToken(env, adminId);
+  const fetchImpl = env.fetch ?? fetch;
+  const title = buildTemplateSpreadsheetTitle(rosterTitle);
+
+  const createResponse = await fetchImpl(SHEETS_CREATE_URL, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      properties: {title},
+      sheets: [
+        {
+          properties: {
+            title: DEFAULT_TEMPLATE_TAB_NAME,
+            gridProperties: {frozenRowCount: 1},
+          },
+        },
+      ],
+    }),
+  });
+
+  if (!createResponse.ok) {
+    const body = (await createResponse.json().catch(() => ({}))) as {
+      error?: {message?: string};
+    };
+    throw new SheetSyncError(
+      "SHEET_CREATE_FAILED",
+      body.error?.message ||
+        `Failed to create template spreadsheet (${createResponse.status})`,
+    );
+  }
+
+  const created = (await createResponse.json()) as {
+    spreadsheetId?: string;
+    spreadsheetUrl?: string;
+    sheets?: Array<{properties?: {title?: string}}>;
+  };
+  const spreadsheetId = created.spreadsheetId?.trim();
+  if (!spreadsheetId) {
+    throw new SheetSyncError(
+      "SHEET_CREATE_FAILED",
+      "Google did not return a spreadsheet id",
+    );
+  }
+
+  const sheetTabName =
+    created.sheets?.[0]?.properties?.title?.trim() || DEFAULT_TEMPLATE_TAB_NAME;
+  const headerRange = `${escapeSheetTabName(sheetTabName)}!A1:${String.fromCharCode(64 + ROSTER_SHEET_COLUMNS.length)}1`;
+  const updateUrl = `${SHEETS_VALUES_URL}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(headerRange)}?valueInputOption=RAW`;
+  const updateResponse = await fetchImpl(updateUrl, {
+    method: "PUT",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      range: headerRange,
+      majorDimension: "ROWS",
+      values: [ROSTER_SHEET_COLUMNS],
+    }),
+  });
+
+  if (!updateResponse.ok) {
+    const body = (await updateResponse.json().catch(() => ({}))) as {
+      error?: {message?: string};
+    };
+    throw new SheetSyncError(
+      "SHEET_TEMPLATE_WRITE_FAILED",
+      body.error?.message ||
+        `Failed to write template header row (${updateResponse.status})`,
+    );
+  }
+
+  return {
+    spreadsheetId,
+    spreadsheetUrl:
+      created.spreadsheetUrl ||
+      `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
+    sheetTabName,
+  };
 }

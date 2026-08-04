@@ -102,6 +102,7 @@ export {
   adminRosterImportsPath,
   adminRosterPath,
   adminRosterStudentsPath,
+  adminRosterSheetTemplatePath,
   adminRosterSyncPath,
   adminRosterSyncApplyPath,
   adminStudentEnrollmentCodePath,
