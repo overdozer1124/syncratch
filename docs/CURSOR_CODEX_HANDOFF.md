@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR5_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 再決裁（B1 コンフリクト解消済み） |
+| 次の作業 | PR 5 GO 済み。CI green 確認後 main マージ → PR5_COMPLETE |
 | 禁止 | 自動マージ / PR 6+ 先行 |
 
 ### 案件レジストリ
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 5 再決裁 | #207 B1 解消後再提出。base main @ 80a740a |
+| `classroom-roster-drive-submissions` | `PR5_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 5 GO 済み。CI green 確認後マージ → PR5_COMPLETE | #207 PR 5 policy binding + student auth gate @220c2fa。Hermes GO（B1 解消・mergeable MERGEABLE・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +80,8 @@
 | 最終更新 | 2026-08-04 10:25:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 5 — B1 コンフリクト解消後再提出） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PR5_APPROVED_PENDING_CI`（PR 5 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 5 Hermes 再決裁待ち |
 | Primary track | Local-First Community runtime |
@@ -6441,3 +6441,34 @@ Hermes 00:58 NO-GO 指摘対応:
 
 禁止: 自動マージ / PR 6+ 先行
 ```
+
+### 2026-08-04 10:28:00 JST — Hermes（PR #207 再決裁 GO — PR 5 @220c2fa）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認
+PR #207 / head SHA: 220c2fa
+Base: origin/main @ 80a740a
+決裁日: 2026-08-04 10:28
+
+再レビュー基準（全 3 件 PASS）:
+1. gh pr view 207 --json mergeable = MERGEABLE ✅（B1 コンフリクト解消済み）
+2. 台帳 3 か所が READY_FOR_HERMES_REVIEW に戻り、base SHA が 80a740a ✅
+3. 再提出（「作業完了」）✅
+
+実装内容（前回レビュー時確認済み・再提出で変更なし）:
+- PR 5 受入れ条件満足: rosterId/studentAuth patch、rosterOwnedByAdmin 所有権検証（foreign→404 隠蔽）、
+  studentAuth.required には rosterId 必須 の検証。
+- 禁止事項遵守: syscratch_student_identity cookie 未発行（PR 6 へ）、匿名フロー維持
+  （resolveStudentAccessMode で flag OFF/rosterId なし/required=false → shared-anonymous）、
+  roster メンバーシップ非露出（student view に rosterId プロパティなし）。
+- テスト: admin-api.test.ts (+263行)、student-auth-gate.test.ts (新規 +121行)。
+- Flag OFF → Phase 2 互換をテストで検証済み。
+
+CI: Gate 0 green（2 job SUCCESS、gh pr view 207 確認済み）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → PR5_COMPLETE）
+次: main マージ後、台帳を PR5_COMPLETE に更新。PR 6 は指示後。
+禁止: 自動マージ / PR 6+ 先行
