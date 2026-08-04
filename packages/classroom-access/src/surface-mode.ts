@@ -25,6 +25,14 @@ export function resolveSurfaceMode(
 
   if (path === "/admin") return {kind: "admin"};
 
+  const previewMatch = /^\/admin\/submissions\/([^/]+)\/preview$/.exec(path);
+  if (previewMatch) {
+    return {
+      kind: "admin-submission-preview",
+      submissionId: decodeURIComponent(previewMatch[1] ?? ""),
+    };
+  }
+
   if (path === "/s") return {kind: "student"};
 
   const studentMatch = /^\/s\/([^/]+)$/.exec(path);

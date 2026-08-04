@@ -120,5 +120,7 @@ export interface AdminAccount {
 export type SurfaceMode =
   | {kind: "community"}
   | {kind: "admin"}
+  /** Teacher read-only submission preview (PR 8). */
+  | {kind: "admin-submission-preview"; submissionId: string}
   /** Student surface. `token` present on `/s/{token}` before grant exchange; absent on `/s`. */
   | {kind: "student"; token?: string};

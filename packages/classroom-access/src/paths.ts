@@ -1,6 +1,7 @@
 /** Admin and student HTTP API paths (collab-host). */
 export const ADMIN_API_PREFIX = "/api/admin";
 export const ADMIN_ME_PATH = `${ADMIN_API_PREFIX}/me`;
+export const ADMIN_CLASSROOM_FLAGS_PATH = `${ADMIN_API_PREFIX}/classroom-flags`;
 export const ADMIN_AUTH_GOOGLE_PATH = `${ADMIN_API_PREFIX}/auth/google`;
 export const ADMIN_AUTH_LOGOUT_PATH = `${ADMIN_API_PREFIX}/auth/logout`;
 export const ADMIN_AUTH_STATUS_PATH = `${ADMIN_API_PREFIX}/auth/status`;

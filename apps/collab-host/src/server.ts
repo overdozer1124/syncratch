@@ -67,12 +67,14 @@ export interface StartCollabHostAdminOptions {
     rosterSheetsEnabled?: boolean;
     studentLocalAuthEnabled?: boolean;
     teacherDriveSubmissionEnabled?: boolean;
+    submissionPreviewEnabled?: boolean;
   };
   adminGoogleOAuthEnabled?: boolean;
   classroomRosterEnabled?: boolean;
   rosterSheetsEnabled?: boolean;
   studentLocalAuthEnabled?: boolean;
   teacherDriveSubmissionEnabled?: boolean;
+  submissionPreviewEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -95,6 +97,11 @@ function defaultStaticRoot(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   // apps/collab-host/src → ../../editor-web/dist
   return resolve(here, "../../editor-web/dist");
+}
+
+function isAdminSubmissionPreviewSurfacePath(urlPath: string): boolean {
+  const path = urlPath.split("?")[0] ?? "";
+  return /^\/admin\/submissions\/[^/]+\/preview$/.test(path);
 }
 
 export async function startCollabHost(
@@ -129,6 +136,12 @@ export async function startCollabHost(
       (runtimeClassroomFlags.classroomRosterEnabled &&
         runtimeClassroomFlags.studentLocalAuthEnabled &&
         runtimeClassroomFlags.teacherDriveSubmissionEnabled),
+  );
+  const submissionPreviewEnabled = Boolean(
+    options.admin?.submissionPreviewEnabled ??
+      options.admin?.classroomFlags?.submissionPreviewEnabled ??
+      (teacherDriveSubmissionEnabled &&
+        runtimeClassroomFlags.submissionPreviewEnabled),
   );
   const adminGoogleOAuthConfig = readAdminGoogleOAuthConfigFromEnv();
 
@@ -168,6 +181,7 @@ export async function startCollabHost(
     sessions: adminSessions,
     classroomRosterEnabled,
     teacherDriveSubmissionEnabled,
+    submissionPreviewEnabled,
   });
   const adminGoogleCryptoKeys = parseAdminGoogleCryptoKeysFromEnv();
   const adminGoogleCredentialStore =
@@ -235,6 +249,15 @@ export async function startCollabHost(
       if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;
       if (await handleIceCredentials(req, res)) return;
+      if (
+        req.method === "GET" &&
+        isAdminSubmissionPreviewSurfacePath(req.url ?? "/") &&
+        !submissionPreviewEnabled
+      ) {
+        res.writeHead(404, {"content-type": "text/plain; charset=utf-8"});
+        res.end("not found");
+        return;
+      }
       if (handleStatic(req, res)) return;
       res.writeHead(405, {"content-type": "text/plain; charset=utf-8"});
       res.end("method not allowed");

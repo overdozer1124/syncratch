@@ -4,6 +4,7 @@
 import type {IncomingMessage, ServerResponse} from "node:http";
 import {
   ADMIN_API_PREFIX,
+  ADMIN_CLASSROOM_FLAGS_PATH,
   ADMIN_LINKS_PATH,
   ADMIN_POLICIES_PATH,
   STUDENT_GRANT_PATH,
@@ -78,6 +79,8 @@ export interface CreateAdminApiHandlerOptions {
   classroomRosterEnabled?: boolean;
   /** When true, submission folder binding is active on policy writes. */
   teacherDriveSubmissionEnabled?: boolean;
+  /** When true, admin submission preview surface is available. */
+  submissionPreviewEnabled?: boolean;
   /** When true, student grant cookie gets Secure flag (production). */
   studentGrantCookieSecure?: boolean;
 }
@@ -93,6 +96,7 @@ export function createAdminApiHandler(
   const classroomRosterEnabled = options.classroomRosterEnabled ?? false;
   const teacherDriveSubmissionEnabled =
     options.teacherDriveSubmissionEnabled ?? false;
+  const submissionPreviewEnabled = options.submissionPreviewEnabled ?? false;
   const policyOptions = {classroomRosterEnabled, teacherDriveSubmissionEnabled};
 
   return async (req, res) => {
@@ -242,6 +246,18 @@ export function createAdminApiHandler(
         ok: false,
         code: "CSRF",
         message: "CSRF token mismatch",
+      });
+      return true;
+    }
+
+    if (urlPath === ADMIN_CLASSROOM_FLAGS_PATH && req.method === "GET") {
+      sendJson(res, 200, {
+        ok: true,
+        flags: {
+          classroomRosterEnabled,
+          teacherDriveSubmissionEnabled,
+          submissionPreviewEnabled,
+        },
       });
       return true;
     }

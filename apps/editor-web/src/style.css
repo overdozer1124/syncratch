@@ -3385,3 +3385,57 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   padding-left: 1.2rem;
   color: var(--sc-muted);
 }
+
+.admin-submissions-panel {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #c9d7e6;
+}
+
+.admin-submission-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.admin-submission-table th,
+.admin-submission-table td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin-submission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.admin-submission-feedback.is-error {
+  color: #b42318;
+}
+
+.admin-submission-preview-banner-host {
+  padding: 0.65rem 1rem;
+  background: #eef4ff;
+  border-bottom: 1px solid #c9d7e6;
+  color: #1e293b;
+  font-size: 0.95rem;
+}
+
+.admin-submission-preview-banner {
+  margin: 0;
+}
+
+body.admin-submission-preview-mode .toolbar .primary-controls > :not(.chrome-left) {
+  visibility: hidden;
+}
+
+.admin-submission-preview-error {
+  padding: 2rem 1rem;
+  color: #b42318;
+}

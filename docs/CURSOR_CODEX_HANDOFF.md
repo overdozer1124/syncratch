@@ -48,12 +48,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 7 Teacher Drive submission |
-| 現在の状態 | `PR7_COMPLETE` |
-| 次の担当 | ユーザー（PR 8 は指示後） |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 8 Teacher submission list/preview UI |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 7 完了（#209 + #210 main 取り込み済み）。PR 8 は指示後 |
-| 禁止 | PR 8+ 先行（指示なし） |
+| 次の作業 | PR 8 Hermes 決裁 → CI green → main マージ |
+| 禁止 | 自動マージ |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR7_COMPLETE` | ユーザー（PR 8 は指示後） | PR 7 完了（#209 @b576e11 + #210 指摘修正）。PR 8 は指示後 | parallel idempotency + flag-off UI + identity gate 修正済み |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 8 Hermes 決裁 → CI green → main マージ | #211 PR 8 admin submissions list/detail + preview surface |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 14:15:03 JST |
-| 更新者 | Hermes |
+| 最終更新 | 2026-08-04 15:04:42 JST |
+| 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR7_COMPLETE`（PR 7 — #209 + #210 main 取り込み済み） |
-| 現在の担当 | ユーザー（PR 8 は指示後） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 8 — Teacher submission list/preview UI） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 7 完了。PR 8 は指示後 |
+| 現在のTask | PR 8 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr7-1-258b`（base main @ 4387d59） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr8-258b`（base main @ 3933705） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | Hermes GO → CI green → main マージ → PR7_COMPLETE 更新。PR 8 は指示後 |
+| 次Task | Hermes GO → CI green → main マージ → PR8_COMPLETE |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |

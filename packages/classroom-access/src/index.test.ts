@@ -31,6 +31,13 @@ describe("resolveSurfaceMode", () => {
     });
   });
 
+  it("maps admin submission preview surface", () => {
+    expect(resolveSurfaceMode("/admin/submissions/sub-1/preview")).toEqual({
+      kind: "admin-submission-preview",
+      submissionId: "sub-1",
+    });
+  });
+
   it("keeps community for root and rejects short tokens", () => {
     expect(resolveSurfaceMode("/")).toEqual({kind: "community"});
     expect(resolveSurfaceMode("/s/short")).toEqual({kind: "community"});

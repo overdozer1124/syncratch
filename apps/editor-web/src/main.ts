@@ -346,6 +346,11 @@ import {
 import type {StudentPolicyView} from "@blocksync/classroom-access";
 import {startAdminSurface} from "./admin-surface.js";
 import {
+  applyAdminSubmissionPreviewReadOnlyChrome,
+  fetchAdminSubmissionPreviewData,
+  mountAdminSubmissionPreviewBanner,
+} from "./admin-submission-preview.js";
+import {
   aiSettingsFromStudentPolicy,
   applyStudentPolicyToDom,
   isStudentDriveFullyBlocked,
@@ -666,6 +671,7 @@ const SURFACE_MODE = detectEditorSurfaceMode();
   window as Window & {__BLOCKSYNC_GUI_PUBLIC_PATH__?: string}
 ).__BLOCKSYNC_GUI_PUBLIC_PATH__ = scratchGuiBasePath();
 let studentPolicy: StudentPolicyView | null = null;
+let submissionPreviewMode = false;
 if (SURFACE_MODE.kind !== "community" && appMain) {
   appMain.hidden = true;
 }
@@ -1497,6 +1503,10 @@ function renderSaveState(state: LocalSaveState): void {
 
 function installSaveCoordinator(session: ProjectSession): void {
   saveCoordinator?.dispose();
+  if (submissionPreviewMode) {
+    renderSaveState("clean");
+    return;
+  }
   saveCoordinator = createSaveCoordinator({
     debounceMs: 250,
     save: () => persistCurrent(session),
@@ -1508,6 +1518,7 @@ function installSaveCoordinator(session: ProjectSession): void {
 }
 
 function markDirty(): void {
+  if (submissionPreviewMode) return;
   if (suppressVmChanges) {
     recordSuppressedProjectChanged(readWorkspaceUpdateInstrumentationContext());
     return;
@@ -3648,6 +3659,7 @@ driveIntegration = await setupDriveIntegration();
 driveAutosave = createDriveAutosave({
   delayMs: 2_000,
   isEligible: () => {
+    if (submissionPreviewMode) return false;
     const state = collabSession?.getState();
     return hasCurrent &&
       !driveOverwriteConfirmationRequired &&
@@ -4467,7 +4479,85 @@ aiClarifyOtherSubmit.addEventListener("click", () => {
   void askAiWithIntent(buildOtherClarifyChoice(other));
 });
 
+async function bootSubmissionPreview(bytes: Uint8Array, title: string): Promise<void> {
+  submissionPreviewMode = true;
+  if (appMain) appMain.hidden = false;
+  const previewBannerHost = document.querySelector<HTMLElement>("#admin-preview-banner");
+  if (previewBannerHost) previewBannerHost.hidden = false;
+
+  store = await openProjectStore();
+  vm = await getVm();
+  ensureBlocklyVmEventPipeline();
+  installWorkspaceUpdateListener(
+    vm as import("./workspace-update-instrumentation.js").WorkspaceUpdateListenerVm,
+    readWorkspaceUpdateInstrumentationContextFull,
+    blocklyWorkspace,
+  );
+  vm.on("PROJECT_CHANGED", markDirty);
+  vm.on("targetsUpdate", () => {
+    noteEditingTargetMaybeChanged();
+  });
+
+  const result = await loadSb3(bytes);
+  if (!result.ok || !result.document || !result.assets) {
+    const message = result.issues.map(issue => issue.message).join("; ");
+    throw new Error(message || "Scratch の作品ファイルではありません");
+  }
+  const record: LocalProjectRecord = {
+    format: LOCAL_PROJECT_FORMAT,
+    localProjectId: crypto.randomUUID(),
+    title,
+    revision: 0,
+    updatedAt: new Date().toISOString(),
+    document: result.document,
+    assets: assetRecordsFromMap(result.document, result.assets),
+    saveState: "clean",
+  };
+  await loadRecord(record);
+  titleInput.readOnly = true;
+  diagnostic.ready = true;
+  driveReady = false;
+  renderDriveStatus(driveIntegration.getStatus());
+  renderCollabIdle();
+  setGuiLoadingVisible(guiHost, false);
+  setGuiSplashVisible(guiSplash, false);
+}
+
 async function startEditorSurface(): Promise<void> {
+  if (SURFACE_MODE.kind === "admin-submission-preview") {
+    if (adminShell) adminShell.hidden = true;
+    const previewBannerHost = document.querySelector<HTMLElement>("#admin-preview-banner");
+    const preview = await fetchAdminSubmissionPreviewData(SURFACE_MODE.submissionId);
+    if (!preview.ok) {
+      if (appMain) {
+        appMain.hidden = false;
+        appMain.replaceChildren();
+        const msg = document.createElement("p");
+        msg.className = "admin-submission-preview-error";
+        msg.textContent = preview.message;
+        appMain.append(msg);
+      }
+      return;
+    }
+    if (previewBannerHost) {
+      mountAdminSubmissionPreviewBanner(previewBannerHost, preview.detail);
+    }
+    applyAdminSubmissionPreviewReadOnlyChrome();
+    try {
+      await bootSubmissionPreview(preview.bytes, preview.detail.projectTitle);
+    } catch (error) {
+      fatalBootError =
+        error instanceof Error ? error.message : "プレビューを開けませんでした。";
+      if (appMain) appMain.hidden = false;
+      setGuiSplashVisible(guiSplash, true);
+      setGuiSplashProgress(guiSplash, {
+        ratio: 1,
+        label: fatalBootError,
+      });
+    }
+    return;
+  }
+
   if (SURFACE_MODE.kind === "admin") {
     if (!adminShell) {
       throw new Error("admin shell missing");
