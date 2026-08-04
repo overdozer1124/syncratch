@@ -237,12 +237,6 @@ describe("admin google oauth handler", () => {
 
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.includes("/tokeninfo")) {
-        return new Response(
-          JSON.stringify({sub: "google-sub", user_id: "google-sub"}),
-          {status: 200, headers: {"content-type": "application/json"}},
-        );
-      }
       if (url.endsWith("/token") || url.includes("/token?")) {
         return new Response(
           JSON.stringify({

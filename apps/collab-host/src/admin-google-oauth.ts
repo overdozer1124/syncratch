@@ -12,6 +12,7 @@ import {
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
   ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH,
   ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
+  ADMIN_GOOGLE_OAUTH_RETURN_REASON,
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
   ADMIN_GOOGLE_OAUTH_START_PATH,
 } from "@blocksync/classroom-access";
@@ -32,7 +33,7 @@ import {
   type AdminGoogleCryptoKeys,
 } from "./admin-token-crypto.js";
 
-export {ADMIN_GOOGLE_OAUTH_RETURN_FLAG};
+export {ADMIN_GOOGLE_OAUTH_RETURN_FLAG, ADMIN_GOOGLE_OAUTH_RETURN_REASON};
 
 const PENDING_TTL_MS = 10 * 60_000;
 /** Reserved for PR 4 access-token refresh skew checks (see roster-sheet-sync). */
@@ -147,32 +148,47 @@ async function exchangeToken(
   return json;
 }
 
-async function fetchGoogleTokenSubject(
-  fetchImpl: typeof fetch,
-  accessToken: string,
-): Promise<string> {
-  const response = await fetchImpl(
-    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
-  );
-  if (!response.ok) {
-    throw new Error("failed to validate Google access token");
+function readAdminIdentity(
+  db: Database.Database,
+  adminId: string,
+): {subject: string; email: string} {
+  const row = db
+    .prepare(`SELECT subject, email FROM admin_accounts WHERE admin_id = ?`)
+    .get(adminId) as {subject?: string; email?: string} | undefined;
+  if (!row?.subject || !row.email) {
+    throw new Error("admin account not found");
   }
-  const json = (await response.json()) as {sub?: string; user_id?: string};
-  const subject = json.sub ?? json.user_id;
-  if (!subject) {
-    throw new Error("Google tokeninfo missing subject");
-  }
-  return String(subject);
+  return {subject: row.subject, email: row.email};
 }
 
-function readAdminEmail(db: Database.Database, adminId: string): string {
-  const row = db
-    .prepare(`SELECT email FROM admin_accounts WHERE admin_id = ?`)
-    .get(adminId) as {email?: string} | undefined;
-  if (!row?.email) {
-    throw new Error("admin account email not found");
+function oauthErrorReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("missing refresh_token")) return "missing_refresh_token";
+  if (message.includes("admin account not found")) return "admin_account_not_found";
+  if (message.includes("drive.file")) return "scope_denied";
+  if (message.includes("token exchange failed") || message.includes("invalid_grant")) {
+    return "token_exchange_failed";
   }
-  return row.email;
+  return "unknown";
+}
+
+function redirectOAuthResult(
+  res: ServerResponse,
+  req: IncomingMessage,
+  returnTo: string,
+  result: "ok" | "error",
+  reason?: string,
+): void {
+  const dest = new URL(returnTo, requestOrigin(req));
+  dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, result);
+  if (reason) {
+    dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_REASON, reason);
+  }
+  res.writeHead(302, {
+    location: dest.pathname + dest.search + dest.hash,
+    "cache-control": "no-store",
+  });
+  res.end();
 }
 
 async function revokeToken(
@@ -309,10 +325,13 @@ export function createAdminGoogleOAuthHandler(
         state && !error ? store.takePendingOAuth(state, nowIso(nowMs)) : null;
       const returnTo = pending?.returnTo ?? "/admin";
       if (error || !code || !state || !pending) {
-        const dest = new URL(returnTo, requestOrigin(req));
-        dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, "error");
-        res.writeHead(302, {location: dest.pathname + dest.search + dest.hash});
-        res.end();
+        redirectOAuthResult(
+          res,
+          req,
+          returnTo,
+          "error",
+          error ? "google_denied" : "pending_expired",
+        );
         return true;
       }
       try {
@@ -334,38 +353,31 @@ export function createAdminGoogleOAuthHandler(
         if (!grantedScope.includes("drive.file")) {
           throw new Error("Google did not grant drive.file scope");
         }
-        const googleSubject = await fetchGoogleTokenSubject(
-          fetchImpl,
-          token.access_token,
-        );
-        const googleEmail = readAdminEmail(options.db, pending.adminId);
+        const adminIdentity = readAdminIdentity(options.db, pending.adminId);
         const expiresInSec = Number(token.expires_in) || 3600;
         store.upsertCredential({
           adminId: pending.adminId,
-          googleSubject,
-          googleEmail,
+          googleSubject: adminIdentity.subject,
+          googleEmail: adminIdentity.email,
           scope: DRIVE_FILE_SCOPE,
           refreshToken: token.refresh_token,
           accessToken: token.access_token,
           accessExpiresAt: nowMs + expiresInSec * 1000,
           nowIso: nowIso(nowMs),
         });
-        const dest = new URL(returnTo, requestOrigin(req));
-        dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, "ok");
-        res.writeHead(302, {
-          location: dest.pathname + dest.search + dest.hash,
-          "cache-control": "no-store",
-        });
-        res.end();
+        redirectOAuthResult(res, req, returnTo, "ok");
       } catch (err) {
         console.warn(
           "[collab-host] admin Google OAuth callback failed:",
           err instanceof Error ? err.message : "unknown error",
         );
-        const dest = new URL(returnTo, requestOrigin(req));
-        dest.searchParams.set(ADMIN_GOOGLE_OAUTH_RETURN_FLAG, "error");
-        res.writeHead(302, {location: dest.pathname + dest.search + dest.hash});
-        res.end();
+        redirectOAuthResult(
+          res,
+          req,
+          returnTo,
+          "error",
+          oauthErrorReason(err),
+        );
       }
       return true;
     }
