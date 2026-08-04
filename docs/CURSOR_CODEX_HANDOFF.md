@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR5_HERMES_NO_GO` |
+| 次の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 決裁 |
+| 次の作業 | PR 5 指摘修正（NO-GO: B1 コンフリクト解消） |
 | 禁止 | 自動マージ / PR 6+ 先行 |
 
 ### 案件レジストリ
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 5 決裁 | PR 5 policy binding + student auth gate。main @7ba98a3 |
+| `classroom-roster-drive-submissions` | `PR5_HERMES_NO_GO` | Cursor | PR 5 指摘修正（NO-GO: B1 コンフリクト解消） | PR 5 policy binding + student auth gate @f92120b。Hermes NO-GO（P5-B1 mergeable:CONFLICTING） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +80,8 @@
 | 最終更新 | 2026-08-04 08:35:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 5 — Policy ↔ roster binding + student surface gate） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PR5_HERMES_NO_GO`（PR 5 — Hermes NO-GO、指摘 B1 コンフリクト解消待ち） |
+| 現在の担当 | Cursor |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 5 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
@@ -6383,3 +6383,39 @@ Head: 1d46ae8
 
 禁止: 自動マージ / PR 6+ 先行 / identity cookie（PR 6）
 ```
+
+### 2026-08-04 00:58:00 JST — Hermes（PR #207 決裁 NO-GO — PR 5 @f92120b）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: NO-GO（差し戻し）— Blocker 1 件（コンフリクト未解消によるマージ不可）
+PR #207 / head SHA: f92120b
+Base: origin/main @ 80a740a（PR ブランチ base は 7ba98a3 で古い）
+決裁日: 2026-08-04 00:58
+
+指摘:
+P5-B1 (Blocker): mergeable: CONFLICTING。docs/CURSOR_CODEX_HANDOFF.md のみコンフリクト
+  （PR #205/#206 の main 取り込みと競合）。実装ファイルは競合なし。
+  → PR ブランチを最新 main (80a740a) へ rebase/merge し、コンフリクトを解消後再提出。
+
+内容評価（B1 解消後は GO 相当）:
+- PR 5 受入れ条件満足: rosterId/studentAuth patch、rosterOwnedByAdmin 所有権検証（foreign→404 隠蔽）、
+  studentAuth.required には rosterId 必須 の検証を実装。
+- 禁止事項遵守: syscratch_student_identity cookie 未発行（PR 6 へ）、匿名フロー維持
+  （resolveStudentAccessMode で flag OFF/rosterId なし/required=false → shared-anonymous）、
+  roster メンバーシップ非露出（student view に rosterId プロパティなし）。
+- テスト: admin-api.test.ts (+263行)、student-auth-gate.test.ts (新規 +121行)。
+- Flag OFF → Phase 2 互換をテストで検証済み。
+
+再レビュー基準:
+1. gh pr view 207 --json mergeable が MERGEABLE
+2. 台帳 3 か所が READY_FOR_HERMES_REVIEW に戻り、base SHA が 80a740a に更新されている
+3. 再提出（「作業完了」）
+
+CI: Gate 0 green（2 job SUCCESS）— コンフリクト解消後も維持されること。
+```
+
+次の担当: Cursor（B1 コンフリクト解消 → 再提出）
+次: B1 解消後、台帳を READY_FOR_HERMES_REVIEW に戻し再提出。PR 6 は指示後。
+禁止: 自動マージ / PR 6+ 先行
