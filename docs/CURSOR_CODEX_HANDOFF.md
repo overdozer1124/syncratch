@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
 | 案件名 | 名簿・生徒認証・教師Drive提出 — PR 7 Teacher Drive submission |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
-| 次の担当 | Hermes |
+| 現在の状態 | `PR7_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 7 Hermes 決裁 → CI green → main マージ |
+| 次の作業 | PR 7 GO 済み。CI green 確認後 main マージ → PR7_COMPLETE |
 | 禁止 | 自動マージ / PR 8+ 先行（指示なし） |
 
 ### 案件レジストリ
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR 7 Hermes 決裁 → CI green → main マージ | #209 PR 7 teacher Drive submission upload。migration v4 + student POST + admin list/detail/content + editor submit UI |
+| `classroom-roster-drive-submissions` | `PR7_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | PR 7 GO 済み。CI green 確認後マージ → PR7_COMPLETE | #209 PR 7 teacher Drive submission upload @8025ba9。Hermes GO（idempotency UNIQUE・5MiB cap・禁止事項遵守・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +80,8 @@
 | 最終更新 | 2026-08-04 13:41:33 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 7 — Teacher Drive submission upload） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `PR7_APPROVED_PENDING_CI`（PR 7 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
 | 現在のTask | PR 7 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
@@ -6566,3 +6566,36 @@ PR: #209（作成予定）
 禁止: 自動マージ / PR 8+ 先行 / preview UI（PR 8）/ SB3 bytes in SQLite
 環境: SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED + admin Google credential + submission_drive_folder_id 必須
 ```
+
+### 2026-08-04 13:50:00 JST — Hermes（PR #209 決裁 GO — PR 7 @8025ba9）
+
+```text
+案件ID  : classroom-roster-drive-submissions
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #209 / head SHA: 8025ba9
+Base: origin/main @ 216bea8
+決裁日: 2026-08-04 13:50
+
+受入れ条件（計画 PR 7）の検証結果:
+- Idempotency: UNIQUE(student_account_id, idempotency_key) 実装、duplicate POST → 200（冪等）✅
+- Size limit: DEFAULT_SUBMISSION_MAX_BYTES = 5 MiB、SYNCRATCH_SUBMISSION_MAX_BYTES env 設定可能 ✅
+- Flag OFF → 404（routes enabled=false 時）✅
+- identity なし → 401、submission.enabled=false → 403 ✅
+- Drive file: teacher credential (ensureAdminAccessToken) + drive.file scope、student 任意 folderId 不可 ✅
+- SQLite: drive_file_id + content_sha256 + size_bytes のみ（SB3 bytes 非保持）✅
+- isResubmission: prior.count > 0 で判定・保存 ✅
+- 禁止事項: SB3 bytes を SQLite/audit に非保持 ✅、student Drive OAuth 不使用 ✅、
+  automatic submit なし（explicit user action）✅、preview UI なし（PR 8）✅
+- テスト: submission.test.ts 6 件（flag off/identity+metadata/disabled+oversize/admin routes）
+
+Minor:
+- m7-1（任意）: idempotency の「parallel duplicate POST」明示テストがない（sequential duplicate は検証済み）。
+  厳密な並行重複の競合テストを追加推奨（UNIQUE 制約で保護されているため blocker ではない）。
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → PR7_COMPLETE）
+次: main マージ後、台帳を PR7_COMPLETE に更新。PR 8 は指示後。
+禁止: 自動マージ / PR 8+ 先行
