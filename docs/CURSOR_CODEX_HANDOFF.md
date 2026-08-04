@@ -47,13 +47,13 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 8 Teacher submission list/preview UI |
-| 現在の状態 | `PR8_COMPLETE` |
-| 次の担当 | ユーザー（案件完了確認） |
-| レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 8 完了（main マージ済み @2c2961d）。PR 9 は計画未定義 → 案件完了検討 |
-| 禁止 | 自動マージ |
+| **アクティブ案件ID** | `なし`（`classroom-roster-drive-submissions` は COMPLETE） |
+| 案件名 | 名簿・生徒認証・教師Drive提出（8 PR 分割） |
+| 現在の状態 | `COMPLETE`（ユーザー確認済み） |
+| 次の担当 | — |
+| レビュー主体 | — |
+| 次の作業 | — |
+| 禁止 | 本案件の追加 PR 先行（計画外） |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR8_COMPLETE` | ユーザー（案件完了確認） | PR 8 完了（main @2c2961d）。PR 9 は計画未定義 → 案件完了検討 | #211 PR 8 admin submissions list/detail + preview surface。Hermes GO → main マージ済み。preview flag OFF→404・read-only・admin-only |
+| `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 15:30:00 JST |
+| 最終更新 | 2026-08-04 16:30:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR8_COMPLETE`（PR 8 — main マージ済み @2c2961d） |
-| 現在の担当 | ユーザー（案件完了確認） |
-| レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 8 完了（案件完了検討 / ユーザー確認待ち） |
+| アクティブ案件ID | `なし`（`classroom-roster-drive-submissions` COMPLETE） |
+| ワークフロー状態 | `COMPLETE`（classroom-roster-drive-submissions — ユーザー確認済み） |
+| 現在の担当 | — |
+| レビュー主体 | — |
+| 現在のTask | — |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr8-258b`（base main @ 3933705） |
+| 作業ブランチ | —（main @19a69a8） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | Hermes GO → main マージ → PR8_COMPLETE |
+| 次Task | — |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -148,9 +148,10 @@
 ## Cursorが次に行う作業
 
 1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**（Codex GO / #197）。Phase 3 は **停止**。
-3. **`release-decision`:** `APPROVED_FOR_PUBLICATION` で停止。公開はユーザー明示指示後のみ。
-4. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
+2. **`classroom-roster-drive-submissions`:** **COMPLETE**（8 PR 分割 main 済み、ユーザー確認済み 2026-08-04）。
+3. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**（Codex GO / #197）。Phase 3 は **停止**。
+4. **`release-decision`:** `APPROVED_FOR_PUBLICATION` で停止。公開はユーザー明示指示後のみ。
+5. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
@@ -6726,3 +6727,20 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（CI green 確認済 → main マージ → PR8_COMPLETE）
 次: main マージ後、台帳を PR8_COMPLETE に更新。PR 9 は指示後（計画に PR 9 の定義なし → 案件完了検討）。
 禁止: 自動マージ
+
+### 2026-08-04 16:30:00 JST — ユーザー（classroom-roster-drive-submissions 案件完了確認）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: COMPLETE（ユーザー確認済み）
+確認者: ユーザー（overdozer1124）
+確認日: 2026-08-04
+
+確認内容:
+- 計画 8 PR 分割（PR 1–8）main 取り込み完了
+- 最終 merge: PR #211 @2c2961d（Teacher submission list/preview UI）
+- feature flags デフォルト OFF、Phase 2 互換維持
+
+次の担当: —
+次: 本案件クローズ。計画外（XLSX import / PR 9 等）は別指示時のみ。
+```
