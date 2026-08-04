@@ -6472,3 +6472,33 @@ CI: Gate 0 green（2 job SUCCESS、gh pr view 207 確認済み）
 次の担当: ユーザー（CI green 確認済 → main マージ → PR5_COMPLETE）
 次: main マージ後、台帳を PR5_COMPLETE に更新。PR 6 は指示後。
 禁止: 自動マージ / PR 6+ 先行
+
+### 2026-08-04 12:50:00 JST — Cursor（PR 6 — Student local auth → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 6f2f378
+branch: cursor/classroom-roster-drive-submissions-pr6-258b
+PR: #208（作成予定）
+
+実装（PR 6）:
+- collab-host/student-auth.ts: scrypt (N=16384, maxmem=64MiB, concurrency queue 3),
+  enrollment code hash, signed syncratch_student_identity cookie (24h, grant-bound),
+  password_version session revoke epoch
+- collab-host/student-auth-routes.ts: activate/login/session/logout +
+  admin enrollment-code / reset-code / sessions/revoke
+- server.ts: SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED wiring
+- editor-web/student-auth-ui.ts: login/activate forms + session fetch
+- student-auth-gate.ts + main.ts: identity session check → editor reveal on auth
+
+検証:
+- classroom-access 15 tests + typecheck PASS
+- collab-host 82 tests (+7 student-auth) + typecheck PASS
+- editor-web student-auth-gate 2 tests + student-auth-ui 3 tests PASS
+- git diff --check PASS
+
+禁止: 自動マージ / PR 7+ 先行 / submission upload（PR 7）
+環境: SYNCRATCH_STUDENT_IDENTITY_SECRET 必須（student local auth ON 時）
+```
