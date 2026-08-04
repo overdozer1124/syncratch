@@ -6434,7 +6434,7 @@ Hermes 00:58 NO-GO 指摘対応:
 - P5-B1: origin/main (80a740a) を merge し docs/CURSOR_CODEX_HANDOFF.md コンフリクト解消
 
 検証:
-- mergeable: MERGEABLE（gh pr view 確認予定）
+- mergeable: MERGEABLE（gh pr view 207 確認済み）
 - classroom-access 15 tests + typecheck PASS
 - collab-host 75 tests + typecheck PASS
 - editor-web student-auth-gate 2 tests PASS
