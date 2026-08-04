@@ -47,13 +47,13 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `なし`（`classroom-roster-drive-submissions` は COMPLETE） |
-| 案件名 | 名簿・生徒認証・教師Drive提出（8 PR 分割） |
-| 現在の状態 | `COMPLETE`（ユーザー確認済み） |
-| 次の担当 | — |
+| **アクティブ案件ID** | `release-decision` |
+| 案件名 | Local-First Community 初回公開（Stage 5 + classroom 任意レイヤ） |
+| 現在の状態 | `PUBLISHED` |
+| 次の担当 | ユーザー（SNS 告知等・任意） |
 | レビュー主体 | — |
 | 次の作業 | — |
-| 禁止 | 本案件の追加 PR 先行（計画外） |
+| 禁止 | School track 復活 / AI Phase 4+ 先行 |
 
 ### 案件レジストリ
 
@@ -61,7 +61,7 @@
 |---|---|---|---|---|
 | `stage5-manual-gates` | `COMPLETE` | — | — | A1–A7 / B1–B3 PASS（2026-08-02）。#192 docs |
 | `file-panel-drive-cta-visibility` | `COMPLETE` | — | — | #185–#191。A5 再検証 PASS |
-| `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
+| `release-decision` | `PUBLISHED` | ユーザー（SNS 告知等・任意） | — | GitHub Release `v0.1.0-community` @ `81a290d`（2026-08-04） |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 16:30:00 JST |
+| 最終更新 | 2026-08-04 20:30:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `なし`（`classroom-roster-drive-submissions` COMPLETE） |
-| ワークフロー状態 | `COMPLETE`（classroom-roster-drive-submissions — ユーザー確認済み） |
-| 現在の担当 | — |
+| アクティブ案件ID | `release-decision` |
+| ワークフロー状態 | `PUBLISHED`（GitHub Release `v0.1.0-community`） |
+| 現在の担当 | ユーザー（SNS 告知等・任意） |
 | レビュー主体 | — |
-| 現在のTask | — |
+| 現在のTask | Community v0.1.0 公開完了 |
 | Primary track | Local-First Community runtime |
-| Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
+| Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | —（main @19a69a8） |
+| 作業ブランチ | —（main @81a290d、tag `v0.1.0-community`） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | — |
+| 次Task | —（Community v0.1.0 公開済み。任意: SNS 告知 / Phase 3 / diagnostics Phase 4） |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -147,11 +147,11 @@
 
 ## Cursorが次に行う作業
 
-1. **Stage 5 / file-panel-drive-cta-visibility は COMPLETE。** 旧 A5 再検証ループへ戻らない。
-2. **`classroom-roster-drive-submissions`:** **COMPLETE**（8 PR 分割 main 済み、ユーザー確認済み 2026-08-04）。
-3. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**（Codex GO / #197）。Phase 3 は **停止**。
-4. **`release-decision`:** `APPROVED_FOR_PUBLICATION` で停止。公開はユーザー明示指示後のみ。
-5. `local-diagnostics-ai-routing` Phase 4 / Transformers.js / 外部AI自動フォールバックは **停止維持**。
+1. **Stage 5 / file-panel-drive-cta-visibility / classroom-roster-drive-submissions / release-decision は COMPLETE / PUBLISHED。**
+2. **`release-decision`:** GitHub Release `v0.1.0-community` 公開済み（2026-08-04）。SNS 告知はユーザー任意。
+3. **アクティブ案件 `admin-student-access`:** Phase 2 **`PHASE2_COMPLETE`**。Phase 3 は **停止**（任意）。
+4. `local-diagnostics-ai-routing` Phase 4 / Transformers.js は **停止維持**。
+5. 全体ステータス: `docs/local-first/PROJECT_COMPLETION_STATUS.md`
 
 ## 作業ログ追記（2026-07-28 Codex向け AI ブランチ一覧）
 
