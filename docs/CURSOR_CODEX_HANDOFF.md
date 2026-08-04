@@ -52,7 +52,7 @@
 | 現在の状態 | `READY_FOR_HERMES_REVIEW` |
 | 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 8 Hermes 決裁 → CI green → main マージ |
+| 次の作業 | PR 8 Hermes 決裁 → main マージ |
 | 禁止 | 自動マージ |
 
 ### 案件レジストリ
@@ -77,7 +77,7 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 15:04:42 JST |
+| 最終更新 | 2026-08-04 15:30:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
 | ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 8 — Teacher submission list/preview UI） |
@@ -91,7 +91,7 @@
 | 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr8-258b`（base main @ 3933705） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | Hermes GO → CI green → main マージ → PR8_COMPLETE |
+| 次Task | Hermes GO → main マージ → PR8_COMPLETE |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |
@@ -6658,7 +6658,7 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: Hermes
 base: main @ 3933705
 branch: cursor/classroom-roster-drive-submissions-pr8-258b
-PR: #211（作成予定）
+PR: #211 @ baa97b5
 
 実装（PR 8）:
 - editor-web/admin-submissions-ui.ts: /admin 提出一覧・詳細・SB3 ダウンロード（PR 7 API 利用）
@@ -6676,4 +6676,25 @@ PR: #211（作成予定）
 
 禁止: 自動マージ / 学生プレビューアクセス / preview からの persist
 環境: SYNCRATCH_SUBMISSION_PREVIEW_ENABLED（teacher submission flag 必須）
+```
+
+### 2026-08-04 15:30:00 JST — Cursor（PR 8 — push + PR #211 + CI green）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+branch: cursor/classroom-roster-drive-submissions-pr8-258b
+PR: #211 @ baa97b5
+URL: https://github.com/overdozer1124/syncratch/pull/211
+
+push: origin/cursor/classroom-roster-drive-submissions-pr8-258b ✅
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+  - https://github.com/overdozer1124/syncratch/actions/runs/30883608120
+  - https://github.com/overdozer1124/syncratch/actions/runs/30883618946
+
+preflight: FAIL（Hermes GO 未記録 — マージ禁止）
+
+禁止: 自動マージ / Cursor による Hermes GO 記載
+次: Hermes 決裁 → preflight PASS → main マージ
 ```
