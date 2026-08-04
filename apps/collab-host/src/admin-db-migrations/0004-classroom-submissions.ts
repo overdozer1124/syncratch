@@ -19,7 +19,7 @@ export const CLASSROOM_SUBMISSIONS_CREATE_SQL = `
         content_sha256 TEXT NOT NULL,
         size_bytes INTEGER NOT NULL,
         project_title TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('submitted', 'failed')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'submitted', 'failed')),
         is_resubmission INTEGER NOT NULL DEFAULT 0,
         idempotency_key TEXT NOT NULL,
         submitted_at TEXT NOT NULL,
@@ -55,7 +55,7 @@ export const classroomSubmissionsMigration: AdminSchemaMigration = {
   version: 4,
   name: "classroom-submissions",
   checksumSource: classroomSubmissionsChecksumSource,
-  checksum: "73591ae48e26e39b878061e407666e97c807c9be34c750596a9b74d389e8dc3a",
+  checksum: "a3624b47a7e36c5ad1565ebb5413812ea0fc4336b1518aaa3aa1ad1f0c5fa468",
   apply(db: Database.Database): void {
     applyClassroomSubmissionsSchema(db);
   },
