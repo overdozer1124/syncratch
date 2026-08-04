@@ -14,6 +14,8 @@ import type {
 export interface StudentPolicyViewOptions {
   /** When false, student clients always see shared-anonymous (Phase 2 compat). */
   classroomRosterEnabled?: boolean;
+  /** When false, hide submission affordances (PR 7 flag OFF compat). */
+  teacherDriveSubmissionEnabled?: boolean;
 }
 
 export interface NormalizedClassroomPolicyFields {
@@ -177,11 +179,15 @@ export function toStudentPolicyView(
     options?.classroomRosterEnabled === false
       ? {required: false}
       : {...policy.studentAuth};
+  const submission =
+    options?.teacherDriveSubmissionEnabled === false
+      ? {enabled: false}
+      : {...policy.submission};
   return {
     policyId: policy.policyId,
     title: policy.title,
     studentAuth,
-    submission: {...policy.submission},
+    submission,
     aiAssist: {...policy.aiAssist},
     editor: {...policy.editor},
     collab: {...policy.collab},

@@ -120,6 +120,23 @@ describe("policy normalize + student view", () => {
     expect(view).not.toHaveProperty("rosterId");
     expect(view.studentAuth.required).toBe(false);
   });
+
+  it("toStudentPolicyView forces submission.enabled false when submission flag off", () => {
+    const policy: ClassroomPolicy = {
+      policyId: "p1",
+      ownerAdminId: "a1",
+      createdAt: "t0",
+      updatedAt: "t1",
+      ...normalizeClassroomPolicyInput({
+        submission: {enabled: true},
+      }),
+    };
+    const view = toStudentPolicyView(policy, {
+      classroomRosterEnabled: true,
+      teacherDriveSubmissionEnabled: false,
+    });
+    expect(view.submission.enabled).toBe(false);
+  });
 });
 
 describe("admin email allowlist", () => {
