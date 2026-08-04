@@ -147,22 +147,32 @@ async function exchangeToken(
   return json;
 }
 
-async function fetchGoogleProfile(
+async function fetchGoogleTokenSubject(
   fetchImpl: typeof fetch,
   accessToken: string,
-): Promise<{sub: string; email: string}> {
+): Promise<string> {
   const response = await fetchImpl(
-    "https://www.googleapis.com/oauth2/v3/userinfo",
-    {headers: {authorization: `Bearer ${accessToken}`}},
+    `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
   );
   if (!response.ok) {
-    throw new Error("failed to fetch Google profile");
+    throw new Error("failed to validate Google access token");
   }
-  const json = (await response.json()) as {sub?: string; email?: string};
-  if (!json.sub || !json.email) {
-    throw new Error("Google profile missing sub/email");
+  const json = (await response.json()) as {sub?: string; user_id?: string};
+  const subject = json.sub ?? json.user_id;
+  if (!subject) {
+    throw new Error("Google tokeninfo missing subject");
   }
-  return {sub: json.sub, email: json.email};
+  return String(subject);
+}
+
+function readAdminEmail(db: Database.Database, adminId: string): string {
+  const row = db
+    .prepare(`SELECT email FROM admin_accounts WHERE admin_id = ?`)
+    .get(adminId) as {email?: string} | undefined;
+  if (!row?.email) {
+    throw new Error("admin account email not found");
+  }
+  return row.email;
 }
 
 async function revokeToken(
@@ -324,12 +334,16 @@ export function createAdminGoogleOAuthHandler(
         if (!grantedScope.includes("drive.file")) {
           throw new Error("Google did not grant drive.file scope");
         }
-        const profile = await fetchGoogleProfile(fetchImpl, token.access_token);
+        const googleSubject = await fetchGoogleTokenSubject(
+          fetchImpl,
+          token.access_token,
+        );
+        const googleEmail = readAdminEmail(options.db, pending.adminId);
         const expiresInSec = Number(token.expires_in) || 3600;
         store.upsertCredential({
           adminId: pending.adminId,
-          googleSubject: profile.sub,
-          googleEmail: profile.email,
+          googleSubject,
+          googleEmail,
           scope: DRIVE_FILE_SCOPE,
           refreshToken: token.refresh_token,
           accessToken: token.access_token,
