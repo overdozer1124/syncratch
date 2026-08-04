@@ -6649,3 +6649,31 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（PR 8 は指示後）
 次: PR 7 完了。PR 8 は指示後。
 禁止: PR 8+ 先行
+
+### 2026-08-04 15:04:42 JST — Cursor（PR 8 — Teacher submission list/preview UI → READY_FOR_HERMES_REVIEW）
+
+```text
+案件ID: classroom-roster-drive-submissions
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+base: main @ 3933705
+branch: cursor/classroom-roster-drive-submissions-pr8-258b
+PR: #211（作成予定）
+
+実装（PR 8）:
+- editor-web/admin-submissions-ui.ts: /admin 提出一覧・詳細・SB3 ダウンロード（PR 7 API 利用）
+- editor-web/admin-submission-preview.ts + main.ts: /admin/submissions/{id}/preview 読み取り専用 Scratch プレビュー
+- surface-mode: admin-submission-preview サーフェス追加
+- collab-host: GET /api/admin/classroom-flags、preview flag OFF 時 preview URL 404
+- server.ts: SYNCRATCH_SUBMISSION_PREVIEW_ENABLED 配線
+- docs/local-first/DEPLOYMENT.md: submission / preview env 追記
+
+検証:
+- classroom-access 17 tests + typecheck PASS
+- collab-host 88 tests (+preview 404) + typecheck PASS
+- editor-web admin-submissions-ui 2 tests + typecheck PASS
+- git diff --check PASS
+
+禁止: 自動マージ / 学生プレビューアクセス / preview からの persist
+環境: SYNCRATCH_SUBMISSION_PREVIEW_ENABLED（teacher submission flag 必須）
+```
