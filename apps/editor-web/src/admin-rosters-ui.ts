@@ -5,6 +5,7 @@ import {
   ADMIN_POLICIES_PATH,
   ADMIN_ROSTERS_PATH,
   ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
+  ADMIN_GOOGLE_OAUTH_RETURN_REASON,
   ROSTER_SHEET_COLUMNS,
   adminRosterImportApplyPath,
   adminRosterImportsPath,
@@ -77,9 +78,34 @@ function summarizePreview(preview: RosterImportPreview): string {
 
 function clearOAuthReturnQuery(): void {
   const url = new URL(window.location.href);
-  if (!url.searchParams.has(ADMIN_GOOGLE_OAUTH_RETURN_FLAG)) return;
+  if (
+    !url.searchParams.has(ADMIN_GOOGLE_OAUTH_RETURN_FLAG) &&
+    !url.searchParams.has(ADMIN_GOOGLE_OAUTH_RETURN_REASON)
+  ) {
+    return;
+  }
   url.searchParams.delete(ADMIN_GOOGLE_OAUTH_RETURN_FLAG);
+  url.searchParams.delete(ADMIN_GOOGLE_OAUTH_RETURN_REASON);
   window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+}
+
+function oauthFailureMessage(reason: string | null): string {
+  switch (reason) {
+    case "missing_refresh_token":
+      return "Google 連携に失敗しました。Google アカウント設定で Syncratch のアクセスを削除してから、もう一度お試しください。";
+    case "pending_expired":
+      return "Google 連携の準備状態が失効しました。/admin からもう一度「Google と連携」を押してください。";
+    case "google_denied":
+      return "Google 側で連携がキャンセルまたは拒否されました。";
+    case "scope_denied":
+      return "Google Drive（drive.file）へのアクセスが許可されませんでした。";
+    case "token_exchange_failed":
+      return "Google トークン交換に失敗しました。GOOGLE_CLIENT_SECRET と redirect URI を確認してください。";
+    case "admin_account_not_found":
+      return "管理者セッションが無効です。ログアウトして /admin から再ログインしてください。";
+    default:
+      return "Google 連携に失敗しました。もう一度お試しください。";
+  }
 }
 
 export async function fetchAdminRosterList(): Promise<ClassroomRosterListItem[]> {
@@ -111,8 +137,10 @@ async function mountGoogleCredentialPanel(
     status.textContent = "Google 連携が完了しました。";
     clearOAuthReturnQuery();
   } else if (oauthFlag === "error") {
-    status.textContent =
-      "Google 連携に失敗しました。もう一度お試しください。";
+    const reason = new URL(window.location.href).searchParams.get(
+      ADMIN_GOOGLE_OAUTH_RETURN_REASON,
+    );
+    status.textContent = oauthFailureMessage(reason);
     clearOAuthReturnQuery();
   }
 
