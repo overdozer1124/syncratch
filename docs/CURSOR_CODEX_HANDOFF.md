@@ -48,12 +48,12 @@
 | 項目 | 値 |
 |---|---|
 | **アクティブ案件ID** | `classroom-roster-drive-submissions` |
-| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 5 Policy ↔ roster binding |
-| 現在の状態 | `PR5_COMPLETE` |
-| 次の担当 | ユーザー（PR 6 は指示後） |
+| 案件名 | 名簿・生徒認証・教師Drive提出 — PR 6 Student local auth |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | PR 5 完了（main マージ済み @680e49e）。PR 6 は指示後 |
-| 禁止 | PR 6+ 先行（指示なし） |
+| 次の作業 | PR #208（PR 6）Hermes 決裁 |
+| 禁止 | 自動マージ / PR 7+ 先行（指示なし） |
 
 ### 案件レジストリ
 
@@ -64,7 +64,7 @@
 | `release-decision` | `APPROVED_FOR_PUBLICATION` | ユーザー | 公開実行（明示指示後） | 告知内容 GO。#196 承認済み |
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
-| `classroom-roster-drive-submissions` | `PR5_COMPLETE` | ユーザー（PR 6 は指示後） | PR 5 完了（main @680e49e）。PR 6 は指示後 | #207 PR 5 policy binding + student auth gate。Hermes GO → main マージ済み。B1 解消・mergeable MERGEABLE・CI green |
+| `classroom-roster-drive-submissions` | `READY_FOR_HERMES_REVIEW` | Hermes | PR #208 PR 6 student local auth — Hermes 決裁 | PR 6: activate/login/session/logout + identity cookie + admin enrollment APIs。base main @6f2f378 |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,21 +77,21 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 10:25:00 JST |
+| 最終更新 | 2026-08-04 12:50:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `classroom-roster-drive-submissions` |
-| ワークフロー状態 | `PR5_COMPLETE`（PR 5 — main マージ済み @680e49e） |
-| 現在の担当 | ユーザー（PR 6 は指示後） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（PR 6 — student local auth） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 現在のTask | PR 5 完了待機（PR 6 は指示後） |
+| 現在のTask | PR 6 Hermes 決裁待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 手動ゲート完了） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr5-258b`（base main @ 80a740a） |
+| 作業ブランチ | `cursor/classroom-roster-drive-submissions-pr6-258b`（base main @ 6f2f378） |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
-| 次Task | PR 5 Hermes 再決裁待ち。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
+| 次Task | PR 6 Hermes 決裁 → main マージ。`release-decision` 公開 / admin Phase 3 / AI Phase 4+ は **停止維持** |
 | Community初回対象外（残） | 中央バックアップ / 大規模room / 新規school-directory / AI Phase 4+ |
 | School track凍結項目 | class-move / overlap / claim / System Owner transfer / Person関連 / audit |
 | local-diagnostics | Milestone A main 済み。**Phase 4 停止中**（Transformers.js 等は後続） |

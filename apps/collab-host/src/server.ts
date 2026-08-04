@@ -53,6 +53,7 @@ import {
 } from "./admin-google-oauth.js";
 import {createAdminGoogleCredentialStore} from "./admin-google-credential-store.js";
 import {createRosterRoutesHandler} from "./roster-routes.js";
+import {createStudentAuthRoutesHandler} from "./student-auth-routes.js";
 
 export interface StartCollabHostAdminOptions {
   db?: AdminDb;
@@ -63,10 +64,12 @@ export interface StartCollabHostAdminOptions {
     classroomRosterEnabled: boolean;
     adminGoogleCredentialEnabled: boolean;
     rosterSheetsEnabled?: boolean;
+    studentLocalAuthEnabled?: boolean;
   };
   adminGoogleOAuthEnabled?: boolean;
   classroomRosterEnabled?: boolean;
   rosterSheetsEnabled?: boolean;
+  studentLocalAuthEnabled?: boolean;
 }
 
 export interface StartCollabHostOptions {
@@ -110,6 +113,12 @@ export async function startCollabHost(
       (runtimeClassroomFlags.classroomRosterEnabled &&
         runtimeClassroomFlags.adminGoogleCredentialEnabled &&
         runtimeClassroomFlags.rosterSheetsEnabled),
+  );
+  const studentLocalAuthEnabled = Boolean(
+    options.admin?.studentLocalAuthEnabled ??
+      options.admin?.classroomFlags?.studentLocalAuthEnabled ??
+      (runtimeClassroomFlags.classroomRosterEnabled &&
+        runtimeClassroomFlags.studentLocalAuthEnabled),
   );
   const adminGoogleOAuthConfig = readAdminGoogleOAuthConfigFromEnv();
 
@@ -180,11 +189,20 @@ export async function startCollabHost(
     adminSessions,
     sheetSync: rosterSheetSync,
   });
+  const handleStudentAuthRoutes = createStudentAuthRoutesHandler({
+    enabled: studentLocalAuthEnabled,
+    db: adminDb.sqlite,
+    adminConfig,
+    adminSessions,
+    cookieSecure:
+      adminConfig?.cookieSecure ?? process.env.NODE_ENV === "production",
+  });
   const httpServer = createServer((req, res) => {
     void (async () => {
       if (await handleDriveOAuth(req, res)) return;
       if (await handleAdminGoogleOAuth(req, res)) return;
       if (await handleRosterRoutes(req, res)) return;
+      if (await handleStudentAuthRoutes(req, res)) return;
       if (await handleAdminAuth(req, res)) return;
       if (await handleAdminApi(req, res)) return;
       if (await handleAiChatProxy(req, res)) return;

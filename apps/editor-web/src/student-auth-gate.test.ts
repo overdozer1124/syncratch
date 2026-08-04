@@ -31,10 +31,11 @@ type MockElement = {
   textContent: string;
   hidden: boolean;
   children: MockElement[];
-  classList: {add: (name: string) => void};
+  classList: {add: (name: string) => void; toggle: (name: string, on?: boolean) => void};
   setAttribute: (name: string, value: string) => void;
   append: (...nodes: MockElement[]) => void;
   replaceChildren?: (...nodes: MockElement[]) => void;
+  addEventListener: () => void;
   matches: (selector: string) => boolean;
   querySelector: (selector: string) => MockElement | null;
   querySelectorAll: (selector: string) => MockElement[];
@@ -51,11 +52,23 @@ function createMockElement(tag: string): MockElement {
       add(name: string) {
         node.className = node.className ? `${node.className} ${name}` : name;
       },
+      toggle(name: string, on?: boolean) {
+        const has = node.className.split(/\s+/).includes(name);
+        const next = on ?? !has;
+        if (next && !has) node.classList.add(name);
+        if (!next && has) {
+          node.className = node.className
+            .split(/\s+/)
+            .filter(part => part !== name)
+            .join(" ");
+        }
+      },
     },
     setAttribute() {},
     append(...nodes: MockElement[]) {
       node.children.push(...nodes);
     },
+    addEventListener() {},
     matches(selector: string) {
       if (selector.startsWith(".")) {
         return node.className.split(/\s+/).includes(selector.slice(1));
@@ -104,15 +117,26 @@ describe("student auth gate", () => {
     ).toBe(true);
   });
 
-  it("renders login/activate shell placeholder", () => {
+  it("renders login/activate auth UI shell", () => {
     vi.stubGlobal("document", {
-      createElement: (tag: string) => createMockElement(tag),
+      createElement: (tag: string) => {
+        const el = createMockElement(tag);
+        if (tag === "form") {
+          Object.assign(el, {
+            innerHTML: "",
+            addEventListener: () => {},
+          });
+        }
+        return el;
+      },
     });
     const root = createShellRoot();
-    showStudentAuthShell(root);
+    const onAuthenticated = vi.fn();
+    showStudentAuthShell(root, {onAuthenticated});
     expect(root.hidden).toBe(false);
     expect(root.querySelector("h1")?.textContent).toBe("ログインが必要です");
     expect(root.querySelectorAll(".student-auth-shell-tab")).toHaveLength(2);
+    expect(root.querySelector(".student-auth-form")).not.toBeNull();
     hideStudentAuthShell(root);
     expect(root.hidden).toBe(true);
     expect(root.childElementCount).toBe(0);
