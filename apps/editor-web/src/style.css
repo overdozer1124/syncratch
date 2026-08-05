@@ -3640,6 +3640,23 @@ body.admin-console-mode {
   padding: 0;
 }
 
+.admin2-card-body.is-connection-summary {
+  padding: 9px 14px;
+}
+
+.admin2-card-body.is-connection-summary > .admin2-row:first-child {
+  padding: 0;
+  border-top: 0;
+}
+
+.admin2-add-student-hint {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #5b708a;
+  border-top: 1px solid #e6ecf3;
+  background: #f4f7fa;
+}
+
 .admin2-row {
   display: grid;
   gap: 10px;

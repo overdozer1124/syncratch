@@ -42,7 +42,13 @@ export type {
   SubmissionStatus,
 } from "./roster-types.js";
 
-export {ROSTER_SHEET_COLUMNS} from "./roster-types.js";
+export {
+  ROSTER_SHEET_COLUMNS,
+  ROSTER_SHEET_COLUMN_LABELS,
+  ROSTER_SHEET_HEADER_ALIASES,
+  canonicalRosterSheetHeader,
+  rosterSheetTemplateHeaders,
+} from "./roster-types.js";
 
 export {
   DEFAULT_CLASSROOM_POLICY_INPUT,

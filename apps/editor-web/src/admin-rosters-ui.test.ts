@@ -111,6 +111,8 @@ describe("admin rosters ui", () => {
     });
 
     expect(pane.querySelector("[data-testid=admin-roster-credential]")).toBeTruthy();
+    expect(pane.querySelector(".admin2-account-card")).toBeTruthy();
+    expect(pane.textContent?.match(/ログアウト/g)?.length ?? 0).toBe(0);
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(pane.textContent).toContain("Google と連携");
   });
@@ -235,6 +237,62 @@ describe("admin rosters ui", () => {
     expect(openSheet?.hidden).toBe(false);
     expect(openSheet?.href).toBe(buildSpreadsheetEditUrl("sheet-bound-1"));
     expect(openSheet?.textContent).toContain("Sheet を開く");
+  });
+
+  it("add student button opens sheet or csv picker with hint", async () => {
+    const openMock = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: "sheet-bound-1",
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({ok: true, students: []}),
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true, rosterSheetsEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    const addBtn = [...pane!.querySelectorAll("button")].find(
+      btn => btn.textContent === "＋ 生徒を追加",
+    );
+    expect(addBtn).toBeTruthy();
+    addBtn!.click();
+    expect(pane!.textContent).toContain("Google Sheet の2行目以降");
+    expect(openMock).toHaveBeenCalled();
+    openMock.mockRestore();
   });
 
   it("mounts policy roster controls with segment and select", () => {

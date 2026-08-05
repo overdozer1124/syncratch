@@ -5,6 +5,7 @@ import {createHash} from "node:crypto";
 import {parse} from "csv-parse/sync";
 import {
   ROSTER_SHEET_COLUMNS,
+  canonicalRosterSheetHeader,
   type RosterImportPreviewCategory,
   type RosterImportPreviewRow,
   type RosterImportRowIssue,
@@ -79,6 +80,8 @@ function parseActive(raw: string | undefined): ActiveParseResult {
   const value = raw.trim().toLowerCase();
   if (value === "true" || value === "1" || value === "yes") return true;
   if (value === "false" || value === "0" || value === "no") return false;
+  if (value === "有" || value === "有効" || value === "はい") return true;
+  if (value === "無" || value === "無効" || value === "いいえ") return false;
   return "invalid";
 }
 
@@ -202,7 +205,12 @@ export function parseRosterCsv(csvText: string): ParsedRosterCsvRow[] {
 
   return records.map((raw, index) => ({
     rowNumber: index + 2,
-    raw,
+    raw: Object.fromEntries(
+      Object.entries(raw).map(([key, value]) => [
+        canonicalRosterSheetHeader(key),
+        value,
+      ]),
+    ),
   }));
 }
 

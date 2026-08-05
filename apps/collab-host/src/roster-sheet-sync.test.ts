@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from "vitest";
-import {ROSTER_SHEET_COLUMNS} from "@blocksync/classroom-access";
+import {ROSTER_SHEET_COLUMNS, rosterSheetTemplateHeaders} from "@blocksync/classroom-access";
 import {
   buildSheetRangeA1,
   createRosterTemplateSpreadsheet,
@@ -41,6 +41,16 @@ describe("roster-sheet-sync helpers", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]?.raw.student_code).toBe("s001");
     expect(rows[1]?.raw.display_name).toBe("Bob");
+  });
+
+  it("accepts Japanese header labels", () => {
+    const values = [
+      [...rosterSheetTemplateHeaders()],
+      ["s001", "Alice", "01", "alice", "A", "1"],
+    ];
+    const rows = sheetValuesToParsedRows(values);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.raw.display_name).toBe("Alice");
   });
 
   it("rejects sheet header missing required columns", () => {
@@ -158,7 +168,7 @@ describe("createRosterTemplateSpreadsheet", () => {
         init?.method === "PUT"
       ) {
         const body = JSON.parse(String(init.body)) as {values?: string[][]};
-        expect(body.values?.[0]).toEqual([...ROSTER_SHEET_COLUMNS]);
+        expect(body.values?.[0]).toEqual(Array.from(rosterSheetTemplateHeaders()));
         return new Response(JSON.stringify({updatedCells: 6}), {status: 200});
       }
       throw new Error(`unexpected fetch: ${url}`);
