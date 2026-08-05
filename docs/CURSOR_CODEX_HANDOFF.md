@@ -47,13 +47,13 @@
 
 | 項目 | 値 |
 |---|---|
-| **アクティブ案件ID** | `release-decision` |
-| 案件名 | Local-First Community 初回公開（Stage 5 + classroom 任意レイヤ） |
-| 現在の状態 | `PUBLISHED` |
-| 次の担当 | ユーザー（SNS 告知等・任意） |
-| レビュー主体 | — |
-| 次の作業 | — |
-| 禁止 | School track 復活 / AI Phase 4+ 先行 |
+| **アクティブ案件ID** | `roster-google-student-auth` |
+| 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
+| レビュー主体 | Hermes |
+| 次の作業 | 設計書 `docs/superpowers/specs/2026-08-05-roster-google-student-auth-design.md` の GO / NO-GO 決裁 |
+| 禁止 | 実装 PR 先行 / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
 
@@ -65,6 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
+| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | 設計 GO/NO-GO | 仕様: `docs/superpowers/specs/2026-08-05-roster-google-student-auth-design.md`。実装は GO 後 |
 
 ### 読取手順（「作業完了」時）
 
@@ -77,13 +78,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-04 20:30:00 JST |
+| 最終更新 | 2026-08-05 19:30:00 JST |
 | 更新者 | Cursor |
-| アクティブ案件ID | `release-decision` |
-| ワークフロー状態 | `PUBLISHED`（GitHub Release `v0.1.0-community`） |
-| 現在の担当 | ユーザー（SNS 告知等・任意） |
-| レビュー主体 | — |
-| 現在のTask | Community v0.1.0 公開完了 |
+| アクティブ案件ID | `roster-google-student-auth` |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW` |
+| 現在の担当 | Hermes |
+| レビュー主体 | Hermes |
+| 現在のTask | 名簿 Google 生徒認証 — 設計書レビュー |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
@@ -6743,4 +6744,39 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 
 次の担当: —
 次: 本案件クローズ。計画外（XLSX import / PR 9 等）は別指示時のみ。
+```
+
+### 2026-08-05 19:30:00 JST — Cursor（roster-google-student-auth 設計書作成 → Hermes レビュー依頼）
+
+```text
+案件ID: roster-google-student-auth
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+レビュー主体: Hermes
+
+背景（ユーザー合意）:
+- 教室運用は Google（Sheet 名簿 + Drive 提出 + Google アカウント）前提
+- 生徒は登録コード/パスフレーズではなく Google ログイン + Sheet メール照合を主路線に
+- 学校ドメイン制限は管理者が教室ごとに設定（allowedEmailDomains）
+- フリー利用はドメインリスト空 = 制限なし
+- ローカルアカウントはフォールバックとして残す
+- WIP（IndexedDB）は Local-First のまま Google 正本化しない
+
+成果物:
+- docs/superpowers/specs/2026-08-05-roster-google-student-auth-design.md
+  - Sheet 列 google_email 追加
+  - ClassroomPolicy 拡張（method, allowedEmailDomains）
+  - Student Google OAuth 第4境界（openid+email、drive.file 不含）
+  - Open questions Q1–Q6（Hermes 判定用）
+  - 実装 PR 分割 G1–G5（GO 後）
+
+親案件: classroom-roster-drive-submissions COMPLETE。§8 ローカル主認証を部分 supersede。
+
+Hermes 依頼:
+- 設計 GO / NO-GO
+- §12 Open questions への回答
+- §13 PR 分割の妥当性
+
+禁止: 実装 PR 先行 / 本 design PR を実装完了とみなす / 自動マージ / Cursor による Hermes GO 記録
+検証: 設計書のみ（実装なし）。git diff --check PASS 予定。
 ```
