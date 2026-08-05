@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `G1_COMPLETE` |
-| 次の担当 | ユーザー（G2 は指示後） |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW` |
+| 次の担当 | Hermes |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | G1 完了（main マージ済み @1893ed0）。G2 は指示後 |
+| 次の作業 | PR #230（G2）Hermes 決裁 → CI green → main マージ |
 | 禁止 | 実装 PR 先行（G3–G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
@@ -65,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `G1_COMPLETE` | ユーザー（G2 は指示後） | G1 完了（main @1893ed0）。G2 は指示後 | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G1 @6cf05e4。Hermes GO → main マージ済み。Q1-Q6+m-google-1 準拠 |
+| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | PR #230（G2）決裁 | G1 main @1893ed0。G2 collab-host import/sync/inline |
 
 ### 読取手順（「作業完了」時）
 
@@ -78,13 +78,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-05 21:55:00 JST |
+| 最終更新 | 2026-08-06 03:25:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `G1_COMPLETE`（G1 — main マージ済み @1893ed0） |
-| 現在の担当 | ユーザー（G2 は指示後） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（G2 実装 PR 提出済み） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes |
-| 現在のTask | G1 完了待機（G2 は指示後） |
+| 現在のTask | 名簿 Google 生徒認証 — G2 import/sync/inline add + google_email |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
@@ -6872,3 +6872,26 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（CI green 確認済 → main マージ → G1_COMPLETE）
 次: main マージ後、台帳を G1_COMPLETE に更新。G2 は指示後。
 禁止: 実装 PR 先行（G2–G5） / 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-06 03:25:00 JST — Cursor（G2 実装 PR #230 → READY_FOR_HERMES_REVIEW）
+
+案件ID: roster-google-student-auth
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+レビュー主体: Hermes
+
+PR: #230 — feat(g2): roster import/sync/inline add google_email
+Branch: cursor/roster-google-student-auth-g2-258b
+Base: main @1893ed0
+
+G2 スコープ（設計 §13 G2 / §6.3）:
+- roster-import: normalizeGoogleEmail、INVALID/DUPLICATE_GOOGLE_EMAIL blocking、owner 全体でのメール衝突
+- roster-service: import apply / inline add で google_email 永続化、重複チェック
+- roster-sheet-sync: Sheet append 7 列（google_email 含む）、既定 range A:G
+- roster-routes: POST student に googleEmail、Sheet append へ伝播
+
+検証:
+- pnpm --filter collab-host test typecheck — PASS（104 tests）
+
+禁止: 自動マージ / Cursor による Hermes GO 記載
+次: Hermes 決裁 → preflight PASS → main マージ

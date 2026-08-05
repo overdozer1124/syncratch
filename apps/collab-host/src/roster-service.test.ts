@@ -84,6 +84,7 @@ describe("roster-service", () => {
     expect(student.studentCode).toBe("S001");
     expect(student.displayName).toBe("山田太郎");
     expect(student.accountStatus).toBe("pending_activation");
+    expect(student.googleEmail).toBeNull();
     expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(1);
     expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(1);
 
@@ -314,6 +315,52 @@ describe("roster-service", () => {
     db.close();
   });
 
+  it("stores normalized google_email on inline add and import apply", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-google-email",
+      email: "teacher@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+
+    const inline = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S010",
+      displayName: "Google 太郎",
+      googleEmail: "  Tarou@School.Example  ",
+    });
+    expect(inline.googleEmail).toBe("tarou@school.example");
+
+    expect(() =>
+      service.addStudent(roster.rosterId, admin.adminId, {
+        studentCode: "S011",
+        displayName: "重複",
+        googleEmail: "tarou@school.example",
+      }),
+    ).toThrow(RosterServiceError);
+
+    const csv = [
+      header(),
+      "S020,CSV 花子,02,hanako,Hanako@School.Example,A,true",
+    ].join("\n");
+    const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    const imported = service
+      .listStudents(roster.rosterId, admin.adminId)
+      .find(s => s.studentCode === "S020");
+    expect(imported?.googleEmail).toBe("hanako@school.example");
+
+    db.close();
+  });
+
   it("sheet sync preview defaults deactivateMissing false and apply is two-stage", async () => {
     const db = openAdminDb(":memory:");
     const admin = db.upsertAdminFromLogin({
@@ -362,7 +409,7 @@ describe("roster-service", () => {
           JSON.stringify({
             values: [
               header().split(","),
-              ["S001", "山田更新", "01", "y", "A", "true"],
+              ["S001", "山田更新", "01", "y", "", "A", "true"],
             ],
           }),
           {status: 200},
@@ -458,7 +505,7 @@ describe("roster-service", () => {
       if (url.includes("/values/")) {
         return new Response(
           JSON.stringify({
-            values: [header().split(","), ["S001", "山田", "01", "y", "A", "true"]],
+            values: [header().split(","), ["S001", "山田", "01", "y", "", "A", "true"]],
           }),
           {status: 200},
         );

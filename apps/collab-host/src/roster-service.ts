@@ -172,6 +172,7 @@ function existingFromRow(row: StudentRow): ExistingRosterStudent {
     displayName: row.display_name,
     attendanceNumber: row.attendance_number,
     loginName: row.login_name,
+    googleEmail: normalizeGoogleEmail(row.google_email),
     groupLabel: row.group_label,
     active: Boolean(row.active),
   };
@@ -188,6 +189,7 @@ function proposedChanged(
     displayName?: string;
     attendanceNumber?: string | null;
     loginName?: string;
+    googleEmail?: string | null;
     groupLabel?: string | null;
     active?: boolean;
   };
@@ -196,6 +198,7 @@ function proposedChanged(
     proposed.attendanceNumber === existing.attendanceNumber &&
     (proposed.loginName ?? proposed.studentCode ?? existing.studentCode) ===
       (existing.loginName ?? existing.studentCode) &&
+    (proposed.googleEmail ?? null) === existing.googleEmail &&
     proposed.groupLabel === existing.groupLabel &&
     proposed.active === existing.active
   );
@@ -408,6 +411,7 @@ function applyDraftsToRoster(input: {
         displayName: string;
         attendanceNumber?: string | null;
         loginName?: string;
+        googleEmail?: string | null;
         groupLabel?: string | null;
         active?: boolean;
       };
@@ -419,9 +423,9 @@ function applyDraftsToRoster(input: {
           .prepare(
             `INSERT INTO classroom_students (
               student_id, owner_admin_id, student_code, display_name,
-              attendance_number, login_name, group_label, active,
+              attendance_number, login_name, google_email, group_label, active,
               archived_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
           )
           .run(
             studentId,
@@ -430,6 +434,7 @@ function applyDraftsToRoster(input: {
             proposed.displayName,
             proposed.attendanceNumber ?? null,
             proposed.loginName ?? proposed.studentCode,
+            proposed.googleEmail ?? null,
             proposed.groupLabel ?? null,
             ts,
             ts,
@@ -466,6 +471,7 @@ function applyDraftsToRoster(input: {
               display_name = ?,
               attendance_number = ?,
               login_name = ?,
+              google_email = ?,
               group_label = ?,
               active = ?,
               archived_at = CASE WHEN ? = 0 THEN ? ELSE NULL END,
@@ -476,6 +482,7 @@ function applyDraftsToRoster(input: {
             proposed.displayName,
             proposed.attendanceNumber ?? null,
             proposed.loginName ?? proposed.studentCode,
+            proposed.googleEmail ?? null,
             proposed.groupLabel ?? null,
             proposed.active ? 1 : 0,
             proposed.active ? 1 : 0,
@@ -907,6 +914,20 @@ export function createRosterService(db: Database.Database): RosterService {
           : input.groupLabel?.trim()
             ? input.groupLabel.trim()
             : null;
+      const googleEmail =
+        input.googleEmail === undefined
+          ? null
+          : normalizeGoogleEmail(input.googleEmail);
+      if (
+        input.googleEmail != null &&
+        String(input.googleEmail).trim() &&
+        !googleEmail
+      ) {
+        throw new RosterServiceError(
+          "INVALID_GOOGLE_EMAIL",
+          "google_email must be a valid email address",
+        );
+      }
       const active = input.active ?? true;
 
       const existingByCode = db
@@ -937,6 +958,21 @@ export function createRosterService(db: Database.Database): RosterService {
         }
       }
 
+      if (googleEmail) {
+        const emailCollision = db
+          .prepare(
+            `SELECT student_id FROM classroom_students
+             WHERE owner_admin_id = ? AND google_email = ?`,
+          )
+          .get(ownerAdminId, googleEmail) as {student_id: string} | undefined;
+        if (emailCollision) {
+          throw new RosterServiceError(
+            "DUPLICATE_GOOGLE_EMAIL",
+            `google_email ${googleEmail} already assigned`,
+          );
+        }
+      }
+
       const studentId = createOpaqueId();
       const membershipId = createOpaqueId();
       const ts = nowIso();
@@ -961,9 +997,9 @@ export function createRosterService(db: Database.Database): RosterService {
         db.prepare(
           `INSERT INTO classroom_students (
             student_id, owner_admin_id, student_code, display_name,
-            attendance_number, login_name, group_label, active,
+            attendance_number, login_name, google_email, group_label, active,
             archived_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
         ).run(
           studentId,
           ownerAdminId,
@@ -971,6 +1007,7 @@ export function createRosterService(db: Database.Database): RosterService {
           displayName,
           attendanceNumber,
           loginName,
+          googleEmail,
           groupLabel,
           active ? 1 : 0,
           ts,
