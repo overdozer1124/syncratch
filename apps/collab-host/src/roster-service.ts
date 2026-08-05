@@ -10,6 +10,7 @@ import {
   type ClassroomRosterSyncStatus,
   type ClassroomStudentInput,
   type ClassroomStudentListItem,
+  type StudentAccountStatus,
   type RosterImport,
   type RosterImportPreview,
   type RosterImportPreviewCategory,
@@ -31,6 +32,7 @@ import {
   SheetSyncError,
   type RosterSheetSyncEnvironment,
 } from "./roster-sheet-sync.js";
+import {ensureStudentAccount} from "./student-auth.js";
 
 export {SheetSyncError, type RosterSheetSyncEnvironment} from "./roster-sheet-sync.js";
 
@@ -69,6 +71,9 @@ interface StudentRow {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  account_status?: string | null;
+  account_updated_at?: string | null;
+  account_created_at?: string | null;
 }
 
 interface ImportRow {
@@ -126,7 +131,21 @@ function rowToImport(row: ImportRow): RosterImport {
   };
 }
 
+function parseAccountStatus(
+  value: string | null | undefined,
+): StudentAccountStatus | null {
+  if (
+    value === "pending_activation" ||
+    value === "active" ||
+    value === "disabled"
+  ) {
+    return value;
+  }
+  return null;
+}
+
 function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
+  const accountStatus = parseAccountStatus(row.account_status);
   return {
     studentId: row.student_id,
     studentCode: row.student_code,
@@ -135,7 +154,9 @@ function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
     loginName: row.login_name,
     groupLabel: row.group_label,
     active: Boolean(row.active),
-    accountStatus: null,
+    accountStatus,
+    firstRegisteredAt:
+      accountStatus === "active" ? (row.account_updated_at ?? null) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -691,9 +712,14 @@ export function createRosterService(db: Database.Database): RosterService {
   `);
 
   const listExistingStudentsStmt = db.prepare(`
-    SELECT s.*
+    SELECT
+      s.*,
+      sa.status AS account_status,
+      sa.updated_at AS account_updated_at,
+      sa.created_at AS account_created_at
     FROM classroom_students s
     INNER JOIN classroom_roster_memberships m ON m.student_id = s.student_id
+    LEFT JOIN student_accounts sa ON sa.student_id = s.student_id
     WHERE m.roster_id = ? AND s.owner_admin_id = ?
     ORDER BY s.student_code ASC
   `);
@@ -969,12 +995,19 @@ export function createRosterService(db: Database.Database): RosterService {
           }),
           ts,
         );
+        ensureStudentAccount(db, studentId, ts);
       });
       tx();
 
-      const row = db
-        .prepare(`SELECT * FROM classroom_students WHERE student_id = ?`)
-        .get(studentId) as StudentRow;
+      const row = (
+        listExistingStudentsStmt.all(rosterId, ownerAdminId) as StudentRow[]
+      ).find(candidate => candidate.student_id === studentId);
+      if (!row) {
+        throw new RosterServiceError(
+          "STUDENT_NOT_FOUND",
+          "Added student could not be loaded",
+        );
+      }
       return rowToStudentListItem(row);
     },
 

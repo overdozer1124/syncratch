@@ -117,10 +117,13 @@ function studentStatusBadge(student: ClassroomStudentListItem): HTMLElement {
   if (!student.active) {
     return createBadge("無効", "neutral");
   }
-  if (student.accountStatus === "pending_activation" || !student.accountStatus) {
-    return createBadge("未登録", "warn");
+  if (student.accountStatus === "active") {
+    return createBadge("ログイン済", "success");
   }
-  return createBadge("active", "success");
+  if (student.accountStatus === "disabled") {
+    return createBadge("無効", "neutral");
+  }
+  return createBadge("ログイン未設定", "warn");
 }
 
 function rosterSyncBadge(syncStatus: string): HTMLElement {
@@ -673,9 +676,16 @@ export async function renderRosterPane(
       previewHost.replaceChildren();
       if (res.sheetSyncWarning) {
         ctx.saveFooter.setError(
-          `生徒を追加しましたが、Google Sheet への反映に失敗しました: ${res.sheetSyncWarning}`,
+          `名簿に追加しましたが、Google Sheet への反映に失敗しました: ${res.sheetSyncWarning}`,
         );
       } else {
+        previewHost.append(
+          el(
+            "div",
+            {class: "admin2-add-student-hint"},
+            "名簿に追加しました。「状態」は生徒のログイン設定です。ログイン未設定のままでも名簿登録は完了しています。",
+          ),
+        );
         ctx.saveFooter.setSaved();
       }
       await refreshStudents();
@@ -847,8 +857,10 @@ export async function renderRosterPane(
         el("td", {}, student.groupLabel || "なし"),
         el(
           "td",
-          {class: student.accountStatus ? "is-mono" : "is-empty"},
-          student.accountStatus ? formatShortTimestamp(student.createdAt) : "なし",
+          {class: student.firstRegisteredAt ? "is-mono" : "is-empty"},
+          student.firstRegisteredAt
+            ? formatShortTimestamp(student.firstRegisteredAt)
+            : "なし",
         ),
         el("td", {}, undefined),
       );

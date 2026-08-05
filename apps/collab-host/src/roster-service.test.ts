@@ -83,6 +83,7 @@ describe("roster-service", () => {
 
     expect(student.studentCode).toBe("S001");
     expect(student.displayName).toBe("山田太郎");
+    expect(student.accountStatus).toBe("pending_activation");
     expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(1);
     expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(1);
 
@@ -93,6 +94,38 @@ describe("roster-service", () => {
       )
       .get(roster.rosterId) as {c: number};
     expect(auditCount.c).toBe(1);
+    db.close();
+  });
+
+  it("lists student account status from student_accounts", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-account-status",
+      email: "teacher-status@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+    });
+
+    const listed = service.listStudents(roster.rosterId, admin.adminId);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.studentId).toBe(student.studentId);
+    expect(listed[0]?.accountStatus).toBe("pending_activation");
+    expect(listed[0]?.firstRegisteredAt).toBeNull();
+
+    db.sqlite
+      .prepare(
+        `UPDATE student_accounts SET status = 'active', updated_at = ? WHERE student_id = ?`,
+      )
+      .run(new Date().toISOString(), student.studentId);
+
+    const activated = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(activated?.accountStatus).toBe("active");
+    expect(activated?.firstRegisteredAt).toBeTruthy();
     db.close();
   });
 
