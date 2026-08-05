@@ -49,9 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW`（G3 提出済み） |
-| 次の担当 | Hermes |
-| 次の作業 | G3 PR レビュー・GO/NO-GO 決裁 |
+| 現在の状態 | `G3_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 次の作業 | G3 GO 済み。CI green 確認後 main マージ → G3_COMPLETE |
 | 禁止 | 実装 PR 先行（G4–G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
@@ -64,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | G3 PR レビュー（Student Google OAuth） | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G3 ブランチ `cursor/roster-google-student-auth-g3-258b` |
+| `roster-google-student-auth` | `G3_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G3 GO 済み。CI green 確認後マージ → G3_COMPLETE | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G3 @b052a08。Hermes GO（openid+email scope・pending SQLite TTL・google_subject・roster 照合・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +81,8 @@
 | 最終更新 | 2026-08-06 04:17:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（G3 — Student Google OAuth） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `G3_APPROVED_PENDING_CI`（G3 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes |
 | 現在のTask | G3 PR レビュー待ち |
 | Primary track | Local-First Community runtime |
@@ -6922,3 +6923,39 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（CI green 確認済 → main マージ → G2_COMPLETE）
 次: main マージ後、台帳を G2_COMPLETE に更新。G3 は指示後。
 禁止: 実装 PR 先行（G3–G5） / 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-06 04:25:00 JST — Hermes（PR #231 決裁 GO — G3 @b052a08）
+
+```text
+案件Id  : roster-google-student-auth
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #231 / head SHA: b052a08
+Base: origin/main @ 336823a
+決裁日: 2026-08-06 04:25
+
+G3 受入れ条件（設計 §13 G3: Student Google OAuth + roster 照合 + identity）の検証:
+- OAuth scope: GOOGLE_IDENTITY_SCOPES = "openid email"（drive.file 不含）✅ 設計 §9 第4境界
+- pending state: student_google_oauth_pending テーブル SQLite 永続、expires_at (TTL)、
+  takePendingOAuth で単回消費（deleted.changes===0 → null）✅ B-2 指摘準拠
+- identity cookie: syncratch_student_identity 継続（Q6 推奨）✅
+- google_subject: SQLite 保存（Option A = Q2 推奨）✅
+- roster 照合: getStudentInRoster() で rm.roster_id + google_email/google_subject 照合 ✅
+- grant 分離: identity は grantId → rosterId → student_id チェーン（§8.2 維持）✅
+- flag OFF → 404（feature flag rosterGoogleStudentAuthEnabled）✅
+
+Hermes 推奨準拠: Q2 Option A ✅、Q6 identity cookie 継続 ✅
+
+Minor:
+- m-g3-1（任意）: takePendingOAuth の SELECT→DELETE 分離は better-sqlite3 同期実行では実質安全だが、
+  より厳密な原子性には DELETE ... RETURNING を推奨（blocker ではない）。
+
+テスト: student-google-oauth.test.ts 6 件（flag off→404 / openid email scope / callback→identity cookie /
+loginStudentViaGoogle binds google_subject + rejects roster mismatch / integration flag off→404）
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → G3_COMPLETE）
+次: main マージ後、台帳を G3_COMPLETE に更新。G4 は指示後。
+禁止: 実装 PR 先行（G4–G5） / 自動マージ / Hermes 未発行の GO 記録
