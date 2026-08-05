@@ -6,7 +6,7 @@ describe("csv-parse roster import gate", () => {
   it("parses the canonical roster CSV contract", () => {
     const csv = [
       ROSTER_SHEET_COLUMNS.join(","),
-      "S001,山田太郎,01,yamada01,A,true",
+      "S001,山田太郎,01,yamada01,,A,true",
     ].join("\n");
     const rows = parse(csv, {
       columns: true,

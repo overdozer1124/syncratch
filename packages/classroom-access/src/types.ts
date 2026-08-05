@@ -1,4 +1,8 @@
-import type {StudentAuthPolicy, SubmissionPolicy} from "./roster-types.js";
+import type {
+  StudentAuthClientPolicy,
+  StudentAuthPolicy,
+  SubmissionPolicy,
+} from "./roster-types.js";
 
 /** Utilization levels aligned with @blocksync/ai-assist (0–6). */
 export type ClassroomAiLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -72,7 +76,7 @@ export interface ClassroomPolicyInput {
 export interface StudentPolicyView {
   policyId: string;
   title: string;
-  studentAuth: StudentAuthPolicy;
+  studentAuth: StudentAuthClientPolicy;
   submission: SubmissionPolicy;
   aiAssist: ClassroomAiAssistPolicy;
   editor: ClassroomEditorPolicy;

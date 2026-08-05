@@ -35,7 +35,9 @@ export type {
   RosterSyncResult,
   StudentAccessMode,
   StudentAccountStatus,
+  StudentAuthMethod,
   StudentAuthPolicy,
+  StudentAuthClientPolicy,
   SubmissionDetail,
   SubmissionListItem,
   SubmissionPolicy,
@@ -49,6 +51,17 @@ export {
   canonicalRosterSheetHeader,
   rosterSheetTemplateHeaders,
 } from "./roster-types.js";
+
+export {
+  emailDomain,
+  isStudentEmailDomainAllowed,
+  normalizeAllowedEmailDomains,
+  normalizeGoogleEmail,
+  normalizeStudentAuthMethod,
+  parseAllowedEmailDomainsJson,
+  studentAuthMethodIncludesGoogle,
+  studentAuthMethodIncludesLocal,
+} from "./roster-auth.js";
 
 export {
   DEFAULT_CLASSROOM_POLICY_INPUT,

@@ -12,6 +12,7 @@ describe("parseClassroomFeatureFlags", () => {
       adminGoogleCredentialEnabled: false,
       rosterSheetsEnabled: false,
       studentLocalAuthEnabled: false,
+      rosterGoogleStudentAuthEnabled: false,
       teacherDriveSubmissionEnabled: false,
       submissionPreviewEnabled: false,
     });
@@ -34,6 +35,7 @@ describe("validateClassroomFeatureFlagDependencies", () => {
       adminGoogleCredentialEnabled: true,
       rosterSheetsEnabled: true,
       studentLocalAuthEnabled: true,
+      rosterGoogleStudentAuthEnabled: true,
       teacherDriveSubmissionEnabled: true,
       submissionPreviewEnabled: true,
     });
@@ -50,9 +52,25 @@ describe("validateClassroomFeatureFlagDependencies", () => {
         adminGoogleCredentialEnabled: true,
         rosterSheetsEnabled: true,
         studentLocalAuthEnabled: true,
+        rosterGoogleStudentAuthEnabled: true,
         teacherDriveSubmissionEnabled: true,
         submissionPreviewEnabled: true,
       }),
     ).toEqual([]);
+  });
+
+  it("requires studentLocalAuth for rosterGoogleStudentAuth", () => {
+    const issues = validateClassroomFeatureFlagDependencies({
+      classroomRosterEnabled: true,
+      adminGoogleCredentialEnabled: false,
+      rosterSheetsEnabled: false,
+      studentLocalAuthEnabled: false,
+      rosterGoogleStudentAuthEnabled: true,
+      teacherDriveSubmissionEnabled: false,
+      submissionPreviewEnabled: false,
+    });
+    expect(
+      issues.some(item => item.includes("ROSTER_GOOGLE_STUDENT_AUTH_ENABLED")),
+    ).toBe(true);
   });
 });

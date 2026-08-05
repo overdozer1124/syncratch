@@ -15,6 +15,7 @@ const ALL_FLAGS_OFF: ClassroomFeatureFlags = {
   adminGoogleCredentialEnabled: false,
   rosterSheetsEnabled: false,
   studentLocalAuthEnabled: false,
+  rosterGoogleStudentAuthEnabled: false,
   teacherDriveSubmissionEnabled: false,
   submissionPreviewEnabled: false,
 };

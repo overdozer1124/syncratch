@@ -41,6 +41,7 @@ describe("resolveClassroomFeatureFlagsForStartup", () => {
       adminGoogleCredentialEnabled: false,
       rosterSheetsEnabled: false,
       studentLocalAuthEnabled: false,
+      rosterGoogleStudentAuthEnabled: false,
       teacherDriveSubmissionEnabled: false,
       submissionPreviewEnabled: false,
     });

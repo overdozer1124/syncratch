@@ -31,8 +31,8 @@ describe("roster-service", () => {
 
     const csv = [
       header(),
-      "S001,山田太郎,007,yamada01,A,true",
-      "S002,佐藤花子,02,sato02,A,true",
+      "S001,山田太郎,007,yamada01,,A,true",
+      "S002,佐藤花子,02,sato02,,A,true",
     ].join("\n");
     const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
     expect(preview.baseRosterRevision).toBe(0);
@@ -161,7 +161,7 @@ describe("roster-service", () => {
     });
     const service = createRosterService(db.sqlite);
     const roster = service.createRoster(admin.adminId, {title: "名簿"});
-    const csv = [header(), "S001,山田,01,y,A,true"].join("\n");
+    const csv = [header(), "S001,山田,01,y,,A,true"].join("\n");
     const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
 
     expect(() =>
@@ -192,7 +192,7 @@ describe("roster-service", () => {
     const previewA = service.createImportFromCsv(
       roster.rosterId,
       admin.adminId,
-      [header(), "S001,山田,01,y,A,true"].join("\n"),
+      [header(), "S001,山田,01,y,,A,true"].join("\n"),
     );
     const previewB = service.createImportFromCsv(
       roster.rosterId,
@@ -249,7 +249,7 @@ describe("roster-service", () => {
     const seed = service.createImportFromCsv(
       rosterA.rosterId,
       admin.adminId,
-      [header(), "S001,共有,01,shared,A,true"].join("\n"),
+      [header(), "S001,共有,01,shared,,A,true"].join("\n"),
     );
     service.applyImport({
       rosterId: rosterA.rosterId,
@@ -263,7 +263,7 @@ describe("roster-service", () => {
     const linkPreview = service.createImportFromCsv(
       rosterB.rosterId,
       admin.adminId,
-      [header(), "S001,共有更新,01,shared,A,true"].join("\n"),
+      [header(), "S001,共有更新,01,shared,,A,true"].join("\n"),
     );
     expect(linkPreview.rows.some(row => row.category === "add")).toBe(false);
     expect(linkPreview.rows.some(row => row.category === "update")).toBe(true);
@@ -295,8 +295,8 @@ describe("roster-service", () => {
     const roster = service.createRoster(admin.adminId, {title: "名簿"});
     const csv = [
       header(),
-      "S001,重複,01,a,A,true",
-      "S001,重複2,02,b,B,true",
+      "S001,重複,01,a,,A,true",
+      "S001,重複2,02,b,,B,true",
     ].join("\n");
     const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
 
@@ -332,7 +332,7 @@ describe("roster-service", () => {
     const seed = service.createImportFromCsv(
       roster.rosterId,
       admin.adminId,
-      [header(), "S001,山田,01,y,A,true", "S002,佐藤,02,s,B,true"].join("\n"),
+      [header(), "S001,山田,01,y,,A,true", "S002,佐藤,02,s,,B,true"].join("\n"),
     );
     service.applyImport({
       rosterId: roster.rosterId,
@@ -431,7 +431,7 @@ describe("roster-service", () => {
     const seed = service.createImportFromCsv(
       roster.rosterId,
       admin.adminId,
-      [header(), "S001,山田,01,y,A,true", "S002,佐藤,02,s,B,true"].join("\n"),
+      [header(), "S001,山田,01,y,,A,true", "S002,佐藤,02,s,,B,true"].join("\n"),
     );
     service.applyImport({
       rosterId: roster.rosterId,

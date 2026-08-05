@@ -11,6 +11,8 @@ import {
   mergeClassroomPolicy,
   normalizeClassroomPolicyInput,
   normalizeEmail,
+  normalizeStudentAuthMethod,
+  parseAllowedEmailDomainsJson,
   toStudentPolicyView,
   type AdminAccount,
   type ClassroomPolicy,
@@ -104,6 +106,8 @@ interface PolicyRow {
   drive_allow: number;
   roster_id: string | null;
   student_auth_required: number;
+  student_auth_method: string;
+  student_auth_allowed_domains_json: string;
   submission_enabled: number;
   submission_drive_folder_id: string | null;
   created_at: string;
@@ -175,7 +179,13 @@ function rowToPolicy(row: PolicyRow): ClassroomPolicy {
     drive: {allow: Boolean(row.drive_allow)},
     rosterId: row.roster_id ?? null,
     submissionDriveFolderId: row.submission_drive_folder_id ?? null,
-    studentAuth: {required: Boolean(row.student_auth_required)},
+    studentAuth: {
+      required: Boolean(row.student_auth_required),
+      method: normalizeStudentAuthMethod(row.student_auth_method),
+      allowedEmailDomains: parseAllowedEmailDomainsJson(
+        row.student_auth_allowed_domains_json,
+      ),
+    },
     submission: {enabled: Boolean(row.submission_enabled)},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -255,7 +265,9 @@ export function openAdminDb(dbPath: string): AdminDb {
       editor_show_settings, editor_allow_sb3_export, editor_allow_sb3_import,
       editor_allow_extensions,
       collab_allow, drive_allow,
-      roster_id, student_auth_required, submission_enabled,
+      roster_id, student_auth_required, student_auth_method,
+      student_auth_allowed_domains_json,
+      submission_enabled,
       submission_drive_folder_id,
       created_at, updated_at
     ) VALUES (
@@ -264,7 +276,9 @@ export function openAdminDb(dbPath: string): AdminDb {
       @editor_show_settings, @editor_allow_sb3_export, @editor_allow_sb3_import,
       @editor_allow_extensions,
       @collab_allow, @drive_allow,
-      @roster_id, @student_auth_required, @submission_enabled,
+      @roster_id, @student_auth_required, @student_auth_method,
+      @student_auth_allowed_domains_json,
+      @submission_enabled,
       @submission_drive_folder_id,
       @created_at, @updated_at
     )
@@ -285,6 +299,8 @@ export function openAdminDb(dbPath: string): AdminDb {
       drive_allow = @drive_allow,
       roster_id = @roster_id,
       student_auth_required = @student_auth_required,
+      student_auth_method = @student_auth_method,
+      student_auth_allowed_domains_json = @student_auth_allowed_domains_json,
       submission_enabled = @submission_enabled,
       submission_drive_folder_id = @submission_drive_folder_id,
       updated_at = @updated_at
@@ -375,6 +391,10 @@ export function openAdminDb(dbPath: string): AdminDb {
       drive_allow: policy.drive.allow ? 1 : 0,
       roster_id: policy.rosterId,
       student_auth_required: policy.studentAuth.required ? 1 : 0,
+      student_auth_method: policy.studentAuth.method,
+      student_auth_allowed_domains_json: JSON.stringify(
+        policy.studentAuth.allowedEmailDomains,
+      ),
       submission_enabled: policy.submission.enabled ? 1 : 0,
       submission_drive_folder_id: policy.submissionDriveFolderId,
       created_at: policy.createdAt,
@@ -611,7 +631,9 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_show_settings, p.editor_allow_sb3_export,
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
-                  p.roster_id, p.student_auth_required, p.submission_enabled,
+                  p.roster_id, p.student_auth_required, p.student_auth_method,
+                  p.student_auth_allowed_domains_json,
+                  p.submission_enabled,
                   p.submission_drive_folder_id,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
@@ -634,6 +656,8 @@ export function openAdminDb(dbPath: string): AdminDb {
             drive_allow: number;
             roster_id: string | null;
             student_auth_required: number;
+            student_auth_method: string;
+            student_auth_allowed_domains_json: string;
             submission_enabled: number;
             submission_drive_folder_id: string | null;
             p_policy_id: string;
@@ -662,6 +686,8 @@ export function openAdminDb(dbPath: string): AdminDb {
         drive_allow: row.drive_allow,
         roster_id: row.roster_id,
         student_auth_required: row.student_auth_required,
+        student_auth_method: row.student_auth_method,
+        student_auth_allowed_domains_json: row.student_auth_allowed_domains_json,
         submission_enabled: row.submission_enabled,
         submission_drive_folder_id: row.submission_drive_folder_id ?? null,
         created_at: row.p_created,
@@ -711,7 +737,9 @@ export function openAdminDb(dbPath: string): AdminDb {
                   p.editor_show_settings, p.editor_allow_sb3_export,
                   p.editor_allow_sb3_import, p.editor_allow_extensions,
                   p.collab_allow, p.drive_allow,
-                  p.roster_id, p.student_auth_required, p.submission_enabled,
+                  p.roster_id, p.student_auth_required, p.student_auth_method,
+                  p.student_auth_allowed_domains_json,
+                  p.submission_enabled,
                   p.submission_drive_folder_id,
                   p.policy_id AS p_policy_id, p.owner_admin_id AS p_owner,
                   p.created_at AS p_created, p.updated_at AS p_updated
@@ -734,6 +762,8 @@ export function openAdminDb(dbPath: string): AdminDb {
             drive_allow: number;
             roster_id: string | null;
             student_auth_required: number;
+            student_auth_method: string;
+            student_auth_allowed_domains_json: string;
             submission_enabled: number;
             submission_drive_folder_id: string | null;
             p_policy_id: string;
@@ -762,6 +792,8 @@ export function openAdminDb(dbPath: string): AdminDb {
         drive_allow: row.drive_allow,
         roster_id: row.roster_id,
         student_auth_required: row.student_auth_required,
+        student_auth_method: row.student_auth_method,
+        student_auth_allowed_domains_json: row.student_auth_allowed_domains_json,
         submission_enabled: row.submission_enabled,
         submission_drive_folder_id: row.submission_drive_folder_id ?? null,
         created_at: row.p_created,

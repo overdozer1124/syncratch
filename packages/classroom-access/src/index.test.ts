@@ -67,6 +67,8 @@ describe("policy normalize + student view", () => {
     expect(normalized.editor.allowExtensions).toBe(false);
     expect(normalized.rosterId).toBeNull();
     expect(normalized.studentAuth.required).toBe(false);
+    expect(normalized.studentAuth.method).toBe("google-or-local");
+    expect(normalized.studentAuth.allowedEmailDomains).toEqual([]);
     expect(normalized.submission.enabled).toBe(false);
 
     const policy: ClassroomPolicy = {
@@ -82,31 +84,42 @@ describe("policy normalize + student view", () => {
     expect(view).not.toHaveProperty("rosterId");
     expect(view.aiAssist.enabled).toBe(false);
     expect(view.studentAuth.required).toBe(false);
+    expect(view.studentAuth.method).toBe("google-or-local");
     expect(view.submission.enabled).toBe(false);
   });
 
   it("resolveStudentAccessMode gates roster-login on rosterId + required auth", () => {
+    const noAuth: ClassroomPolicy["studentAuth"] = {
+      required: false,
+      method: "google-or-local",
+      allowedEmailDomains: [],
+    };
+    const rosterLogin: ClassroomPolicy["studentAuth"] = {
+      required: true,
+      method: "google-or-local",
+      allowedEmailDomains: [],
+    };
     expect(
       resolveStudentAccessMode({
         rosterId: null,
-        studentAuth: {required: false},
+        studentAuth: noAuth,
       }),
     ).toBe("shared-anonymous");
     expect(
       resolveStudentAccessMode({
         rosterId: "r1",
-        studentAuth: {required: false},
+        studentAuth: {...noAuth, method: "google"},
       }),
     ).toBe("shared-anonymous");
     expect(
       resolveStudentAccessMode({
         rosterId: "r1",
-        studentAuth: {required: true},
+        studentAuth: rosterLogin,
       }),
     ).toBe("roster-login");
     expect(
       resolveStudentAccessMode(
-        {rosterId: "r1", studentAuth: {required: true}},
+        {rosterId: "r1", studentAuth: rosterLogin},
         {classroomRosterEnabled: false},
       ),
     ).toBe("shared-anonymous");
@@ -120,12 +133,32 @@ describe("policy normalize + student view", () => {
       updatedAt: "t1",
       ...normalizeClassroomPolicyInput({
         rosterId: "r1",
-        studentAuth: {required: true},
+        studentAuth: {required: true, method: "google-or-local"},
       }),
     };
     const view = toStudentPolicyView(policy, {classroomRosterEnabled: false});
     expect(view).not.toHaveProperty("rosterId");
     expect(view.studentAuth.required).toBe(false);
+    expect(view.studentAuth.method).toBe("google-or-local");
+  });
+
+  it("toStudentPolicyView exposes method but not allowedEmailDomains", () => {
+    const policy: ClassroomPolicy = {
+      policyId: "p1",
+      ownerAdminId: "a1",
+      createdAt: "t0",
+      updatedAt: "t1",
+      ...normalizeClassroomPolicyInput({
+        studentAuth: {
+          required: true,
+          method: "google",
+          allowedEmailDomains: ["school.jp"],
+        },
+      }),
+    };
+    const view = toStudentPolicyView(policy, {classroomRosterEnabled: true});
+    expect(view.studentAuth.method).toBe("google");
+    expect(view.studentAuth).not.toHaveProperty("allowedEmailDomains");
   });
 
   it("toStudentPolicyView forces submission.enabled false when submission flag off", () => {
