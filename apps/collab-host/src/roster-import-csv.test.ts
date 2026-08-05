@@ -20,6 +20,7 @@ describe("csv-parse roster import gate", () => {
       display_name: "山田太郎",
       attendance_number: "01",
       login_name: "yamada01",
+      google_email: "",
       group_label: "A",
       active: "true",
     });

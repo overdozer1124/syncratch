@@ -6,6 +6,7 @@ import {parse} from "csv-parse/sync";
 import {
   ROSTER_SHEET_COLUMNS,
   canonicalRosterSheetHeader,
+  normalizeGoogleEmail,
   type RosterImportPreviewCategory,
   type RosterImportPreviewRow,
   type RosterImportRowIssue,
@@ -26,6 +27,8 @@ const BLOCKING_ISSUE_CODES = new Set([
   "INVALID_ACTIVE",
   "INACTIVE_ADD",
   "CSV_PARSE_ERROR",
+  "INVALID_GOOGLE_EMAIL",
+  "DUPLICATE_GOOGLE_EMAIL",
 ]);
 
 export interface ParsedRosterCsvRow {
@@ -39,6 +42,7 @@ export interface ExistingRosterStudent {
   displayName: string;
   attendanceNumber: string | null;
   loginName: string | null;
+  googleEmail: string | null;
   groupLabel: string | null;
   active: boolean;
 }
@@ -48,6 +52,7 @@ export interface NormalizedRosterRow {
   displayName: string;
   attendanceNumber: string | null;
   loginName: string;
+  googleEmail: string | null;
   groupLabel: string | null;
   active: boolean;
 }
@@ -133,7 +138,31 @@ function normalizeRow(
 
   const attendanceRaw = raw.attendance_number?.trim() ?? "";
   const loginRaw = raw.login_name?.trim() ?? "";
+  const googleEmailRaw = raw.google_email?.trim() ?? "";
   const groupRaw = raw.group_label?.trim() ?? "";
+
+  let googleEmail: string | null = null;
+  if (googleEmailRaw) {
+    googleEmail = normalizeGoogleEmail(googleEmailRaw);
+    if (!googleEmail) {
+      issues.push({
+        code: "INVALID_GOOGLE_EMAIL",
+        message: "google_email must be a valid email address",
+        field: "google_email",
+      });
+    }
+  }
+
+  const blockingAfterEmail = issues.filter(issue =>
+    BLOCKING_ISSUE_CODES.has(issue.code),
+  );
+  if (blockingAfterEmail.length > 0) {
+    return {
+      issues: blockingAfterEmail.concat(
+        issues.filter(i => !BLOCKING_ISSUE_CODES.has(i.code)),
+      ),
+    };
+  }
 
   return {
     row: {
@@ -141,6 +170,7 @@ function normalizeRow(
       displayName,
       attendanceNumber: attendanceRaw ? attendanceRaw : null,
       loginName: loginRaw || studentCode,
+      googleEmail,
       groupLabel: groupRaw ? groupRaw : null,
       active: activeParsed as boolean,
     },
@@ -219,8 +249,21 @@ function rowsEqual(a: NormalizedRosterRow, b: ExistingRosterStudent): boolean {
     a.displayName === b.displayName &&
     a.attendanceNumber === b.attendanceNumber &&
     a.loginName === (b.loginName ?? b.studentCode) &&
+    a.googleEmail === b.googleEmail &&
     a.groupLabel === b.groupLabel &&
     a.active === b.active
+  );
+}
+
+function findGoogleEmailCollision(
+  googleEmail: string,
+  existingStudents: ExistingRosterStudent[],
+  excludeStudentId: string | null,
+): ExistingRosterStudent | undefined {
+  return existingStudents.find(
+    student =>
+      student.googleEmail === googleEmail &&
+      student.studentId !== excludeStudentId,
   );
 }
 
@@ -240,6 +283,7 @@ export function buildImportPreviewRows(input: {
   );
   const seenCodes = new Map<string, number>();
   const seenAttendance = new Map<string, string>();
+  const seenGoogleEmails = new Map<string, string>();
   const csvCodes = new Set<string>();
   const drafts: PreviewRowDraft[] = [];
 
@@ -298,6 +342,27 @@ export function buildImportPreviewRows(input: {
       seenAttendance.set(row.attendanceNumber, row.studentCode);
     }
 
+    if (row.googleEmail) {
+      const otherCode = seenGoogleEmails.get(row.googleEmail);
+      if (otherCode && otherCode !== row.studentCode) {
+        drafts.push({
+          rowNumber: parsed.rowNumber,
+          category: "duplicate_candidate",
+          studentId: byCode.get(row.studentCode)?.studentId ?? null,
+          proposed: {...row},
+          issues: [
+            {
+              code: "DUPLICATE_GOOGLE_EMAIL",
+              message: `Duplicate google_email in import (first at row ${seenGoogleEmails.get(row.googleEmail)})`,
+              field: "google_email",
+            },
+          ],
+        });
+        continue;
+      }
+      seenGoogleEmails.set(row.googleEmail, row.studentCode);
+    }
+
     const existing = byCode.get(row.studentCode);
     if (existing) {
       if (row.attendanceNumber) {
@@ -318,6 +383,30 @@ export function buildImportPreviewRows(input: {
                 code: "ATTENDANCE_COLLISION",
                 message: `attendance_number ${row.attendanceNumber} already assigned`,
                 field: "attendance_number",
+              },
+            ],
+          });
+          continue;
+        }
+      }
+
+      if (row.googleEmail) {
+        const emailCollision = findGoogleEmailCollision(
+          row.googleEmail,
+          input.existingStudents,
+          existing.studentId,
+        );
+        if (emailCollision) {
+          drafts.push({
+            rowNumber: parsed.rowNumber,
+            category: "duplicate_candidate",
+            studentId: existing.studentId,
+            proposed: {...row},
+            issues: [
+              {
+                code: "DUPLICATE_GOOGLE_EMAIL",
+                message: `google_email ${row.googleEmail} already assigned to ${emailCollision.studentCode}`,
+                field: "google_email",
               },
             ],
           });
@@ -372,6 +461,30 @@ export function buildImportPreviewRows(input: {
               code: "ATTENDANCE_COLLISION",
               message: `attendance_number ${row.attendanceNumber} already assigned`,
               field: "attendance_number",
+            },
+          ],
+        });
+        continue;
+      }
+    }
+
+    if (row.googleEmail) {
+      const emailCollision = findGoogleEmailCollision(
+        row.googleEmail,
+        input.existingStudents,
+        null,
+      );
+      if (emailCollision) {
+        drafts.push({
+          rowNumber: parsed.rowNumber,
+          category: "duplicate_candidate",
+          studentId: null,
+          proposed: {...row},
+          issues: [
+            {
+              code: "DUPLICATE_GOOGLE_EMAIL",
+              message: `google_email ${row.googleEmail} already assigned to ${emailCollision.studentCode}`,
+              field: "google_email",
             },
           ],
         });

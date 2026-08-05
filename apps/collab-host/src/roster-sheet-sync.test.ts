@@ -35,19 +35,20 @@ describe("roster-sheet-sync helpers", () => {
     const header = [...ROSTER_SHEET_COLUMNS];
     const values = [
       header,
-      ["s001", "Alice", "01", "alice", "A", "true"],
-      ["s002", "Bob", "", "bob", "", ""],
+      ["s001", "Alice", "01", "alice", "", "A", "true"],
+      ["s002", "Bob", "", "bob", "bob@school.example", "", ""],
     ];
     const rows = sheetValuesToParsedRows(values);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.raw.student_code).toBe("s001");
     expect(rows[1]?.raw.display_name).toBe("Bob");
+    expect(rows[1]?.raw.google_email).toBe("bob@school.example");
   });
 
   it("accepts Japanese header labels", () => {
     const values = [
       [...rosterSheetTemplateHeaders()],
-      ["s001", "Alice", "01", "alice", "A", "1"],
+      ["s001", "Alice", "01", "alice", "alice@school.example", "A", "1"],
     ];
     const rows = sheetValuesToParsedRows(values);
     expect(rows).toHaveLength(1);
@@ -170,7 +171,7 @@ describe("createRosterTemplateSpreadsheet", () => {
       ) {
         const body = JSON.parse(String(init.body)) as {values?: string[][]};
         expect(body.values?.[0]).toEqual(Array.from(rosterSheetTemplateHeaders()));
-        return new Response(JSON.stringify({updatedCells: 6}), {status: 200});
+        return new Response(JSON.stringify({updatedCells: 7}), {status: 200});
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
@@ -234,6 +235,7 @@ describe("appendStudentRowToSheet", () => {
           "山田太郎",
           "01",
           "yamada01",
+          "tarou@school.example",
           "A",
           "1",
         ]);
@@ -281,13 +283,14 @@ describe("appendStudentRowToSheet", () => {
       {
         sheetSpreadsheetId: "sheet-1",
         sheetTabName: "Sheet1",
-        sheetRange: "A:F",
+        sheetRange: "A:G",
       },
       {
         studentCode: "S001",
         displayName: "山田太郎",
         attendanceNumber: "01",
         loginName: "yamada01",
+        googleEmail: "tarou@school.example",
         groupLabel: "A",
         active: true,
       },
@@ -295,7 +298,7 @@ describe("appendStudentRowToSheet", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      encodeURIComponent("'Sheet1'!A:F") + ":append",
+      encodeURIComponent("'Sheet1'!A:G") + ":append",
     );
   });
 });

@@ -205,7 +205,10 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
         return {status: 422, body: {ok: false, code: error.code, message: error.message}};
       case "DUPLICATE_STUDENT_CODE":
       case "ATTENDANCE_COLLISION":
+      case "DUPLICATE_GOOGLE_EMAIL":
         return {status: 409, body: {ok: false, code: error.code, message: error.message}};
+      case "INVALID_GOOGLE_EMAIL":
+        return {status: 422, body: {ok: false, code: error.code, message: error.message}};
       case "IMPORT_NOT_APPLICABLE":
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
       case "NOT_CONFIGURED":
@@ -378,6 +381,10 @@ export function createRosterRoutesHandler(
                 body?.loginName === null || typeof body?.loginName === "string"
                   ? (body.loginName as string | null)
                   : undefined,
+              googleEmail:
+                body?.googleEmail === null || typeof body?.googleEmail === "string"
+                  ? (body.googleEmail as string | null)
+                  : undefined,
               groupLabel:
                 body?.groupLabel === null || typeof body?.groupLabel === "string"
                   ? (body.groupLabel as string | null)
@@ -402,6 +409,7 @@ export function createRosterRoutesHandler(
                     displayName: student.displayName,
                     attendanceNumber: student.attendanceNumber,
                     loginName: student.loginName,
+                    googleEmail: student.googleEmail,
                     groupLabel: student.groupLabel,
                     active: student.active,
                   },

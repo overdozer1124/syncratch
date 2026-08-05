@@ -24,6 +24,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
       displayName: "山田太郎",
       attendanceNumber: "01",
       loginName: "yamada01",
+      googleEmail: "yamada01@school.example",
       groupLabel: "A",
       active: true,
     },
@@ -75,7 +76,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   });
 
   it("4. unchanged category on identical re-import", () => {
-    const csv = [header(), "S001,山田太郎,01,yamada01,,A,true"].join("\n");
+    const csv = [header(), "S001,山田太郎,01,yamada01,yamada01@school.example,A,true"].join("\n");
     const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: existing,
@@ -85,7 +86,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   });
 
   it("5. deactivateMissing defaults false and affects previewHash", () => {
-    const csv = [header(), "S001,山田太郎,01,yamada01,,A,true"].join("\n");
+    const csv = [header(), "S001,山田太郎,01,yamada01,yamada01@school.example,A,true"].join("\n");
     const parsed = parseRosterCsv(csv);
     const rosterMembers = [
       ...existing,
@@ -95,6 +96,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
         displayName: "佐藤",
         attendanceNumber: "02",
         loginName: "sato",
+        googleEmail: null,
         groupLabel: "A",
         active: true,
       },
@@ -157,10 +159,59 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   it("parses CSV with Japanese header labels", () => {
     const csv = [
       rosterSheetTemplateHeaders().join(","),
-      "S001,山田太郎,01,yamada01,,A,1",
+      "S001,山田太郎,01,yamada01,yamada01@school.example,A,1",
     ].join("\n");
     const parsed = parseRosterCsv(csv);
     expect(parsed[0]?.raw.student_code).toBe("S001");
     expect(parsed[0]?.raw.display_name).toBe("山田太郎");
+    expect(parsed[0]?.raw.google_email).toBe("yamada01@school.example");
+  });
+
+  it("normalizes google_email and rejects invalid values", () => {
+    const csv = [header(), "S010,新規,10,new,not-an-email,B,true"].join("\n");
+    expect(() => parseRosterCsv(csv)).not.toThrow();
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows[0]?.category).toBe("rejected_row");
+    expect(rows[0]?.issues.some(issue => issue.code === "INVALID_GOOGLE_EMAIL")).toBe(
+      true,
+    );
+  });
+
+  it("detects duplicate google_email within import", () => {
+    const csv = [
+      header(),
+      "S010,重複A,10,a,alice@school.example,A,true",
+      "S011,重複B,11,b,alice@school.example,B,true",
+    ].join("\n");
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows.filter(row => row.category === "duplicate_candidate")).toHaveLength(1);
+    expect(hasBlockingPreviewRows(rows)).toBe(true);
+  });
+
+  it("detects google_email collision with existing owner student", () => {
+    const csv = [header(), "S010,新規,10,new,alice@school.example,B,true"].join("\n");
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [
+        {
+          studentId: "stu-x",
+          studentCode: "S999",
+          displayName: "既存",
+          attendanceNumber: null,
+          loginName: "existing",
+          googleEmail: "alice@school.example",
+          groupLabel: null,
+          active: true,
+        },
+      ],
+    });
+    expect(rows[0]?.category).toBe("duplicate_candidate");
+    expect(hasBlockingPreviewRows(rows)).toBe(true);
   });
 });

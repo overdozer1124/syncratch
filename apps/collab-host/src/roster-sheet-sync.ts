@@ -352,6 +352,7 @@ export interface RosterSheetStudentRow {
   displayName: string;
   attendanceNumber: string | null;
   loginName: string | null;
+  googleEmail: string | null;
   groupLabel: string | null;
   active: boolean;
 }
@@ -361,7 +362,7 @@ function buildSheetAppendRange(input: {
   sheetRange: string | null;
 }): string {
   const tabName = input.sheetTabName?.trim() || "Sheet1";
-  const dataRange = input.sheetRange?.trim() || "A:F";
+  const dataRange = input.sheetRange?.trim() || "A:G";
   return `${escapeSheetTabName(tabName)}!${dataRange}`;
 }
 
@@ -371,6 +372,7 @@ function rosterStudentRowValues(student: RosterSheetStudentRow): string[] {
     student.displayName,
     student.attendanceNumber ?? "",
     student.loginName ?? student.studentCode,
+    student.googleEmail ?? "",
     student.groupLabel ?? "",
     student.active ? "1" : "0",
   ];
