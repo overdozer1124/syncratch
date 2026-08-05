@@ -11,7 +11,10 @@ import {
   buildSpreadsheetEditUrl,
   mountAdminRostersSection,
   mountPolicyRosterControls,
+  renderAccountPane,
+  renderRosterPane,
 } from "./admin-rosters-ui.js";
+import {createAdminSaveFooter} from "./admin-console-shared.js";
 
 const samplePolicy = {
   policyId: "policy-1",
@@ -33,6 +36,14 @@ const samplePolicy = {
   drive: {allow: false},
   createdAt: "t0",
   updatedAt: "t1",
+};
+
+const disabledFlags = {
+  classroomRosterEnabled: false,
+  adminGoogleCredentialEnabled: false,
+  rosterSheetsEnabled: false,
+  teacherDriveSubmissionEnabled: false,
+  submissionPreviewEnabled: false,
 };
 
 describe("admin rosters ui", () => {
@@ -58,7 +69,7 @@ describe("admin rosters ui", () => {
         ok: true,
         json: async () => ({
           ok: true,
-          rosters: [{rosterId: "r1", title: "3A", studentCount: 2, syncStatus: "idle"}],
+          rosters: [{rosterId: "r1", title: "3A", studentCount: 2, syncStatus: "active"}],
         }),
       })),
     );
@@ -70,31 +81,44 @@ describe("admin rosters ui", () => {
 
   it("shows disabled message when roster flag is off", async () => {
     const host = document.createElement("div");
-    await mountAdminRostersSection(host, () => "csrf", {
-      classroomRosterEnabled: false,
-      adminGoogleCredentialEnabled: false,
-      rosterSheetsEnabled: false,
-      teacherDriveSubmissionEnabled: false,
-      submissionPreviewEnabled: false,
-    });
+    await mountAdminRostersSection(host, () => "csrf", disabledFlags);
 
     expect(host.querySelector("[data-testid=admin-rosters-panel]")).toBeTruthy();
     expect(host.textContent).toContain("SYNCRATCH_CLASSROOM_ROSTER_ENABLED");
   });
 
-  it("renders roster cards with google credential panel", async () => {
+  it("renders account pane with google credential section", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url === ADMIN_ROSTERS_PATH) {
+        if (url === ADMIN_GOOGLE_OAUTH_SESSION_PATH) {
           return {
             ok: true,
-            json: async () => ({
-              ok: true,
-              rosters: [{rosterId: "r1", title: "3A", studentCount: 1, syncStatus: "idle"}],
-            }),
+            json: async () => ({ok: true, connected: false}),
           };
         }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+    const pane = renderAccountPane({
+      getCsrf: () => "csrf",
+      flags: {...disabledFlags, adminGoogleCredentialEnabled: true, classroomRosterEnabled: true},
+      saveFooter: createAdminSaveFooter(),
+      onRefresh: async () => {},
+      rosters: [],
+      adminEmail: "t@example.com",
+    });
+
+    expect(pane.querySelector("[data-testid=admin-roster-credential]")).toBeTruthy();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(pane.textContent).toContain("Google と連携");
+  });
+
+  it("renders roster pane with student table and hidden open sheet link", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
         if (url === adminRosterPath("r1")) {
           return {
             ok: true,
@@ -104,7 +128,7 @@ describe("admin rosters ui", () => {
                 rosterId: "r1",
                 title: "3A",
                 rosterRevision: 1,
-                syncStatus: "idle",
+                syncStatus: "active",
                 sheetSpreadsheetId: null,
                 sheetTabName: "Sheet1",
                 sheetRange: null,
@@ -128,35 +152,34 @@ describe("admin rosters ui", () => {
                   loginName: null,
                   groupLabel: null,
                   active: true,
+                  accountStatus: "active",
+                  createdAt: "t0",
+                  updatedAt: "t1",
                 },
               ],
             }),
-          };
-        }
-        if (url === ADMIN_GOOGLE_OAUTH_SESSION_PATH) {
-          return {
-            ok: true,
-            json: async () => ({ok: true, connected: false}),
           };
         }
         throw new Error(`unexpected fetch ${url}`);
       }),
     );
 
-    const host = document.createElement("div");
-    await mountAdminRostersSection(host, () => "csrf", {
-      classroomRosterEnabled: true,
-      adminGoogleCredentialEnabled: true,
-      rosterSheetsEnabled: true,
-      teacherDriveSubmissionEnabled: false,
-      submissionPreviewEnabled: false,
-    });
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true, rosterSheetsEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 1, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
 
-    expect(host.querySelector("[data-testid=admin-roster-credential]")).toBeTruthy();
-    expect(host.querySelector("[data-testid=admin-roster-card]")).toBeTruthy();
-    expect(host.querySelector(".admin-roster-student-table")).toBeTruthy();
+    expect(pane?.querySelector("[data-testid=admin-roster-card]")).toBeTruthy();
+    expect(pane?.querySelector(".admin-roster-student-table")).toBeTruthy();
     expect(
-      host.querySelector<HTMLAnchorElement>("[data-testid=admin-roster-open-sheet]")?.hidden,
+      pane?.querySelector<HTMLAnchorElement>("[data-testid=admin-roster-open-sheet]")?.hidden,
     ).toBe(true);
   });
 
@@ -164,15 +187,6 @@ describe("admin rosters ui", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
-        if (url === ADMIN_ROSTERS_PATH) {
-          return {
-            ok: true,
-            json: async () => ({
-              ok: true,
-              rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "idle"}],
-            }),
-          };
-        }
         if (url === adminRosterPath("r1")) {
           return {
             ok: true,
@@ -182,7 +196,7 @@ describe("admin rosters ui", () => {
                 rosterId: "r1",
                 title: "3A",
                 rosterRevision: 1,
-                syncStatus: "idle",
+                syncStatus: "active",
                 sheetSpreadsheetId: "sheet-bound-1",
                 sheetTabName: "Sheet1",
                 sheetRange: null,
@@ -198,52 +212,44 @@ describe("admin rosters ui", () => {
             json: async () => ({ok: true, students: []}),
           };
         }
-        if (url === ADMIN_GOOGLE_OAUTH_SESSION_PATH) {
-          return {
-            ok: true,
-            json: async () => ({ok: true, connected: true, googleEmail: "t@example.com"}),
-          };
-        }
         throw new Error(`unexpected fetch ${url}`);
       }),
     );
 
-    const host = document.createElement("div");
-    await mountAdminRostersSection(host, () => "csrf", {
-      classroomRosterEnabled: true,
-      adminGoogleCredentialEnabled: true,
-      rosterSheetsEnabled: true,
-      teacherDriveSubmissionEnabled: false,
-      submissionPreviewEnabled: false,
-    });
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true, rosterSheetsEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
 
-    const openSheet = host.querySelector<HTMLAnchorElement>(
+    const openSheet = pane?.querySelector<HTMLAnchorElement>(
       "[data-testid=admin-roster-open-sheet]",
     );
     expect(openSheet).toBeTruthy();
     expect(openSheet?.hidden).toBe(false);
     expect(openSheet?.href).toBe(buildSpreadsheetEditUrl("sheet-bound-1"));
-    expect(openSheet?.textContent).toContain("スプレッドシートを開く");
+    expect(openSheet?.textContent).toContain("Sheet を開く");
   });
 
-  it("mounts policy roster controls", () => {
-    const card = document.createElement("div");
-    mountPolicyRosterControls(
-      card,
+  it("mounts policy roster controls with segment and select", () => {
+    const saveFooter = createAdminSaveFooter();
+    const panel = mountPolicyRosterControls(
       samplePolicy,
-      [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "idle"}],
-      {
-        classroomRosterEnabled: true,
-        adminGoogleCredentialEnabled: false,
-        rosterSheetsEnabled: false,
-        teacherDriveSubmissionEnabled: false,
-        submissionPreviewEnabled: false,
-      },
+      [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+      {...disabledFlags, classroomRosterEnabled: true},
       () => "csrf",
+      saveFooter,
       async () => {},
     );
 
-    expect(card.querySelector("[data-testid=admin-policy-roster]")).toBeTruthy();
-    expect(card.querySelector(".admin-roster-select")).toBeTruthy();
+    expect(panel.getAttribute("data-testid")).toBe("admin-policy-roster");
+    expect(panel.querySelector(".admin-roster-select")).toBeTruthy();
+    expect(panel.querySelector(".admin2-segment")).toBeTruthy();
   });
 });

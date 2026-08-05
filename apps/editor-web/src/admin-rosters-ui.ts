@@ -22,20 +22,18 @@ import {
   type RosterImportPreviewCategory,
 } from "@blocksync/classroom-access";
 import type {AdminClassroomFlags} from "./admin-classroom-flags.js";
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs: Record<string, string> = {},
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === "class") node.className = value;
-    else node.setAttribute(key, value);
-  }
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
+import {
+  adminFetch,
+  createBadge,
+  createFilePicker,
+  createSegmentControl,
+  debounce,
+  el,
+  emptyValue,
+  formatShortTimestamp,
+  truncateMiddle,
+  type AdminSaveFooterController,
+} from "./admin-console-shared.js";
 
 const CATEGORY_LABELS: Record<RosterImportPreviewCategory, string> = {
   add: "追加",
@@ -47,21 +45,26 @@ const CATEGORY_LABELS: Record<RosterImportPreviewCategory, string> = {
   rejected_row: "拒否",
 };
 
-async function adminFetch<T>(
-  path: string,
-  init: RequestInit & {csrfToken?: string} = {},
-): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has("content-type")) {
-    headers.set("content-type", "application/json");
-  }
-  if (init.csrfToken) headers.set("x-csrf-token", init.csrfToken);
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: "same-origin",
-  });
-  return (await response.json()) as T;
+export interface AdminPaneContext {
+  getCsrf: () => string;
+  flags: AdminClassroomFlags | null;
+  saveFooter: AdminSaveFooterController;
+  onRefresh: () => Promise<void>;
+  rosters: ClassroomRosterListItem[];
+  adminEmail: string;
+}
+
+export function buildSpreadsheetEditUrl(spreadsheetId: string): string {
+  const id = spreadsheetId.trim();
+  if (!id) return "";
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
+}
+
+export async function fetchAdminRosterList(): Promise<ClassroomRosterListItem[]> {
+  const res = await adminFetch<{ok: boolean; rosters?: ClassroomRosterListItem[]}>(
+    ADMIN_ROSTERS_PATH,
+  );
+  return res.ok ? (res.rosters ?? []) : [];
 }
 
 function summarizePreview(preview: RosterImportPreview): string {
@@ -75,26 +78,6 @@ function summarizePreview(preview: RosterImportPreview): string {
     parts.push(`${label} ${count}`);
   }
   return parts.join(" / ") || "変更なし";
-}
-
-export function buildSpreadsheetEditUrl(spreadsheetId: string): string {
-  const id = spreadsheetId.trim();
-  if (!id) return "";
-  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
-}
-
-function syncOpenSheetButton(
-  button: HTMLAnchorElement,
-  spreadsheetId: string,
-): void {
-  const id = spreadsheetId.trim();
-  if (!id) {
-    button.hidden = true;
-    button.removeAttribute("href");
-    return;
-  }
-  button.hidden = false;
-  button.href = buildSpreadsheetEditUrl(id);
 }
 
 function clearOAuthReturnQuery(): void {
@@ -115,7 +98,7 @@ function oauthFailureMessage(reason: string | null): string {
     case "missing_refresh_token":
       return "Google 連携に失敗しました。Google アカウント設定で Syncratch のアクセスを削除してから、もう一度お試しください。";
     case "pending_expired":
-      return "Google 連携の準備状態が失効しました。/admin からもう一度「Google と連携」を押してください。";
+      return "Google 連携の準備状態が失効しました。/admin からもう一度連携してください。";
     case "google_denied":
       return "Google 側で連携がキャンセルまたは拒否されました。";
     case "scope_denied":
@@ -129,86 +112,21 @@ function oauthFailureMessage(reason: string | null): string {
   }
 }
 
-export async function fetchAdminRosterList(): Promise<ClassroomRosterListItem[]> {
-  const res = await adminFetch<{ok: boolean; rosters?: ClassroomRosterListItem[]}>(
-    ADMIN_ROSTERS_PATH,
-  );
-  return res.ok ? (res.rosters ?? []) : [];
+function studentStatusBadge(student: ClassroomStudentListItem): HTMLElement {
+  if (!student.active) {
+    return createBadge("無効", "neutral");
+  }
+  if (student.accountStatus === "pending_activation" || !student.accountStatus) {
+    return createBadge("未登録", "warn");
+  }
+  return createBadge("active", "success");
 }
 
-async function mountGoogleCredentialPanel(
-  host: HTMLElement,
-  flags: AdminClassroomFlags,
-  getCsrf: () => string,
-): Promise<void> {
-  if (!flags.adminGoogleCredentialEnabled) return;
-
-  const panel = el("div", {
-    class: "admin-roster-credential",
-    "data-testid": "admin-roster-credential",
-  });
-  panel.append(el("h3", {}, "教員 Google 連携（名簿 Sheet / 提出用）"));
-  const status = el("p", {class: "admin-muted"});
-  const actions = el("div", {class: "admin-roster-actions"});
-
-  const oauthFlag = new URL(window.location.href).searchParams.get(
-    ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
-  );
-  if (oauthFlag === "ok") {
-    status.textContent = "Google 連携が完了しました。";
-    clearOAuthReturnQuery();
-  } else if (oauthFlag === "error") {
-    const reason = new URL(window.location.href).searchParams.get(
-      ADMIN_GOOGLE_OAUTH_RETURN_REASON,
-    );
-    status.textContent = oauthFailureMessage(reason);
-    clearOAuthReturnQuery();
+function rosterSyncBadge(syncStatus: string): HTMLElement {
+  if (syncStatus === "sync_required") {
+    return createBadge("要確認", "warn");
   }
-
-  async function refreshCredential(): Promise<void> {
-    const session = await adminFetch<{
-      ok: boolean;
-      connected?: boolean;
-      googleEmail?: string;
-    }>(ADMIN_GOOGLE_OAUTH_SESSION_PATH);
-    actions.replaceChildren();
-    if (session.ok && session.connected) {
-      status.textContent = `連携中: ${session.googleEmail ?? "（メール不明）"}`;
-      const disconnect = el(
-        "button",
-        {type: "button", class: "admin-button"},
-        "連携を解除",
-      );
-      disconnect.addEventListener("click", () => {
-        void (async () => {
-          await adminFetch(ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH, {
-            method: "POST",
-            csrfToken: getCsrf(),
-          });
-          await refreshCredential();
-        })();
-      });
-      actions.append(disconnect);
-    } else {
-      status.textContent =
-        status.textContent ||
-        "Google スプレッドシート同期には教員 Google 連携が必要です。";
-      const connect = el(
-        "button",
-        {type: "button", class: "admin-button primary"},
-        "Google と連携",
-      );
-      connect.addEventListener("click", () => {
-        const returnTo = encodeURIComponent("/admin");
-        window.location.href = `${ADMIN_GOOGLE_OAUTH_START_PATH}?return=${returnTo}`;
-      });
-      actions.append(connect);
-    }
-  }
-
-  panel.append(status, actions);
-  host.append(panel);
-  await refreshCredential();
+  return createBadge("同期 active", "success");
 }
 
 function renderPreviewBox(
@@ -217,37 +135,16 @@ function renderPreviewBox(
   onApply: (deactivateMissing: boolean) => Promise<void>,
 ): void {
   container.replaceChildren();
-  container.append(
-    el("p", {class: "admin-muted"}, summarizePreview(preview)),
-  );
-  if (preview.ignoredColumns.length > 0) {
-    container.append(
-      el(
-        "p",
-        {class: "admin-muted"},
-        `無視した列: ${preview.ignoredColumns.join(", ")}`,
-      ),
-    );
-  }
-  if (preview.missingFromCsvCount > 0 && !preview.deactivateMissing) {
-    container.append(
-      el(
-        "p",
-        {class: "admin-muted"},
-        `CSV/Sheet に無い在籍生徒: ${preview.missingFromCsvCount} 名（無効化プレビューなし）`,
-      ),
-    );
-  }
+  container.append(el("p", {class: "admin2-feedback"}, summarizePreview(preview)));
 
-  const table = el("table", {class: "admin-roster-preview-table"});
+  const table = el("table", {class: "admin2-table"});
   const head = el("tr");
   for (const label of ["行", "区分", "student_code", "display_name", "メモ"]) {
     head.append(el("th", {}, label));
   }
-  const thead = el("thead");
-  thead.append(head);
-  table.append(thead);
-  const tbody = el("tbody");
+  table.append(el("thead", {}, undefined), el("tbody"));
+  table.querySelector("thead")!.append(head);
+  const tbody = table.querySelector("tbody")!;
   for (const row of preview.rows.slice(0, 30)) {
     const tr = el("tr");
     const proposed = row.proposed as {
@@ -255,316 +152,626 @@ function renderPreviewBox(
       display_name?: string;
     };
     const issueText =
-      row.issues.length > 0
-        ? row.issues.map(i => i.message).join("; ")
-        : "";
+      row.issues.length > 0 ? row.issues.map(i => i.message).join("; ") : "なし";
     tr.append(
-      el("td", {}, String(row.rowNumber)),
+      el("td", {class: "is-mono"}, String(row.rowNumber)),
       el("td", {}, CATEGORY_LABELS[row.category] ?? row.category),
-      el("td", {}, proposed.student_code ?? ""),
-      el("td", {}, proposed.display_name ?? ""),
+      el("td", {class: "is-mono"}, proposed.student_code || "なし"),
+      el("td", {}, proposed.display_name || "なし"),
       el("td", {}, issueText),
     );
     tbody.append(tr);
   }
-  table.append(tbody);
   container.append(table);
-  if (preview.rows.length > 30) {
-    container.append(
-      el("p", {class: "admin-muted"}, `…他 ${preview.rows.length - 30} 行`),
-    );
-  }
 
-  const deactivateLabel = el("label", {}, "");
-  const deactivateCheck = el("input", {type: "checkbox"}) as HTMLInputElement;
-  deactivateCheck.checked = preview.deactivateMissing;
-  deactivateLabel.append(
-    deactivateCheck,
-    document.createTextNode(" CSV/Sheet に無い在籍生徒を無効化する"),
-  );
   const applyBtn = el(
     "button",
-    {type: "button", class: "admin-button primary"},
+    {type: "button", class: "admin2-btn admin2-btn-primary"},
     "プレビューを適用",
   );
   applyBtn.addEventListener("click", () => {
-    void onApply(deactivateCheck.checked).catch(error => {
+    void onApply(preview.deactivateMissing).catch(error => {
       container.append(
         el(
           "p",
-          {class: "admin-roster-feedback is-error"},
+          {class: "admin2-feedback is-error"},
           error instanceof Error ? error.message : "適用に失敗しました。",
         ),
       );
     });
   });
-  container.append(deactivateLabel, applyBtn);
+  container.append(applyBtn);
 }
 
-async function mountRosterCard(
-  host: HTMLElement,
-  rosterSummary: ClassroomRosterListItem,
-  flags: AdminClassroomFlags,
-  getCsrf: () => string,
-  onChanged: () => Promise<void>,
-): Promise<void> {
-  const detailRes = await adminFetch<{ok: boolean; roster?: ClassroomRoster}>(
-    adminRosterPath(rosterSummary.rosterId),
-  );
-  const roster = detailRes.roster;
-  if (!roster) return;
-  const rosterId = roster.rosterId;
+function buildConnectionSummary(roster: ClassroomRoster): string {
+  if (!roster.sheetSpreadsheetId) return "なし";
+  const id = truncateMiddle(roster.sheetSpreadsheetId, 28);
+  const tab = roster.sheetTabName || "Sheet1";
+  const range = roster.sheetRange || "A:F";
+  return `${id} · ${tab} · ${range}`;
+}
 
-  const card = el("section", {
-    class: "admin-roster-card",
-    "data-testid": "admin-roster-card",
+export function renderAccountPane(ctx: AdminPaneContext): HTMLElement {
+  const pane = el("div", {class: "admin2-pane-wrap"});
+  const header = el("div", {class: "admin2-pane-header"});
+  header.append(
+    el("h3", {class: "admin2-pane-title"}, "アカウント"),
+    createBadge(ctx.adminEmail, "neutral"),
+  );
+  const logoutBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
+    "ログアウト",
+  );
+  logoutBtn.addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("admin2-logout"));
   });
-  card.append(
-    el("h3", {}, roster.title),
+  header.append(el("div", {class: "admin2-pane-header-actions"}, undefined));
+  header.querySelector(".admin2-pane-header-actions")!.append(logoutBtn);
+
+  const body = el("div", {class: "admin2-pane-body is-flat"});
+  const credentialRow = el("div", {
+    class: "admin2-row admin2-row-label-account",
+    "data-testid": "admin-roster-credential",
+  });
+  credentialRow.append(el("span", {class: "admin2-row-label"}, "Google 連携"));
+
+  const valueCol = el("div", {class: "admin2-row-value"});
+  const actionsCol = el("div", {class: "admin2-row-actions"});
+  credentialRow.append(valueCol, actionsCol);
+
+  const dependentRow = el("div", {class: "admin2-row admin2-row-label-account-2"});
+  dependentRow.append(
+    el("span", {class: "admin2-row-label"}, "連携中の名簿"),
+    el("div", {class: "admin2-chip-list"}),
+  );
+
+  const permissionRow = el("div", {class: "admin2-row admin2-row-label-account-2"});
+  const permissionValue = el("span", {});
+  permissionValue.append(
+    "管理者",
     el(
-      "p",
-      {class: "admin-muted"},
-      `revision ${roster.rosterRevision} / 同期: ${roster.syncStatus} / 生徒 ${rosterSummary.studentCount} 名`,
+      "span",
+      {style: "font-size:11px;color:#5b708a"},
+      " — 教室設定・名簿の作成と削除ができます",
     ),
   );
+  permissionRow.append(
+    el("span", {class: "admin2-row-label"}, "権限"),
+    permissionValue,
+  );
 
-  const feedback = el("p", {
-    class: "admin-roster-feedback",
-    hidden: "true",
-  });
+  body.append(credentialRow, dependentRow, permissionRow);
+  pane.append(header, body, ctx.saveFooter.root);
 
-  if (flags.rosterSheetsEnabled) {
-    const sheetForm = el("div", {class: "admin-roster-sheet-form"});
-    sheetForm.append(el("h4", {}, "Google スプレッドシート"));
-    const sheetId = el("input", {
-      type: "text",
-      class: "admin-roster-input",
-      placeholder: "スプレッドシート ID",
-      value: roster.sheetSpreadsheetId ?? "",
-    }) as HTMLInputElement;
-    const tabName = el("input", {
-      type: "text",
-      class: "admin-roster-input",
-      placeholder: "シート名（例: Sheet1）",
-      value: roster.sheetTabName ?? "Sheet1",
-    }) as HTMLInputElement;
-    const sheetRange = el("input", {
-      type: "text",
-      class: "admin-roster-input",
-      placeholder: "範囲（例: A:F または空）",
-      value: roster.sheetRange ?? "",
-    }) as HTMLInputElement;
-    sheetForm.append(
-      el(
-        "p",
-        {class: "admin-muted"},
-        "空の Sheet でも構いません。「テンプレート Sheet を作成」でヘッダー行入りのスプレッドシートを自動作成できます。",
-      ),
-      el("p", {class: "admin-muted"}, `列: ${ROSTER_SHEET_COLUMNS.join(", ")}`),
-      sheetId,
-      tabName,
-      sheetRange,
-    );
-    const openSheetBtn = el(
-      "a",
-      {
-        class: "admin-button primary admin-roster-open-sheet",
-        "data-testid": "admin-roster-open-sheet",
-        target: "_blank",
-        rel: "noopener noreferrer",
-        hidden: "true",
-      },
-      "スプレッドシートを開く",
-    ) as HTMLAnchorElement;
-    syncOpenSheetButton(openSheetBtn, roster.sheetSpreadsheetId ?? "");
-    sheetId.addEventListener("input", () => {
-      syncOpenSheetButton(openSheetBtn, sheetId.value);
-    });
-    const createTemplateBtn = el(
-      "button",
-      {type: "button", class: "admin-button primary"},
-      "テンプレート Sheet を作成",
-    );
-    createTemplateBtn.addEventListener("click", () => {
-      void (async () => {
-        feedback.hidden = true;
-        const res = await adminFetch<{
-          ok: boolean;
-          message?: string;
-          code?: string;
-          template?: {
-            spreadsheetId: string;
-            spreadsheetUrl: string;
-            sheetTabName: string;
-          };
-          roster?: ClassroomRoster;
-        }>(adminRosterSheetTemplatePath(roster.rosterId), {
-          method: "POST",
-          csrfToken: getCsrf(),
-        });
-        if (!res.ok || !res.template) {
-          feedback.hidden = false;
-          feedback.textContent =
-            res.message ||
-            (res.code === "CREDENTIAL_MISSING"
-              ? "教員 Google 連携が必要です。"
-              : res.code === "SHEET_CREATE_FAILED"
-                ? "スプレッドシートの作成に失敗しました。Google Sheets API が有効か確認してください。"
-                : "テンプレート Sheet の作成に失敗しました。");
-          feedback.classList.add("is-error");
-          return;
-        }
-        sheetId.value = res.template.spreadsheetId;
-        tabName.value = res.template.sheetTabName;
-        sheetRange.value = "";
-        syncOpenSheetButton(openSheetBtn, res.template.spreadsheetId);
-        feedback.hidden = false;
-        feedback.textContent =
-          "テンプレート Sheet を作成し、名簿に紐づけました。2行目以降に生徒データを入力してください。";
-        feedback.classList.remove("is-error");
-        await onChanged();
-      })();
-    });
-    const saveSheet = el(
-      "button",
-      {type: "button", class: "admin-button"},
-      "Sheet 設定を保存",
-    );
-    saveSheet.addEventListener("click", () => {
-      void (async () => {
-        feedback.hidden = true;
-        const res = await adminFetch<{ok: boolean; message?: string}>(
-          adminRosterPath(roster.rosterId),
-          {
-            method: "PATCH",
-            csrfToken: getCsrf(),
-            body: JSON.stringify({
-              sheetSpreadsheetId: sheetId.value.trim() || null,
-              sheetTabName: tabName.value.trim() || null,
-              sheetRange: sheetRange.value.trim() || null,
-            }),
-          },
-        );
-        if (!res.ok) {
-          feedback.hidden = false;
-          feedback.textContent = res.message || "Sheet 設定の保存に失敗しました。";
-          feedback.classList.add("is-error");
-          return;
-        }
-        feedback.hidden = false;
-        feedback.textContent = "Sheet 設定を保存しました。";
-        feedback.classList.remove("is-error");
-        await onChanged();
-      })();
-    });
-    const sheetActions = el("div", {class: "admin-roster-actions"});
-    sheetActions.append(createTemplateBtn, openSheetBtn, saveSheet);
-    sheetForm.append(sheetActions);
+  const chipList = dependentRow.querySelector(".admin2-chip-list")!;
+  const sheetRosters = ctx.rosters.filter(
+    r => r.syncStatus === "active" || r.syncStatus === "sync_required",
+  );
 
-    const previewHost = el("div", {class: "admin-roster-preview-host"});
-    const syncBtn = el(
-      "button",
-      {type: "button", class: "admin-button"},
-      "Sheet から同期（プレビュー）",
+  async function refreshCredential(): Promise<void> {
+    valueCol.replaceChildren();
+    actionsCol.replaceChildren();
+    chipList.replaceChildren();
+
+    if (!ctx.flags?.adminGoogleCredentialEnabled) {
+      valueCol.append(emptyValue());
+      return;
+    }
+
+    const oauthFlag = new URL(window.location.href).searchParams.get(
+      ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
     );
-    syncBtn.addEventListener("click", () => {
-      void (async () => {
-        feedback.hidden = true;
-        previewHost.replaceChildren();
-        const res = await adminFetch<
-          {ok: boolean; message?: string; code?: string} & RosterImportPreview
-        >(adminRosterSyncPath(roster.rosterId), {
-          method: "POST",
-          csrfToken: getCsrf(),
-          body: JSON.stringify({deactivateMissing: false}),
-        });
-        if (!res.ok || !res.import) {
-          feedback.hidden = false;
-          feedback.textContent =
-            res.message ||
-            (res.code === "CREDENTIAL_MISSING"
-              ? "教員 Google 連携が必要です。"
-              : res.code === "SHEET_NOT_BOUND"
-                ? "スプレッドシート ID を設定してください。"
-                : "Sheet 同期プレビューに失敗しました。");
-          feedback.classList.add("is-error");
-          return;
-        }
-        renderPreviewBox(previewHost, res, async deactivateMissing => {
-          const applyRes = await adminFetch<{
-            ok: boolean;
-            message?: string;
-            rosterRevision?: number;
-          }>(adminRosterSyncApplyPath(roster.rosterId), {
+    if (oauthFlag === "ok") {
+      ctx.saveFooter.setSaved();
+      clearOAuthReturnQuery();
+    } else if (oauthFlag === "error") {
+      const reason = new URL(window.location.href).searchParams.get(
+        ADMIN_GOOGLE_OAUTH_RETURN_REASON,
+      );
+      ctx.saveFooter.setError(oauthFailureMessage(reason));
+      clearOAuthReturnQuery();
+    }
+
+    const session = await adminFetch<{
+      ok: boolean;
+      connected?: boolean;
+      googleEmail?: string;
+    }>(ADMIN_GOOGLE_OAUTH_SESSION_PATH);
+
+    if (session.ok && session.connected) {
+      valueCol.append(
+        createBadge("連携中", "success"),
+        el(
+          "span",
+          {class: "admin2-input-mono"},
+          session.googleEmail ?? ctx.adminEmail,
+        ),
+        el(
+          "span",
+          {style: "font-size:11px;color:#5b708a;white-space:nowrap"},
+          "名簿 Sheet の読み取り / 提出物の書き出しに使用",
+        ),
+      );
+      actionsCol.append(
+        el(
+          "button",
+          {type: "button", class: "admin2-btn admin2-btn-sm"},
+          "別のアカウントで連携",
+        ),
+        el(
+          "button",
+          {type: "button", class: "admin2-btn admin2-btn-danger admin2-btn-sm"},
+          "連携を解除",
+        ),
+      );
+      const reconnect = actionsCol.firstElementChild as HTMLButtonElement;
+      reconnect.addEventListener("click", () => {
+        window.location.href = `${ADMIN_GOOGLE_OAUTH_START_PATH}?return=${encodeURIComponent("/admin")}`;
+      });
+      const disconnect = actionsCol.lastElementChild as HTMLButtonElement;
+      disconnect.addEventListener("click", () => {
+        void (async () => {
+          const prevEmail = session.googleEmail;
+          await adminFetch(ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH, {
             method: "POST",
-            csrfToken: getCsrf(),
-            body: JSON.stringify({
-              importId: res.import.importId,
-              previewHash: res.previewHash,
-              baseRosterRevision: res.baseRosterRevision,
-              deactivateMissing,
-            }),
+            csrfToken: ctx.getCsrf(),
           });
-          if (!applyRes.ok) {
-            throw new Error(applyRes.message || "Sheet 同期の適用に失敗しました。");
-          }
-          previewHost.replaceChildren();
-          feedback.hidden = false;
-          feedback.textContent = "Sheet 同期を適用しました。";
-          feedback.classList.remove("is-error");
-          await onChanged();
-        });
-      })();
-    });
-    sheetForm.append(syncBtn, previewHost);
-    card.append(sheetForm);
+          ctx.saveFooter.pushUndo(async () => {
+            window.location.href = `${ADMIN_GOOGLE_OAUTH_START_PATH}?return=${encodeURIComponent("/admin")}`;
+            void prevEmail;
+          });
+          ctx.saveFooter.setSaved();
+          await refreshCredential();
+          await ctx.onRefresh();
+        })();
+      });
+
+      for (const roster of sheetRosters) {
+        chipList.append(createBadge(roster.title, "info"));
+      }
+      if (sheetRosters.length > 0) {
+        chipList.append(
+          el(
+            "span",
+            {style: "font-size:11px;color:#5b708a;white-space:nowrap"},
+            `解除するとこの${sheetRosters.length}件の Sheet 同期が停止します`,
+          ),
+        );
+      } else {
+        chipList.append(emptyValue());
+      }
+    } else {
+      valueCol.append(emptyValue());
+      const connect = el(
+        "button",
+        {type: "button", class: "admin2-btn admin2-btn-primary admin2-btn-sm"},
+        "Google と連携",
+      );
+      connect.addEventListener("click", () => {
+        window.location.href = `${ADMIN_GOOGLE_OAUTH_START_PATH}?return=${encodeURIComponent("/admin")}`;
+      });
+      actionsCol.append(connect);
+      chipList.append(emptyValue());
+    }
   }
 
-  const csvSection = el("div", {class: "admin-roster-csv-form"});
-  csvSection.append(el("h4", {}, "CSV 取込"));
-  const fileInput = el("input", {
-    type: "file",
-    accept: ".csv,text/csv",
-    class: "admin-roster-file",
-  }) as HTMLInputElement;
-  const csvPreviewHost = el("div", {class: "admin-roster-preview-host"});
-  const uploadBtn = el(
-    "button",
-    {type: "button", class: "admin-button"},
-    "CSV をプレビュー",
+  void refreshCredential();
+  return pane;
+}
+
+export async function renderRosterPane(
+  ctx: AdminPaneContext,
+  rosterId: string,
+): Promise<HTMLElement | null> {
+  const summary = ctx.rosters.find(r => r.rosterId === rosterId);
+  const detailRes = await adminFetch<{ok: boolean; roster?: ClassroomRoster}>(
+    adminRosterPath(rosterId),
   );
-  uploadBtn.addEventListener("click", () => {
-    void (async () => {
-      feedback.hidden = true;
-      csvPreviewHost.replaceChildren();
-      const file = fileInput.files?.[0];
-      if (!file) {
-        feedback.hidden = false;
-        feedback.textContent = "CSV ファイルを選んでください。";
-        feedback.classList.add("is-error");
-        return;
-      }
-      const csv = await file.text();
-      const res = await adminFetch<
-        {ok: boolean; message?: string} & RosterImportPreview
-      >(adminRosterImportsPath(roster.rosterId), {
+  const roster = detailRes.roster;
+  if (!roster || !summary) return null;
+  const rosterRecord: ClassroomRoster = roster;
+
+  const pane = el("div", {class: "admin2-pane-wrap"});
+  const header = el("div", {class: "admin2-pane-header"});
+  header.append(
+    el("h3", {class: "admin2-pane-title"}, roster.title),
+    rosterSyncBadge(roster.syncStatus),
+    el(
+      "span",
+      {class: "admin2-pane-meta"},
+      `revision ${roster.rosterRevision} · ${summary.studentCount}名`,
+    ),
+  );
+  const headerActions = el("div", {class: "admin2-pane-header-actions"});
+  const syncNowBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-secondary admin2-btn-sm"},
+    "今すぐ同期",
+  );
+  const deleteBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-danger admin2-btn-sm"},
+    "削除",
+  );
+  headerActions.append(syncNowBtn, deleteBtn);
+  header.append(headerActions);
+
+  const body = el("div", {class: "admin2-pane-body"});
+  const connectionCard = el("div", {class: "admin2-card"});
+  const connectionRow = el("div", {class: "admin2-row admin2-row-label-roster"});
+  connectionRow.append(el("span", {class: "admin2-row-label"}, "接続"));
+  const connectionValue = el("div", {class: "admin2-row-value"});
+  const connectionActions = el("div", {class: "admin2-row-actions"});
+  connectionRow.append(connectionValue, connectionActions);
+
+  const expandPanel = el("div", {class: "admin2-card-body", hidden: "true"});
+  const sheetIdInput = el("input", {
+    type: "text",
+    class: "admin2-input admin2-input-mono",
+    placeholder: "スプレッドシート ID",
+    value: roster.sheetSpreadsheetId ?? "",
+  }) as HTMLInputElement;
+  const tabInput = el("input", {
+    type: "text",
+    class: "admin2-input",
+    placeholder: "Sheet1",
+    value: roster.sheetTabName ?? "Sheet1",
+  }) as HTMLInputElement;
+  const rangeInput = el("input", {
+    type: "text",
+    class: "admin2-input admin2-input-mono",
+    placeholder: "A:F",
+    value: roster.sheetRange ?? "",
+  }) as HTMLInputElement;
+
+  for (const [label, input] of [
+    ["スプレッドシート ID", sheetIdInput],
+    ["シート名", tabInput],
+    ["範囲", rangeInput],
+  ] as const) {
+    const row = el("div", {class: "admin2-row admin2-row-label-roster"});
+    row.append(el("span", {class: "admin2-row-label"}, label), input);
+    expandPanel.append(row);
+  }
+
+  const openSheetBtn = el(
+    "a",
+    {
+      class: "admin2-btn admin2-btn-secondary admin2-btn-sm admin-roster-open-sheet",
+      "data-testid": "admin-roster-open-sheet",
+      target: "_blank",
+      rel: "noopener noreferrer",
+      href: buildSpreadsheetEditUrl(rosterRecord.sheetSpreadsheetId ?? ""),
+    },
+    "Sheet を開く ↗",
+  ) as HTMLAnchorElement;
+  openSheetBtn.hidden = !rosterRecord.sheetSpreadsheetId;
+
+  const toggleExpandBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
+    "接続を変更",
+  );
+
+  function refreshConnectionSummary(): void {
+    connectionValue.replaceChildren();
+    if (!sheetIdInput.value.trim()) {
+      connectionValue.append(emptyValue());
+      openSheetBtn.hidden = true;
+      return;
+    }
+    connectionValue.append(
+      createBadge("Google Sheet", "success"),
+      el(
+        "span",
+        {class: "admin2-input-mono", style: "color:#5b708a"},
+        buildConnectionSummary({
+          ...rosterRecord,
+          sheetSpreadsheetId: sheetIdInput.value.trim(),
+          sheetTabName: tabInput.value.trim() || "Sheet1",
+          sheetRange: rangeInput.value.trim() || "A:F",
+        }),
+      ),
+      el(
+        "span",
+        {style: "font-size:11px;color:#5b708a;white-space:nowrap"},
+        `最終 ${formatShortTimestamp(rosterRecord.updatedAt)}`,
+      ),
+    );
+    openSheetBtn.href = buildSpreadsheetEditUrl(sheetIdInput.value);
+    openSheetBtn.hidden = false;
+  }
+
+  toggleExpandBtn.addEventListener("click", () => {
+    expandPanel.hidden = !expandPanel.hidden;
+  });
+
+  connectionActions.append(openSheetBtn, toggleExpandBtn);
+  connectionCard.append(connectionRow, expandPanel);
+
+  const studentsCard = el("div", {
+    class: "admin2-card admin-roster-card",
+    "data-testid": "admin-roster-card",
+  });
+  const studentsHeader = el("div", {class: "admin2-card-header"});
+  studentsHeader.append(
+    el("h4", {class: "admin2-card-title"}, "生徒"),
+    el("span", {class: "admin2-card-hint"}, `${summary.studentCount} 名`),
+  );
+  const filterInput = el("input", {
+    type: "text",
+    class: "admin2-input",
+    placeholder: "氏名・ログイン名で絞り込み",
+    style: "margin-left:10px;width:16rem",
+  }) as HTMLInputElement;
+  studentsHeader.append(filterInput);
+  const studentsActions = el("div", {class: "admin2-row-actions", style: "margin-left:auto"});
+  const exportCsvBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
+    "CSV で書き出す",
+  );
+  const addStudentBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-primary admin2-btn-sm"},
+    "＋ 生徒を追加",
+  );
+  studentsActions.append(exportCsvBtn, addStudentBtn);
+  studentsHeader.append(studentsActions);
+
+  const previewHost = el("div", {class: "admin2-card-body"});
+  const csvPicker = createFilePicker(".csv,text/csv", "CSV で取り込む", file => {
+    void uploadCsvPreview(file);
+  });
+  studentsHeader.insertBefore(csvPicker.root, studentsActions);
+
+  const studentsTableHost = el("div", {class: "admin2-card-body is-flush"});
+  studentsCard.append(studentsHeader, previewHost, studentsTableHost);
+
+  body.append(connectionCard, studentsCard);
+  pane.append(header, body, ctx.saveFooter.root);
+
+  const saveSheetDebounced = debounce(() => {
+    void saveSheetSettings();
+  }, 400);
+
+  for (const input of [sheetIdInput, tabInput, rangeInput]) {
+    input.addEventListener("input", () => {
+      refreshConnectionSummary();
+      saveSheetDebounced();
+    });
+  }
+  refreshConnectionSummary();
+
+  async function saveSheetSettings(): Promise<void> {
+    const prev = {
+      sheetSpreadsheetId: rosterRecord.sheetSpreadsheetId,
+      sheetTabName: rosterRecord.sheetTabName,
+      sheetRange: rosterRecord.sheetRange,
+    };
+    const next = {
+      sheetSpreadsheetId: sheetIdInput.value.trim() || null,
+      sheetTabName: tabInput.value.trim() || null,
+      sheetRange: rangeInput.value.trim() || null,
+    };
+    const res = await adminFetch<{ok: boolean; message?: string}>(
+      adminRosterPath(rosterId),
+      {
+        method: "PATCH",
+        csrfToken: ctx.getCsrf(),
+        body: JSON.stringify(next),
+      },
+    );
+    if (!res.ok) {
+      ctx.saveFooter.setError(res.message || "Sheet 設定の保存に失敗しました。");
+      return;
+    }
+    ctx.saveFooter.pushUndo(async () => {
+      await adminFetch(adminRosterPath(rosterId), {
+        method: "PATCH",
+        csrfToken: ctx.getCsrf(),
+        body: JSON.stringify(prev),
+      });
+      await ctx.onRefresh();
+    });
+    ctx.saveFooter.setSaved();
+    Object.assign(rosterRecord, next);
+    await ctx.onRefresh();
+  }
+
+  async function uploadCsvPreview(file: File): Promise<void> {
+    previewHost.replaceChildren();
+    const csv = await file.text();
+    const res = await adminFetch<{ok: boolean; message?: string} & RosterImportPreview>(
+      adminRosterImportsPath(rosterId),
+      {
         method: "POST",
-        csrfToken: getCsrf(),
+        csrfToken: ctx.getCsrf(),
         body: JSON.stringify({csv, deactivateMissing: false}),
+      },
+    );
+    if (!res.ok || !res.import) {
+      ctx.saveFooter.setError(res.message || "CSV プレビューに失敗しました。");
+      return;
+    }
+    renderPreviewBox(previewHost, res, async deactivateMissing => {
+      const applyRes = await adminFetch<{ok: boolean; message?: string}>(
+        adminRosterImportApplyPath(rosterId, res.import.importId),
+        {
+          method: "POST",
+          csrfToken: ctx.getCsrf(),
+          body: JSON.stringify({
+            previewHash: res.previewHash,
+            baseRosterRevision: res.baseRosterRevision,
+            deactivateMissing,
+          }),
+        },
+      );
+      if (!applyRes.ok) {
+        throw new Error(applyRes.message || "CSV 適用に失敗しました。");
+      }
+      previewHost.replaceChildren();
+      ctx.saveFooter.setSaved();
+      await refreshStudents();
+      await ctx.onRefresh();
+    });
+  }
+
+  async function refreshStudents(): Promise<void> {
+    const res = await adminFetch<{
+      ok: boolean;
+      students?: ClassroomStudentListItem[];
+    }>(adminRosterStudentsPath(rosterId));
+    studentsTableHost.replaceChildren();
+    if (!res.ok || !res.students?.length) {
+      const table = el("table", {class: "admin2-table admin-roster-student-table"});
+      table.append(
+        el("thead", {}, undefined),
+        el("tbody", {}, undefined),
+      );
+      const headRow = el("tr");
+      for (const label of [
+        "出席番号",
+        "氏名",
+        "ログイン名",
+        "グループ",
+        "初回登録",
+        "状態",
+      ]) {
+        headRow.append(el("th", {}, label));
+      }
+      table.querySelector("thead")!.append(headRow);
+      const emptyRow = el("tr");
+      emptyRow.append(el("td", {colspan: "6", class: "is-empty"}, "なし"));
+      table.querySelector("tbody")!.append(emptyRow);
+      studentsTableHost.append(table);
+      return;
+    }
+
+    const filter = filterInput.value.trim().toLowerCase();
+    const rows = res.students.filter(student => {
+      if (!filter) return true;
+      return (
+        student.displayName.toLowerCase().includes(filter) ||
+        (student.loginName ?? "").toLowerCase().includes(filter)
+      );
+    });
+
+    const table = el("table", {class: "admin2-table admin-roster-student-table"});
+    const headRow = el("tr");
+    for (const label of [
+      "出席番号",
+      "氏名",
+      "ログイン名",
+      "グループ",
+      "初回登録",
+      "状態",
+    ]) {
+      headRow.append(el("th", {}, label));
+    }
+    table.append(el("thead", {}, undefined), el("tbody"));
+    table.querySelector("thead")!.append(headRow);
+    const tbody = table.querySelector("tbody")!;
+    for (const student of rows) {
+      const tr = el("tr");
+      tr.append(
+        el(
+          "td",
+          {class: "is-mono"},
+          student.attendanceNumber ?? emptyValue().textContent!,
+        ),
+        el("td", {}, student.displayName || "なし"),
+        el(
+          "td",
+          {class: "is-mono"},
+          student.loginName ? student.loginName : (emptyValue().textContent ?? "なし"),
+        ),
+        el("td", {}, student.groupLabel || "なし"),
+        el(
+          "td",
+          {class: student.accountStatus ? "is-mono" : "is-empty"},
+          student.accountStatus ? formatShortTimestamp(student.createdAt) : "なし",
+        ),
+        el("td", {}, undefined),
+      );
+      tr.lastElementChild!.append(studentStatusBadge(student));
+      tbody.append(tr);
+    }
+    studentsTableHost.append(table);
+  }
+
+  filterInput.addEventListener("input", () => {
+    void refreshStudents();
+  });
+
+  exportCsvBtn.addEventListener("click", () => {
+    void (async () => {
+      const res = await adminFetch<{
+        ok: boolean;
+        students?: ClassroomStudentListItem[];
+      }>(adminRosterStudentsPath(rosterId));
+      if (!res.ok || !res.students?.length) return;
+      const header = [
+        "student_code",
+        "display_name",
+        "attendance_number",
+        "login_name",
+        "group_label",
+        "active",
+      ];
+      const lines = [
+        header.join(","),
+        ...res.students.map(s =>
+          [
+            s.studentCode,
+            s.displayName,
+            s.attendanceNumber ?? "",
+            s.loginName ?? "",
+            s.groupLabel ?? "",
+            s.active ? "1" : "0",
+          ]
+            .map(v => `"${String(v).replace(/"/g, '""')}"`)
+            .join(","),
+        ),
+      ];
+      const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${rosterRecord.title}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    })();
+  });
+
+  syncNowBtn.addEventListener("click", () => {
+    void (async () => {
+      previewHost.replaceChildren();
+      const res = await adminFetch<
+        {ok: boolean; message?: string; code?: string} & RosterImportPreview
+      >(adminRosterSyncPath(rosterId), {
+        method: "POST",
+        csrfToken: ctx.getCsrf(),
+        body: JSON.stringify({deactivateMissing: false}),
       });
       if (!res.ok || !res.import) {
-        feedback.hidden = false;
-        feedback.textContent = res.message || "CSV プレビューに失敗しました。";
-        feedback.classList.add("is-error");
+        ctx.saveFooter.setError(
+          res.message ||
+            (res.code === "CREDENTIAL_MISSING"
+              ? "教員 Google 連携が必要です。"
+              : "Sheet 同期プレビューに失敗しました。"),
+        );
         return;
       }
-      renderPreviewBox(csvPreviewHost, res, async deactivateMissing => {
+      renderPreviewBox(previewHost, res, async deactivateMissing => {
         const applyRes = await adminFetch<{ok: boolean; message?: string}>(
-          adminRosterImportApplyPath(roster.rosterId, res.import.importId),
+          adminRosterSyncApplyPath(rosterId),
           {
             method: "POST",
-            csrfToken: getCsrf(),
+            csrfToken: ctx.getCsrf(),
             body: JSON.stringify({
+              importId: res.import.importId,
               previewHash: res.previewHash,
               baseRosterRevision: res.baseRosterRevision,
               deactivateMissing,
@@ -572,62 +779,186 @@ async function mountRosterCard(
           },
         );
         if (!applyRes.ok) {
-          throw new Error(applyRes.message || "CSV 適用に失敗しました。");
+          throw new Error(applyRes.message || "Sheet 同期の適用に失敗しました。");
         }
-        csvPreviewHost.replaceChildren();
-        feedback.hidden = false;
-        feedback.textContent = "CSV を適用しました。";
-        feedback.classList.remove("is-error");
-        await onChanged();
+        previewHost.replaceChildren();
+        ctx.saveFooter.setSaved();
+        await refreshStudents();
+        await ctx.onRefresh();
       });
     })();
   });
-  csvSection.append(fileInput, uploadBtn, csvPreviewHost);
-  card.append(csvSection);
 
-  const studentsSection = el("div", {class: "admin-roster-students"});
-  studentsSection.append(el("h4", {}, "登録生徒"));
-  const studentsBox = el("div", {class: "admin-roster-students-list"});
-
-  async function refreshStudents(): Promise<void> {
-    const res = await adminFetch<{
-      ok: boolean;
-      students?: ClassroomStudentListItem[];
-    }>(adminRosterStudentsPath(rosterId));
-    studentsBox.replaceChildren();
-    if (!res.ok || !res.students?.length) {
-      studentsBox.textContent = res.ok ? "まだ生徒がいません。" : "生徒一覧を取得できませんでした。";
-      return;
-    }
-    const table = el("table", {class: "admin-roster-student-table"});
-    const head = el("tr");
-    for (const label of ["コード", "氏名", "出席番号", "ログイン名", "グループ", "状態"]) {
-      head.append(el("th", {}, label));
-    }
-    const thead = el("thead");
-  thead.append(head);
-  table.append(thead);
-    const tbody = el("tbody");
-    for (const student of res.students) {
-      const tr = el("tr");
-      tr.append(
-        el("td", {}, student.studentCode),
-        el("td", {}, student.displayName),
-        el("td", {}, student.attendanceNumber ?? ""),
-        el("td", {}, student.loginName ?? ""),
-        el("td", {}, student.groupLabel ?? ""),
-        el("td", {}, student.active ? "在籍" : "無効"),
-      );
-      tbody.append(tr);
-    }
-    table.append(tbody);
-    studentsBox.append(table);
+  if (ctx.flags?.rosterSheetsEnabled) {
+    const templateBtn = el(
+      "button",
+      {type: "button", class: "admin2-btn admin2-btn-sm"},
+      "テンプレート Sheet を作成",
+    );
+    templateBtn.addEventListener("click", () => {
+      void (async () => {
+        const res = await adminFetch<{
+          ok: boolean;
+          message?: string;
+          template?: {spreadsheetId: string; sheetTabName: string};
+        }>(adminRosterSheetTemplatePath(rosterId), {
+          method: "POST",
+          csrfToken: ctx.getCsrf(),
+        });
+        if (!res.ok || !res.template) {
+          ctx.saveFooter.setError(res.message || "テンプレート Sheet の作成に失敗しました。");
+          return;
+        }
+        sheetIdInput.value = res.template.spreadsheetId;
+        tabInput.value = res.template.sheetTabName;
+        rangeInput.value = "";
+        refreshConnectionSummary();
+        saveSheetDebounced();
+      })();
+    });
+    expandPanel.append(
+      el("p", {class: "admin2-feedback"}, `列: ${ROSTER_SHEET_COLUMNS.join(", ")}`),
+      templateBtn,
+    );
   }
 
-  studentsSection.append(studentsBox);
-  card.append(studentsSection, feedback);
-  host.append(card);
   await refreshStudents();
+  return pane;
+}
+
+export function mountPolicyRosterControls(
+  policy: ClassroomPolicy,
+  rosters: ClassroomRosterListItem[],
+  flags: AdminClassroomFlags | null,
+  getCsrf: () => string,
+  saveFooter: AdminSaveFooterController,
+  onSaved: () => Promise<void>,
+): HTMLElement {
+  const panel = el("div", {
+    class: "admin2-card admin-policy-roster",
+    "data-testid": "admin-policy-roster",
+  });
+  panel.append(
+    el("div", {class: "admin2-card-header"}, undefined),
+  );
+  panel.querySelector(".admin2-card-header")!.append(
+    el("h4", {class: "admin2-card-title"}, "名簿と生徒ログイン"),
+  );
+
+  const body = el("div", {class: "admin2-card-body"});
+  panel.append(body);
+
+  if (!flags?.classroomRosterEnabled) {
+    body.append(el("p", {class: "admin2-feedback"}, emptyValue().textContent!));
+    return panel;
+  }
+
+  const rosterRow = el("div", {class: "admin2-row admin2-row-label-policy-3"});
+  rosterRow.append(el("span", {class: "admin2-row-label"}, "紐づける名簿"));
+  const rosterSelect = el("select", {
+    class: "admin2-select admin-roster-select",
+  }) as HTMLSelectElement;
+  rosterSelect.append(el("option", {value: ""}, "名簿なし（匿名リンク）"));
+  for (const roster of rosters) {
+    const opt = el(
+      "option",
+      {value: roster.rosterId},
+      `${roster.title}（${roster.studentCount}名）`,
+    );
+    if (policy.rosterId === roster.rosterId) opt.selected = true;
+    rosterSelect.append(opt);
+  }
+  const openRosterBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-secondary admin2-btn-sm"},
+    "名簿を開く",
+  );
+  rosterRow.append(rosterSelect, openRosterBtn);
+
+  const authRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  authRow.append(el("span", {class: "admin2-row-label"}, "名簿ログイン"));
+  const authValue = el("div", {class: "admin2-row-value"});
+  authRow.append(authValue);
+
+  body.append(rosterRow, authRow);
+
+  let authRequired = policy.studentAuth.required;
+
+  function renderAuthSegment(): void {
+    authValue.replaceChildren(
+      createSegmentControl(
+        [
+          {label: "必須", value: "required"},
+          {label: "任意", value: "optional"},
+        ],
+        authRequired ? "required" : "optional",
+        value => {
+          authRequired = value === "required";
+          renderAuthSegment();
+          void saveRosterSettings();
+        },
+      ),
+      el(
+        "span",
+        {style: "font-size:11px;color:#5b708a"},
+        "生徒は初回にログイン名で登録します",
+      ),
+    );
+  }
+  renderAuthSegment();
+
+  const saveDebounced = debounce(() => {
+    void saveRosterSettings();
+  }, 400);
+
+  async function saveRosterSettings(): Promise<void> {
+    const prevRosterId = policy.rosterId;
+    const prevRequired = policy.studentAuth.required;
+    const rosterId = rosterSelect.value || null;
+    const res = await adminFetch<{ok: boolean; message?: string}>(
+      `${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`,
+      {
+        method: "PATCH",
+        csrfToken: getCsrf(),
+        body: JSON.stringify({
+          rosterId,
+          studentAuth: {required: authRequired},
+        }),
+      },
+    );
+    if (!res.ok) {
+      saveFooter.setError(res.message || "名簿設定の保存に失敗しました。");
+      return;
+    }
+    saveFooter.pushUndo(async () => {
+      await adminFetch(`${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`, {
+        method: "PATCH",
+        csrfToken: getCsrf(),
+        body: JSON.stringify({
+          rosterId: prevRosterId,
+          studentAuth: {required: prevRequired},
+        }),
+      });
+      await onSaved();
+    });
+    policy.rosterId = rosterId;
+    policy.studentAuth.required = authRequired;
+    saveFooter.setSaved();
+    await onSaved();
+  }
+
+  rosterSelect.addEventListener("change", () => {
+    saveDebounced();
+  });
+
+  openRosterBtn.addEventListener("click", () => {
+    if (!rosterSelect.value) return;
+    document.dispatchEvent(
+      new CustomEvent("admin2-select-roster", {detail: {rosterId: rosterSelect.value}}),
+    );
+  });
+
+  return panel;
 }
 
 export async function mountAdminRostersSection(
@@ -640,139 +971,21 @@ export async function mountAdminRostersSection(
     class: "admin-rosters-panel",
     "data-testid": "admin-rosters-panel",
   });
-  section.append(el("h2", {}, "名簿"));
   host.append(section);
 
   if (!flags?.classroomRosterEnabled) {
     section.append(
       el(
         "p",
-        {class: "admin-muted"},
+        {class: "admin2-feedback"},
         "名簿機能はサーバー側で無効です（SYNCRATCH_CLASSROOM_ROSTER_ENABLED=1 が必要）。",
       ),
     );
     return;
   }
 
-  const toolbar = el("div", {class: "admin-roster-toolbar"});
-  const createBtn = el(
-    "button",
-    {type: "button", class: "admin-button primary", "data-testid": "admin-create-roster"},
-    "名簿を作る",
+  section.append(
+    el("p", {class: "admin2-feedback"}, "名簿は左レールから選択してください。"),
   );
-  toolbar.append(createBtn);
-  section.append(toolbar);
-
-  if (flags) {
-    await mountGoogleCredentialPanel(section, flags, getCsrf);
-  }
-
-  const listHost = el("div", {class: "admin-roster-list"});
-  section.append(listHost);
-
-  async function refreshRosters(): Promise<void> {
-    listHost.replaceChildren();
-    const rosters = await fetchAdminRosterList();
-    if (rosters.length === 0) {
-      listHost.textContent = "まだ名簿がありません。";
-      return;
-    }
-    for (const summary of rosters) {
-      await mountRosterCard(listHost, summary, flags!, getCsrf, refreshRosters);
-    }
-  }
-
-  createBtn.addEventListener("click", () => {
-    void (async () => {
-      const title = window.prompt("名簿の名前", "2026年度 3年A組");
-      if (!title) return;
-      await adminFetch(ADMIN_ROSTERS_PATH, {
-        method: "POST",
-        csrfToken: getCsrf(),
-        body: JSON.stringify({title}),
-      });
-      await refreshRosters();
-    })();
-  });
-
-  await refreshRosters();
-}
-
-export function mountPolicyRosterControls(
-  card: HTMLElement,
-  policy: ClassroomPolicy,
-  rosters: ClassroomRosterListItem[],
-  flags: AdminClassroomFlags | null,
-  getCsrf: () => string,
-  onSaved: () => Promise<void>,
-): void {
-  if (!flags?.classroomRosterEnabled) return;
-
-  const panel = el("div", {
-    class: "admin-policy-roster",
-    "data-testid": "admin-policy-roster",
-  });
-  panel.append(el("h3", {}, "名簿と生徒ログイン"));
-
-  const rosterSelect = el("select", {class: "admin-roster-select"}) as HTMLSelectElement;
-  const noneOption = el("option", {value: ""}, "名簿なし（匿名リンク）");
-  rosterSelect.append(noneOption);
-  for (const roster of rosters) {
-    const opt = el("option", {value: roster.rosterId}, roster.title);
-    if (policy.rosterId === roster.rosterId) {
-      opt.selected = true;
-    }
-    rosterSelect.append(opt);
-  }
-
-  const authLabel = el("label", {}, "");
-  const authCheck = el("input", {type: "checkbox"}) as HTMLInputElement;
-  authCheck.checked = policy.studentAuth.required;
-  authLabel.append(
-    authCheck,
-    document.createTextNode(" 名簿ログイン必須（生徒はログイン/初回登録が必要）"),
-  );
-
-  const feedback = el("p", {
-    class: "admin-roster-feedback",
-    hidden: "true",
-  });
-
-  const save = el("button", {type: "button", class: "admin-button"}, "名簿設定を保存");
-  save.addEventListener("click", () => {
-    void (async () => {
-      feedback.hidden = true;
-      const rosterId = rosterSelect.value || null;
-      const res = await adminFetch<{ok: boolean; message?: string}>(
-        `${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`,
-        {
-          method: "PATCH",
-          csrfToken: getCsrf(),
-          body: JSON.stringify({
-            rosterId,
-            studentAuth: {required: authCheck.checked},
-          }),
-        },
-      );
-      if (!res.ok) {
-        feedback.hidden = false;
-        feedback.textContent = res.message || "名簿設定の保存に失敗しました。";
-        feedback.classList.add("is-error");
-        return;
-      }
-      feedback.hidden = false;
-      feedback.textContent = "名簿設定を保存しました。";
-      feedback.classList.remove("is-error");
-      await onSaved();
-    })();
-  });
-
-  panel.append(
-    el("label", {}, "紐づける名簿"),
-    rosterSelect,
-    authLabel,
-    save,
-    feedback,
-  );
-  card.append(panel);
+  void getCsrf;
 }
