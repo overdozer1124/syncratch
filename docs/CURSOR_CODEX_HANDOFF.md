@@ -6922,3 +6922,28 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（CI green 確認済 → main マージ → G2_COMPLETE）
 次: main マージ後、台帳を G2_COMPLETE に更新。G3 は指示後。
 禁止: 実装 PR 先行（G3–G5） / 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-06 04:17:00 JST — Cursor（G3 Student Google OAuth 実装 → Hermes レビュー依頼）
+
+```
+案件ID: roster-google-student-auth
+Task: G3 — Student Google OAuth（openid+email）+ roster 照合 + identity
+Branch: cursor/roster-google-student-auth-g3-258b
+状態: READY_FOR_HERMES_REVIEW
+
+実装:
+- admin DB migration v6: student_google_oauth_pending（grant-bound PKCE pending）
+- student-google-oauth.ts: start/callback（scope=openid email のみ、drive.file 禁止）
+- student-auth.ts: loginStudentViaGoogle / Google identity cookie / revoke で google_subject クリア
+- server.ts: rosterGoogleStudentAuthEnabled フラグ配線
+- editor-web: policy.method に応じた「Google でログイン」UI + OAuth return 処理
+- packages/classroom-access: STUDENT_AUTH_GOOGLE_* paths export
+
+テスト: student-google-oauth.test.ts、migration v6、loginStudentViaGoogle、flag OFF → 404
+pnpm --filter collab-host test: 111 passed
+pnpm --filter editor-web test (student-auth-*): 7 passed
+pnpm --filter @blocksync/classroom-access test: 31 passed
+
+次の担当: Hermes（GO/NO-GO）
+禁止: Hermes GO 前のマージ / G4–G5 先行
+```
