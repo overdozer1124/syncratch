@@ -8,6 +8,7 @@
 
 **Related:**
 - 教室ポリシー / 匿名生徒リンク: `docs/superpowers/specs/2026-07-30-admin-student-access-design.md`（Phase 2 実装済み）
+- **生徒 Google 認証（設計改定）:** `docs/superpowers/specs/2026-08-05-roster-google-student-auth-design.md`（`roster-google-student-auth` — Hermes レビュー中）
 - Local-First 主系: `docs/superpowers/specs/2026-07-19-blocksync-local-first-pivot-design.md`
 - Admin DB migration ledger パターン: `apps/collab-host/src/admin-db-migrations/`（Phase 2 baseline + 本 case foundation）
 - 契約パッケージ: `packages/classroom-access`
