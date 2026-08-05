@@ -11,23 +11,15 @@ import {
   fetchAdminClassroomFlags,
   type AdminClassroomFlags,
 } from "./admin-classroom-flags.js";
+import {
+  createBadge,
+  el,
+  emptyValue,
+  formatShortTimestamp,
+} from "./admin-console-shared.js";
 
 export type {AdminClassroomFlags};
 export {fetchAdminClassroomFlags};
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  attrs: Record<string, string> = {},
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === "class") node.className = value;
-    else node.setAttribute(key, value);
-  }
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
 
 function formatBytes(sizeBytes: number): string {
   if (sizeBytes < 1024) return `${sizeBytes} B`;
@@ -70,16 +62,16 @@ function renderSubmissionDetail(
 ): void {
   container.replaceChildren();
   container.append(
-    el("h3", {}, "提出詳細"),
+    el("h4", {class: "admin2-card-title"}, "提出詳細"),
     el(
       "p",
-      {class: "admin-muted"},
+      {class: "admin2-feedback"},
       `${detail.displayName}（${detail.studentCode}） / ${detail.projectTitle}`,
     ),
     el(
       "p",
-      {class: "admin-muted"},
-      `提出: ${detail.submittedAt} / ${formatBytes(detail.sizeBytes)}${
+      {class: "admin2-feedback"},
+      `提出: ${formatShortTimestamp(detail.submittedAt)} / ${formatBytes(detail.sizeBytes)}${
         detail.isResubmission ? " / 再提出" : ""
       }`,
     ),
@@ -88,7 +80,7 @@ function renderSubmissionDetail(
   const actions = el("div", {class: "admin-submission-actions"});
   const download = el(
     "button",
-    {type: "button", class: "admin-button"},
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
     "SB3 をダウンロード",
   );
   download.addEventListener("click", () => {
@@ -99,7 +91,7 @@ function renderSubmissionDetail(
       container.append(
         el(
           "p",
-          {class: "admin-submission-feedback is-error"},
+          {class: "admin2-feedback is-error"},
           error instanceof Error ? error.message : "ダウンロードに失敗しました。",
         ),
       );
@@ -111,7 +103,7 @@ function renderSubmissionDetail(
     const preview = el(
       "a",
       {
-        class: "admin-button primary",
+        class: "admin2-btn admin2-btn-primary admin2-btn-sm",
         href: adminSubmissionPreviewSurfacePath(detail.submissionId),
         target: "_blank",
         rel: "noopener noreferrer",
@@ -125,25 +117,35 @@ function renderSubmissionDetail(
 }
 
 export async function mountPolicySubmissionsPanel(
-  card: HTMLElement,
+  host: HTMLElement,
   policy: ClassroomPolicy,
   flags: AdminClassroomFlags | null,
+  rosterStudentCount?: number,
 ): Promise<void> {
   if (!policy.submission.enabled) return;
 
-  const panel = el("section", {
-    class: "admin-submissions-panel",
+  const panel = el("div", {
+    class: "admin2-card admin-submissions-panel",
     "data-testid": "admin-submissions-panel",
   });
-  panel.append(el("h3", {}, "提出一覧"));
+  const header = el("div", {class: "admin2-card-header"});
+  header.append(el("h4", {class: "admin2-card-title"}, "提出"));
+  const countHint = el("span", {class: "admin2-card-hint"}, "なし");
+  header.append(countHint);
+  const exportBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm", style: "margin-left:auto"},
+    "CSV で書き出す",
+  );
+  header.append(exportBtn);
+
   const feedback = el("p", {
-    class: "admin-submission-feedback",
+    class: "admin2-feedback admin-submission-feedback",
     hidden: "true",
   });
-  const list = el("div", {class: "admin-submission-list"});
   const detailBox = el("div", {class: "admin-submission-detail"});
-  panel.append(feedback, list, detailBox);
-  card.append(panel);
+  panel.append(header, feedback, detailBox);
+  host.append(panel);
 
   if (!flags?.teacherDriveSubmissionEnabled) {
     feedback.hidden = false;
@@ -178,71 +180,97 @@ export async function mountPolicySubmissionsPanel(
     return;
   }
 
-  if (submissions.length === 0) {
-    list.textContent = "まだ提出はありません。";
-    return;
-  }
+  const submittedCount = submissions.length;
+  const totalCount = rosterStudentCount ?? submittedCount;
+  countHint.textContent = `${submittedCount} / ${totalCount} 名`;
 
-  const table = el("table", {class: "admin-submission-table"});
-  const thead = el("thead");
+  const tableHost = el("div", {class: "admin2-card-body is-flush"});
+  panel.insertBefore(tableHost, detailBox);
+
+  const table = el("table", {class: "admin2-table admin-submission-table"});
   const headRow = el("tr");
-  for (const label of ["生徒", "作品名", "提出日時", ""]) {
+  for (const label of ["出席番号", "氏名", "提出", "日時"]) {
     headRow.append(el("th", {}, label));
   }
-  thead.append(headRow);
-  table.append(thead);
+  table.append(el("thead"), el("tbody"));
+  table.querySelector("thead")!.append(headRow);
+  const tbody = table.querySelector("tbody")!;
 
-  const tbody = el("tbody");
-  for (const row of submissions) {
+  if (submissions.length === 0) {
     const tr = el("tr");
     tr.append(
-      el("td", {}, `${row.displayName} (${row.studentCode})`),
-      el("td", {}, row.projectTitle),
-      el(
-        "td",
-        {},
-        `${row.submittedAt}${row.isResubmission ? " · 再提出" : ""}`,
-      ),
+      el("td", {class: "is-empty", colspan: "4"}, "なし"),
     );
-    const actionCell = el("td", {});
-    const detailBtn = el(
-      "button",
-      {type: "button", class: "admin-button"},
-      "詳細",
-    );
-    detailBtn.addEventListener("click", () => {
-      void (async () => {
-        feedback.hidden = true;
-        feedback.textContent = "";
-        const detailRes = await fetch(adminSubmissionPath(row.submissionId), {
-          credentials: "same-origin",
-          headers: {accept: "application/json"},
-        });
-        if (!detailRes.ok) {
-          feedback.hidden = false;
-          feedback.textContent = "提出詳細を取得できませんでした。";
-          return;
-        }
-        const detailBody = (await detailRes.json()) as {
-          ok?: boolean;
-          submission?: SubmissionDetail;
-        };
-        if (!detailBody.ok || !detailBody.submission) {
-          feedback.hidden = false;
-          feedback.textContent = "提出詳細を取得できませんでした。";
-          return;
-        }
-        renderSubmissionDetail(
-          detailBox,
-          detailBody.submission,
-          Boolean(flags?.submissionPreviewEnabled),
-        );
-      })();
-    });
-    actionCell.append(detailBtn);
-    tr.append(actionCell);
     tbody.append(tr);
+  } else {
+    for (const row of submissions) {
+      const tr = el("tr", {class: "is-clickable"});
+      tr.append(
+        el("td", {class: "is-mono"}, row.attendanceNumber ?? "なし"),
+        el("td", {}, row.displayName),
+        el("td", {}, createBadge("提出済", "success")),
+        el(
+          "td",
+          {class: "is-mono"},
+          formatShortTimestamp(row.submittedAt),
+        ),
+      );
+      tr.addEventListener("click", () => {
+        void (async () => {
+          feedback.hidden = true;
+          feedback.textContent = "";
+          const detailRes = await fetch(adminSubmissionPath(row.submissionId), {
+            credentials: "same-origin",
+            headers: {accept: "application/json"},
+          });
+          if (!detailRes.ok) {
+            feedback.hidden = false;
+            feedback.textContent = "提出詳細を取得できませんでした。";
+            return;
+          }
+          const detailBody = (await detailRes.json()) as {
+            ok?: boolean;
+            submission?: SubmissionDetail;
+          };
+          if (!detailBody.ok || !detailBody.submission) {
+            feedback.hidden = false;
+            feedback.textContent = "提出詳細を取得できませんでした。";
+            return;
+          }
+          renderSubmissionDetail(
+            detailBox,
+            detailBody.submission,
+            Boolean(flags?.submissionPreviewEnabled),
+          );
+        })();
+      });
+      tbody.append(tr);
+    }
   }
-  table.append(tbody);
-  list.append(table);
+
+  tableHost.append(table);
+
+  exportBtn.addEventListener("click", () => {
+    if (submissions.length === 0) return;
+    const lines = [
+      "attendance_number,display_name,submitted_at,project_title",
+      ...submissions.map(s =>
+        [
+          s.attendanceNumber ?? "",
+          s.displayName,
+          s.submittedAt,
+          s.projectTitle,
+        ]
+          .map(v => `"${String(v).replace(/"/g, '""')}"`)
+          .join(","),
+      ),
+    ];
+    const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${policy.title}-submissions.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  });
 }

@@ -131,10 +131,10 @@ describe("admin submissions ui", () => {
     );
 
     expect(card.querySelector(".admin-submission-table")).toBeTruthy();
-    const detailButton = card.querySelector("button");
-    detailButton?.dispatchEvent(new MouseEvent("click", {bubbles: true}));
+    const detailRow = card.querySelector("tr.is-clickable");
+    detailRow?.dispatchEvent(new MouseEvent("click", {bubbles: true}));
     await new Promise(resolve => setTimeout(resolve, 0));
-    const previewLink = card.querySelector<HTMLAnchorElement>("a.admin-button.primary");
+    const previewLink = card.querySelector<HTMLAnchorElement>("a.admin2-btn-primary");
     expect(previewLink?.href).toContain(
       adminSubmissionPreviewSurfacePath("sub-1"),
     );
