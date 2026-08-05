@@ -227,14 +227,18 @@ export function renderAccountPane(ctx: AdminPaneContext): HTMLElement {
   );
 
   const permissionRow = el("div", {class: "admin2-row admin2-row-label-account-2"});
-  permissionRow.append(
-    el("span", {class: "admin2-row-label"}, "権限"),
+  const permissionValue = el("span", {});
+  permissionValue.append(
+    "管理者",
     el(
       "span",
-      {},
-      "管理者",
-      el("span", {style: "font-size:11px;color:#5b708a"}, " — 教室設定・名簿の作成と削除ができます"),
+      {style: "font-size:11px;color:#5b708a"},
+      " — 教室設定・名簿の作成と削除ができます",
     ),
+  );
+  permissionRow.append(
+    el("span", {class: "admin2-row-label"}, "権限"),
+    permissionValue,
   );
 
   body.append(credentialRow, dependentRow, permissionRow);
@@ -366,6 +370,7 @@ export async function renderRosterPane(
   );
   const roster = detailRes.roster;
   if (!roster || !summary) return null;
+  const rosterRecord: ClassroomRoster = roster;
 
   const pane = el("div", {class: "admin2-pane-wrap"});
   const header = el("div", {class: "admin2-pane-header"});
@@ -437,11 +442,11 @@ export async function renderRosterPane(
       "data-testid": "admin-roster-open-sheet",
       target: "_blank",
       rel: "noopener noreferrer",
-      hidden: roster.sheetSpreadsheetId ? undefined : "true",
-      href: buildSpreadsheetEditUrl(roster.sheetSpreadsheetId ?? ""),
+      href: buildSpreadsheetEditUrl(rosterRecord.sheetSpreadsheetId ?? ""),
     },
     "Sheet を開く ↗",
   ) as HTMLAnchorElement;
+  openSheetBtn.hidden = !rosterRecord.sheetSpreadsheetId;
 
   const toggleExpandBtn = el(
     "button",
@@ -462,7 +467,7 @@ export async function renderRosterPane(
         "span",
         {class: "admin2-input-mono", style: "color:#5b708a"},
         buildConnectionSummary({
-          ...roster,
+          ...rosterRecord,
           sheetSpreadsheetId: sheetIdInput.value.trim(),
           sheetTabName: tabInput.value.trim() || "Sheet1",
           sheetRange: rangeInput.value.trim() || "A:F",
@@ -471,7 +476,7 @@ export async function renderRosterPane(
       el(
         "span",
         {style: "font-size:11px;color:#5b708a;white-space:nowrap"},
-        `最終 ${formatShortTimestamp(roster.updatedAt)}`,
+        `最終 ${formatShortTimestamp(rosterRecord.updatedAt)}`,
       ),
     );
     openSheetBtn.href = buildSpreadsheetEditUrl(sheetIdInput.value);
@@ -541,9 +546,9 @@ export async function renderRosterPane(
 
   async function saveSheetSettings(): Promise<void> {
     const prev = {
-      sheetSpreadsheetId: roster.sheetSpreadsheetId,
-      sheetTabName: roster.sheetTabName,
-      sheetRange: roster.sheetRange,
+      sheetSpreadsheetId: rosterRecord.sheetSpreadsheetId,
+      sheetTabName: rosterRecord.sheetTabName,
+      sheetRange: rosterRecord.sheetRange,
     };
     const next = {
       sheetSpreadsheetId: sheetIdInput.value.trim() || null,
@@ -571,7 +576,7 @@ export async function renderRosterPane(
       await ctx.onRefresh();
     });
     ctx.saveFooter.setSaved();
-    Object.assign(roster, next);
+    Object.assign(rosterRecord, next);
     await ctx.onRefresh();
   }
 
@@ -734,7 +739,7 @@ export async function renderRosterPane(
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `${roster.title}.csv`;
+      anchor.download = `${rosterRecord.title}.csv`;
       anchor.click();
       URL.revokeObjectURL(url);
     })();

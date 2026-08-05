@@ -544,9 +544,12 @@ async function renderConsole(
       return;
     }
 
-    const policy = policies.find(p => p.policyId === selection.policyId);
-    if (!policy) return;
-    paneHost.append(await renderPolicyPane(policy));
+    if (selection.kind === "policy") {
+      const policyId = selection.policyId;
+      const policy = policies.find(p => p.policyId === policyId);
+      if (!policy) return;
+      paneHost.append(await renderPolicyPane(policy));
+    }
   }
 
   async function renderPolicyPane(policy: ClassroomPolicy): Promise<HTMLElement> {

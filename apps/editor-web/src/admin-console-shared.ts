@@ -3,7 +3,7 @@
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   attrs: Record<string, string> = {},
-  text?: string,
+  content?: string | Node,
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
@@ -11,7 +11,10 @@ export function el<K extends keyof HTMLElementTagNameMap>(
     else if (key === "hidden" && value === "true") node.hidden = true;
     else node.setAttribute(key, value);
   }
-  if (text !== undefined) node.textContent = text;
+  if (content !== undefined) {
+    if (typeof content === "string") node.textContent = content;
+    else node.append(content);
+  }
   return node;
 }
 
