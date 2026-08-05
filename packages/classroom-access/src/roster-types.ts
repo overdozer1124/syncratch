@@ -26,6 +26,8 @@ export interface ClassroomStudent {
   displayName: string;
   attendanceNumber: string | null;
   loginName: string | null;
+  googleEmail: string | null;
+  googleSubject: string | null;
   groupLabel: string | null;
   active: boolean;
   archivedAt: string | null;
@@ -47,8 +49,20 @@ export type StudentAccountStatus =
   | "active"
   | "disabled";
 
+export type StudentAuthMethod = "google" | "local" | "google-or-local";
+
 export interface StudentAuthPolicy {
   required: boolean;
+  /** Primary auth path when roster-login is active (G1 contract). */
+  method: StudentAuthMethod;
+  /** Empty = no domain restriction (free use). Non-empty = exact domain match. */
+  allowedEmailDomains: readonly string[];
+}
+
+/** Student client policy view — domains are server-side only. */
+export interface StudentAuthClientPolicy {
+  required: boolean;
+  method: StudentAuthMethod;
 }
 
 export interface SubmissionPolicy {
@@ -77,6 +91,7 @@ export const ROSTER_SHEET_COLUMNS = [
   "display_name",
   "attendance_number",
   "login_name",
+  "google_email",
   "group_label",
   "active",
 ] as const;
@@ -89,6 +104,7 @@ export const ROSTER_SHEET_COLUMN_LABELS: Record<RosterSheetColumn, string> = {
   display_name: "氏名",
   attendance_number: "出席番号",
   login_name: "ログイン名",
+  google_email: "Google メール",
   group_label: "グループ",
   active: "有効",
 };
@@ -183,6 +199,7 @@ export interface ClassroomStudentInput {
   displayName?: string;
   attendanceNumber?: string | null;
   loginName?: string | null;
+  googleEmail?: string | null;
   groupLabel?: string | null;
   active?: boolean;
 }
@@ -203,6 +220,7 @@ export interface ClassroomStudentListItem {
   displayName: string;
   attendanceNumber: string | null;
   loginName: string | null;
+  googleEmail: string | null;
   groupLabel: string | null;
   active: boolean;
   accountStatus: StudentAccountStatus | null;

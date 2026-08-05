@@ -17,6 +17,9 @@ import {
   classroomRosterFoundationChecksumSource,
   classroomRosterFoundationMigration,
 } from "./0002-classroom-roster-foundation.js";
+import {
+  rosterGoogleStudentAuthMigration,
+} from "./0005-roster-google-student-auth-foundation.js";
 import type {AdminSchemaMigration} from "./types.js";
 
 function createPhase2LedgerlessDb(dbPath: string): void {
@@ -118,6 +121,7 @@ describe("admin DB migrations", () => {
     const view = adminDb.resolveStudentPolicy("abcdefghijklmnopqrstuvwxyz12");
     expect(view?.editor.allowExtensions).toBe(true);
     expect(view?.studentAuth.required).toBe(false);
+    expect(view?.studentAuth.method).toBe("google-or-local");
     expect(view?.submission.enabled).toBe(false);
     adminDb.close();
 
@@ -125,8 +129,8 @@ describe("admin DB migrations", () => {
     const ledger = sqlite
       .prepare(`SELECT version, name FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number; name: string}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4]);
-    expect(sqlite.pragma("user_version", {simple: true})).toBe(4);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(sqlite.pragma("user_version", {simple: true})).toBe(5);
     const tables = sqlite
       .prepare(
         `SELECT name FROM sqlite_master
@@ -145,7 +149,7 @@ describe("admin DB migrations", () => {
     sqlite.close();
   });
 
-  it("creates fresh DB at migration version 4", () => {
+  it("creates fresh DB at migration version 5", () => {
     const root = mkdtempSync(join(tmpdir(), "admin-db-fresh-"));
     const dbPath = join(root, "fresh.sqlite");
     const db = new Database(dbPath);
@@ -154,8 +158,20 @@ describe("admin DB migrations", () => {
     const ledger = db
       .prepare(`SELECT version FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4]);
-    expect(db.pragma("user_version", {simple: true})).toBe(4);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(db.pragma("user_version", {simple: true})).toBe(5);
+    const studentColumns = db
+      .prepare(`PRAGMA table_info(classroom_students)`)
+      .all() as Array<{name: string}>;
+    expect(studentColumns.map(row => row.name)).toContain("google_email");
+    expect(studentColumns.map(row => row.name)).toContain("google_subject");
+    const policyColumns = db
+      .prepare(`PRAGMA table_info(classroom_policies)`)
+      .all() as Array<{name: string}>;
+    expect(policyColumns.map(row => row.name)).toContain("student_auth_method");
+    expect(policyColumns.map(row => row.name)).toContain(
+      "student_auth_allowed_domains_json",
+    );
     const tables = db
       .prepare(
         `SELECT name FROM sqlite_master
@@ -237,5 +253,11 @@ describe("admin DB migrations", () => {
       runAdminDbMigrations(db, [adminPhase2BaselineMigration, tampered]),
     ).toThrow(/checksum mismatch/);
     db.close();
+  });
+
+  it("registers v5 roster google student auth migration checksum", () => {
+    expect(
+      computeMigrationChecksum(rosterGoogleStudentAuthMigration.checksumSource),
+    ).toBe(rosterGoogleStudentAuthMigration.checksum);
   });
 });

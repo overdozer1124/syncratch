@@ -5,6 +5,7 @@ export interface ClassroomFeatureFlags {
   adminGoogleCredentialEnabled: boolean;
   rosterSheetsEnabled: boolean;
   studentLocalAuthEnabled: boolean;
+  rosterGoogleStudentAuthEnabled: boolean;
   teacherDriveSubmissionEnabled: boolean;
   submissionPreviewEnabled: boolean;
 }
@@ -14,6 +15,7 @@ export const CLASSROOM_FEATURE_FLAG_ENV = {
   adminGoogleCredentialEnabled: "SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED",
   rosterSheetsEnabled: "SYNCRATCH_ROSTER_SHEETS_ENABLED",
   studentLocalAuthEnabled: "SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED",
+  rosterGoogleStudentAuthEnabled: "SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED",
   teacherDriveSubmissionEnabled: "SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED",
   submissionPreviewEnabled: "SYNCRATCH_SUBMISSION_PREVIEW_ENABLED",
 } as const;
@@ -39,6 +41,9 @@ export function parseClassroomFeatureFlags(
     ),
     studentLocalAuthEnabled: parseEnvFlag(
       env[CLASSROOM_FEATURE_FLAG_ENV.studentLocalAuthEnabled],
+    ),
+    rosterGoogleStudentAuthEnabled: parseEnvFlag(
+      env[CLASSROOM_FEATURE_FLAG_ENV.rosterGoogleStudentAuthEnabled],
     ),
     teacherDriveSubmissionEnabled: parseEnvFlag(
       env[CLASSROOM_FEATURE_FLAG_ENV.teacherDriveSubmissionEnabled],
@@ -67,6 +72,16 @@ export function validateClassroomFeatureFlagDependencies(
   if (flags.studentLocalAuthEnabled && !flags.classroomRosterEnabled) {
     issues.push(
       "SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED requires SYNCRATCH_CLASSROOM_ROSTER_ENABLED",
+    );
+  }
+  if (flags.rosterGoogleStudentAuthEnabled && !flags.studentLocalAuthEnabled) {
+    issues.push(
+      "SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED requires SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED",
+    );
+  }
+  if (flags.rosterGoogleStudentAuthEnabled && !flags.classroomRosterEnabled) {
+    issues.push(
+      "SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED requires SYNCRATCH_CLASSROOM_ROSTER_ENABLED",
     );
   }
   if (flags.teacherDriveSubmissionEnabled && !flags.studentLocalAuthEnabled) {

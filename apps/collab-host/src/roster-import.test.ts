@@ -32,7 +32,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   it("1. unknown columns warn only — rows still add/update", () => {
     const csv = [
       `${header()},extra_col`,
-      "S010,新規,10,new,B,true,ignored",
+      "S010,新規,10,new,,B,true,ignored",
     ].join("\n");
     const {rows, ignoredColumns} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
@@ -75,7 +75,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   });
 
   it("4. unchanged category on identical re-import", () => {
-    const csv = [header(), "S001,山田太郎,01,yamada01,A,true"].join("\n");
+    const csv = [header(), "S001,山田太郎,01,yamada01,,A,true"].join("\n");
     const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: existing,
@@ -85,7 +85,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   });
 
   it("5. deactivateMissing defaults false and affects previewHash", () => {
-    const csv = [header(), "S001,山田太郎,01,yamada01,A,true"].join("\n");
+    const csv = [header(), "S001,山田太郎,01,yamada01,,A,true"].join("\n");
     const parsed = parseRosterCsv(csv);
     const rosterMembers = [
       ...existing,
@@ -131,8 +131,8 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   it("detects duplicate student_code within import", () => {
     const csv = [
       header(),
-      "S010,重複A,10,a,A,true",
-      "S010,重複B,11,b,B,true",
+      "S010,重複A,10,a,,A,true",
+      "S010,重複B,11,b,,B,true",
     ].join("\n");
     const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
@@ -143,7 +143,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   });
 
   it("preserves leading zeros in attendance_number", () => {
-    const csv = [header(), "S010,出席,007,user,B,true"].join("\n");
+    const csv = [header(), "S010,出席,007,user,,B,true"].join("\n");
     const {rows} = buildImportPreviewRows({
       parsedRows: parseRosterCsv(csv),
       existingStudents: [],
@@ -157,7 +157,7 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
   it("parses CSV with Japanese header labels", () => {
     const csv = [
       rosterSheetTemplateHeaders().join(","),
-      "S001,山田太郎,01,yamada01,A,1",
+      "S001,山田太郎,01,yamada01,,A,1",
     ].join("\n");
     const parsed = parseRosterCsv(csv);
     expect(parsed[0]?.raw.student_code).toBe("S001");

@@ -10,6 +10,10 @@ import type {
   ClassroomPolicyStatus,
   StudentPolicyView,
 } from "./types.js";
+import {
+  normalizeAllowedEmailDomains,
+  normalizeStudentAuthMethod,
+} from "./roster-auth.js";
 
 export interface StudentPolicyViewOptions {
   /** When false, student clients always see shared-anonymous (Phase 2 compat). */
@@ -36,7 +40,11 @@ export const DEFAULT_CLASSROOM_POLICY_INPUT: NormalizedClassroomPolicyFields = {
   status: "active",
   rosterId: null,
   submissionDriveFolderId: null,
-  studentAuth: {required: false},
+  studentAuth: {
+    required: false,
+    method: "google-or-local",
+    allowedEmailDomains: [],
+  },
   submission: {enabled: false},
   aiAssist: {
     enabled: false,
@@ -95,6 +103,13 @@ export function normalizeClassroomPolicyInput(
     studentAuth: {
       required: Boolean(
         input?.studentAuth?.required ?? base.studentAuth.required,
+      ),
+      method: normalizeStudentAuthMethod(
+        input?.studentAuth?.method ?? base.studentAuth.method,
+      ),
+      allowedEmailDomains: normalizeAllowedEmailDomains(
+        input?.studentAuth?.allowedEmailDomains ??
+          base.studentAuth.allowedEmailDomains,
       ),
     },
     submission: {
@@ -177,8 +192,11 @@ export function toStudentPolicyView(
 ): StudentPolicyView {
   const studentAuth =
     options?.classroomRosterEnabled === false
-      ? {required: false}
-      : {...policy.studentAuth};
+      ? {required: false, method: "google-or-local" as const}
+      : {
+          required: policy.studentAuth.required,
+          method: policy.studentAuth.method,
+        };
   const submission =
     options?.teacherDriveSubmissionEnabled === false
       ? {enabled: false}

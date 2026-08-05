@@ -49,11 +49,11 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `SPEC_APPROVED_PENDING_IMPL` |
-| 次の担当 | ユーザー（実装 PR G1 は指示後） |
+| 現在の状態 | `G1_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | 設計 GO 済み。実装 PR 群（G1–G5）は指示後 |
-| 禁止 | 実装 PR 先行 / 自動マージ / Hermes 未発行の GO 記録 |
+| 次の作業 | G1 GO 済み。CI green 確認後 main マージ → G1_COMPLETE |
+| 禁止 | 実装 PR 先行（G2–G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
 
@@ -65,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `SPEC_APPROVED_PENDING_IMPL` | ユーザー（実装 PR G1 は指示後） | 設計 GO 済み。実装 PR 群（G1–G5）は指示後 | 仕様: `docs/superpowers/specs/2026-08-05-roster-google-student-auth-design.md`。Hermes GO（設計承認・Q1-Q6 推奨付与） |
+| `roster-google-student-auth` | `G1_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G1 GO 済み。CI green 確認後マージ → G1_COMPLETE | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G1 @6cf05e4。Hermes GO（Q1-Q6+m-google-1 準拠・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -78,13 +78,13 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-05 19:30:00 JST |
+| 最終更新 | 2026-08-05 21:55:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `SPEC_APPROVED_PENDING_IMPL`（roster-google-student-auth — 設計承認・実装待ち） |
-| 現在の担当 | ユーザー（実装 PR G1 は指示後） |
+| ワークフロー状態 | `G1_APPROVED_PENDING_CI`（G1 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes |
-| 現在のTask | 名簿 Google 生徒認証 — 設計書レビュー |
+| 現在のTask | 名簿 Google 生徒認証 — G1 契約・migration・feature flag |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
@@ -6817,3 +6817,58 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（実装 PR G1 は指示後）
 次: 実装 PR 群（G1–G5）提出時は各 PR ごとに READY_FOR_HERMES_REVIEW → Hermes 決裁。
 禁止: 実装 PR 先行 / 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-05 21:55:00 JST — Cursor（G1 実装 PR #229 → READY_FOR_HERMES_REVIEW）
+
+案件ID: roster-google-student-auth
+状態: READY_FOR_HERMES_REVIEW
+次の担当: Hermes
+レビュー主体: Hermes
+
+PR: #229 — feat(g1): roster Google student auth foundation contract
+Branch: cursor/roster-google-student-auth-g1-258b
+Commit: b96cd4b
+
+G1 スコープ（設計 §13）:
+- classroom-access: google_email 列契約、StudentAuthPolicy（method + allowedEmailDomains）、roster-auth helpers
+- collab-host: admin DB migration v5、policy 永続化、rosterGoogleStudentAuthEnabled flag（default OFF）
+- UI/OAuth/import 本体は G2–G5（本 PR では触らない）
+
+検証:
+- pnpm --filter @blocksync/classroom-access test typecheck — PASS（31 tests）
+- pnpm --filter collab-host test typecheck — PASS（100 tests）
+
+禁止: 自動マージ / Cursor による Hermes GO 記載
+次: Hermes 決裁 → preflight PASS → main マージ
+
+### 2026-08-05 22:00:00 JST — Hermes（PR #229 決裁 GO — G1 @6cf05e4）
+
+```text
+案件ID  : roster-google-student-auth
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #229 / head SHA: 6cf05e4
+Base: origin/main @ a822e2d
+決裁日: 2026-08-05 22:00
+
+G1 受入れ条件（設計 §13 G1: 契約・policy 型・migration・classroom-access）の検証:
+- policy 型拡張: studentAuth.method (既定 "google-or-local" = Q3 推奨), allowedEmailDomains (既定 [] = フリー) ✅
+- migration 0005: classroom_students に google_email / google_subject 列追加（Option A = Q2 推奨）✅
+- UNIQUE(owner_admin_id, google_email) + UNIQUE(owner_admin_id, google_subject)（Q1 推奨、NULL は除外）✅
+- feature flag: SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED、依存チェーン (studentLocalAuth + classroomRoster) ✅
+- email 正規化: normalizeEmail (trim+lowercase)、normalizeAllowedEmailDomains (trim+lowercase+@除去+重複排除) ✅
+- domain 一致: emailDomain() で @ 以降抽出、完全一致（m-google-1 対応: サブドメイン暗黙ロールアップなし）✅
+- 実装範囲: contract レイヤーのみ（OAuth flow G3 / admin UI G4 は別 PR）— 設計 §13 分割通り ✅
+
+Hermes 推奨準拠: Q1 UNIQUE(owner,email) ✅、Q2 Option A ✅、Q3 google-or-local ✅、
+Q4 独立 callback（今回は contract のみ・G3 で実装）✅、Q5 空行は local fallback ✅、Q6 既存 identity cookie 継続 ✅
+
+テスト: roster-auth.test.ts 12 件（normalize/domain/method 一致）、feature-flags.test.ts（依存チェーン）、
+migration.test.ts（0005 適用）、policy 型・index.test.ts 拡張
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → G1_COMPLETE）
+次: main マージ後、台帳を G1_COMPLETE に更新。G2 は指示後。
+禁止: 実装 PR 先行（G2–G5） / 自動マージ / Hermes 未発行の GO 記録

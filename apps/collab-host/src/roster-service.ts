@@ -4,6 +4,7 @@
 import type Database from "better-sqlite3";
 import {
   createOpaqueId,
+  normalizeGoogleEmail,
   type ClassroomRoster,
   type ClassroomRosterInput,
   type ClassroomRosterListItem,
@@ -66,6 +67,7 @@ interface StudentRow {
   display_name: string;
   attendance_number: string | null;
   login_name: string | null;
+  google_email?: string | null;
   group_label: string | null;
   active: number;
   archived_at: string | null;
@@ -152,6 +154,7 @@ function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
     displayName: row.display_name,
     attendanceNumber: row.attendance_number,
     loginName: row.login_name,
+    googleEmail: normalizeGoogleEmail(row.google_email),
     groupLabel: row.group_label,
     active: Boolean(row.active),
     accountStatus,

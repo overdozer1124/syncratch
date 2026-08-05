@@ -179,7 +179,7 @@ describe("roster admin routes", () => {
 
     const csv = [
       ROSTER_SHEET_COLUMNS.join(","),
-      "S001,山田太郎,007,yamada01,A,true",
+      "S001,山田太郎,007,yamada01,,A,true",
     ].join("\n");
     const imported = await fetch(
       new URL(adminRosterImportsPath(rosterId), h.url),
@@ -331,7 +331,7 @@ describe("roster admin routes", () => {
     const {roster} = (await created.json()) as {roster: {rosterId: string}};
     const csv = [
       ROSTER_SHEET_COLUMNS.join(","),
-      "S001,山田,01,y,A,true",
+      "S001,山田,01,y,,A,true",
     ].join("\n");
     const imported = await fetch(
       new URL(adminRosterImportsPath(roster.rosterId), h.url),
