@@ -1,6 +1,7 @@
 import {describe, expect, it, vi} from "vitest";
 import {ROSTER_SHEET_COLUMNS, rosterSheetTemplateHeaders} from "@blocksync/classroom-access";
 import {
+  appendStudentRowToSheet,
   buildSheetRangeA1,
   createRosterTemplateSpreadsheet,
   ensureAdminAccessToken,
@@ -218,5 +219,83 @@ describe("createRosterTemplateSpreadsheet", () => {
       sheetTabName: "Sheet1",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("appendStudentRowToSheet", () => {
+  it("appends a student row to the bound sheet", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes(":append")) {
+        expect(init?.method).toBe("POST");
+        const body = JSON.parse(String(init?.body)) as {values: string[][]};
+        expect(body.values[0]).toEqual([
+          "S001",
+          "山田太郎",
+          "01",
+          "yamada01",
+          "A",
+          "1",
+        ]);
+        return new Response(JSON.stringify({updates: {updatedRows: 1}}), {
+          status: 200,
+        });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    const store: AdminGoogleCredentialStore = {
+      putPendingOAuth: () => {},
+      takePendingOAuth: () => null,
+      purgeExpiredPendingOAuth: () => 0,
+      upsertCredential: () => {
+        throw new Error("not used");
+      },
+      getCredentialByAdminId: () => ({
+        credentialId: "agc_test",
+        adminId: "admin-1",
+        googleSubject: "sub",
+        googleEmail: "teacher@school.example",
+        scope: "drive.file",
+        refreshToken: "refresh-1",
+        accessToken: "access-live",
+        accessExpiresAt: Date.now() + 3600_000,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }),
+      deleteCredentialByAdminId: () => false,
+      updateAccessToken: () => {},
+    };
+
+    await appendStudentRowToSheet(
+      {
+        oauthConfig: {
+          clientId: "client",
+          clientSecret: "secret",
+          fetch: fetchMock,
+        },
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      "admin-1",
+      {
+        sheetSpreadsheetId: "sheet-1",
+        sheetTabName: "Sheet1",
+        sheetRange: "A:F",
+      },
+      {
+        studentCode: "S001",
+        displayName: "山田太郎",
+        attendanceNumber: "01",
+        loginName: "yamada01",
+        groupLabel: "A",
+        active: true,
+      },
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+      encodeURIComponent("'Sheet1'!A:F") + ":append",
+    );
   });
 });

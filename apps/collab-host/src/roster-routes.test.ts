@@ -247,6 +247,64 @@ describe("roster admin routes", () => {
     expect(auditCount.c).toBeGreaterThan(0);
   });
 
+  it("adds a student via POST without sheet connection", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-add-student-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-roster-add-student"),
+    };
+    const {handle: h} = await boot(config, dbPath, root, true);
+    const {cookie, csrfToken} = await loginAdmin(h.url, config);
+
+    const created = await fetch(new URL(ADMIN_ROSTERS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "3年A組"}),
+    });
+    const {roster} = (await created.json()) as {roster: {rosterId: string}};
+    const rosterId = roster.rosterId;
+
+    const added = await fetch(new URL(adminRosterStudentsPath(rosterId), h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({
+        studentCode: "S001",
+        displayName: "山田太郎",
+        attendanceNumber: "01",
+        loginName: "yamada01",
+        groupLabel: "A",
+      }),
+    });
+    expect(added.status).toBe(201);
+    const addedBody = (await added.json()) as {
+      student: {studentCode: string; displayName: string};
+    };
+    expect(addedBody.student.studentCode).toBe("S001");
+    expect(addedBody.student.displayName).toBe("山田太郎");
+
+    const students = await fetch(
+      new URL(adminRosterStudentsPath(rosterId), h.url),
+      {headers: {cookie}},
+    );
+    const studentBody = (await students.json()) as {
+      students: Array<{studentCode: string}>;
+    };
+    expect(studentBody.students).toHaveLength(1);
+  });
+
   it("returns 409 for stale preview on apply", async () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-roster-stale-"));
     writeFileSync(join(root, "index.html"), "<html>host</html>");

@@ -64,6 +64,61 @@ describe("roster-service", () => {
     db.close();
   });
 
+  it("adds a student inline with revision bump and audit", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-add-student",
+      email: "teacher-add@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+      attendanceNumber: "01",
+      loginName: "yamada01",
+      groupLabel: "A",
+    });
+
+    expect(student.studentCode).toBe("S001");
+    expect(student.displayName).toBe("山田太郎");
+    expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(1);
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(1);
+
+    const auditCount = db.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS c FROM classroom_audit_events
+         WHERE roster_id = ? AND event_type = 'roster.student.added'`,
+      )
+      .get(roster.rosterId) as {c: number};
+    expect(auditCount.c).toBe(1);
+    db.close();
+  });
+
+  it("rejects duplicate student_code on inline add", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-dup-student",
+      email: "teacher-dup@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+    });
+
+    expect(() =>
+      service.addStudent(roster.rosterId, admin.adminId, {
+        studentCode: "S001",
+        displayName: "別名",
+      }),
+    ).toThrow(RosterServiceError);
+    db.close();
+  });
+
   it("rejects stale preview_hash on apply", () => {
     const db = openAdminDb(":memory:");
     const admin = db.upsertAdminFromLogin({

@@ -346,3 +346,77 @@ export async function createRosterTemplateSpreadsheet(
     sheetTabName,
   };
 }
+
+export interface RosterSheetStudentRow {
+  studentCode: string;
+  displayName: string;
+  attendanceNumber: string | null;
+  loginName: string | null;
+  groupLabel: string | null;
+  active: boolean;
+}
+
+function buildSheetAppendRange(input: {
+  sheetTabName: string | null;
+  sheetRange: string | null;
+}): string {
+  const tabName = input.sheetTabName?.trim() || "Sheet1";
+  const dataRange = input.sheetRange?.trim() || "A:F";
+  return `${escapeSheetTabName(tabName)}!${dataRange}`;
+}
+
+function rosterStudentRowValues(student: RosterSheetStudentRow): string[] {
+  return [
+    student.studentCode,
+    student.displayName,
+    student.attendanceNumber ?? "",
+    student.loginName ?? student.studentCode,
+    student.groupLabel ?? "",
+    student.active ? "1" : "0",
+  ];
+}
+
+export async function appendStudentRowToSheet(
+  env: RosterSheetSyncEnvironment,
+  adminId: string,
+  roster: Pick<
+    ClassroomRoster,
+    "sheetSpreadsheetId" | "sheetTabName" | "sheetRange"
+  >,
+  student: RosterSheetStudentRow,
+): Promise<void> {
+  if (!roster.sheetSpreadsheetId) {
+    throw new SheetSyncError(
+      "SHEET_NOT_BOUND",
+      "Roster is not bound to a Google Sheet",
+    );
+  }
+
+  const {accessToken} = await ensureAdminAccessToken(env, adminId);
+  const fetchImpl = env.fetch ?? fetch;
+  const range = buildSheetAppendRange(roster);
+  const appendUrl = `${SHEETS_VALUES_URL}/${encodeURIComponent(roster.sheetSpreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
+  const response = await fetchImpl(appendUrl, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      range,
+      majorDimension: "ROWS",
+      values: [rosterStudentRowValues(student)],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as {
+      error?: {message?: string};
+    };
+    throw new SheetSyncError(
+      "SHEET_APPEND_FAILED",
+      body.error?.message ||
+        `Failed to append student row (${response.status})`,
+    );
+  }
+}

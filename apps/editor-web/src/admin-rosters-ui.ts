@@ -130,6 +130,113 @@ function rosterSyncBadge(syncStatus: string): HTMLElement {
   return createBadge("同期 active", "success");
 }
 
+function renderAddStudentForm(
+  container: HTMLElement,
+  onSubmit: (input: {
+    studentCode: string;
+    displayName: string;
+    attendanceNumber: string | null;
+    loginName: string | null;
+    groupLabel: string | null;
+  }) => Promise<void>,
+): void {
+  container.replaceChildren();
+  const form = el("div", {class: "admin2-add-student-form"});
+  const errorEl = el("div", {
+    class: "admin2-form-error",
+    hidden: "true",
+  }) as HTMLElement;
+
+  const fields = {
+    studentCode: el("input", {
+      type: "text",
+      class: "admin2-input admin2-input-mono",
+      placeholder: "例: S001",
+    }) as HTMLInputElement,
+    displayName: el("input", {
+      type: "text",
+      class: "admin2-input",
+      placeholder: "例: 山田太郎",
+    }) as HTMLInputElement,
+    attendanceNumber: el("input", {
+      type: "text",
+      class: "admin2-input admin2-input-mono",
+      placeholder: "例: 01",
+    }) as HTMLInputElement,
+    loginName: el("input", {
+      type: "text",
+      class: "admin2-input admin2-input-mono",
+      placeholder: "省略時は生徒コード",
+    }) as HTMLInputElement,
+    groupLabel: el("input", {
+      type: "text",
+      class: "admin2-input",
+      placeholder: "例: A",
+    }) as HTMLInputElement,
+  };
+
+  for (const [label, input] of [
+    ["生徒コード", fields.studentCode],
+    ["氏名", fields.displayName],
+    ["出席番号", fields.attendanceNumber],
+    ["ログイン名", fields.loginName],
+    ["グループ", fields.groupLabel],
+  ] as const) {
+    const row = el("div", {class: "admin2-row admin2-row-label-roster"});
+    row.append(el("span", {class: "admin2-row-label"}, label), input);
+    form.append(row);
+  }
+
+  const actions = el("div", {class: "admin2-add-student-actions"});
+  const submitBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-primary admin2-btn-sm"},
+    "追加する",
+  );
+  const cancelBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
+    "キャンセル",
+  );
+  actions.append(submitBtn, cancelBtn);
+  form.append(errorEl, actions);
+  container.append(form);
+
+  cancelBtn.addEventListener("click", () => {
+    container.replaceChildren();
+  });
+
+  submitBtn.addEventListener("click", () => {
+    errorEl.hidden = true;
+    errorEl.textContent = "";
+    const studentCode = fields.studentCode.value.trim();
+    const displayName = fields.displayName.value.trim();
+    if (!studentCode || !displayName) {
+      errorEl.textContent = "生徒コードと氏名は必須です。";
+      errorEl.hidden = false;
+      return;
+    }
+    submitBtn.disabled = true;
+    void onSubmit({
+      studentCode,
+      displayName,
+      attendanceNumber: fields.attendanceNumber.value.trim() || null,
+      loginName: fields.loginName.value.trim() || null,
+      groupLabel: fields.groupLabel.value.trim() || null,
+    })
+      .catch(error => {
+        errorEl.textContent =
+          error instanceof Error ? error.message : "生徒の追加に失敗しました。";
+        errorEl.hidden = false;
+      })
+      .finally(() => {
+        submitBtn.disabled = false;
+      });
+  });
+
+  fields.studentCode.focus();
+}
+
 function renderPreviewBox(
   container: HTMLElement,
   preview: RosterImportPreview,
@@ -550,26 +657,30 @@ export async function renderRosterPane(
   studentsHeader.insertBefore(csvPicker.root, studentsActions);
 
   addStudentBtn.addEventListener("click", () => {
-    previewHost.replaceChildren();
-    if (sheetIdInput.value.trim()) {
-      previewHost.append(
-        el(
-          "div",
-          {class: "admin2-add-student-hint"},
-          "Google Sheet の2行目以降に生徒を入力し、保存したら「今すぐ同期」を押してください。",
-        ),
-      );
-      openSheetBtn.click();
-      return;
-    }
-    previewHost.append(
-      el(
-        "div",
-        {class: "admin2-add-student-hint"},
-        "CSV ファイルを選んで取り込むか、「テンプレート Sheet を作成」で名簿 Sheet を用意してください。",
-      ),
-    );
-    csvPicker.input.click();
+    renderAddStudentForm(previewHost, async input => {
+      const res = await adminFetch<{
+        ok: boolean;
+        message?: string;
+        sheetSyncWarning?: string;
+      }>(adminRosterStudentsPath(rosterId), {
+        method: "POST",
+        csrfToken: ctx.getCsrf(),
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) {
+        throw new Error(res.message || "生徒の追加に失敗しました。");
+      }
+      previewHost.replaceChildren();
+      if (res.sheetSyncWarning) {
+        ctx.saveFooter.setError(
+          `生徒を追加しましたが、Google Sheet への反映に失敗しました: ${res.sheetSyncWarning}`,
+        );
+      } else {
+        ctx.saveFooter.setSaved();
+      }
+      await refreshStudents();
+      await ctx.onRefresh();
+    });
   });
 
   const studentsTableHost = el("div", {class: "admin2-card-body is-flush"});
