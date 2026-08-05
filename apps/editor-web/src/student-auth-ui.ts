@@ -1,7 +1,13 @@
 import {
   STUDENT_AUTH_ACTIVATE_PATH,
+  STUDENT_AUTH_GOOGLE_RETURN_FLAG,
+  STUDENT_AUTH_GOOGLE_RETURN_REASON,
+  STUDENT_AUTH_GOOGLE_START_PATH,
   STUDENT_AUTH_LOGIN_PATH,
   STUDENT_AUTH_SESSION_PATH,
+  studentAuthMethodIncludesGoogle,
+  studentAuthMethodIncludesLocal,
+  type StudentAuthMethod,
 } from "@blocksync/classroom-access";
 
 export interface StudentAuthSessionView {
@@ -105,8 +111,37 @@ export async function activateStudentIdentity(input: {
   }
 }
 
+export function buildStudentGoogleOAuthStartUrl(returnTo: string): string {
+  if (typeof window === "undefined") {
+    const query = new URLSearchParams({return: returnTo});
+    return `${STUDENT_AUTH_GOOGLE_START_PATH}?${query.toString()}`;
+  }
+  const url = new URL(STUDENT_AUTH_GOOGLE_START_PATH, window.location.origin);
+  url.searchParams.set("return", returnTo);
+  return `${url.pathname}${url.search}`;
+}
+
+export function consumeStudentGoogleOAuthReturn(): {
+  ok: boolean;
+  reason?: string;
+} | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const flag = params.get(STUDENT_AUTH_GOOGLE_RETURN_FLAG);
+  if (!flag) return null;
+  const reason = params.get(STUDENT_AUTH_GOOGLE_RETURN_REASON) ?? undefined;
+  params.delete(STUDENT_AUTH_GOOGLE_RETURN_FLAG);
+  params.delete(STUDENT_AUTH_GOOGLE_RETURN_REASON);
+  const cleaned = params.toString();
+  const nextUrl =
+    window.location.pathname + (cleaned ? `?${cleaned}` : "") + window.location.hash;
+  window.history.replaceState(null, "", nextUrl);
+  return {ok: flag === "ok", reason};
+}
+
 export interface MountStudentAuthUiOptions {
   onAuthenticated: () => void;
+  authMethod?: StudentAuthMethod;
 }
 
 export function mountStudentAuthUi(
@@ -115,6 +150,10 @@ export function mountStudentAuthUi(
 ): void {
   root.replaceChildren();
   root.classList.add("student-auth-shell");
+
+  const authMethod = options.authMethod ?? "google-or-local";
+  const showGoogle = studentAuthMethodIncludesGoogle(authMethod);
+  const showLocal = studentAuthMethodIncludesLocal(authMethod);
 
   const brand = document.createElement("p");
   brand.className = "admin-brand";
@@ -125,8 +164,59 @@ export function mountStudentAuthUi(
 
   const help = document.createElement("p");
   help.className = "student-auth-shell-help";
-  help.textContent =
-    "この教室では、名簿に登録された生徒のみエディターを使えます。ログインするか、先生から案内された登録コードで初回登録してください。";
+  help.textContent = showGoogle
+    ? "この教室では、名簿に登録された生徒のみエディターを使えます。Google アカウントでログインするか、先生から案内された方法でログインしてください。"
+    : "この教室では、名簿に登録された生徒のみエディターを使えます。ログインするか、先生から案内された登録コードで初回登録してください。";
+
+  const feedback = document.createElement("p");
+  feedback.className = "student-auth-shell-feedback";
+  feedback.hidden = true;
+
+  const showFeedback = (message: string) => {
+    feedback.textContent = message;
+    feedback.hidden = !message;
+  };
+
+  const oauthReturn = consumeStudentGoogleOAuthReturn();
+  if (oauthReturn?.ok) {
+    void fetchStudentIdentitySession().then(session => {
+      if (session) options.onAuthenticated();
+      else showFeedback("Google ログインに失敗しました。もう一度お試しください。");
+    });
+  } else if (oauthReturn && !oauthReturn.ok) {
+    showFeedback("Google ログインに失敗しました。もう一度お試しください。");
+  }
+
+  root.append(brand, title, help, feedback);
+
+  if (showGoogle) {
+    const googleSection = document.createElement("div");
+    googleSection.className = "student-auth-google-section";
+
+    const googleButton = document.createElement("button");
+    googleButton.type = "button";
+    googleButton.className = "student-auth-google-button";
+    googleButton.textContent = "Google でログイン";
+    googleButton.addEventListener("click", () => {
+      const returnTo =
+        window.location.pathname + window.location.search + window.location.hash;
+      window.location.assign(buildStudentGoogleOAuthStartUrl(returnTo));
+    });
+
+    googleSection.append(googleButton);
+    root.append(googleSection);
+  }
+
+  if (!showLocal) {
+    return;
+  }
+
+  if (showGoogle) {
+    const divider = document.createElement("p");
+    divider.className = "student-auth-shell-divider";
+    divider.textContent = "または";
+    root.append(divider);
+  }
 
   const tabs = document.createElement("div");
   tabs.className = "student-auth-shell-tabs";
@@ -152,10 +242,6 @@ export function mountStudentAuthUi(
   const panel = document.createElement("div");
   panel.className = "student-auth-shell-panel";
   panel.setAttribute("role", "tabpanel");
-
-  const feedback = document.createElement("p");
-  feedback.className = "student-auth-shell-feedback";
-  feedback.hidden = true;
 
   const loginForm = document.createElement("form");
   loginForm.className = "student-auth-form";
@@ -186,13 +272,8 @@ export function mountStudentAuthUi(
     <button type="submit">登録してログイン</button>
   `;
 
-  panel.append(feedback, loginForm, activateForm);
-  root.append(brand, title, help, tabs, panel);
-
-  const showFeedback = (message: string) => {
-    feedback.textContent = message;
-    feedback.hidden = !message;
-  };
+  panel.append(loginForm, activateForm);
+  root.append(tabs, panel);
 
   const selectTab = (mode: "login" | "activate") => {
     const loginActive = mode === "login";

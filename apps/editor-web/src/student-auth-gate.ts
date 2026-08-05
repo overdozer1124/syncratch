@@ -7,14 +7,18 @@ export function shouldShowStudentAuthGate(policy: StudentPolicyView): boolean {
 
 export function showStudentAuthShell(
   root: HTMLElement,
-  options?: {onAuthenticated?: () => void},
+  options?: {onAuthenticated?: () => void; policy?: StudentPolicyView},
 ): void {
   root.hidden = false;
+  const authMethod = options?.policy?.studentAuth.method;
   if (options?.onAuthenticated) {
-    mountStudentAuthUi(root, {onAuthenticated: options.onAuthenticated});
+    mountStudentAuthUi(root, {
+      onAuthenticated: options.onAuthenticated,
+      authMethod,
+    });
     return;
   }
-  mountStudentAuthUi(root, {onAuthenticated: () => {}});
+  mountStudentAuthUi(root, {onAuthenticated: () => {}, authMethod});
 }
 
 export function hideStudentAuthShell(root: HTMLElement): void {

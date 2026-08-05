@@ -20,6 +20,9 @@ import {
 import {
   rosterGoogleStudentAuthMigration,
 } from "./0005-roster-google-student-auth-foundation.js";
+import {
+  studentGoogleOAuthPendingMigration,
+} from "./0006-student-google-oauth-pending.js";
 import type {AdminSchemaMigration} from "./types.js";
 
 function createPhase2LedgerlessDb(dbPath: string): void {
@@ -129,8 +132,8 @@ describe("admin DB migrations", () => {
     const ledger = sqlite
       .prepare(`SELECT version, name FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number; name: string}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5]);
-    expect(sqlite.pragma("user_version", {simple: true})).toBe(5);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(sqlite.pragma("user_version", {simple: true})).toBe(6);
     const tables = sqlite
       .prepare(
         `SELECT name FROM sqlite_master
@@ -158,8 +161,8 @@ describe("admin DB migrations", () => {
     const ledger = db
       .prepare(`SELECT version FROM schema_migrations ORDER BY version`)
       .all() as Array<{version: number}>;
-    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5]);
-    expect(db.pragma("user_version", {simple: true})).toBe(5);
+    expect(ledger.map(row => row.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(db.pragma("user_version", {simple: true})).toBe(6);
     const studentColumns = db
       .prepare(`PRAGMA table_info(classroom_students)`)
       .all() as Array<{name: string}>;
@@ -176,7 +179,12 @@ describe("admin DB migrations", () => {
       .prepare(
         `SELECT name FROM sqlite_master
          WHERE type = 'table'
-           AND name IN ('admin_google_oauth_pending', 'admin_google_credentials', 'classroom_submissions')
+           AND name IN (
+             'admin_google_oauth_pending',
+             'admin_google_credentials',
+             'classroom_submissions',
+             'student_google_oauth_pending'
+           )
          ORDER BY name`,
       )
       .all() as Array<{name: string}>;
@@ -184,6 +192,7 @@ describe("admin DB migrations", () => {
       "admin_google_credentials",
       "admin_google_oauth_pending",
       "classroom_submissions",
+      "student_google_oauth_pending",
     ]);
     db.close();
   });
@@ -259,5 +268,11 @@ describe("admin DB migrations", () => {
     expect(
       computeMigrationChecksum(rosterGoogleStudentAuthMigration.checksumSource),
     ).toBe(rosterGoogleStudentAuthMigration.checksum);
+  });
+
+  it("registers v6 student google oauth pending migration checksum", () => {
+    expect(
+      computeMigrationChecksum(studentGoogleOAuthPendingMigration.checksumSource),
+    ).toBe(studentGoogleOAuthPendingMigration.checksum);
   });
 });

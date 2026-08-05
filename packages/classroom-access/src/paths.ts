@@ -24,6 +24,12 @@ export const STUDENT_AUTH_ACTIVATE_PATH = `${STUDENT_AUTH_PREFIX}/activate`;
 export const STUDENT_AUTH_LOGIN_PATH = `${STUDENT_AUTH_PREFIX}/login`;
 export const STUDENT_AUTH_SESSION_PATH = `${STUDENT_AUTH_PREFIX}/session`;
 export const STUDENT_AUTH_LOGOUT_PATH = `${STUDENT_AUTH_PREFIX}/logout`;
+export const STUDENT_AUTH_GOOGLE_START_PATH = `${STUDENT_AUTH_PREFIX}/google/start`;
+export const STUDENT_AUTH_GOOGLE_CALLBACK_PATH = "/oauth/student-google/callback";
+/** Query param on student surface after Google OAuth redirect (`ok` | `error`). */
+export const STUDENT_AUTH_GOOGLE_RETURN_FLAG = "student_google_oauth";
+/** Optional detail code on student surface after Google OAuth redirect failure. */
+export const STUDENT_AUTH_GOOGLE_RETURN_REASON = "student_google_oauth_reason";
 export const STUDENT_SUBMISSIONS_PATH = "/api/student/submissions";
 
 export const STUDENT_POLICY_BY_TOKEN_PREFIX = "/api/student/policy-by-token";
