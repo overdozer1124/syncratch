@@ -49,11 +49,11 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `G2_APPROVED_PENDING_CI` |
-| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| 現在の状態 | `G2_COMPLETE` |
+| 次の担当 | ユーザー（G3 は指示後） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | G2 GO 済み。CI green 確認後 main マージ → G2_COMPLETE |
-| 禁止 | 実装 PR 先行（G3–G5） / 自動マージ / Hermes 未発行の GO 記録 |
+| 次の作業 | G2 完了（main マージ済み @0b131c4）。G3 は指示後 |
+| 禁止 | 実装 PR 先行（G4–G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
 
@@ -65,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `G2_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G2 GO 済み。CI green 確認後マージ → G2_COMPLETE | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G2 @4d0fec8。Hermes GO（google_email 正規化・重複 blocking・CI green） |
+| `roster-google-student-auth` | `G2_COMPLETE` | ユーザー（G3 は指示後） | G2 完了（main @0b131c4）。G3 は指示後 | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G2 @4d0fec8。Hermes GO → main マージ済み。google_email 正規化・重複 blocking |
 
 ### 読取手順（「作業完了」時）
 
@@ -81,10 +81,10 @@
 | 最終更新 | 2026-08-06 03:25:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `G2_APPROVED_PENDING_CI`（G2 — Hermes GO 済み、CI green 待ち → マージ） |
-| 現在の担当 | ユーザー（CI green 確認後マージ） |
+| ワークフロー状態 | `G2_COMPLETE`（G2 — main マージ済み @0b131c4） |
+| 現在の担当 | ユーザー（G3 は指示後） |
 | レビュー主体 | Hermes |
-| 現在のTask | 名簿 Google 生徒認証 — G2 import/sync/inline add + google_email |
+| 現在のTask | G2 完了待機（G3 は指示後） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
