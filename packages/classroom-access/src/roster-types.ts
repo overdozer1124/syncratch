@@ -206,6 +206,8 @@ export interface ClassroomStudentListItem {
   groupLabel: string | null;
   active: boolean;
   accountStatus: StudentAccountStatus | null;
+  /** Set when the student completes first login activation. */
+  firstRegisteredAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
