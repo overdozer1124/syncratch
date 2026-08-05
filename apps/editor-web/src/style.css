@@ -3657,6 +3657,29 @@ body.admin-console-mode {
   background: #f4f7fa;
 }
 
+.admin2-add-student-form {
+  padding: 12px 14px;
+  border-top: 1px solid #e6ecf3;
+  background: #f4f7fa;
+}
+
+.admin2-add-student-form .admin2-row {
+  grid-template-columns: 120px 1fr;
+}
+
+.admin2-add-student-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+.admin2-form-error {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #b42318;
+}
+
 .admin2-row {
   display: grid;
   gap: 10px;

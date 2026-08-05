@@ -24,12 +24,16 @@ import {
   applySheetSync,
   createRosterService,
   createSheetSyncPreview,
+  markRosterSyncRequired,
   RosterServiceError,
   SheetSyncError,
   type RosterService,
   type RosterSheetSyncEnvironment,
 } from "./roster-service.js";
-import {createRosterTemplateSpreadsheet} from "./roster-sheet-sync.js";
+import {
+  appendStudentRowToSheet,
+  createRosterTemplateSpreadsheet,
+} from "./roster-sheet-sync.js";
 import {MAX_ROSTER_CSV_BYTES} from "./roster-import.js";
 import type Database from "better-sqlite3";
 
@@ -180,6 +184,7 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
       case "SHEET_FETCH_FAILED":
       case "SHEET_CREATE_FAILED":
       case "SHEET_TEMPLATE_WRITE_FAILED":
+      case "SHEET_APPEND_FAILED":
         return {status: 409, body: {ok: false, code: error.code, message: error.message}};
       default:
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
@@ -195,6 +200,12 @@ function mapServiceError(error: unknown): {status: number; body: unknown} {
         return {status: 409, body: {ok: false, code: error.code, message: error.message}};
       case "BLOCKING_PREVIEW":
         return {status: 422, body: {ok: false, code: error.code, message: error.message}};
+      case "MISSING_STUDENT_CODE":
+      case "MISSING_DISPLAY_NAME":
+        return {status: 422, body: {ok: false, code: error.code, message: error.message}};
+      case "DUPLICATE_STUDENT_CODE":
+      case "ATTENDANCE_COLLISION":
+        return {status: 409, body: {ok: false, code: error.code, message: error.message}};
       case "IMPORT_NOT_APPLICABLE":
         return {status: 400, body: {ok: false, code: error.code, message: error.message}};
       case "NOT_CONFIGURED":
@@ -336,17 +347,93 @@ export function createRosterRoutesHandler(
       }
 
       if (route.action === "students") {
-        if (req.method !== "GET") {
-          sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
+        if (req.method === "GET") {
+          try {
+            const students = service.listStudents(route.rosterId, adminSession.adminId);
+            sendJson(res, 200, {ok: true, students});
+          } catch (error) {
+            const mapped = mapServiceError(error);
+            sendJson(res, mapped.status, mapped.body);
+          }
           return true;
         }
-        try {
-          const students = service.listStudents(route.rosterId, adminSession.adminId);
-          sendJson(res, 200, {ok: true, students});
-        } catch (error) {
-          const mapped = mapServiceError(error);
-          sendJson(res, mapped.status, mapped.body);
+        if (req.method === "POST") {
+          if (!requireAdminCsrf(req, adminSession)) {
+            sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
+            return true;
+          }
+          const body = (await readJsonBody(req)) as Record<string, unknown> | null;
+          try {
+            const student = service.addStudent(route.rosterId, adminSession.adminId, {
+              studentCode:
+                typeof body?.studentCode === "string" ? body.studentCode : undefined,
+              displayName:
+                typeof body?.displayName === "string" ? body.displayName : undefined,
+              attendanceNumber:
+                body?.attendanceNumber === null ||
+                typeof body?.attendanceNumber === "string"
+                  ? (body.attendanceNumber as string | null)
+                  : undefined,
+              loginName:
+                body?.loginName === null || typeof body?.loginName === "string"
+                  ? (body.loginName as string | null)
+                  : undefined,
+              groupLabel:
+                body?.groupLabel === null || typeof body?.groupLabel === "string"
+                  ? (body.groupLabel as string | null)
+                  : undefined,
+              active: typeof body?.active === "boolean" ? body.active : undefined,
+            });
+
+            let sheetSyncWarning: string | undefined;
+            const roster = service.getRoster(route.rosterId, adminSession.adminId);
+            if (
+              roster?.sheetSpreadsheetId &&
+              options.sheetsEnabled &&
+              options.sheetSync
+            ) {
+              try {
+                await appendStudentRowToSheet(
+                  options.sheetSync,
+                  adminSession.adminId,
+                  roster,
+                  {
+                    studentCode: student.studentCode,
+                    displayName: student.displayName,
+                    attendanceNumber: student.attendanceNumber,
+                    loginName: student.loginName,
+                    groupLabel: student.groupLabel,
+                    active: student.active,
+                  },
+                );
+              } catch (error) {
+                const reason =
+                  error instanceof SheetSyncError
+                    ? error.code
+                    : error instanceof Error
+                      ? error.message
+                      : "SHEET_APPEND_FAILED";
+                markRosterSyncRequired(
+                  options.db,
+                  route.rosterId,
+                  adminSession.adminId,
+                  reason,
+                );
+                sheetSyncWarning =
+                  error instanceof Error
+                    ? error.message
+                    : "Failed to append student row to Google Sheet";
+              }
+            }
+
+            sendJson(res, 201, {ok: true, student, sheetSyncWarning});
+          } catch (error) {
+            const mapped = mapServiceError(error);
+            sendJson(res, mapped.status, mapped.body);
+          }
+          return true;
         }
+        sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
         return true;
       }
 

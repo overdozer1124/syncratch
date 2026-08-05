@@ -239,39 +239,56 @@ describe("admin rosters ui", () => {
     expect(openSheet?.textContent).toContain("テンプレート Sheet を開く");
   });
 
-  it("add student button opens sheet or csv picker with hint", async () => {
-    const openMock = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string) => {
-        if (url === adminRosterPath("r1")) {
-          return {
+  it("add student button shows inline form and posts student", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === adminRosterPath("r1")) {
+        return {
+          ok: true,
+          json: async () => ({
             ok: true,
-            json: async () => ({
-              ok: true,
-              roster: {
-                rosterId: "r1",
-                title: "3A",
-                rosterRevision: 1,
-                syncStatus: "active",
-                sheetSpreadsheetId: "sheet-bound-1",
-                sheetTabName: "Sheet1",
-                sheetRange: null,
-                createdAt: "t0",
-                updatedAt: "t1",
-              },
-            }),
-          };
-        }
-        if (url === adminRosterStudentsPath("r1")) {
-          return {
+            roster: {
+              rosterId: "r1",
+              title: "3A",
+              rosterRevision: 1,
+              syncStatus: "active",
+              sheetSpreadsheetId: "sheet-bound-1",
+              sheetTabName: "Sheet1",
+              sheetRange: null,
+              createdAt: "t0",
+              updatedAt: "t1",
+            },
+          }),
+        };
+      }
+      if (url === adminRosterStudentsPath("r1") && (!init?.method || init.method === "GET")) {
+        return {
+          ok: true,
+          json: async () => ({ok: true, students: []}),
+        };
+      }
+      if (url === adminRosterStudentsPath("r1") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
             ok: true,
-            json: async () => ({ok: true, students: []}),
-          };
-        }
-        throw new Error(`unexpected fetch ${url}`);
-      }),
-    );
+            student: {
+              studentId: "s-new",
+              studentCode: "S001",
+              displayName: "山田太郎",
+              attendanceNumber: "01",
+              loginName: "S001",
+              groupLabel: "A",
+              active: true,
+              accountStatus: null,
+              createdAt: "t0",
+              updatedAt: "t0",
+            },
+          }),
+        };
+      }
+      throw new Error(`unexpected fetch ${url} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const pane = await renderRosterPane(
       {
@@ -290,9 +307,24 @@ describe("admin rosters ui", () => {
     );
     expect(addBtn).toBeTruthy();
     addBtn!.click();
-    expect(pane!.textContent).toContain("Google Sheet の2行目以降");
-    expect(openMock).toHaveBeenCalled();
-    openMock.mockRestore();
+    expect(pane!.querySelector(".admin2-add-student-form")).toBeTruthy();
+
+    const inputs = pane!.querySelectorAll<HTMLInputElement>(".admin2-add-student-form input");
+    inputs[0]!.value = "S001";
+    inputs[1]!.value = "山田太郎";
+    inputs[2]!.value = "01";
+    inputs[4]!.value = "A";
+
+    const submitBtn = [...pane!.querySelectorAll("button")].find(
+      btn => btn.textContent === "追加する",
+    );
+    submitBtn!.click();
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        adminRosterStudentsPath("r1"),
+        expect.objectContaining({method: "POST"}),
+      );
+    });
   });
 
   it("shows template create button when spreadsheet is not bound", async () => {

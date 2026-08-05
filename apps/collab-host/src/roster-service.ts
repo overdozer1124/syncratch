@@ -8,6 +8,7 @@ import {
   type ClassroomRosterInput,
   type ClassroomRosterListItem,
   type ClassroomRosterSyncStatus,
+  type ClassroomStudentInput,
   type ClassroomStudentListItem,
   type RosterImport,
   type RosterImportPreview,
@@ -192,6 +193,11 @@ export interface RosterService {
     rosterId: string,
     ownerAdminId: string,
   ): ClassroomStudentListItem[];
+  addStudent(
+    rosterId: string,
+    ownerAdminId: string,
+    input: ClassroomStudentInput,
+  ): ClassroomStudentListItem;
   createImportFromCsv(
     rosterId: string,
     ownerAdminId: string,
@@ -581,7 +587,7 @@ function applyDraftsToRoster(input: {
   return rowToRoster(row);
 }
 
-function markRosterSyncRequired(
+export function markRosterSyncRequired(
   db: Database.Database,
   rosterId: string,
   ownerAdminId: string,
@@ -839,6 +845,137 @@ export function createRosterService(db: Database.Database): RosterService {
         ownerAdminId,
       ) as StudentRow[];
       return rows.map(rowToStudentListItem);
+    },
+
+    addStudent(rosterId, ownerAdminId, input) {
+      const roster = requireRoster(rosterId, ownerAdminId);
+      const studentCode = input.studentCode?.trim() ?? "";
+      const displayName = input.displayName?.trim() ?? "";
+      if (!studentCode) {
+        throw new RosterServiceError(
+          "MISSING_STUDENT_CODE",
+          "student_code is required",
+        );
+      }
+      if (!displayName) {
+        throw new RosterServiceError(
+          "MISSING_DISPLAY_NAME",
+          "display_name is required",
+        );
+      }
+
+      const attendanceNumber =
+        input.attendanceNumber === undefined
+          ? null
+          : input.attendanceNumber?.trim()
+            ? input.attendanceNumber.trim()
+            : null;
+      const loginNameRaw = input.loginName?.trim() ?? "";
+      const loginName = loginNameRaw || studentCode;
+      const groupLabel =
+        input.groupLabel === undefined
+          ? null
+          : input.groupLabel?.trim()
+            ? input.groupLabel.trim()
+            : null;
+      const active = input.active ?? true;
+
+      const existingByCode = db
+        .prepare(
+          `SELECT * FROM classroom_students
+           WHERE owner_admin_id = ? AND student_code = ?`,
+        )
+        .get(ownerAdminId, studentCode) as StudentRow | undefined;
+      if (existingByCode) {
+        throw new RosterServiceError(
+          "DUPLICATE_STUDENT_CODE",
+          `student_code ${studentCode} already exists`,
+        );
+      }
+
+      if (attendanceNumber) {
+        const attendanceCollision = db
+          .prepare(
+            `SELECT student_id FROM classroom_students
+             WHERE owner_admin_id = ? AND attendance_number = ? AND active = 1`,
+          )
+          .get(ownerAdminId, attendanceNumber) as {student_id: string} | undefined;
+        if (attendanceCollision) {
+          throw new RosterServiceError(
+            "ATTENDANCE_COLLISION",
+            `attendance_number ${attendanceNumber} already assigned`,
+          );
+        }
+      }
+
+      const studentId = createOpaqueId();
+      const membershipId = createOpaqueId();
+      const ts = nowIso();
+      const tx = db.transaction(() => {
+        const bump = db
+          .prepare(
+            `UPDATE classroom_rosters SET
+              roster_revision = roster_revision + 1,
+              sync_status = 'active',
+              updated_at = ?
+             WHERE roster_id = ? AND owner_admin_id = ?
+               AND roster_revision = ?`,
+          )
+          .run(ts, rosterId, ownerAdminId, roster.rosterRevision);
+        if (bump.changes === 0) {
+          throw new RosterServiceError(
+            "REVISION_CONFLICT",
+            "Concurrent roster update",
+          );
+        }
+
+        db.prepare(
+          `INSERT INTO classroom_students (
+            student_id, owner_admin_id, student_code, display_name,
+            attendance_number, login_name, group_label, active,
+            archived_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+        ).run(
+          studentId,
+          ownerAdminId,
+          studentCode,
+          displayName,
+          attendanceNumber,
+          loginName,
+          groupLabel,
+          active ? 1 : 0,
+          ts,
+          ts,
+        );
+        db.prepare(
+          `INSERT INTO classroom_roster_memberships (
+            membership_id, roster_id, student_id, active,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, 1, ?, ?)`,
+        ).run(membershipId, rosterId, studentId, ts, ts);
+        db.prepare(
+          `INSERT INTO classroom_audit_events (
+            event_id, owner_admin_id, roster_id, student_id,
+            event_type, payload_json, created_at
+          ) VALUES (?, ?, ?, ?, 'roster.student.added', ?, ?)`,
+        ).run(
+          createOpaqueId(),
+          ownerAdminId,
+          rosterId,
+          studentId,
+          JSON.stringify({
+            source: "inline",
+            studentCode,
+          }),
+          ts,
+        );
+      });
+      tx();
+
+      const row = db
+        .prepare(`SELECT * FROM classroom_students WHERE student_id = ?`)
+        .get(studentId) as StudentRow;
+      return rowToStudentListItem(row);
     },
 
     createImportFromCsv(rosterId, ownerAdminId, csvText, options = {}) {
