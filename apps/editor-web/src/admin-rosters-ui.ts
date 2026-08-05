@@ -192,6 +192,12 @@ function buildConnectionSummary(roster: ClassroomRoster): string {
   return `${id} · ${tab} · ${range}`;
 }
 
+function formatRosterSheetColumnHint(): string {
+  return ROSTER_SHEET_COLUMNS.map(column => ROSTER_SHEET_COLUMN_LABELS[column]).join(
+    "、",
+  );
+}
+
 export function renderAccountPane(ctx: AdminPaneContext): HTMLElement {
   const pane = el("div", {class: "admin2-pane-wrap"});
   const header = el("div", {class: "admin2-pane-header"});
@@ -441,9 +447,19 @@ export async function renderRosterPane(
       rel: "noopener noreferrer",
       href: buildSpreadsheetEditUrl(rosterRecord.sheetSpreadsheetId ?? ""),
     },
-    "Sheet を開く ↗",
+    "テンプレート Sheet を開く ↗",
   ) as HTMLAnchorElement;
   openSheetBtn.hidden = !rosterRecord.sheetSpreadsheetId;
+
+  const templateBtn = el(
+    "button",
+    {
+      type: "button",
+      class: "admin2-btn admin2-btn-primary admin2-btn-sm admin-roster-create-template",
+      "data-testid": "admin-roster-create-template",
+    },
+    "テンプレート Sheet を作成",
+  );
 
   const toggleExpandBtn = el(
     "button",
@@ -453,11 +469,21 @@ export async function renderRosterPane(
 
   function refreshConnectionSummary(): void {
     connectionValue.replaceChildren();
-    if (!sheetIdInput.value.trim()) {
+    connectionActions.replaceChildren();
+
+    const hasSheet = Boolean(sheetIdInput.value.trim());
+
+    if (!hasSheet) {
       connectionValue.append(emptyValue());
       openSheetBtn.hidden = true;
+      if (ctx.flags?.rosterSheetsEnabled) {
+        connectionActions.append(templateBtn, openSheetBtn, toggleExpandBtn);
+      } else {
+        connectionActions.append(openSheetBtn, toggleExpandBtn);
+      }
       return;
     }
+
     connectionValue.append(
       createBadge("Google Sheet", "success"),
       el(
@@ -478,13 +504,13 @@ export async function renderRosterPane(
     );
     openSheetBtn.href = buildSpreadsheetEditUrl(sheetIdInput.value);
     openSheetBtn.hidden = false;
+    connectionActions.append(openSheetBtn, toggleExpandBtn);
   }
 
   toggleExpandBtn.addEventListener("click", () => {
     expandPanel.hidden = !expandPanel.hidden;
   });
 
-  connectionActions.append(openSheetBtn, toggleExpandBtn);
   connectionCard.append(connectionBody, expandPanel);
 
   const studentsCard = el("div", {
@@ -805,10 +831,12 @@ export async function renderRosterPane(
   });
 
   if (ctx.flags?.rosterSheetsEnabled) {
-    const templateBtn = el(
-      "button",
-      {type: "button", class: "admin2-btn admin2-btn-sm"},
-      "テンプレート Sheet を作成",
+    expandPanel.append(
+      el(
+        "p",
+        {class: "admin2-card-hint", style: "padding:7px 0 4px"},
+        `列（1行目）: ${formatRosterSheetColumnHint()}。2行目以降に生徒を入力してください。`,
+      ),
     );
     templateBtn.addEventListener("click", () => {
       void (async () => {
@@ -829,12 +857,14 @@ export async function renderRosterPane(
         rangeInput.value = "";
         refreshConnectionSummary();
         saveSheetDebounced();
+        ctx.saveFooter.setSaved();
+        window.open(
+          buildSpreadsheetEditUrl(res.template.spreadsheetId),
+          "_blank",
+          "noopener,noreferrer",
+        );
       })();
     });
-    expandPanel.append(
-      el("p", {class: "admin2-feedback"}, `列: ${ROSTER_SHEET_COLUMNS.join(", ")}`),
-      templateBtn,
-    );
   }
 
   await refreshStudents();
