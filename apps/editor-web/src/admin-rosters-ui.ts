@@ -7,6 +7,7 @@ import {
   ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
   ADMIN_GOOGLE_OAUTH_RETURN_REASON,
   ROSTER_SHEET_COLUMNS,
+  ROSTER_SHEET_COLUMN_LABELS,
   adminRosterImportApplyPath,
   adminRosterImportsPath,
   adminRosterPath,
@@ -198,18 +199,10 @@ export function renderAccountPane(ctx: AdminPaneContext): HTMLElement {
     el("h3", {class: "admin2-pane-title"}, "アカウント"),
     createBadge(ctx.adminEmail, "neutral"),
   );
-  const logoutBtn = el(
-    "button",
-    {type: "button", class: "admin2-btn admin2-btn-sm"},
-    "ログアウト",
-  );
-  logoutBtn.addEventListener("click", () => {
-    document.dispatchEvent(new CustomEvent("admin2-logout"));
-  });
-  header.append(el("div", {class: "admin2-pane-header-actions"}, undefined));
-  header.querySelector(".admin2-pane-header-actions")!.append(logoutBtn);
 
-  const body = el("div", {class: "admin2-pane-body is-flat"});
+  const body = el("div", {class: "admin2-pane-body"});
+  const accountCard = el("div", {class: "admin2-card admin2-account-card"});
+  const accountBody = el("div", {class: "admin2-card-body"});
   const credentialRow = el("div", {
     class: "admin2-row admin2-row-label-account",
     "data-testid": "admin-roster-credential",
@@ -241,7 +234,9 @@ export function renderAccountPane(ctx: AdminPaneContext): HTMLElement {
     permissionValue,
   );
 
-  body.append(credentialRow, dependentRow, permissionRow);
+  accountBody.append(credentialRow, dependentRow, permissionRow);
+  accountCard.append(accountBody);
+  body.append(accountCard);
   pane.append(header, body, ctx.saveFooter.root);
 
   const chipList = dependentRow.querySelector(".admin2-chip-list")!;
@@ -399,11 +394,13 @@ export async function renderRosterPane(
 
   const body = el("div", {class: "admin2-pane-body"});
   const connectionCard = el("div", {class: "admin2-card"});
+  const connectionBody = el("div", {class: "admin2-card-body is-connection-summary"});
   const connectionRow = el("div", {class: "admin2-row admin2-row-label-roster"});
   connectionRow.append(el("span", {class: "admin2-row-label"}, "接続"));
   const connectionValue = el("div", {class: "admin2-row-value"});
   const connectionActions = el("div", {class: "admin2-row-actions"});
   connectionRow.append(connectionValue, connectionActions);
+  connectionBody.append(connectionRow);
 
   const expandPanel = el("div", {class: "admin2-card-body", hidden: "true"});
   const sheetIdInput = el("input", {
@@ -488,7 +485,7 @@ export async function renderRosterPane(
   });
 
   connectionActions.append(openSheetBtn, toggleExpandBtn);
-  connectionCard.append(connectionRow, expandPanel);
+  connectionCard.append(connectionBody, expandPanel);
 
   const studentsCard = el("div", {
     class: "admin2-card admin-roster-card",
@@ -525,6 +522,29 @@ export async function renderRosterPane(
     void uploadCsvPreview(file);
   });
   studentsHeader.insertBefore(csvPicker.root, studentsActions);
+
+  addStudentBtn.addEventListener("click", () => {
+    previewHost.replaceChildren();
+    if (sheetIdInput.value.trim()) {
+      previewHost.append(
+        el(
+          "div",
+          {class: "admin2-add-student-hint"},
+          "Google Sheet の2行目以降に生徒を入力し、保存したら「今すぐ同期」を押してください。",
+        ),
+      );
+      openSheetBtn.click();
+      return;
+    }
+    previewHost.append(
+      el(
+        "div",
+        {class: "admin2-add-student-hint"},
+        "CSV ファイルを選んで取り込むか、「テンプレート Sheet を作成」で名簿 Sheet を用意してください。",
+      ),
+    );
+    csvPicker.input.click();
+  });
 
   const studentsTableHost = el("div", {class: "admin2-card-body is-flush"});
   studentsCard.append(studentsHeader, previewHost, studentsTableHost);
@@ -712,14 +732,9 @@ export async function renderRosterPane(
         students?: ClassroomStudentListItem[];
       }>(adminRosterStudentsPath(rosterId));
       if (!res.ok || !res.students?.length) return;
-      const header = [
-        "student_code",
-        "display_name",
-        "attendance_number",
-        "login_name",
-        "group_label",
-        "active",
-      ];
+      const header = ROSTER_SHEET_COLUMNS.map(
+        column => ROSTER_SHEET_COLUMN_LABELS[column],
+      );
       const lines = [
         header.join(","),
         ...res.students.map(s =>

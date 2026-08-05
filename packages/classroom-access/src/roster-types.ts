@@ -83,6 +83,35 @@ export const ROSTER_SHEET_COLUMNS = [
 
 export type RosterSheetColumn = (typeof ROSTER_SHEET_COLUMNS)[number];
 
+/** Japanese labels for teacher-facing Sheet / CSV headers. */
+export const ROSTER_SHEET_COLUMN_LABELS: Record<RosterSheetColumn, string> = {
+  student_code: "生徒コード",
+  display_name: "氏名",
+  attendance_number: "出席番号",
+  login_name: "ログイン名",
+  group_label: "グループ",
+  active: "有効",
+};
+
+const ROSTER_SHEET_HEADER_ALIAS_ENTRIES: Array<[string, RosterSheetColumn]> =
+  ROSTER_SHEET_COLUMNS.flatMap(column => [
+    [column, column],
+    [ROSTER_SHEET_COLUMN_LABELS[column], column],
+  ]);
+
+export const ROSTER_SHEET_HEADER_ALIASES: Readonly<Record<string, RosterSheetColumn>> =
+  Object.fromEntries(ROSTER_SHEET_HEADER_ALIAS_ENTRIES);
+
+/** Map a Sheet/CSV header cell to the canonical English column key. */
+export function canonicalRosterSheetHeader(header: string): string {
+  const trimmed = header.trim();
+  return ROSTER_SHEET_HEADER_ALIASES[trimmed] ?? trimmed;
+}
+
+export function rosterSheetTemplateHeaders(): readonly string[] {
+  return ROSTER_SHEET_COLUMNS.map(column => ROSTER_SHEET_COLUMN_LABELS[column]);
+}
+
 export type RosterImportPreviewCategory =
   | "add"
   | "update"

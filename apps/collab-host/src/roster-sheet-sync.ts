@@ -3,6 +3,8 @@
  */
 import {
   ROSTER_SHEET_COLUMNS,
+  canonicalRosterSheetHeader,
+  rosterSheetTemplateHeaders,
   type ClassroomRoster,
 } from "@blocksync/classroom-access";
 import type {
@@ -70,7 +72,7 @@ export function sheetValuesToParsedRows(values: string[][]): ParsedRosterCsvRow[
     return [];
   }
   const header = values[0] ?? [];
-  const headerKeys = header.map(cell => cell.trim());
+  const headerKeys = header.map(cell => canonicalRosterSheetHeader(cell));
   const parsed: ParsedRosterCsvRow[] = [];
 
   for (let index = 1; index < values.length; index++) {
@@ -321,7 +323,7 @@ export async function createRosterTemplateSpreadsheet(
     body: JSON.stringify({
       range: headerRange,
       majorDimension: "ROWS",
-      values: [ROSTER_SHEET_COLUMNS],
+      values: [Array.from(rosterSheetTemplateHeaders())],
     }),
   });
 

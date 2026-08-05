@@ -1,5 +1,8 @@
 import {describe, expect, it} from "vitest";
-import {ROSTER_SHEET_COLUMNS} from "@blocksync/classroom-access";
+import {
+  ROSTER_SHEET_COLUMNS,
+  rosterSheetTemplateHeaders,
+} from "@blocksync/classroom-access";
 import {
   buildImportPreviewRows,
   computePreviewHash,
@@ -149,5 +152,15 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
     expect((addRow?.proposed as {attendanceNumber?: string}).attendanceNumber).toBe(
       "007",
     );
+  });
+
+  it("parses CSV with Japanese header labels", () => {
+    const csv = [
+      rosterSheetTemplateHeaders().join(","),
+      "S001,山田太郎,01,yamada01,A,1",
+    ].join("\n");
+    const parsed = parseRosterCsv(csv);
+    expect(parsed[0]?.raw.student_code).toBe("S001");
+    expect(parsed[0]?.raw.display_name).toBe("山田太郎");
   });
 });
