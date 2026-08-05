@@ -3266,11 +3266,14 @@ body.admin-console-mode {
   box-sizing: border-box;
   padding: 0;
   margin: 0;
-  background: #f4f7fa;
+  background: #eef2f7;
   color: #1a2b3c;
   font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif;
   font-size: 13px;
   -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .admin2-shell button,
@@ -3326,10 +3329,13 @@ body.admin-console-mode {
 .admin2-frame {
   display: grid;
   grid-template-rows: auto 1fr;
+  width: 100%;
+  max-width: 1180px;
   min-width: 940px;
   min-height: 100vh;
   border: 1px solid #b3c3d4;
   background: #f4f7fa;
+  box-sizing: border-box;
 }
 
 .admin2-topbar {
@@ -3388,9 +3394,15 @@ body.admin-console-mode {
 
 .admin2-layout {
   display: grid;
-  grid-template-columns: 248px 1fr;
+  grid-template-columns: 248px minmax(0, 1fr);
   min-height: calc(100vh - 44px);
   overflow: hidden;
+}
+
+.admin2-pane-host {
+  min-width: 0;
+  overflow: hidden;
+  display: grid;
 }
 
 .admin2-rail {
@@ -3859,8 +3871,10 @@ a.admin2-btn:hover {
 
 .admin2-table {
   width: 100%;
+  max-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: auto;
 }
 
 .admin2-table th {
