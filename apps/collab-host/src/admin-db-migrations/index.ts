@@ -3,6 +3,7 @@ import {classroomRosterFoundationMigration} from "./0002-classroom-roster-founda
 import {adminGoogleCredentialMigration} from "./0003-admin-google-credential.js";
 import {classroomSubmissionsMigration} from "./0004-classroom-submissions.js";
 import {rosterGoogleStudentAuthMigration} from "./0005-roster-google-student-auth-foundation.js";
+import {studentGoogleOAuthPendingMigration} from "./0006-student-google-oauth-pending.js";
 
 export const ADMIN_DB_MIGRATIONS = [
   adminPhase2BaselineMigration,
@@ -10,6 +11,7 @@ export const ADMIN_DB_MIGRATIONS = [
   adminGoogleCredentialMigration,
   classroomSubmissionsMigration,
   rosterGoogleStudentAuthMigration,
+  studentGoogleOAuthPendingMigration,
 ] as const;
 
 export {

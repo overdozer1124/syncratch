@@ -4654,6 +4654,7 @@ async function startEditorSurface(): Promise<void> {
       }
       if (studentAuthShell) {
         showStudentAuthShell(studentAuthShell, {
+          policy,
           onAuthenticated: () => {
             revealStudentEditor(policy!);
             void startStudentBootOnce();

@@ -54,6 +54,10 @@ import {
 import {createAdminGoogleCredentialStore} from "./admin-google-credential-store.js";
 import {createRosterRoutesHandler} from "./roster-routes.js";
 import {createStudentAuthRoutesHandler} from "./student-auth-routes.js";
+import {
+  createStudentGoogleOAuthHandler,
+  readStudentGoogleOAuthConfigFromEnv,
+} from "./student-google-oauth.js";
 import {createSubmissionRoutesHandler} from "./submission-routes.js";
 
 export interface StartCollabHostAdminOptions {
@@ -66,6 +70,7 @@ export interface StartCollabHostAdminOptions {
     adminGoogleCredentialEnabled: boolean;
     rosterSheetsEnabled?: boolean;
     studentLocalAuthEnabled?: boolean;
+    rosterGoogleStudentAuthEnabled?: boolean;
     teacherDriveSubmissionEnabled?: boolean;
     submissionPreviewEnabled?: boolean;
   };
@@ -73,6 +78,7 @@ export interface StartCollabHostAdminOptions {
   classroomRosterEnabled?: boolean;
   rosterSheetsEnabled?: boolean;
   studentLocalAuthEnabled?: boolean;
+  rosterGoogleStudentAuthEnabled?: boolean;
   teacherDriveSubmissionEnabled?: boolean;
   submissionPreviewEnabled?: boolean;
 }
@@ -129,6 +135,13 @@ export async function startCollabHost(
       options.admin?.classroomFlags?.studentLocalAuthEnabled ??
       (runtimeClassroomFlags.classroomRosterEnabled &&
         runtimeClassroomFlags.studentLocalAuthEnabled),
+  );
+  const rosterGoogleStudentAuthEnabled = Boolean(
+    options.admin?.rosterGoogleStudentAuthEnabled ??
+      options.admin?.classroomFlags?.rosterGoogleStudentAuthEnabled ??
+      (runtimeClassroomFlags.classroomRosterEnabled &&
+        runtimeClassroomFlags.studentLocalAuthEnabled &&
+        runtimeClassroomFlags.rosterGoogleStudentAuthEnabled),
   );
   const teacherDriveSubmissionEnabled = Boolean(
     options.admin?.teacherDriveSubmissionEnabled ??
@@ -216,11 +229,19 @@ export async function startCollabHost(
     adminSessions,
     sheetSync: rosterSheetSync,
   });
+  const studentGoogleOAuthConfig = readStudentGoogleOAuthConfigFromEnv();
   const handleStudentAuthRoutes = createStudentAuthRoutesHandler({
     enabled: studentLocalAuthEnabled,
     db: adminDb.sqlite,
     adminConfig,
     adminSessions,
+    cookieSecure:
+      adminConfig?.cookieSecure ?? process.env.NODE_ENV === "production",
+  });
+  const handleStudentGoogleOAuth = createStudentGoogleOAuthHandler({
+    enabled: rosterGoogleStudentAuthEnabled,
+    db: adminDb.sqlite,
+    oauthConfig: studentGoogleOAuthConfig,
     cookieSecure:
       adminConfig?.cookieSecure ?? process.env.NODE_ENV === "production",
   });
@@ -245,6 +266,7 @@ export async function startCollabHost(
       if (await handleDriveOAuth(req, res)) return;
       if (await handleAdminGoogleOAuth(req, res)) return;
       if (await handleRosterRoutes(req, res)) return;
+      if (await handleStudentGoogleOAuth(req, res)) return;
       if (await handleStudentAuthRoutes(req, res)) return;
       if (await handleSubmissionRoutes(req, res)) return;
       if (await handleAdminAuth(req, res)) return;

@@ -12,6 +12,14 @@ import {
 import type {IncomingMessage, ServerResponse} from "node:http";
 import type Database from "better-sqlite3";
 import {createOpaqueId} from "@blocksync/classroom-access";
+import {
+  isStudentEmailDomainAllowed,
+  normalizeGoogleEmail,
+  normalizeStudentAuthMethod,
+  parseAllowedEmailDomainsJson,
+  studentAuthMethodIncludesGoogle,
+  type StudentAuthMethod,
+} from "@blocksync/classroom-access";
 
 export const STUDENT_IDENTITY_COOKIE = "syncratch_student_identity";
 
@@ -67,6 +75,8 @@ export interface SignedIdentityPayload {
   studentId: string;
   passwordVersion: number;
   expiresAtMs: number;
+  authMethod?: "local" | "google";
+  googleSubject?: string;
 }
 
 export interface ResolvedGrantContext {
@@ -100,7 +110,14 @@ interface StudentRow {
   display_name: string;
   login_name: string | null;
   student_code: string;
+  google_email: string | null;
+  google_subject: string | null;
   active: number;
+}
+
+export interface GrantStudentAuthPolicy {
+  method: StudentAuthMethod;
+  allowedEmailDomains: readonly string[];
 }
 
 class ScryptConcurrencyQueue {
@@ -231,6 +248,19 @@ export function parseSignedIdentityToken(
     ) {
       return null;
     }
+    if (
+      payload.authMethod !== undefined &&
+      payload.authMethod !== "local" &&
+      payload.authMethod !== "google"
+    ) {
+      return null;
+    }
+    if (
+      payload.authMethod === "google" &&
+      typeof payload.googleSubject !== "string"
+    ) {
+      return null;
+    }
     if (payload.expiresAtMs <= nowMs) return null;
     return payload;
   } catch {
@@ -334,7 +364,8 @@ function getStudentInRoster(
 ): StudentRow | null {
   const row = db
     .prepare(
-      `SELECT cs.student_id, cs.display_name, cs.login_name, cs.student_code, cs.active
+      `SELECT cs.student_id, cs.display_name, cs.login_name, cs.student_code,
+              cs.google_email, cs.google_subject, cs.active
        FROM classroom_students cs
        JOIN classroom_roster_memberships rm ON rm.student_id = cs.student_id
        WHERE rm.roster_id = ?
@@ -344,6 +375,37 @@ function getStudentInRoster(
     .get(rosterId, studentId) as StudentRow | undefined;
   if (!row || row.active !== 1) return null;
   return row;
+}
+
+export function getGrantStudentAuthPolicy(
+  db: Database.Database,
+  grantId: string,
+  now = nowIso(),
+): GrantStudentAuthPolicy | null {
+  const row = db
+    .prepare(
+      `SELECT p.student_auth_method, p.student_auth_allowed_domains_json
+       FROM student_grants g
+       JOIN student_links l ON l.link_id = g.link_id
+       JOIN classroom_policies p ON p.policy_id = l.policy_id
+       WHERE g.grant_id = ?
+         AND g.expires_at > ?
+         AND l.status = 'active'
+         AND p.status = 'active'`,
+    )
+    .get(grantId, now) as
+    | {
+        student_auth_method: string;
+        student_auth_allowed_domains_json: string;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    method: normalizeStudentAuthMethod(row.student_auth_method),
+    allowedEmailDomains: parseAllowedEmailDomainsJson(
+      row.student_auth_allowed_domains_json,
+    ),
+  };
 }
 
 function isStudentInRoster(
@@ -521,6 +583,13 @@ export function revokeStudentIdentitySessions(
     ).run(ts, input.studentId);
   }
 
+  db.prepare(
+    `UPDATE classroom_students SET
+      google_subject = NULL,
+      updated_at = ?
+     WHERE student_id = ? AND owner_admin_id = ?`,
+  ).run(ts, input.studentId, input.ownerAdminId);
+
   insertAudit(db, {
     ownerAdminId: input.ownerAdminId,
     rosterId: input.rosterId ?? null,
@@ -571,6 +640,8 @@ async function findAccountByEnrollmentCode(
           display_name: row.display_name,
           login_name: row.login_name,
           student_code: row.student_code,
+          google_email: null,
+          google_subject: null,
           active: row.active,
         },
       };
@@ -670,6 +741,213 @@ export async function activateStudentAccount(
     passwordVersion: updated.password_version,
     displayName: match.student.display_name,
     loginName,
+    identityExpiresAtMs,
+  };
+}
+
+export interface GoogleAuthSuccess {
+  ok: true;
+  studentId: string;
+  googleSubject: string;
+  displayName: string;
+  loginName: string;
+  identityExpiresAtMs: number;
+}
+
+function findRosterStudentForGoogleLogin(
+  db: Database.Database,
+  grant: ResolvedGrantContext,
+  googleSubject: string,
+  googleEmail: string,
+): StudentRow | null {
+  const bySubject = db
+    .prepare(
+      `SELECT cs.student_id, cs.display_name, cs.login_name, cs.student_code,
+              cs.google_email, cs.google_subject, cs.active
+       FROM classroom_students cs
+       JOIN classroom_roster_memberships rm ON rm.student_id = cs.student_id
+       WHERE rm.roster_id = ?
+         AND rm.active = 1
+         AND cs.owner_admin_id = ?
+         AND cs.active = 1
+         AND cs.google_subject = ?`,
+    )
+    .get(grant.rosterId, grant.ownerAdminId, googleSubject) as StudentRow | undefined;
+  if (bySubject) return bySubject;
+
+  const byEmail = db
+    .prepare(
+      `SELECT cs.student_id, cs.display_name, cs.login_name, cs.student_code,
+              cs.google_email, cs.google_subject, cs.active
+       FROM classroom_students cs
+       JOIN classroom_roster_memberships rm ON rm.student_id = cs.student_id
+       WHERE rm.roster_id = ?
+         AND rm.active = 1
+         AND cs.owner_admin_id = ?
+         AND cs.active = 1
+         AND cs.google_email = ?`,
+    )
+    .get(grant.rosterId, grant.ownerAdminId, googleEmail) as StudentRow | undefined;
+  return byEmail ?? null;
+}
+
+function ensureGoogleSubmissionAccount(
+  db: Database.Database,
+  studentId: string,
+  now: string,
+): AccountRow {
+  const account = ensureStudentAccount(db, studentId, now);
+  if (account.status === "active") return account;
+  db.prepare(
+    `UPDATE student_accounts SET
+      status = 'active',
+      updated_at = ?
+     WHERE account_id = ?`,
+  ).run(now, account.account_id);
+  return db
+    .prepare(`SELECT * FROM student_accounts WHERE account_id = ?`)
+    .get(account.account_id) as AccountRow;
+}
+
+export function loginStudentViaGoogle(
+  db: Database.Database,
+  input: {
+    grant: ResolvedGrantContext;
+    googleSubject: string;
+    googleEmail: string;
+    emailVerified: boolean;
+    authPolicy: GrantStudentAuthPolicy;
+    nowMs?: number;
+  },
+): GoogleAuthSuccess | AuthFailure {
+  if (!input.emailVerified) {
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+  if (!studentAuthMethodIncludesGoogle(input.authPolicy.method)) {
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+
+  const normalizedEmail = normalizeGoogleEmail(input.googleEmail);
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+  if (
+    !isStudentEmailDomainAllowed(normalizedEmail, input.authPolicy.allowedEmailDomains)
+  ) {
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+
+  const nowMs = input.nowMs ?? Date.now();
+  const now = nowIso(nowMs);
+  const student = findRosterStudentForGoogleLogin(
+    db,
+    input.grant,
+    input.googleSubject,
+    normalizedEmail,
+  );
+  if (!student) {
+    insertAudit(db, {
+      ownerAdminId: input.grant.ownerAdminId,
+      rosterId: input.grant.rosterId,
+      studentId: null,
+      eventType: "student.auth.google_login_failed",
+      payload: {reason: "roster_mismatch"},
+      now,
+    });
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+
+  if (
+    student.google_subject &&
+    student.google_subject !== input.googleSubject
+  ) {
+    insertAudit(db, {
+      ownerAdminId: input.grant.ownerAdminId,
+      rosterId: input.grant.rosterId,
+      studentId: student.student_id,
+      eventType: "student.auth.google_login_failed",
+      payload: {reason: "subject_mismatch"},
+      now,
+    });
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+
+  if (student.google_email && student.google_email !== normalizedEmail) {
+    insertAudit(db, {
+      ownerAdminId: input.grant.ownerAdminId,
+      rosterId: input.grant.rosterId,
+      studentId: student.student_id,
+      eventType: "student.auth.google_login_failed",
+      payload: {reason: "email_mismatch"},
+      now,
+    });
+    return {
+      ok: false,
+      code: "AUTH_FAILED",
+      message: GENERIC_AUTH_FAILURE_MESSAGE,
+    };
+  }
+
+  db.prepare(
+    `UPDATE classroom_students SET
+      google_email = COALESCE(google_email, ?),
+      google_subject = ?,
+      updated_at = ?
+     WHERE student_id = ? AND owner_admin_id = ?`,
+  ).run(
+    normalizedEmail,
+    input.googleSubject,
+    now,
+    student.student_id,
+    input.grant.ownerAdminId,
+  );
+
+  ensureGoogleSubmissionAccount(db, student.student_id, now);
+
+  const identityExpiresAtMs = Math.min(
+    nowMs + STUDENT_IDENTITY_TTL_MS,
+    Date.parse(input.grant.grantExpiresAt),
+  );
+
+  insertAudit(db, {
+    ownerAdminId: input.grant.ownerAdminId,
+    rosterId: input.grant.rosterId,
+    studentId: student.student_id,
+    eventType: "student.auth.google_login_succeeded",
+    payload: {},
+    now,
+  });
+
+  return {
+    ok: true,
+    studentId: student.student_id,
+    googleSubject: input.googleSubject,
+    displayName: student.display_name,
+    loginName: student.login_name?.trim() || student.student_code,
     identityExpiresAtMs,
   };
 }
@@ -791,6 +1069,22 @@ export function resolveStudentIdentitySession(
   );
   if (!payload) return null;
 
+  if (payload.authMethod === "google") {
+    if (!payload.googleSubject || payload.googleSubject !== payload.googleSubject.trim()) {
+      return null;
+    }
+    const student = getStudentInRoster(db, grant.rosterId, payload.studentId);
+    if (!student || student.google_subject !== payload.googleSubject) {
+      return null;
+    }
+    return {
+      authenticated: true,
+      studentId: student.student_id,
+      displayName: student.display_name,
+      loginName: student.login_name?.trim() || student.student_code,
+    };
+  }
+
   const account = db
     .prepare(`SELECT * FROM student_accounts WHERE account_id = ?`)
     .get(payload.accountId) as AccountRow | undefined;
@@ -828,6 +1122,24 @@ export function buildIdentityCookieToken(
       studentId: success.studentId,
       passwordVersion: success.passwordVersion,
       expiresAtMs: success.identityExpiresAtMs,
+      authMethod: "local",
+    },
+    signingSecret,
+  );
+}
+
+export function buildGoogleIdentityCookieToken(
+  success: GoogleAuthSuccess,
+  signingSecret: string,
+): string {
+  return createSignedIdentityToken(
+    {
+      accountId: `google:${success.studentId}`,
+      studentId: success.studentId,
+      passwordVersion: 0,
+      expiresAtMs: success.identityExpiresAtMs,
+      authMethod: "google",
+      googleSubject: success.googleSubject,
     },
     signingSecret,
   );
