@@ -130,6 +130,38 @@ describe("roster-service", () => {
     db.close();
   });
 
+  it("exposes google identity fields on student list items", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-google-identity",
+      email: "teacher-google@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+      googleEmail: "taro@school.example",
+    });
+    const pending = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(pending?.googleEmail).toBe("taro@school.example");
+    expect(pending?.googleSubject).toBeNull();
+    expect(pending?.googleIdentityEstablishedAt).toBeNull();
+
+    const boundAt = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        `UPDATE classroom_students SET google_subject = ?, updated_at = ? WHERE student_id = ?`,
+      )
+      .run("google-sub-123", boundAt, student.studentId);
+
+    const bound = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(bound?.googleSubject).toBe("google-sub-123");
+    expect(bound?.googleIdentityEstablishedAt).toBe(boundAt);
+    db.close();
+  });
+
   it("rejects duplicate student_code on inline add", () => {
     const db = openAdminDb(":memory:");
     const admin = db.upsertAdminFromLogin({

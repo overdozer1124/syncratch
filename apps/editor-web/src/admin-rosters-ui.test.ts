@@ -23,7 +23,11 @@ const samplePolicy = {
   status: "active" as const,
   rosterId: null,
   submissionDriveFolderId: null,
-  studentAuth: {required: false},
+  studentAuth: {
+    required: false,
+    method: "google-or-local",
+    allowedEmailDomains: [],
+  },
   submission: {enabled: false},
   aiAssist: {enabled: false, level: 0, allowStudentApiKey: false},
   editor: {
@@ -42,6 +46,8 @@ const disabledFlags = {
   classroomRosterEnabled: false,
   adminGoogleCredentialEnabled: false,
   rosterSheetsEnabled: false,
+  studentLocalAuthEnabled: false,
+  rosterGoogleStudentAuthEnabled: false,
   teacherDriveSubmissionEnabled: false,
   submissionPreviewEnabled: false,
 };
@@ -152,10 +158,13 @@ describe("admin rosters ui", () => {
                   displayName: "Alice",
                   attendanceNumber: "1",
                   loginName: null,
+                  googleEmail: "alice@school.example",
+                  googleSubject: null,
                   groupLabel: null,
                   active: true,
                   accountStatus: "active",
                   firstRegisteredAt: "t0",
+                  googleIdentityEstablishedAt: null,
                   createdAt: "t0",
                   updatedAt: "t1",
                 },
@@ -315,7 +324,8 @@ describe("admin rosters ui", () => {
     inputs[0]!.value = "S001";
     inputs[1]!.value = "山田太郎";
     inputs[2]!.value = "01";
-    inputs[4]!.value = "A";
+    inputs[4]!.value = "taro@school.example";
+    inputs[5]!.value = "A";
 
     const submitBtn = [...pane!.querySelectorAll("button")].find(
       btn => btn.textContent === "追加する",
@@ -324,7 +334,17 @@ describe("admin rosters ui", () => {
     await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         adminRosterStudentsPath("r1"),
-        expect.objectContaining({method: "POST"}),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            studentCode: "S001",
+            displayName: "山田太郎",
+            attendanceNumber: "01",
+            loginName: null,
+            googleEmail: "taro@school.example",
+            groupLabel: "A",
+          }),
+        }),
       );
     });
   });
@@ -396,5 +416,98 @@ describe("admin rosters ui", () => {
     expect(panel.getAttribute("data-testid")).toBe("admin-policy-roster");
     expect(panel.querySelector(".admin-roster-select")).toBeTruthy();
     expect(panel.querySelector(".admin2-segment")).toBeTruthy();
+  });
+
+  it("shows google auth method controls when rosterGoogleStudentAuthEnabled", () => {
+    const panel = mountPolicyRosterControls(
+      samplePolicy,
+      [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+      {
+        ...disabledFlags,
+        classroomRosterEnabled: true,
+        studentLocalAuthEnabled: true,
+        rosterGoogleStudentAuthEnabled: true,
+      },
+      () => "csrf",
+      createAdminSaveFooter(),
+      async () => {},
+    );
+
+    expect(panel.textContent).toContain("認証方式");
+    expect(panel.textContent).toContain("許可ドメイン");
+    expect(panel.querySelectorAll(".admin2-segment").length).toBeGreaterThan(1);
+  });
+
+  it("shows google roster status badge when google auth flag is on", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              students: [
+                {
+                  studentId: "s1",
+                  studentCode: "001",
+                  displayName: "Alice",
+                  attendanceNumber: "1",
+                  loginName: null,
+                  googleEmail: "alice@school.example",
+                  googleSubject: null,
+                  groupLabel: null,
+                  active: true,
+                  accountStatus: null,
+                  firstRegisteredAt: null,
+                  googleIdentityEstablishedAt: null,
+                  createdAt: "t0",
+                  updatedAt: "t1",
+                },
+              ],
+            }),
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {
+          ...disabledFlags,
+          classroomRosterEnabled: true,
+          rosterGoogleStudentAuthEnabled: true,
+        },
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 1, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    expect(pane?.textContent).toContain("名簿一致");
+    expect(pane?.textContent).toContain("Google メール");
   });
 });

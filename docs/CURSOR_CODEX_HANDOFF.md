@@ -49,10 +49,9 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `G3_COMPLETE` |
-| 次の担当 | ユーザー（G4 は指示後） |
-| レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | G3 完了（main マージ済み @b0d04e6）。G4 は指示後 |
+| 現在の状態 | `READY_FOR_HERMES_REVIEW`（G4 提出済み） |
+| 次の担当 | Hermes |
+| 次の作業 | G4 PR レビュー・GO/NO-GO 決裁 |
 | 禁止 | 実装 PR 先行（G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
@@ -65,7 +64,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `G3_COMPLETE` | ユーザー（G4 は指示後） | G3 完了（main @b0d04e6）。G4 は指示後 | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G3 @b052a08。Hermes GO → main マージ済み。openid+email・pending SQLite TTL・google_subject・roster 照合 |
+| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | G4 PR レビュー（Admin UI） | G4 ブランチ `cursor/roster-google-student-auth-g4-258b`。ポリシー method/ドメイン + 名簿 UI |
 
 ### 読取手順（「作業完了」時）
 
@@ -78,18 +77,18 @@
 
 | 項目 | 値 |
 |---|---|
-| 最終更新 | 2026-08-06 04:17:00 JST |
+| 最終更新 | 2026-08-06 09:24:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `G3_COMPLETE`（G3 — main マージ済み @b0d04e6） |
-| 現在の担当 | ユーザー（G4 は指示後） |
+| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（G4 — Admin UI） |
+| 現在の担当 | Hermes |
 | レビュー主体 | Hermes |
-| 現在のTask | G3 完了待機（G4 は指示後） |
+| 現在のTask | G4 PR レビュー待ち |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
 | Frozen track | School/self-hosted server（既存実装・文書・証跡を保持） |
-| 作業ブランチ | `cursor/roster-google-student-auth-g3-258b` |
+| 作業ブランチ | `cursor/roster-google-student-auth-g4-258b` |
 | 作業worktree | `/workspace`（cloud agent） |
 | Drive concurrency | best-effort logical leader + pre/post/reconnect conflict detection |
 | 次Task | —（Community v0.1.0 公開済み。任意: SNS 告知 / Phase 3 / diagnostics Phase 4） |

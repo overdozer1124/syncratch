@@ -21,6 +21,9 @@ import {
   type ClassroomStudentListItem,
   type RosterImportPreview,
   type RosterImportPreviewCategory,
+  type StudentAuthMethod,
+  studentAuthMethodIncludesGoogle,
+  studentAuthMethodIncludesLocal,
 } from "@blocksync/classroom-access";
 import type {AdminClassroomFlags} from "./admin-classroom-flags.js";
 import {
@@ -45,6 +48,43 @@ const CATEGORY_LABELS: Record<RosterImportPreviewCategory, string> = {
   attendance_collision: "出席番号衝突",
   rejected_row: "拒否",
 };
+
+const DEFAULT_ROSTER_SHEET_RANGE = "A:G";
+
+const STUDENT_AUTH_METHOD_OPTIONS: ReadonlyArray<{
+  label: string;
+  value: StudentAuthMethod;
+}> = [
+  {label: "Google", value: "google"},
+  {label: "ローカル", value: "local"},
+  {label: "両方", value: "google-or-local"},
+];
+
+function isGoogleAuthAdminUi(flags: AdminClassroomFlags | null): boolean {
+  return Boolean(flags?.rosterGoogleStudentAuthEnabled);
+}
+
+function studentTableHeaders(googleAuthUi: boolean): string[] {
+  return [
+    "出席番号",
+    "氏名",
+    "ログイン名",
+    "Google メール",
+    "グループ",
+    googleAuthUi ? "Google ログイン" : "初回登録",
+    "状態",
+  ];
+}
+
+function formatStudentIdentityTimestamp(
+  student: ClassroomStudentListItem,
+  googleAuthUi: boolean,
+): string {
+  const raw = googleAuthUi
+    ? student.googleIdentityEstablishedAt
+    : student.firstRegisteredAt;
+  return raw ? formatShortTimestamp(raw) : "なし";
+}
 
 export interface AdminPaneContext {
   getCsrf: () => string;
@@ -113,9 +153,21 @@ function oauthFailureMessage(reason: string | null): string {
   }
 }
 
-function studentStatusBadge(student: ClassroomStudentListItem): HTMLElement {
+function studentStatusBadge(
+  student: ClassroomStudentListItem,
+  googleAuthUi: boolean,
+): HTMLElement {
   if (!student.active) {
     return createBadge("無効", "neutral");
+  }
+  if (googleAuthUi) {
+    if (student.googleSubject) {
+      return createBadge("ログイン済", "success");
+    }
+    if (student.googleEmail) {
+      return createBadge("名簿一致", "info");
+    }
+    return createBadge("メール未設定", "warn");
   }
   if (student.accountStatus === "active") {
     return createBadge("ログイン済", "success");
@@ -124,6 +176,71 @@ function studentStatusBadge(student: ClassroomStudentListItem): HTMLElement {
     return createBadge("無効", "neutral");
   }
   return createBadge("ログイン未設定", "warn");
+}
+
+function renderAllowedDomainEditor(
+  container: HTMLElement,
+  domains: readonly string[],
+  onChange: (next: string[]) => void,
+): void {
+  container.replaceChildren();
+  const chipList = el("div", {class: "admin2-chip-list admin2-domain-tags"});
+  const inputRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  const input = el("input", {
+    type: "text",
+    class: "admin2-input",
+    placeholder: "例: school.example",
+  }) as HTMLInputElement;
+
+  const renderChips = () => {
+    chipList.replaceChildren();
+    for (const domain of domains) {
+      const chip = el("span", {class: "admin2-chip"}, domain);
+      const removeBtn = el(
+        "button",
+        {
+          type: "button",
+          class: "admin2-btn admin2-btn-sm",
+          "aria-label": `${domain} を削除`,
+        },
+        "×",
+      );
+      removeBtn.addEventListener("click", () => {
+        onChange(domains.filter(item => item !== domain));
+      });
+      chip.append(removeBtn);
+      chipList.append(chip);
+    }
+  };
+
+  const addDomain = () => {
+    const normalized = input.value.trim().toLowerCase().replace(/^@+/, "");
+    input.value = "";
+    if (!normalized || domains.includes(normalized)) return;
+    onChange([...domains, normalized]);
+  };
+
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addDomain();
+    }
+  });
+
+  const addBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-sm"},
+    "追加",
+  );
+  addBtn.addEventListener("click", addDomain);
+
+  inputRow.append(
+    el("span", {class: "admin2-row-label"}, "ドメイン追加"),
+    input,
+    addBtn,
+  );
+  container.append(chipList, inputRow);
+  renderChips();
 }
 
 function rosterSyncBadge(syncStatus: string): HTMLElement {
@@ -140,6 +257,7 @@ function renderAddStudentForm(
     displayName: string;
     attendanceNumber: string | null;
     loginName: string | null;
+    googleEmail: string | null;
     groupLabel: string | null;
   }) => Promise<void>,
 ): void {
@@ -171,6 +289,11 @@ function renderAddStudentForm(
       class: "admin2-input admin2-input-mono",
       placeholder: "省略時は生徒コード",
     }) as HTMLInputElement,
+    googleEmail: el("input", {
+      type: "email",
+      class: "admin2-input admin2-input-mono",
+      placeholder: "例: taro@school.example",
+    }) as HTMLInputElement,
     groupLabel: el("input", {
       type: "text",
       class: "admin2-input",
@@ -183,6 +306,7 @@ function renderAddStudentForm(
     ["氏名", fields.displayName],
     ["出席番号", fields.attendanceNumber],
     ["ログイン名", fields.loginName],
+    ["Google メール", fields.googleEmail],
     ["グループ", fields.groupLabel],
   ] as const) {
     const row = el("div", {class: "admin2-row admin2-row-label-roster"});
@@ -225,6 +349,7 @@ function renderAddStudentForm(
       displayName,
       attendanceNumber: fields.attendanceNumber.value.trim() || null,
       loginName: fields.loginName.value.trim() || null,
+      googleEmail: fields.googleEmail.value.trim() || null,
       groupLabel: fields.groupLabel.value.trim() || null,
     })
       .catch(error => {
@@ -298,7 +423,7 @@ function buildConnectionSummary(roster: ClassroomRoster): string {
   if (!roster.sheetSpreadsheetId) return "なし";
   const id = truncateMiddle(roster.sheetSpreadsheetId, 28);
   const tab = roster.sheetTabName || "Sheet1";
-  const range = roster.sheetRange || "A:F";
+  const range = roster.sheetRange || DEFAULT_ROSTER_SHEET_RANGE;
   return `${id} · ${tab} · ${range}`;
 }
 
@@ -534,7 +659,7 @@ export async function renderRosterPane(
   const rangeInput = el("input", {
     type: "text",
     class: "admin2-input admin2-input-mono",
-    placeholder: "A:F",
+    placeholder: DEFAULT_ROSTER_SHEET_RANGE,
     value: roster.sheetRange ?? "",
   }) as HTMLInputElement;
 
@@ -603,7 +728,7 @@ export async function renderRosterPane(
           ...rosterRecord,
           sheetSpreadsheetId: sheetIdInput.value.trim(),
           sheetTabName: tabInput.value.trim() || "Sheet1",
-          sheetRange: rangeInput.value.trim() || "A:F",
+          sheetRange: rangeInput.value.trim() || DEFAULT_ROSTER_SHEET_RANGE,
         }),
       ),
       el(
@@ -635,7 +760,7 @@ export async function renderRosterPane(
   const filterInput = el("input", {
     type: "text",
     class: "admin2-input",
-    placeholder: "氏名・ログイン名で絞り込み",
+    placeholder: "氏名・ログイン名・Google メールで絞り込み",
     style: "margin-left:10px;width:16rem",
   }) as HTMLInputElement;
   studentsHeader.append(filterInput);
@@ -683,7 +808,9 @@ export async function renderRosterPane(
           el(
             "div",
             {class: "admin2-add-student-hint"},
-            "名簿に追加しました。「状態」は生徒のログイン設定です。ログイン未設定のままでも名簿登録は完了しています。",
+            isGoogleAuthAdminUi(ctx.flags)
+              ? "名簿に追加しました。「状態」は Google ログインの準備状況です。Google メールを登録すると名簿一致になり、初回 Google ログイン後にログイン済になります。"
+              : "名簿に追加しました。「状態」は生徒のログイン設定です。ログイン未設定のままでも名簿登録は完了しています。",
           ),
         );
         ctx.saveFooter.setSaved();
@@ -786,6 +913,8 @@ export async function renderRosterPane(
   }
 
   async function refreshStudents(): Promise<void> {
+    const googleAuthUi = isGoogleAuthAdminUi(ctx.flags);
+    const headers = studentTableHeaders(googleAuthUi);
     const res = await adminFetch<{
       ok: boolean;
       students?: ClassroomStudentListItem[];
@@ -798,19 +927,14 @@ export async function renderRosterPane(
         el("tbody", {}, undefined),
       );
       const headRow = el("tr");
-      for (const label of [
-        "出席番号",
-        "氏名",
-        "ログイン名",
-        "グループ",
-        "初回登録",
-        "状態",
-      ]) {
+      for (const label of headers) {
         headRow.append(el("th", {}, label));
       }
       table.querySelector("thead")!.append(headRow);
       const emptyRow = el("tr");
-      emptyRow.append(el("td", {colspan: "6", class: "is-empty"}, "なし"));
+      emptyRow.append(
+        el("td", {colspan: String(headers.length), class: "is-empty"}, "なし"),
+      );
       table.querySelector("tbody")!.append(emptyRow);
       studentsTableHost.append(table);
       return;
@@ -821,20 +945,14 @@ export async function renderRosterPane(
       if (!filter) return true;
       return (
         student.displayName.toLowerCase().includes(filter) ||
-        (student.loginName ?? "").toLowerCase().includes(filter)
+        (student.loginName ?? "").toLowerCase().includes(filter) ||
+        (student.googleEmail ?? "").toLowerCase().includes(filter)
       );
     });
 
     const table = el("table", {class: "admin2-table admin-roster-student-table"});
     const headRow = el("tr");
-    for (const label of [
-      "出席番号",
-      "氏名",
-      "ログイン名",
-      "グループ",
-      "初回登録",
-      "状態",
-    ]) {
+    for (const label of headers) {
       headRow.append(el("th", {}, label));
     }
     table.append(el("thead", {}, undefined), el("tbody"));
@@ -842,6 +960,13 @@ export async function renderRosterPane(
     const tbody = table.querySelector("tbody")!;
     for (const student of rows) {
       const tr = el("tr");
+      const identityClass = (
+        googleAuthUi
+          ? student.googleIdentityEstablishedAt
+          : student.firstRegisteredAt
+      )
+        ? "is-mono"
+        : "is-empty";
       tr.append(
         el(
           "td",
@@ -854,17 +979,20 @@ export async function renderRosterPane(
           {class: "is-mono"},
           student.loginName ? student.loginName : (emptyValue().textContent ?? "なし"),
         ),
+        el(
+          "td",
+          {class: student.googleEmail ? "is-mono" : "is-empty"},
+          student.googleEmail || "なし",
+        ),
         el("td", {}, student.groupLabel || "なし"),
         el(
           "td",
-          {class: student.firstRegisteredAt ? "is-mono" : "is-empty"},
-          student.firstRegisteredAt
-            ? formatShortTimestamp(student.firstRegisteredAt)
-            : "なし",
+          {class: identityClass},
+          formatStudentIdentityTimestamp(student, googleAuthUi),
         ),
         el("td", {}, undefined),
       );
-      tr.lastElementChild!.append(studentStatusBadge(student));
+      tr.lastElementChild!.append(studentStatusBadge(student, googleAuthUi));
       tbody.append(tr);
     }
     studentsTableHost.append(table);
@@ -886,15 +1014,27 @@ export async function renderRosterPane(
       );
       const lines = [
         header.join(","),
-        ...res.students.map(s =>
-          [
-            s.studentCode,
-            s.displayName,
-            s.attendanceNumber ?? "",
-            s.loginName ?? "",
-            s.groupLabel ?? "",
-            s.active ? "1" : "0",
-          ]
+        ...res.students.map(student =>
+          ROSTER_SHEET_COLUMNS.map(column => {
+            switch (column) {
+              case "student_code":
+                return student.studentCode;
+              case "display_name":
+                return student.displayName;
+              case "attendance_number":
+                return student.attendanceNumber ?? "";
+              case "login_name":
+                return student.loginName ?? "";
+              case "google_email":
+                return student.googleEmail ?? "";
+              case "group_label":
+                return student.groupLabel ?? "";
+              case "active":
+                return student.active ? "1" : "0";
+              default:
+                return "";
+            }
+          })
             .map(v => `"${String(v).replace(/"/g, '""')}"`)
             .join(","),
         ),
@@ -1051,6 +1191,68 @@ export function mountPolicyRosterControls(
   body.append(rosterRow, authRow);
 
   let authRequired = policy.studentAuth.required;
+  let authMethod: StudentAuthMethod = policy.studentAuth.method;
+  let allowedDomains = [...policy.studentAuth.allowedEmailDomains];
+  const googleAuthUi = isGoogleAuthAdminUi(flags);
+
+  const methodRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  methodRow.append(el("span", {class: "admin2-row-label"}, "認証方式"));
+  const methodValue = el("div", {class: "admin2-row-value"});
+  methodRow.append(methodValue);
+
+  const domainRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  domainRow.append(el("span", {class: "admin2-row-label"}, "許可ドメイン"));
+  const domainValue = el("div", {class: "admin2-row-value admin2-domain-editor-host"});
+  domainRow.append(
+    domainValue,
+    el(
+      "p",
+      {style: "font-size:11px;color:#5b708a;margin:6px 0 0"},
+      "空のまま = 個人 Gmail も可。学校運用では学校ドメインを追加してください。",
+    ),
+  );
+
+  if (googleAuthUi) {
+    body.append(methodRow, domainRow);
+  }
+
+  function renderAuthMethodSegment(): void {
+    methodValue.replaceChildren(
+      createSegmentControl(
+        STUDENT_AUTH_METHOD_OPTIONS.map(option => ({
+          label: option.label,
+          value: option.value,
+        })),
+        authMethod,
+        value => {
+          authMethod = value as StudentAuthMethod;
+          renderAuthMethodSegment();
+          renderDomainEditor();
+          void saveRosterSettings();
+        },
+      ),
+      el(
+        "span",
+        {style: "font-size:11px;color:#5b708a"},
+        studentAuthMethodIncludesLocal(authMethod)
+          ? "ローカル（登録コード）も利用できます。"
+          : "Google ログインのみです。",
+      ),
+    );
+  }
+
+  function renderDomainEditor(): void {
+    if (!googleAuthUi || !studentAuthMethodIncludesGoogle(authMethod)) {
+      domainRow.hidden = true;
+      return;
+    }
+    domainRow.hidden = false;
+    renderAllowedDomainEditor(domainValue, allowedDomains, next => {
+      allowedDomains = next;
+      renderDomainEditor();
+      void saveRosterSettings();
+    });
+  }
 
   function renderAuthSegment(): void {
     authValue.replaceChildren(
@@ -1069,11 +1271,17 @@ export function mountPolicyRosterControls(
       el(
         "span",
         {style: "font-size:11px;color:#5b708a"},
-        "生徒は初回にログイン名で登録します",
+        googleAuthUi
+          ? "名簿に登録された生徒のみエディターを利用できます。"
+          : "生徒は初回にログイン名で登録します。",
       ),
     );
   }
   renderAuthSegment();
+  if (googleAuthUi) {
+    renderAuthMethodSegment();
+    renderDomainEditor();
+  }
 
   const saveDebounced = debounce(() => {
     void saveRosterSettings();
@@ -1082,7 +1290,20 @@ export function mountPolicyRosterControls(
   async function saveRosterSettings(): Promise<void> {
     const prevRosterId = policy.rosterId;
     const prevRequired = policy.studentAuth.required;
+    const prevMethod = policy.studentAuth.method;
+    const prevDomains = [...policy.studentAuth.allowedEmailDomains];
     const rosterId = rosterSelect.value || null;
+    const studentAuthPatch: {
+      required: boolean;
+      method?: StudentAuthMethod;
+      allowedEmailDomains?: string[];
+    } = {required: authRequired};
+    if (googleAuthUi) {
+      studentAuthPatch.method = authMethod;
+      if (studentAuthMethodIncludesGoogle(authMethod)) {
+        studentAuthPatch.allowedEmailDomains = allowedDomains;
+      }
+    }
     const res = await adminFetch<{ok: boolean; message?: string}>(
       `${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`,
       {
@@ -1090,7 +1311,7 @@ export function mountPolicyRosterControls(
         csrfToken: getCsrf(),
         body: JSON.stringify({
           rosterId,
-          studentAuth: {required: authRequired},
+          studentAuth: studentAuthPatch,
         }),
       },
     );
@@ -1104,13 +1325,23 @@ export function mountPolicyRosterControls(
         csrfToken: getCsrf(),
         body: JSON.stringify({
           rosterId: prevRosterId,
-          studentAuth: {required: prevRequired},
+          studentAuth: {
+            required: prevRequired,
+            method: prevMethod,
+            allowedEmailDomains: prevDomains,
+          },
         }),
       });
       await onSaved();
     });
     policy.rosterId = rosterId;
     policy.studentAuth.required = authRequired;
+    if (googleAuthUi) {
+      policy.studentAuth.method = authMethod;
+      policy.studentAuth.allowedEmailDomains = studentAuthMethodIncludesGoogle(authMethod)
+        ? allowedDomains
+        : [];
+    }
     saveFooter.setSaved();
     await onSaved();
   }
