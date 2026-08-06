@@ -223,6 +223,7 @@ async function seedRosterLoginFixture(h: CollabHostHandle, db: ReturnType<typeof
     cookie,
     csrfToken,
     studentId,
+    policyId: policyBody.policy.policyId,
     rosterId: rosterBody.roster.rosterId,
     ownerAdminId: meBody.admin.adminId,
     grantId,
@@ -413,6 +414,62 @@ describe("student local auth", () => {
       headers: {cookie: grantCookie},
     });
     expect(policyRes.status).toBe(404);
+  });
+
+  it("rejects local activate and login when policy method is google-only", async () => {
+    const root = mkdtempSync(join(tmpdir(), "student-auth-google-only-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const {handle: h} = await bootStudentAuth(root, dbPath);
+    const fixture = await seedRosterLoginFixture(h, openAdminDb(dbPath));
+
+    const patchRes = await fetch(
+      new URL(adminPolicyPath(fixture.policyId), h.url),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          cookie: fixture.cookie,
+          "x-csrf-token": fixture.csrfToken,
+        },
+        body: JSON.stringify({
+          studentAuth: {method: "google"},
+        }),
+      },
+    );
+    expect(patchRes.status).toBe(200);
+
+    const grantCookie = `${STUDENT_GRANT_COOKIE}=${encodeURIComponent(fixture.grantId)}`;
+
+    const activate = await fetch(new URL(STUDENT_AUTH_ACTIVATE_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: grantCookie,
+      },
+      body: JSON.stringify({
+        enrollmentCode: fixture.enrollmentCode,
+        passphrase: fixture.passphrase,
+      }),
+    });
+    expect(activate.status).toBe(403);
+    const activateBody = (await activate.json()) as {code?: string};
+    expect(activateBody.code).toBe("FORBIDDEN");
+
+    const login = await fetch(new URL(STUDENT_AUTH_LOGIN_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: grantCookie,
+      },
+      body: JSON.stringify({
+        loginName: "student.one",
+        passphrase: fixture.passphrase,
+      }),
+    });
+    expect(login.status).toBe(403);
+    const loginBody = (await login.json()) as {code?: string};
+    expect(loginBody.code).toBe("FORBIDDEN");
   });
 
   it("revokes identity sessions via admin endpoint", async () => {
