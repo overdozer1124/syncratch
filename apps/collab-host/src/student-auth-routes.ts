@@ -11,6 +11,7 @@ import {
   adminStudentResetCodePath,
   adminStudentRevokeSessionsPath,
 } from "@blocksync/classroom-access";
+import {studentAuthMethodIncludesLocal} from "@blocksync/classroom-access";
 import type Database from "better-sqlite3";
 import {
   readAdminSession,
@@ -23,6 +24,7 @@ import {
   activateStudentAccount,
   buildIdentityCookieToken,
   clearStudentIdentityCookie,
+  getGrantStudentAuthPolicy,
   loginStudentAccount,
   issueEnrollmentCode,
   readIdentitySigningSecret,
@@ -288,6 +290,16 @@ export function createStudentAuthRoutesHandler(
         ok: false,
         code: "GRANT_REQUIRED",
         message: "Grant required",
+      });
+      return true;
+    }
+
+    const authPolicy = getGrantStudentAuthPolicy(options.db, grantId);
+    if (!authPolicy || !studentAuthMethodIncludesLocal(authPolicy.method)) {
+      sendJson(res, 403, {
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Local login is not enabled for this classroom",
       });
       return true;
     }

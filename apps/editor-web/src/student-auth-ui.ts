@@ -164,9 +164,16 @@ export function mountStudentAuthUi(
 
   const help = document.createElement("p");
   help.className = "student-auth-shell-help";
-  help.textContent = showGoogle
-    ? "この教室では、名簿に登録された生徒のみエディターを使えます。Google アカウントでログインするか、先生から案内された方法でログインしてください。"
-    : "この教室では、名簿に登録された生徒のみエディターを使えます。ログインするか、先生から案内された登録コードで初回登録してください。";
+  if (showGoogle && !showLocal) {
+    help.textContent =
+      "この教室では、名簿に登録された生徒のみエディターを使えます。Google アカウントでログインしてください。";
+  } else if (showGoogle) {
+    help.textContent =
+      "この教室では、名簿に登録された生徒のみエディターを使えます。Google アカウントでログインするか、先生から案内された方法でログインしてください。";
+  } else {
+    help.textContent =
+      "この教室では、名簿に登録された生徒のみエディターを使えます。ログインするか、先生から案内された登録コードで初回登録してください。";
+  }
 
   const feedback = document.createElement("p");
   feedback.className = "student-auth-shell-feedback";
