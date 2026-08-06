@@ -49,11 +49,11 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `G4_COMPLETE` |
-| 次の担当 | ユーザー（G5 は指示後） |
+| 現在の状態 | `G5_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | G4 完了（main マージ済み @5d4101b）。G5 は指示後 |
-| 禁止 | 実装 PR 先行 / 自動マージ / Hermes 未発行の GO 記録 |
+| 次の作業 | G5 GO 済み。CI green 確認後 main マージ → G5_COMPLETE（案件完了） |
+| 禁止 | 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
 
@@ -65,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | G5 PR レビュー → GO 後 main マージ | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G5: local fallback サーバー enforce + DEPLOYMENT.md + 回帰テスト |
+| `roster-google-student-auth` | `G5_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G5 GO 済み。CI green 確認後マージ → G5_COMPLETE（案件完了） | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G5 @ca1fea6。Hermes GO（local fallback enforce・DEPLOYMENT.md・回帰テスト・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -81,8 +81,8 @@
 | 最終更新 | 2026-08-06 10:48:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（G5 PR 提出） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `G5_APPROVED_PENDING_CI`（G5 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes |
 | 現在のTask | G5 — ローカル fallback 整理・DEPLOYMENT.md・回帰テスト |
 | Primary track | Local-First Community runtime |
@@ -7026,4 +7026,38 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 - [x] DEPLOYMENT.md 追記
 
 次の担当: Hermes（G5 PR レビュー → GO 後 main マージ → G5_COMPLETE / 案件 COMPLETE）
+禁止: 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-06 10:50:00 JST — Hermes（PR #233 決裁 GO — G5 @ca1fea6）
+
+```text
+案件Id  : roster-google-student-auth
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #233 / head SHA: ca1fea6
+Base: origin/main @ 54626ad
+決裁日: 2026-08-06 10:50
+
+G5 受入れ条件（設計 §13 G5: ローカル fallback 整理・DEPLOYMENT.md・回帰テスト）の検証:
+- local fallback enforce: student-auth-routes.ts で method=google 時 local activate/login を 403 拒否
+  (!studentAuthMethodIncludesLocal(authPolicy.method) → "Local login is not enabled") ✅ §7.2/§14
+- DEPLOYMENT.md: Student Google identity 運用ドキュメント（method 別挙動表、env 一覧、
+  redirect URI、flow 説明）✅ §13 G5
+- 回帰テスト: student-auth.test.ts に "rejects local activate and login when policy method is google-only" 追加 ✅ §14
+- Phase 2 互換: flag OFF → 404（returns 404 when student local auth flag is off）✅ §14
+
+設計 §14 Verification 全項目の充足確認:
+- Phase 2 匿名リンク + 全 flag OFF 現行同一 ✅（G1-G5 で互換性維持）
+- allowedEmailDomains:[] で個人 Gmail 通る（名簿一致時）✅（G1-G2 実装済）
+- 非空ドメインリストで outsiders 拒否 ✅（G1 実装済）
+- Sheet/CSV/inline/append が google_email 一貫读写 ✅（G2 実装済）
+- Student Google OAuth が drive.file 要求しない ✅（G3 実装済: openid+email のみ）
+- ローカル fallback が method で OFF にできる ✅（本 G5 enforce）
+- Railway SQLite に refresh token/passphrase 平文増やさず ✅（G3 で最小保存）
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → G5_COMPLETE = 案件完了）
+次: main マージ後、台帳を G5_COMPLETE に更新（roster-google-student-auth 案件完了）。
 禁止: 自動マージ / Hermes 未発行の GO 記録
