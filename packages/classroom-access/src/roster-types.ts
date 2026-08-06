@@ -221,11 +221,15 @@ export interface ClassroomStudentListItem {
   attendanceNumber: string | null;
   loginName: string | null;
   googleEmail: string | null;
+  /** Set after first successful Google login (admin-only). */
+  googleSubject: string | null;
   groupLabel: string | null;
   active: boolean;
   accountStatus: StudentAccountStatus | null;
-  /** Set when the student completes first login activation. */
+  /** Set when the student completes first local login activation. */
   firstRegisteredAt: string | null;
+  /** Set when Google subject is bound on first Google login. */
+  googleIdentityEstablishedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

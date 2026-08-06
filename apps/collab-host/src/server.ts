@@ -195,6 +195,8 @@ export async function startCollabHost(
     classroomRosterEnabled,
     adminGoogleCredentialEnabled: adminGoogleOAuthEnabled,
     rosterSheetsEnabled,
+    studentLocalAuthEnabled,
+    rosterGoogleStudentAuthEnabled,
     teacherDriveSubmissionEnabled,
     submissionPreviewEnabled,
   });

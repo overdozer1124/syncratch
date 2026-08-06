@@ -68,6 +68,7 @@ interface StudentRow {
   attendance_number: string | null;
   login_name: string | null;
   google_email?: string | null;
+  google_subject?: string | null;
   group_label: string | null;
   active: number;
   archived_at: string | null;
@@ -148,6 +149,7 @@ function parseAccountStatus(
 
 function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
   const accountStatus = parseAccountStatus(row.account_status);
+  const googleSubject = row.google_subject?.trim() || null;
   return {
     studentId: row.student_id,
     studentCode: row.student_code,
@@ -155,11 +157,13 @@ function rowToStudentListItem(row: StudentRow): ClassroomStudentListItem {
     attendanceNumber: row.attendance_number,
     loginName: row.login_name,
     googleEmail: normalizeGoogleEmail(row.google_email),
+    googleSubject,
     groupLabel: row.group_label,
     active: Boolean(row.active),
     accountStatus,
     firstRegisteredAt:
       accountStatus === "active" ? (row.account_updated_at ?? null) : null,
+    googleIdentityEstablishedAt: googleSubject ? row.updated_at : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

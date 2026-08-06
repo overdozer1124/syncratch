@@ -4,6 +4,8 @@ export interface AdminClassroomFlags {
   classroomRosterEnabled: boolean;
   adminGoogleCredentialEnabled: boolean;
   rosterSheetsEnabled: boolean;
+  studentLocalAuthEnabled: boolean;
+  rosterGoogleStudentAuthEnabled: boolean;
   teacherDriveSubmissionEnabled: boolean;
   submissionPreviewEnabled: boolean;
 }
@@ -24,6 +26,8 @@ export async function fetchAdminClassroomFlags(): Promise<AdminClassroomFlags | 
       classroomRosterEnabled: Boolean(body.flags.classroomRosterEnabled),
       adminGoogleCredentialEnabled: Boolean(body.flags.adminGoogleCredentialEnabled),
       rosterSheetsEnabled: Boolean(body.flags.rosterSheetsEnabled),
+      studentLocalAuthEnabled: Boolean(body.flags.studentLocalAuthEnabled),
+      rosterGoogleStudentAuthEnabled: Boolean(body.flags.rosterGoogleStudentAuthEnabled),
       teacherDriveSubmissionEnabled: Boolean(body.flags.teacherDriveSubmissionEnabled),
       submissionPreviewEnabled: Boolean(body.flags.submissionPreviewEnabled),
     };

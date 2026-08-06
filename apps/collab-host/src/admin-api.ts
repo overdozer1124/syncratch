@@ -81,6 +81,8 @@ export interface CreateAdminApiHandlerOptions {
   adminGoogleCredentialEnabled?: boolean;
   /** When true, roster Google Sheet sync routes are available. */
   rosterSheetsEnabled?: boolean;
+  studentLocalAuthEnabled?: boolean;
+  rosterGoogleStudentAuthEnabled?: boolean;
   /** When true, submission folder binding is active on policy writes. */
   teacherDriveSubmissionEnabled?: boolean;
   /** When true, admin submission preview surface is available. */
@@ -101,6 +103,9 @@ export function createAdminApiHandler(
   const adminGoogleCredentialEnabled =
     options.adminGoogleCredentialEnabled ?? false;
   const rosterSheetsEnabled = options.rosterSheetsEnabled ?? false;
+  const studentLocalAuthEnabled = options.studentLocalAuthEnabled ?? false;
+  const rosterGoogleStudentAuthEnabled =
+    options.rosterGoogleStudentAuthEnabled ?? false;
   const teacherDriveSubmissionEnabled =
     options.teacherDriveSubmissionEnabled ?? false;
   const submissionPreviewEnabled = options.submissionPreviewEnabled ?? false;
@@ -264,6 +269,8 @@ export function createAdminApiHandler(
           classroomRosterEnabled,
           adminGoogleCredentialEnabled,
           rosterSheetsEnabled,
+          studentLocalAuthEnabled,
+          rosterGoogleStudentAuthEnabled,
           teacherDriveSubmissionEnabled,
           submissionPreviewEnabled,
         },
