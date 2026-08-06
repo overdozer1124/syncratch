@@ -49,10 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `G5_APPROVED_PENDING_CI` |
-| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| 現在の状態 | `G5_COMPLETE` |
+| 次の担当 | ユーザー（案件完了確認） |
 | レビュー主体 | Hermes（Codex 週次制限のため代行） |
-| 次の作業 | G5 GO 済み。CI green 確認後 main マージ → G5_COMPLETE（案件完了） |
+| 次の作業 | G5 完了（main マージ済み @797e9e0）。案件 COMPLETE |
 | 禁止 | 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
@@ -65,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `G5_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G5 GO 済み。CI green 確認後マージ → G5_COMPLETE（案件完了） | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G5 @ca1fea6。Hermes GO（local fallback enforce・DEPLOYMENT.md・回帰テスト・CI green） |
+| `roster-google-student-auth` | `G5_COMPLETE` | ユーザー（案件完了確認） | G5 完了（main @797e9e0）。案件 COMPLETE | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G5 @ca1fea6。Hermes GO → main マージ済み。local fallback enforce・DEPLOYMENT.md・回帰テスト。G1-G5 全完了 |
 
 ### 読取手順（「作業完了」時）
 
@@ -81,10 +81,10 @@
 | 最終更新 | 2026-08-06 10:48:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `G5_APPROVED_PENDING_CI`（G5 — Hermes GO 済み、CI green 待ち → マージ） |
-| 現在の担当 | ユーザー（CI green 確認後マージ） |
+| ワークフロー状態 | `G5_COMPLETE`（G5 — main マージ済み @797e9e0・案件完了） |
+| 現在の担当 | ユーザー（案件完了確認） |
 | レビュー主体 | Hermes |
-| 現在のTask | G5 — ローカル fallback 整理・DEPLOYMENT.md・回帰テスト |
+| 現在のTask | G5 完了（案件 COMPLETE・ユーザー確認待ち） |
 | Primary track | Local-First Community runtime |
 | Local-First実装進捗 | **100%**（Stage 5 + classroom 任意レイヤ main 済み） |
 | Stage 5 | **COMPLETE** — A1–A7 / B1–B3 PASS（2026-08-02）。`STAGE5_MANUAL_GATES.md` §C.1.2 / `FINAL_ACCEPTANCE_REPORT.md` |
