@@ -49,9 +49,10 @@
 |---|---|
 | **アクティブ案件ID** | `roster-google-student-auth` |
 | 案件名 | 名簿 Google 生徒認証（Sheet メール + 管理者ドメイン制限） |
-| 現在の状態 | `READY_FOR_HERMES_REVIEW`（G4 提出済み） |
-| 次の担当 | Hermes |
-| 次の作業 | G4 PR レビュー・GO/NO-GO 決裁 |
+| 現在の状態 | `G4_APPROVED_PENDING_CI` |
+| 次の担当 | ユーザー（CI green 確認 → マージ） |
+| レビュー主体 | Hermes（Codex 週次制限のため代行） |
+| 次の作業 | G4 GO 済み。CI green 確認後 main マージ → G4_COMPLETE |
 | 禁止 | 実装 PR 先行（G5） / 自動マージ / Hermes 未発行の GO 記録 |
 
 ### 案件レジストリ
@@ -64,7 +65,7 @@
 | `local-diagnostics-ai-routing` | `MILESTONE_A_MERGED` | ユーザー | Phase 4 は指示後 | Phase 1–3 = #177–#179 main 済み。**停止維持** |
 | `admin-student-access` | `PHASE2_COMPLETE` | ユーザー | Phase 3 は指示後 | Phase 2 main 済み。#197 merge `24a0778`。Phase 3 停止 |
 | `classroom-roster-drive-submissions` | `COMPLETE` | — | — | 8 PR 分割完了（PR 1–8 main 済み、最終 #211 @2c2961d）。ユーザー確認済み（2026-08-04） |
-| `roster-google-student-auth` | `READY_FOR_HERMES_REVIEW` | Hermes | G4 PR レビュー（Admin UI） | G4 ブランチ `cursor/roster-google-student-auth-g4-258b`。ポリシー method/ドメイン + 名簿 UI |
+| `roster-google-student-auth` | `G4_APPROVED_PENDING_CI` | ユーザー（CI green → マージ） | G4 GO 済み。CI green 確認後マージ → G4_COMPLETE | 仕様: `2026-08-05-roster-google-student-auth-design.md`。G4 @9cebd51。Hermes GO（policy method/domain UI・名簿 Google メール列・状態バッジ・CI green） |
 
 ### 読取手順（「作業完了」時）
 
@@ -80,8 +81,8 @@
 | 最終更新 | 2026-08-06 09:24:00 JST |
 | 更新者 | Cursor |
 | アクティブ案件ID | `roster-google-student-auth` |
-| ワークフロー状態 | `READY_FOR_HERMES_REVIEW`（G4 — Admin UI） |
-| 現在の担当 | Hermes |
+| ワークフロー状態 | `G4_APPROVED_PENDING_CI`（G4 — Hermes GO 済み、CI green 待ち → マージ） |
+| 現在の担当 | ユーザー（CI green 確認後マージ） |
 | レビュー主体 | Hermes |
 | 現在のTask | G4 PR レビュー待ち |
 | Primary track | Local-First Community runtime |
@@ -6958,3 +6959,34 @@ CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
 次の担当: ユーザー（CI green 確認済 → main マージ → G3_COMPLETE）
 次: main マージ後、台帳を G3_COMPLETE に更新。G4 は指示後。
 禁止: 実装 PR 先行（G4–G5） / 自動マージ / Hermes 未発行の GO 記録
+
+### 2026-08-06 09:30:00 JST — Hermes（PR #232 決裁 GO — G4 @9cebd51）
+
+```text
+案件Id  : roster-google-student-auth
+Reviewer: Hermes
+判定: GO（マージ可） — 残条件: CI green 確認（既に green）
+PR #232 / head SHA: 9cebd51
+Base: origin/main @ 2a09bee
+決裁日: 2026-08-06 09:30
+
+G4 受入れ条件（設計 §13 G4: Admin UI ポリシー + 名簿 UI + 状態表示）の検証:
+- policy method UI: STUDENT_AUTH_METHOD_OPTIONS (Google / ローカル / 両方=google-or-local) ✅ 設計 §10.1
+- allowedEmailDomains UI: admin2-domain-tags chip list、policy.studentAuth.allowedEmailDomains 保存 ✅ §10.1
+- 名簿 UI: studentTableHeaders で "Google メール" 列追加、状態バッジ "Google ログイン" 切り替え ✅ §10.2
+- admin allowlist との分離: allowedEmailDomains は policy.studentAuth 配下（生徒用）、
+  教員 /admin allowlist は別 → 混同なし ✅ §10.3
+- flag 連動: isGoogleAuthAdminUi(flags) で rosterGoogleStudentAuthEnabled チェック ✅
+- G1-G3 の contract/OAuth を UI から操作可能 ✅
+
+Hermes 推奨準拠: Q3 google-or-local 既定（UI で選択可能）✅、Q4 独立 callback（G3 で実装済）✅
+
+テスト: admin-rosters-ui.test.ts 11 件（policy method セグメント/セレクト / flag ON→Google 認証 UI /
+Google ログイン状態バッジ / "Google メール" 列 / inline add googleEmail）
+
+CI: Gate 0 green（2 job SUCCESS、completedAt 確定）
+```
+
+次の担当: ユーザー（CI green 確認済 → main マージ → G4_COMPLETE）
+次: main マージ後、台帳を G4_COMPLETE に更新。G5 は指示後。
+禁止: 実装 PR 先行（G5） / 自動マージ / Hermes 未発行の GO 記録
