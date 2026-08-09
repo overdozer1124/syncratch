@@ -11,7 +11,7 @@ import {
 import type {ResolvedGrantContext} from "./student-auth.js";
 import {resolveStudentIdentitySession} from "./student-auth.js";
 import {
-  sanitizeSb3FileName,
+  buildSubmissionSb3FileName,
   SubmissionDriveError,
   uploadSb3ToTeacherFolder,
   downloadSb3FromDrive,
@@ -152,6 +152,11 @@ export function createSubmissionService(
     SELECT account_id FROM student_accounts WHERE student_id = ?
   `);
 
+  const getStudentById = db.prepare(`
+    SELECT student_code, display_name, attendance_number
+    FROM classroom_students WHERE student_id = ?
+  `);
+
   return {
     uploadStudentSubmission(
       input: UploadSubmissionInput,
@@ -165,6 +170,7 @@ export function createSubmissionService(
           getExistingByIdempotency,
           countPriorSubmissions,
           getAccountId,
+          getStudentById,
         },
         input,
       );
@@ -188,7 +194,7 @@ export function createSubmissionService(
            FROM classroom_submissions s
            JOIN classroom_students cs ON cs.student_id = s.student_id
            WHERE s.policy_id = ?
-           ORDER BY s.submitted_at DESC`,
+           ORDER BY cs.student_code ASC, s.submitted_at DESC`,
         )
         .all(policyId) as Array<SubmissionRow & StudentJoinRow>;
 
@@ -232,7 +238,8 @@ export function createSubmissionService(
       if (!driveEnv) return null;
       const row = db
         .prepare(
-          `SELECT s.drive_file_id, s.project_title, cs.student_code, p.owner_admin_id
+          `SELECT s.drive_file_id, s.project_title, s.submitted_at,
+                  cs.student_code, cs.display_name, p.owner_admin_id
            FROM classroom_submissions s
            JOIN classroom_students cs ON cs.student_id = s.student_id
            JOIN classroom_policies p ON p.policy_id = s.policy_id
@@ -242,7 +249,9 @@ export function createSubmissionService(
         | {
             drive_file_id: string | null;
             project_title: string;
+            submitted_at: string;
             student_code: string;
+            display_name: string;
             owner_admin_id: string;
           }
         | undefined;
@@ -251,9 +260,15 @@ export function createSubmissionService(
         ownerAdminId: row.owner_admin_id,
         driveFileId: row.drive_file_id,
       });
+      const submittedAtMs = Date.parse(row.submitted_at);
       return {
         bytes,
-        fileName: sanitizeSb3FileName(row.project_title, row.student_code),
+        fileName: buildSubmissionSb3FileName({
+          studentCode: row.student_code,
+          displayName: row.display_name,
+          projectTitle: row.project_title,
+          submittedAtMs: Number.isFinite(submittedAtMs) ? submittedAtMs : Date.now(),
+        }),
       };
     },
   };
@@ -299,6 +314,7 @@ async function uploadStudentSubmissionImpl(
     getExistingByIdempotency: Database.Statement;
     countPriorSubmissions: Database.Statement;
     getAccountId: Database.Statement;
+    getStudentById: Database.Statement;
   },
   input: UploadSubmissionInput,
 ): Promise<UploadSubmissionResult> {
@@ -373,7 +389,20 @@ async function uploadStudentSubmissionImpl(
   ) as {count: number};
   const isResubmission = prior.count > 0;
   const ts = nowIso(nowMs);
-  const fileName = sanitizeSb3FileName(projectTitle, identity.loginName);
+
+  const student = stmts.getStudentById.get(identity.studentId) as
+    | StudentJoinRow
+    | undefined;
+  if (!student) {
+    throw new SubmissionServiceError("IDENTITY_REQUIRED", "Identity required");
+  }
+
+  const fileName = buildSubmissionSb3FileName({
+    studentCode: student.student_code,
+    displayName: student.display_name,
+    projectTitle,
+    submittedAtMs: nowMs,
+  });
 
   type ReserveResult =
     | {kind: "existing"; row: SubmissionRow & StudentJoinRow}
@@ -501,13 +530,6 @@ async function uploadStudentSubmissionImpl(
     }),
     ts,
   );
-
-  const student = db
-    .prepare(
-      `SELECT student_code, display_name, attendance_number
-       FROM classroom_students WHERE student_id = ?`,
-    )
-    .get(identity.studentId) as StudentJoinRow;
 
   return {
     submission: rowToDetail(

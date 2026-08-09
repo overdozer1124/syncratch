@@ -91,6 +91,19 @@ function claims(email: string, sub: string) {
   };
 }
 
+function extractDriveUploadFileName(init?: RequestInit): string {
+  const body = init?.body;
+  if (!body || typeof body === "string") {
+    throw new Error("expected binary upload body");
+  }
+  const text = Buffer.from(body as ArrayBuffer).toString("utf8");
+  const match = text.match(/"name":"((?:\\.|[^"\\])*)"/);
+  if (!match) {
+    throw new Error("Drive upload metadata name missing");
+  }
+  return JSON.parse(`"${match[1]}"`) as string;
+}
+
 function buildMultipartBody(fields: Record<string, string | Buffer>): {
   body: Buffer;
   contentType: string;
@@ -255,7 +268,7 @@ async function seedSubmissionFixture(
     .run(
       studentId,
       meBody.admin.adminId,
-      "S001",
+      "261101",
       "Student One",
       "01",
       "student.one",
@@ -358,7 +371,7 @@ describe("teacher drive submissions", () => {
     const root = mkdtempSync(join(tmpdir(), "submission-flow-"));
     writeFileSync(join(root, "index.html"), "<html></html>");
     const dbPath = join(root, "admin.sqlite");
-    const {handle: h, db} = await bootSubmissionHost(root, dbPath);
+    const {handle: h, db, fetchMock} = await bootSubmissionHost(root, dbPath);
     const fixture = await seedSubmissionFixture(h, db);
 
     const noIdentityMultipart = buildMultipartBody({
@@ -433,6 +446,16 @@ describe("teacher drive submissions", () => {
       submission: {isResubmission: boolean};
     };
     expect(secondBody.submission.isResubmission).toBe(true);
+
+    const uploadCalls = fetchMock.mock.calls.filter(([requestUrl]) =>
+      String(requestUrl).includes("upload/drive/v3/files"),
+    );
+    expect(uploadCalls).toHaveLength(2);
+    const firstUploadName = extractDriveUploadFileName(uploadCalls[0]?.[1]);
+    const secondUploadName = extractDriveUploadFileName(uploadCalls[1]?.[1]);
+    expect(firstUploadName).toMatch(/^261101_Student One_Work_\d{8}-\d{6}\.sb3$/);
+    expect(secondUploadName).toMatch(/^261101_Student One_Work v2_\d{8}-\d{6}\.sb3$/);
+    expect(firstUploadName).not.toBe(secondUploadName);
   });
 
   it("deduplicates parallel uploads with the same idempotency key", async () => {
@@ -569,5 +592,133 @@ describe("teacher drive submissions", () => {
     );
     expect(content.status).toBe(200);
     expect(content.headers.get("content-type")).toContain("sb3");
+    const disposition = content.headers.get("content-disposition") ?? "";
+    expect(decodeURIComponent(disposition)).toMatch(
+      /filename="261101_Student One_Work_\d{8}-\d{6}\.sb3"/,
+    );
+  });
+
+  it("sorts admin list by student_code ascending then submitted_at descending", async () => {
+    const root = mkdtempSync(join(tmpdir(), "submission-sort-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const {handle: h, db} = await bootSubmissionHost(root, dbPath);
+    const fixture = await seedSubmissionFixture(h, db);
+
+    const multipart = buildMultipartBody({
+      projectTitle: "Latest",
+      idempotencyKey: "sort-key-latest",
+      sb3: Buffer.from("SORT-SB3"),
+    });
+    const submit = await fetch(new URL(STUDENT_SUBMISSIONS_PATH, h.url), {
+      method: "POST",
+      headers: {
+        cookie: `${fixture.grantCookie}; ${fixture.identityCookie}`,
+        "content-type": multipart.contentType,
+      },
+      body: new Uint8Array(multipart.body),
+    });
+    expect(submit.status).toBe(201);
+    const submitBody = (await submit.json()) as {
+      submission: {submissionId: string};
+    };
+    const accountRow = db.sqlite
+      .prepare(`SELECT student_account_id FROM classroom_submissions WHERE submission_id = ?`)
+      .get(submitBody.submission.submissionId) as {student_account_id: string};
+
+    const studentTwoId = "student-submit-2";
+    const ts = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        `INSERT INTO classroom_students (
+          student_id, owner_admin_id, student_code, display_name,
+          attendance_number, login_name, group_label, active,
+          archived_at, created_at, updated_at
+        ) VALUES (?, (SELECT owner_admin_id FROM classroom_students WHERE student_id = ?), ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+      )
+      .run(
+        studentTwoId,
+        fixture.studentId,
+        "261102",
+        "Student Two",
+        "02",
+        "student.two",
+        null,
+        ts,
+        ts,
+      );
+    db.sqlite
+      .prepare(
+        `INSERT INTO classroom_roster_memberships (
+          membership_id, roster_id, student_id, active, created_at, updated_at
+        ) VALUES (?, (SELECT roster_id FROM classroom_roster_memberships WHERE student_id = ? LIMIT 1), ?, 1, ?, ?)`,
+      )
+      .run("membership-submit-2", fixture.studentId, studentTwoId, ts, ts);
+    db.sqlite
+      .prepare(
+        `INSERT INTO student_accounts (
+          account_id, student_id, status, password_hash, enrollment_code_hash,
+          enrollment_code_expires_at, password_version, created_at, updated_at
+        ) VALUES (?, ?, 'active', NULL, NULL, NULL, 1, ?, ?)`,
+      )
+      .run("account-submit-2", studentTwoId, ts, ts);
+
+    const insertSubmission = db.sqlite.prepare(
+      `INSERT INTO classroom_submissions (
+        submission_id, policy_id, student_id, student_account_id,
+        drive_file_id, content_sha256, size_bytes, project_title,
+        status, is_resubmission, idempotency_key,
+        submitted_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?)`,
+    );
+    insertSubmission.run(
+      "submission-sort-261101-old",
+      fixture.policyId,
+      fixture.studentId,
+      accountRow.student_account_id,
+      "drive-old",
+      "sha-old",
+      10,
+      "Older",
+      1,
+      "sort-key-old",
+      "2026-04-15T10:00:00.000Z",
+      ts,
+      ts,
+    );
+    insertSubmission.run(
+      "submission-sort-261102",
+      fixture.policyId,
+      studentTwoId,
+      "account-submit-2",
+      "drive-two",
+      "sha-two",
+      10,
+      "Other student",
+      0,
+      "sort-key-two",
+      "2026-04-15T09:00:00.000Z",
+      ts,
+      ts,
+    );
+
+    const list = await fetch(
+      new URL(adminPolicySubmissionsPath(fixture.policyId), h.url),
+      {headers: {cookie: fixture.cookie}},
+    );
+    expect(list.status).toBe(200);
+    const listBody = (await list.json()) as {
+      submissions: Array<{submissionId: string; studentCode: string}>;
+    };
+    expect(listBody.submissions.map(item => item.submissionId)).toEqual([
+      submitBody.submission.submissionId,
+      "submission-sort-261101-old",
+      "submission-sort-261102",
+    ]);
+    expect(listBody.submissions.map(item => item.studentCode)).toEqual([
+      "261101",
+      "261101",
+      "261102",
+    ]);
   });
 });
