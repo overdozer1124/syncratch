@@ -21,12 +21,54 @@ export class SubmissionDriveError extends Error {
 
 export type SubmissionDriveEnvironment = RosterSheetSyncEnvironment;
 
-export function sanitizeSb3FileName(title: string, studentCode: string): string {
-  const base = title.trim().replace(/\.sb3$/i, "") || studentCode || "submission";
-  const safe = base
-    .replace(/[^\w\u3040-\u30ff\u3400-\u9fff.-]+/g, "_")
-    .slice(0, 80);
-  return `${safe || "submission"}.sb3`;
+const DEFAULT_PROJECT_TITLE = "提出作品";
+
+/** UTC wall-clock parts for stable Drive filenames (YYYYMMDD-HHmmss). */
+export function formatSubmissionTimestamp(submittedAtMs: number): string {
+  const d = new Date(submittedAtMs);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}-` +
+    `${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`
+  );
+}
+
+export function sanitizeSubmissionFileNamePart(value: string, maxLen: number): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const safe = trimmed
+    .replace(/[\u0000-\u001f\u007f]+/g, "")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, " ")
+    .replace(/[^\w\u3040-\u30ff\u3400-\u9fff .-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^[\s._-]+|[\s._-]+$/g, "");
+  return safe.slice(0, maxLen) || "";
+}
+
+export interface BuildSubmissionSb3FileNameInput {
+  studentCode: string;
+  displayName: string;
+  projectTitle: string;
+  submittedAtMs: number;
+}
+
+/**
+ * Drive object name: {student_code}_{display_name}_{project_title}_{timestamp}.sb3
+ * Leading student_code keeps folder listings in roster ID order (e.g. 261101).
+ */
+export function buildSubmissionSb3FileName(
+  input: BuildSubmissionSb3FileNameInput,
+): string {
+  const studentCode =
+    sanitizeSubmissionFileNamePart(input.studentCode, 16) || "student";
+  const displayName =
+    sanitizeSubmissionFileNamePart(input.displayName, 40) || "student";
+  const titleRaw = input.projectTitle.trim().replace(/\.sb3$/i, "");
+  const projectTitle =
+    sanitizeSubmissionFileNamePart(titleRaw, 60) || DEFAULT_PROJECT_TITLE;
+  const timestamp = formatSubmissionTimestamp(input.submittedAtMs);
+  return `${studentCode}_${displayName}_${projectTitle}_${timestamp}.sb3`;
 }
 
 export async function uploadSb3ToTeacherFolder(
