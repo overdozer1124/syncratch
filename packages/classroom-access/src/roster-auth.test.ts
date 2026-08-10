@@ -1,14 +1,29 @@
 import {describe, expect, it} from "vitest";
 import {
   emailDomain,
+  isCanonicalRosterStudentCode,
   isStudentEmailDomainAllowed,
   normalizeAllowedEmailDomains,
   normalizeGoogleEmail,
   normalizeStudentAuthMethod,
   parseAllowedEmailDomainsJson,
+  ROSTER_STUDENT_CODE_PATTERN,
   studentAuthMethodIncludesGoogle,
   studentAuthMethodIncludesLocal,
 } from "./roster-auth.js";
+
+describe("isCanonicalRosterStudentCode", () => {
+  it("accepts 6-digit roster IDs", () => {
+    expect(isCanonicalRosterStudentCode("261101")).toBe(true);
+    expect(ROSTER_STUDENT_CODE_PATTERN.test("261101")).toBe(true);
+  });
+
+  it("rejects legacy or malformed codes", () => {
+    expect(isCanonicalRosterStudentCode("S001")).toBe(false);
+    expect(isCanonicalRosterStudentCode("26110")).toBe(false);
+    expect(isCanonicalRosterStudentCode("2611011")).toBe(false);
+  });
+});
 
 describe("normalizeGoogleEmail", () => {
   it("trims and lowercases valid emails", () => {

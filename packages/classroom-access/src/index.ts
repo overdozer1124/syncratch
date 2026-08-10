@@ -54,11 +54,13 @@ export {
 
 export {
   emailDomain,
+  isCanonicalRosterStudentCode,
   isStudentEmailDomainAllowed,
   normalizeAllowedEmailDomains,
   normalizeGoogleEmail,
   normalizeStudentAuthMethod,
   parseAllowedEmailDomainsJson,
+  ROSTER_STUDENT_CODE_PATTERN,
   studentAuthMethodIncludesGoogle,
   studentAuthMethodIncludesLocal,
 } from "./roster-auth.js";

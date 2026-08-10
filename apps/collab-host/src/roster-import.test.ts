@@ -214,4 +214,29 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
     expect(rows[0]?.category).toBe("duplicate_candidate");
     expect(hasBlockingPreviewRows(rows)).toBe(true);
   });
+
+  it("warns on non-canonical student_code but still adds", () => {
+    const csv = [header(), "S010,新規,10,new,,B,true"].join("\n");
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows[0]?.category).toBe("add");
+    expect(hasBlockingPreviewRows(rows)).toBe(false);
+    expect(rows[0]?.issues.some(issue => issue.code === "STUDENT_CODE_FORMAT")).toBe(
+      true,
+    );
+  });
+
+  it("accepts canonical 6-digit student_code without format warning", () => {
+    const csv = [header(), "261101,山田,01,yamada,,A,true"].join("\n");
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [],
+    });
+    expect(rows[0]?.category).toBe("add");
+    expect(rows[0]?.issues.some(issue => issue.code === "STUDENT_CODE_FORMAT")).toBe(
+      false,
+    );
+  });
 });
