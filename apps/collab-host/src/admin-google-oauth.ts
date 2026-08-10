@@ -11,6 +11,7 @@ import type {IncomingMessage, ServerResponse} from "node:http";
 import {
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
   ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH,
+  ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH,
   ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
   ADMIN_GOOGLE_OAUTH_RETURN_REASON,
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
@@ -32,6 +33,7 @@ import {
   parseAdminGoogleCryptoKeysFromEnv,
   type AdminGoogleCryptoKeys,
 } from "./admin-token-crypto.js";
+import {ensureAdminAccessToken, SheetSyncError} from "./roster-sheet-sync.js";
 
 export {ADMIN_GOOGLE_OAUTH_RETURN_FLAG, ADMIN_GOOGLE_OAUTH_RETURN_REASON};
 
@@ -212,6 +214,7 @@ export function isAdminGoogleOAuthPath(urlPath: string): boolean {
     path === ADMIN_GOOGLE_OAUTH_START_PATH ||
     path === ADMIN_GOOGLE_OAUTH_CALLBACK_PATH ||
     path === ADMIN_GOOGLE_OAUTH_SESSION_PATH ||
+    path === ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH ||
     path === ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH
   );
 }
@@ -410,6 +413,45 @@ export function createAdminGoogleOAuthHandler(
         scope: credential.scope,
       });
       return true;
+    }
+
+    if (path === ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH) {
+      if (req.method !== "GET") {
+        sendJson(res, 405, {ok: false, code: "BAD_REQUEST"});
+        return true;
+      }
+      if (!adminSession) {
+        sendJson(res, 401, {
+          ok: false,
+          code: "UNAUTHORIZED",
+          message: "Admin login required",
+        });
+        return true;
+      }
+      try {
+        const {accessToken} = await ensureAdminAccessToken(
+          {oauthConfig, credentialStore: store},
+          adminSession.adminId,
+        );
+        sendJson(res, 200, {ok: true, accessToken});
+        return true;
+      } catch (error) {
+        if (error instanceof SheetSyncError && error.code === "CREDENTIAL_MISSING") {
+          sendJson(res, 409, {
+            ok: false,
+            code: "CREDENTIAL_MISSING",
+            message: "Teacher Google credential is not connected",
+          });
+          return true;
+        }
+        sendJson(res, 502, {
+          ok: false,
+          code: "TOKEN_REFRESH_FAILED",
+          message:
+            error instanceof Error ? error.message : "Failed to obtain access token",
+        });
+        return true;
+      }
     }
 
     if (path === ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH) {
