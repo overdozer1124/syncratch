@@ -1,40 +1,52 @@
 import {loadGoogleScripts} from "@blocksync/google-drive-sync";
 
-type GooglePickerGlobal = {
-  picker: {
-    PickerBuilder: new () => {
-      enableFeature(feature: unknown): GooglePickerGlobal["picker"]["PickerBuilder"];
-      setDeveloperKey(key: string): GooglePickerGlobal["picker"]["PickerBuilder"];
-      setAppId(appId: string): GooglePickerGlobal["picker"]["PickerBuilder"];
-      setOAuthToken(token: string): GooglePickerGlobal["picker"]["PickerBuilder"];
-      setOrigin(origin: string): GooglePickerGlobal["picker"]["PickerBuilder"];
-      addView(view: unknown): GooglePickerGlobal["picker"]["PickerBuilder"];
-      setCallback(
-        callback: (data: Record<string, unknown>) => void,
-      ): GooglePickerGlobal["picker"]["PickerBuilder"];
-      build(): {setVisible(visible: boolean): void};
-    };
-    DocsView: new () => {
-      setIncludeFolders(include: boolean): unknown;
-      setSelectFolderEnabled(enabled: boolean): unknown;
-      setEnableDrives(enabled: boolean): unknown;
-    };
-    Feature: {SUPPORT_DRIVES: unknown};
-    Action: {CANCEL: string; PICKED: string};
-    Response: {DOCUMENTS: string};
-    Document: {ID: string};
-  };
-};
+interface GapiGlobal {
+  load(
+    module: string,
+    options: {
+      callback(): void;
+      onerror(): void;
+    },
+  ): void;
+}
 
-type GapiGlobal = {
-  load: (
-    api: string,
-    options: {callback: () => void; onerror?: () => void},
-  ) => void;
-};
+interface PickerView {
+  setMimeTypes(mimeTypes: string): PickerView;
+}
 
-function googleGlobal(): GooglePickerGlobal | undefined {
-  return (window as unknown as {google?: GooglePickerGlobal}).google;
+interface DocsView extends PickerView {
+  setIncludeFolders(include: boolean): DocsView;
+  setSelectFolderEnabled(enabled: boolean): DocsView;
+  setEnableDrives(enabled: boolean): DocsView;
+  setOwnedByMe(ownedByMe: boolean): DocsView;
+}
+
+interface PickerBuilder {
+  setDeveloperKey(value: string): PickerBuilder;
+  setAppId(value: string): PickerBuilder;
+  setOAuthToken(value: string): PickerBuilder;
+  setOrigin(value: string): PickerBuilder;
+  enableFeature(feature: string): PickerBuilder;
+  addView(value: PickerView): PickerBuilder;
+  setCallback(callback: (data: Record<string, unknown>) => void): PickerBuilder;
+  build(): {setVisible(visible: boolean): void};
+}
+
+interface PickerGlobal {
+  Action: {PICKED: string; CANCEL: string};
+  Response: {DOCUMENTS: string};
+  Document: {ID: string};
+  Feature: {SUPPORT_DRIVES: string};
+  DocsView: new () => DocsView;
+  PickerBuilder: new () => PickerBuilder;
+}
+
+interface GoogleBrowserGlobal {
+  picker: PickerGlobal;
+}
+
+function googleGlobal(): GoogleBrowserGlobal | undefined {
+  return (window as unknown as {google?: GoogleBrowserGlobal}).google;
 }
 
 function gapiGlobal(): GapiGlobal | undefined {
@@ -97,7 +109,7 @@ export async function pickTeacherDriveFolder(accessToken: string): Promise<strin
           .setSelectFolderEnabled(true)
           .setEnableDrives(true),
       )
-      .setCallback(data => {
+      .setCallback((data: Record<string, unknown>) => {
         if (data.action === picker.Action.CANCEL) {
           resolve(null);
           return;
