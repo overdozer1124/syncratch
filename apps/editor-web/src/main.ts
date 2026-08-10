@@ -369,8 +369,10 @@ import {
   showStudentSubmissionUi,
 } from "./student-submission-ui.js";
 import {
+  buildStudentAwareInviteUrl,
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
+  rememberStudentLinkToken,
   replaceStudentUrlWithoutToken,
   showStudentLinkError,
 } from "./student-surface.js";
@@ -672,6 +674,13 @@ const SURFACE_MODE = detectEditorSurfaceMode();
 ).__BLOCKSYNC_GUI_PUBLIC_PATH__ = scratchGuiBasePath();
 let studentPolicy: StudentPolicyView | null = null;
 let submissionPreviewMode = false;
+
+function collabInviteShareUrl(invite: CollabInvite): string {
+  if (SURFACE_MODE.kind === "student") {
+    return buildStudentAwareInviteUrl(window.location.href, invite);
+  }
+  return inviteUrl(window.location.href, invite);
+}
 if (SURFACE_MODE.kind !== "community" && appMain) {
   appMain.hidden = true;
 }
@@ -1916,7 +1925,7 @@ async function startCollaboration(
   collabSession = session;
   activeInvite = invite;
   collabFeedback.textContent = "";
-  collabInviteInput.value = inviteUrl(window.location.href, invite);
+  collabInviteInput.value = collabInviteShareUrl(invite);
   const started = session.start({host});
   if (!started.ok) {
     const summary = summarizePreflightIssues(started.issues);
@@ -1937,7 +1946,7 @@ async function copyActiveInviteLink(options?: {
   panelFeedback?: boolean;
 }): Promise<boolean> {
   if (!activeInvite) return false;
-  const url = inviteUrl(window.location.href, activeInvite);
+  const url = collabInviteShareUrl(activeInvite);
   try {
     await navigator.clipboard.writeText(url);
     appToast.show(INVITE_LINK_COPIED_TOAST);
@@ -1982,7 +1991,7 @@ async function ensureGoogleBeforeCollab(intent: {
   } else if (intent.invite) {
     ensureInviteHashOnLocation(intent.invite);
     savePendingGuestInvite(intent.invite);
-    collabInviteInput.value = inviteUrl(window.location.href, intent.invite);
+    collabInviteInput.value = collabInviteShareUrl(intent.invite);
     renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_JOIN);
   }
 
@@ -3642,7 +3651,7 @@ async function boot(): Promise<void> {
   const guestInvite = fragmentInvite ?? pendingGuest;
   if (guestInvite) {
     // Opening a shared invite URL joins after Google (when configured).
-    collabInviteInput.value = inviteUrl(window.location.href, guestInvite);
+    collabInviteInput.value = collabInviteShareUrl(guestInvite);
     ensureInviteHashOnLocation(guestInvite);
     renderCollabIdle();
     if (!(await ensureGoogleBeforeCollab({role: "guest", invite: guestInvite}))) {
@@ -3768,7 +3777,7 @@ connectGoogleButton.addEventListener("click", () => {
         consumePendingGuestInvite() ??
         decodeInviteFragment(window.location.hash);
       if (invite && !collabSession) {
-        collabInviteInput.value = inviteUrl(window.location.href, invite);
+        collabInviteInput.value = collabInviteShareUrl(invite);
         await startCollaboration(invite, false);
       }
     })
@@ -4636,6 +4645,7 @@ async function startEditorSurface(): Promise<void> {
         if (studentErrorShell) showStudentLinkError(studentErrorShell);
         return;
       }
+      rememberStudentLinkToken(SURFACE_MODE.token);
       replaceStudentUrlWithoutToken();
       policy = await fetchStudentPolicyFromGrant();
     } else {
