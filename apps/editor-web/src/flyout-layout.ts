@@ -141,6 +141,17 @@ export function computeToggleEdgeX(options: {
   return options.toolboxRightPx + options.visualFlyoutWidthPx;
 }
 
+/** Blockly positions the flyout scrollbar at metrics width; nudge it for hover overlay. */
+export function computeFlyoutScrollbarNudgePx(options: {
+  collapsed: boolean;
+  hoverExpanded: boolean;
+  metricsWidthPx: number;
+  visualWidthPx: number;
+}): number {
+  if (options.collapsed || !options.hoverExpanded) return 0;
+  return Math.max(0, options.visualWidthPx - options.metricsWidthPx);
+}
+
 /** Apply / clear the hover overlay width on the flyout SVG (metrics untouched). */
 export function applyFlyoutVisualOverlay(
   flyoutSvg: SVGElement | null | undefined,
@@ -244,6 +255,7 @@ export function installFlyoutLayout(options: {
     );
     host.style.removeProperty("--syncratch-toolbox-width");
     host.style.removeProperty("--syncratch-flyout-width");
+    host.style.removeProperty("--syncratch-flyout-scroll-nudge");
     host = next;
     host.classList.add("syncratch-flyout-host");
   }
@@ -332,6 +344,15 @@ export function installFlyoutLayout(options: {
     const toolboxWidth = toolbox?.getBoundingClientRect().width ?? 60;
     host.style.setProperty("--syncratch-toolbox-width", `${toolboxWidth}px`);
     host.style.setProperty("--syncratch-flyout-width", `${visualWidth}px`);
+    host.style.setProperty(
+      "--syncratch-flyout-scroll-nudge",
+      `${computeFlyoutScrollbarNudgePx({
+        collapsed,
+        hoverExpanded,
+        metricsWidthPx: metricsWidth,
+        visualWidthPx: visualWidth,
+      })}px`,
+    );
 
     const toolboxRect = toolbox?.getBoundingClientRect();
     const hostRect = host.getBoundingClientRect();
@@ -544,6 +565,7 @@ export function installFlyoutLayout(options: {
       );
       host.style.removeProperty("--syncratch-toolbox-width");
       host.style.removeProperty("--syncratch-flyout-width");
+      host.style.removeProperty("--syncratch-flyout-scroll-nudge");
     },
   };
 }

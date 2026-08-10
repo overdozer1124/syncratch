@@ -4,6 +4,7 @@ import {
   applyFlyoutVisualOverlay,
   clampFlyoutWidth,
   computeMetricsFlyoutWidth,
+  computeFlyoutScrollbarNudgePx,
   computeToggleEdgeX,
   computeVisualFlyoutWidth,
   DEFAULT_FLYOUT_WIDTH_PX,
@@ -62,6 +63,33 @@ describe("flyout layout helpers", () => {
       }),
     };
     expect(measureFlyoutContentWidthPx(flyout)).toBe(328);
+  });
+
+  it("computeFlyoutScrollbarNudgePx offsets scrollbar only on hover-expand", () => {
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: false,
+        hoverExpanded: false,
+        metricsWidthPx: DEFAULT_FLYOUT_WIDTH_PX,
+        visualWidthPx: 400,
+      }),
+    ).toBe(0);
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: false,
+        hoverExpanded: true,
+        metricsWidthPx: DEFAULT_FLYOUT_WIDTH_PX,
+        visualWidthPx: 400,
+      }),
+    ).toBe(150);
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: true,
+        hoverExpanded: true,
+        metricsWidthPx: 0,
+        visualWidthPx: 400,
+      }),
+    ).toBe(0);
   });
 
   it("computeToggleEdgeX follows the visual flyout edge", () => {
@@ -188,6 +216,9 @@ describe("installFlyoutLayout", () => {
     expect(Number.parseFloat(toggle!.style.left)).toBeGreaterThan(
       Number.parseFloat(leftBeforeHover || "0"),
     );
+    expect(blocks.style.getPropertyValue("--syncratch-flyout-scroll-nudge")).toBe(
+      `${388 - DEFAULT_FLYOUT_WIDTH_PX}px`,
+    );
 
     const out = new PointerEvent("pointerout", {bubbles: true});
     Object.defineProperty(out, "relatedTarget", {value: document.body});
@@ -197,6 +228,9 @@ describe("installFlyoutLayout", () => {
     expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
     expect(workspace.resize.mock.calls.length).toBe(resizeCallsAfterAttach);
     expect(toggle!.style.left).toBe(leftBeforeHover);
+    expect(blocks.style.getPropertyValue("--syncratch-flyout-scroll-nudge")).toBe(
+      "0px",
+    );
 
     toggle?.click();
     expect(controller.isCollapsed()).toBe(true);
