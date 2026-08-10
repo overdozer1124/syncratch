@@ -63,6 +63,7 @@ import {
   saveLocalCollabProfile,
 } from "./local-collab-profile.js";
 import {
+  clearPendingHostRoomInvite,
   COLLAB_GOOGLE_CONNECT_HINT,
   COLLAB_GOOGLE_OAUTH_FAILED,
   COLLAB_GOOGLE_REQUIRED_FOR_CREATE,
@@ -73,8 +74,11 @@ import {
   markPendingHostCreate,
   peekPendingGuestInvite,
   peekPendingHostCreate,
+  peekPendingHostRoomInvite,
   savePendingGuestInvite,
+  savePendingHostRoomInvite,
   shouldGateCollabOnGoogle,
+  stageCollabInviteFromLocation,
 } from "./collab-oauth-gate.js";
 import {
   CLASSROOM_DRIVE_BLOCKED_STATUS,
@@ -1931,12 +1935,16 @@ async function startCollaboration(
     const summary = summarizePreflightIssues(started.issues);
     collabSession = null;
     activeInvite = null;
+    if (host) clearPendingHostRoomInvite();
     renderCollabIdle(summary.summary);
     collabStatus.title = summary.codes.length > 0
       ? `${summary.codes.join(", ")} / 作品の素材や内容を確認してください。`
       : "作品の素材や内容を確認してください。";
   } else {
     publishLocalCollabProfile();
+    if (host && activeInvite) {
+      savePendingHostRoomInvite(activeInvite);
+    }
   }
   closePanelFor(host ? createRoomButton : joinRoomButton);
 }
@@ -2278,6 +2286,7 @@ function leaveRoom(): void {
   collaborationGeneration += 1;
   collabSession = null;
   activeInvite = null;
+  clearPendingHostRoomInvite();
   collabFeedback.textContent = "";
   renderCollabIdle();
 }
@@ -3630,6 +3639,23 @@ async function boot(): Promise<void> {
   if (oauthReturn === "error") {
     appToast.show(COLLAB_GOOGLE_OAUTH_FAILED);
     renderCollabIdle(COLLAB_GOOGLE_OAUTH_FAILED);
+    if (!driveIntegration.isConnected()) {
+      return;
+    }
+  }
+
+  const hostRoomInvite = peekPendingHostRoomInvite();
+  if (hostRoomInvite && !collabSession) {
+    if (
+      shouldGateCollabOnGoogle(driveIntegration.getStatus()) &&
+      !driveIntegration.isConnected()
+    ) {
+      if (!(await ensureGoogleBeforeCollab({role: "host"}))) {
+        return;
+      }
+    }
+    renderCollabIdle();
+    await startCollaboration(hostRoomInvite, true);
     return;
   }
 
@@ -4647,8 +4673,10 @@ async function startEditorSurface(): Promise<void> {
       }
       rememberStudentLinkToken(SURFACE_MODE.token);
       replaceStudentUrlWithoutToken();
+      stageCollabInviteFromLocation();
       policy = await fetchStudentPolicyFromGrant();
     } else {
+      stageCollabInviteFromLocation();
       policy = await fetchStudentPolicyFromGrant();
     }
     if (!policy) {
