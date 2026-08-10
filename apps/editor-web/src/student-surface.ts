@@ -2,8 +2,15 @@ import {
   STUDENT_GRANT_PATH,
   STUDENT_POLICY_PATH,
   STUDENT_SURFACE_SESSION_PATH,
+  isPlausibleStudentToken,
+  studentSurfacePath,
   type StudentPolicyView,
 } from "@blocksync/classroom-access";
+import {
+  encodeInviteFragment,
+  inviteUrl,
+  type CollabInvite,
+} from "@blocksync/collab-invite";
 
 function normalizeBasePath(basePath: string): string {
   if (!basePath || basePath === "/") return "";
@@ -64,6 +71,48 @@ export async function fetchStudentPolicyFromGrant(): Promise<StudentPolicyView |
   } catch {
     return null;
   }
+}
+
+const STUDENT_LINK_TOKEN_STORAGE_KEY = "syncratch_student_link_token";
+
+/** Remember the classroom link token after grant exchange (URL bar strips it). */
+export function rememberStudentLinkToken(token: string): void {
+  if (!isPlausibleStudentToken(token)) return;
+  try {
+    sessionStorage.setItem(STUDENT_LINK_TOKEN_STORAGE_KEY, token);
+  } catch {
+    // sessionStorage unavailable (private mode, blocked, etc.)
+  }
+}
+
+export function readRememberedStudentLinkToken(): string | null {
+  try {
+    const token = sessionStorage.getItem(STUDENT_LINK_TOKEN_STORAGE_KEY);
+    return token && isPlausibleStudentToken(token) ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Classroom collab invites must carry `/s/{token}` so guests can exchange a grant
+ * before auto-joining from the URL hash. After grant exchange the host bar is
+ * token-less `/s`, so we re-inject the remembered token when sharing.
+ */
+export function buildStudentAwareInviteUrl(
+  baseUrl: string,
+  invite: CollabInvite,
+  basePath = typeof import.meta !== "undefined"
+    ? String(import.meta.env?.BASE_URL ?? "/")
+    : "/",
+): string {
+  const token = readRememberedStudentLinkToken();
+  if (!token) return inviteUrl(baseUrl, invite);
+  const url = new URL(baseUrl);
+  const base = normalizeBasePath(basePath);
+  url.pathname = `${base}${studentSurfacePath(token)}`;
+  url.hash = encodeInviteFragment(invite);
+  return url.toString();
 }
 
 /** Replace `/s/{token}` with token-less `/s` after grant exchange (keeps query/hash). */
