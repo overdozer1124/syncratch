@@ -188,8 +188,7 @@ describe("installFlyoutLayout", () => {
       getWorkspace: () => workspace,
     });
     await new Promise(r => setTimeout(r, 0));
-
-    expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
+    const reflow = flyout.reflow as ReturnType<typeof vi.fn>;
     const resizeCallsAfterAttach = workspace.resize.mock.calls.length;
 
     const toggle = document.querySelector<HTMLButtonElement>(
@@ -197,11 +196,13 @@ describe("installFlyoutLayout", () => {
     );
     expect(toggle).toBeTruthy();
     const leftBeforeHover = toggle!.style.left;
+    const reflowCallsBeforeHover = reflow.mock.calls.length;
 
     const over = new PointerEvent("pointerover", {bubbles: true});
     Object.defineProperty(over, "target", {value: flyoutSvg});
     root.dispatchEvent(over);
     expect(controller.isHoverExpanded()).toBe(true);
+    expect(reflow.mock.calls.length).toBe(reflowCallsBeforeHover);
     // Metrics width unchanged — workspace must not shift.
     expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
     expect(workspace.resize.mock.calls.length).toBe(resizeCallsAfterAttach);
