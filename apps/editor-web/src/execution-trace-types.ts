@@ -12,6 +12,8 @@ export type TraceStateSnapshot = {
   direction?: number;
   variable?: {id?: string; name: string; value: TraceValue};
   repeat?: {total: number; loopCounterBefore: unknown};
+  /** Frozen before control primitives mutate the stack (e.g. control_if branch entry). */
+  conditionText?: string;
 };
 
 export type TraceSemanticSnapshot = {

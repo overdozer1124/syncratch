@@ -183,12 +183,18 @@ const descriptors: Record<string, TraceDescriptor> = {
     },
   },
   control_if: {
-    enrichControl(args, util) {
+    captureBefore(_args, util) {
+      const conditionText = describeConditionExpression(util);
+      return conditionText ? {conditionText} : undefined;
+    },
+    enrichControl(args, util, before) {
       const condition = Boolean(args.CONDITION);
       return {
         branch: condition ? 1 : 0,
         conditionText:
-          describeConditionExpression(util) ?? conditionTextFromArgs(args),
+          before?.conditionText ??
+          describeConditionExpression(util) ??
+          conditionTextFromArgs(args),
       };
     },
     describe(snapshot) {
@@ -201,12 +207,18 @@ const descriptors: Record<string, TraceDescriptor> = {
     },
   },
   control_if_else: {
-    enrichControl(args, util) {
+    captureBefore(_args, util) {
+      const conditionText = describeConditionExpression(util);
+      return conditionText ? {conditionText} : undefined;
+    },
+    enrichControl(args, util, before) {
       const condition = Boolean(args.CONDITION);
       return {
         branch: condition ? 1 : 2,
         conditionText:
-          describeConditionExpression(util) ?? conditionTextFromArgs(args),
+          before?.conditionText ??
+          describeConditionExpression(util) ??
+          conditionTextFromArgs(args),
       };
     },
     describe(snapshot) {
@@ -219,9 +231,14 @@ const descriptors: Record<string, TraceDescriptor> = {
     },
   },
   control_wait_until: {
-    enrichControl(_args, util) {
+    captureBefore(_args, util) {
+      const conditionText = describeConditionExpression(util);
+      return conditionText ? {conditionText} : undefined;
+    },
+    enrichControl(_args, util, before) {
       return {
-        conditionText: describeConditionExpression(util) ?? "条件",
+        conditionText:
+          before?.conditionText ?? describeConditionExpression(util) ?? "条件",
       };
     },
     describe(snapshot) {
@@ -230,9 +247,14 @@ const descriptors: Record<string, TraceDescriptor> = {
     },
   },
   control_repeat_until: {
-    enrichControl(_args, util) {
+    captureBefore(_args, util) {
+      const conditionText = describeConditionExpression(util);
+      return conditionText ? {conditionText} : undefined;
+    },
+    enrichControl(_args, util, before) {
       return {
-        conditionText: describeConditionExpression(util) ?? "条件",
+        conditionText:
+          before?.conditionText ?? describeConditionExpression(util) ?? "条件",
       };
     },
     describe(snapshot) {
