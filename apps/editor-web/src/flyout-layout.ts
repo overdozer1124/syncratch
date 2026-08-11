@@ -405,13 +405,15 @@ export function installFlyoutLayout(options: {
   function setHoverExpanded(next: boolean): void {
     if (collapsed) {
       hoverExpanded = false;
-      applyWidth();
+      applyWidth(false);
       return;
     }
     if (next) refreshContentWidth();
     if (hoverExpanded === next) return;
     hoverExpanded = next;
-    applyWidth();
+    // Hover widen is a visual overlay only — reflow rebuilds flyout DOM and
+    // breaks category scroll + block drag/clicks (Scratch shows wrong blocks).
+    applyWidth(false);
   }
 
   let ignoreClickUntil = 0;
