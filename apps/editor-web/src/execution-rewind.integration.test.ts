@@ -280,6 +280,35 @@ describe("execution rewind scratch-vm integration", () => {
     harness.control.dispose();
   }, 20_000);
 
+  it("rewinds after the if-true branch teleports the sprite", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    harness.vm.greenFlag();
+    harness.control.pause();
+
+    let sawThenBranch = false;
+    let previousX = harness.findSprite().x ?? 0;
+    for (let i = 0; i < 80; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+      const x = harness.findSprite().x ?? 0;
+      if (x < previousX - 50 || x <= -200) {
+        sawThenBranch = true;
+        break;
+      }
+      previousX = x;
+    }
+    expect(sawThenBranch, "if-true goto should teleport x toward -240").toBe(true);
+    expect(harness.rewind.getSnapshot().rewindError).toBeNull();
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
+    expect(harness.rewind.getSnapshot().rewindError).toBeNull();
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 30_000);
+
   it("rewinds forever move + if x>240 goto while paused", async () => {
     const harness = await createRewindVmHarness({foreverIfGoto: true});
     harness.vm.greenFlag();
