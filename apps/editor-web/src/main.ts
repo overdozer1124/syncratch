@@ -2875,7 +2875,8 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         refreshExecUi?.();
       },
       onHistoryCleared: reason => {
-        if (reason !== "green-flag") {
+        // Keep execution logs after a failed rewind; only scrub rewind metadata.
+        if (reason !== "green-flag" && reason !== "replay-failure") {
           executionTrace?.trace.clear();
         }
         refreshExecUi?.();
@@ -3046,8 +3047,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       execRewindButton.disabled = true;
       try {
         const result = await executionRewind.rewindFrame();
-        if (!result.ok && result.error) {
-          appToast.show(result.error);
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
         }
       } finally {
         render();
@@ -3065,8 +3068,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         execStepButton.disabled = true;
         try {
           const result = await executionRewind!.scrubForwardOneFrame();
-          if (!result.ok && result.error) {
-            appToast.show(result.error);
+          if (!result.ok) {
+            const message =
+              executionRewind!.getSnapshot().rewindError ?? result.error;
+            if (message) appToast.show(message);
           }
         } finally {
           render();
@@ -3085,8 +3090,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       execScrubInput.disabled = true;
       try {
         const result = await executionRewind.scrubToFrame(value);
-        if (!result.ok && result.error) {
-          appToast.show(result.error);
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
         }
       } finally {
         render();

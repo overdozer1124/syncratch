@@ -421,6 +421,26 @@ describe("computeFrameFingerprint", () => {
     expect(result.supported).toBe(false);
   });
 
+  it("ignores blockGlowInFrame when it differs from peekStack", () => {
+    const {runtime} = makeSimulatedRuntime([]);
+    const origin = makeOrigin(runtime);
+    const thread = runtime.threads![0]!;
+    thread.blockGlowInFrame = "glow-only";
+    thread.peekStack = () => "move";
+    const withGlow = computeFrameFingerprint({
+      frameIndex: 0,
+      runtime,
+      blockGraphHash: origin.blockGraphHash,
+    });
+    thread.blockGlowInFrame = "other-glow";
+    const withOtherGlow = computeFrameFingerprint({
+      frameIndex: 0,
+      runtime,
+      blockGraphHash: origin.blockGraphHash,
+    });
+    expect(withGlow.fingerprint).toBe(withOtherGlow.fingerprint);
+  });
+
   it("hashes visible block graphs with stable target identity", () => {
     const {runtime} = makeSimulatedRuntime([]);
     expect(computeProjectBlockGraphHash(runtime)).toBe("sprite:ネコ:orig=0");
@@ -1049,7 +1069,7 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
-  it("invalidates trace and frame history on replay failure without restarting green flag", async () => {
+  it("invalidates frame history on replay failure without clearing trace", async () => {
     const sim = makeSimulatedRuntime([2, 4]);
     const journal = new RewindJournal();
     let truncatedTo = -1;
@@ -1092,7 +1112,7 @@ describe("installExecutionRewind", () => {
     const result = await handle.rewindFrame();
     expect(result.ok).toBe(false);
     expect(handle.getFrames()).toHaveLength(0);
-    expect(truncatedTo).toBe(0);
+    expect(truncatedTo).toBe(-1);
     expect(clearedReason).toBe("replay-failure");
     // replayToFrame restarts green-flag hats once while loading origin; recovery
     // must not trigger a second restart after the failed replay.
