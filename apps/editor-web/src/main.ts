@@ -299,6 +299,7 @@ import {
   resolveTraceEntries,
   type ExecutionTraceHandle,
 } from "./execution-trace.js";
+import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
 import {
   createRewindOrigin,
   installExecutionRewind,
@@ -1377,6 +1378,9 @@ async function restoreRewindExecutionCheckpoint(
   }
   vm.runtime.stopAll?.();
   await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
+  restartGreenFlagHatThreads(
+    vm.runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
+  );
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {

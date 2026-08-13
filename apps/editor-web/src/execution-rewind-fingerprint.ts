@@ -59,9 +59,6 @@ type NormalizedStackFrame = {
   isLoop: boolean;
   params: unknown;
   executionContext: unknown;
-  waitingReporter: string | null;
-  justReported: unknown;
-  reported: unknown;
 };
 
 class StackFrameNormalizationError extends Error {
@@ -201,42 +198,6 @@ function normalizeExecutionContext(
   return normalized;
 }
 
-function normalizeReportedEntry(value: unknown): unknown {
-  if (!isPlainObject(value)) {
-    throw new StackFrameNormalizationError("reported entry must be an object");
-  }
-  const opCached = value.opCached;
-  if (typeof opCached !== "string" || !opCached) {
-    throw new StackFrameNormalizationError("reported entry missing opCached");
-  }
-  return {
-    opCached,
-    inputValue: normalizeJsonValue(value.inputValue),
-  };
-}
-
-function normalizeReported(value: unknown): unknown {
-  if (value === null || value === undefined) return null;
-  if (!Array.isArray(value)) {
-    throw new StackFrameNormalizationError("reported must be an array");
-  }
-  return value.map(entry => normalizeReportedEntry(entry));
-}
-
-function normalizeWaitingReporter(
-  waitingReporter: unknown,
-  reporting: unknown,
-): string | null {
-  if (waitingReporter === null || waitingReporter === undefined) {
-    if (typeof reporting === "string" && reporting) return reporting;
-    return null;
-  }
-  if (typeof waitingReporter !== "string") {
-    throw new StackFrameNormalizationError("waitingReporter must be a string");
-  }
-  return waitingReporter;
-}
-
 function normalizeStackFrame(
   frame: RewindStackFrameLike,
 ): NormalizedStackFrame | null {
@@ -248,26 +209,7 @@ function normalizeStackFrame(
         ? null
         : normalizeJsonValue(frame.params),
       executionContext: normalizeExecutionContext(frame.executionContext),
-      waitingReporter: normalizeWaitingReporter(
-        frame.waitingReporter,
-        frame.reporting,
-      ),
-      justReported:
-        frame.justReported === undefined
-          ? null
-          : normalizeJsonValue(frame.justReported),
-      reported: normalizeReported(frame.reported),
     };
-  } catch {
-    return null;
-  }
-}
-
-/** Stack top for fingerprints — ignore blockGlowInFrame (UI glow can diverge on replay). */
-function readStackTopBlock(thread: RewindThreadLike): string | null {
-  try {
-    const id = thread.peekStack?.();
-    return typeof id === "string" && id ? id : null;
   } catch {
     return null;
   }
@@ -321,7 +263,6 @@ function hashThreadState(
     hash: [
       stableTargetIdentity(target ?? {}),
       thread.topBlock ?? "",
-      readStackTopBlock(thread) ?? "",
       thread.status ?? "",
       thread.isKilled ? "1" : "0",
       stack,

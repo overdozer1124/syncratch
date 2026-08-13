@@ -272,10 +272,24 @@ describe("normalizeStackFrame", () => {
       isLoop: true,
       params: {count: 1},
       executionContext: {loopCounter: 2},
-      waitingReporter: "block-a",
-      justReported: 5,
-      reported: [{opCached: "block-a", inputValue: 5}],
     });
+  });
+
+  it("ignores transient reporter fields that differ at frame boundaries", () => {
+    const base = {
+      warpMode: false,
+      isLoop: false,
+      params: null,
+      executionContext: {loopCounter: 1},
+    };
+    expect(
+      normalizeStackFrame({
+        ...base,
+        waitingReporter: "gt",
+        justReported: 250,
+        reported: [{opCached: "xpos", inputValue: 250}],
+      }),
+    ).toEqual(normalizeStackFrame(base));
   });
 
   it("returns null for non-normalizable executionContext", () => {
