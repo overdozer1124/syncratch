@@ -17,6 +17,7 @@ export const IMPLEMENTED_JOURNAL_KINDS = new Set<JournalEntryKind>([
   "backdropResolve",
   "sequencerWork",
   "edgeBounce",
+  "spriteXY",
 ]);
 
 /** Explicit opcode → journal kind mapping for unjournaled non-deterministic inputs. */

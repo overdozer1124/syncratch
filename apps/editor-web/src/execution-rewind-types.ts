@@ -81,7 +81,8 @@ export type JournalEntryKind =
   | "broadcastOrder"
   | "backdropResolve"
   | "sequencerWork"
-  | "edgeBounce";
+  | "edgeBounce"
+  | "spriteXY";
 
 export type JournalEntry =
   | {kind: "random"; from: number; to: number; value: number}
@@ -108,7 +109,8 @@ export type JournalEntry =
       direction: number;
       x: number;
       y: number;
-    };
+    }
+  | {kind: "spriteXY"; x: number; y: number};
 
 export interface ReplayResult {
   ok: boolean;
