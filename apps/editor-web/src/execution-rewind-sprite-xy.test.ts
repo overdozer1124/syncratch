@@ -44,7 +44,7 @@ describe("installSpriteXYCapture", () => {
     journal.endFrame();
     expect(recordTarget.x).toBe(200);
     expect(journal.slice(0, journal.size)).toEqual([
-      {kind: "spriteXY", x: 200, y: 0},
+      {kind: "spriteXY", requestedX: 250, requestedY: 0, x: 200, y: 0},
     ]);
 
     const replayTarget = {
@@ -59,7 +59,7 @@ describe("installSpriteXYCapture", () => {
     capture.ensureWrapped();
 
     journal.beginReplay(0, 1);
-    replayTarget.setXY(999, 0);
+    replayTarget.setXY(250, 0);
     journal.endFrame();
     expect(replayTarget.x).toBe(200);
     expect(journal.replayRangeFullyConsumed()).toBe(true);
@@ -125,6 +125,52 @@ describe("installSpriteXYCapture", () => {
     journal.endFrame();
     expect(replayTarget.x).toBe(200);
     expect(replayTarget.x > 240).toBe(false);
+
+    capture.dispose();
+  });
+
+  it("does not let an unfenced move consume a later fenced goto in the same frame", () => {
+    const journal = new RewindJournal();
+    const recordTarget = {
+      x: 240,
+      y: 0,
+      setXY(x: number, y: number) {
+        this.x = Math.max(-180, x);
+        this.y = y;
+      },
+    };
+    const runtime = {targets: [recordTarget]};
+    const capture = installSpriteXYCapture({runtime, journal});
+
+    journal.beginRecord();
+    recordTarget.setXY(250, 0);
+    expect(recordTarget.x).toBe(250);
+    recordTarget.setXY(-240, 0);
+    expect(recordTarget.x).toBe(-180);
+    journal.endFrame();
+    expect(journal.slice(0, journal.size)).toEqual([
+      {kind: "spriteXY", requestedX: -240, requestedY: 0, x: -180, y: 0},
+    ]);
+
+    const replayTarget = {
+      x: 240,
+      y: 0,
+      setXY(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+      },
+    };
+    runtime.targets = [replayTarget];
+    capture.ensureWrapped();
+
+    journal.beginReplay(0, 1);
+    replayTarget.setXY(250, 0);
+    expect(replayTarget.x).toBe(250);
+    expect(replayTarget.x > 240).toBe(true);
+    replayTarget.setXY(-240, 0);
+    journal.endFrame();
+    expect(replayTarget.x).toBe(-180);
+    expect(journal.replayRangeFullyConsumed()).toBe(true);
 
     capture.dispose();
   });

@@ -20,6 +20,8 @@ const SPRITE_XY_WRAPPED = "__syncratchRewindSpriteXYWrapped";
 
 type SpriteXYJournalEntry = {
   kind: "spriteXY";
+  requestedX: number;
+  requestedY: number;
   x: number;
   y: number;
 };
@@ -31,14 +33,32 @@ function readJournal(runtime: RuntimeSlots): RewindJournal | null {
   return journal ? (journal as RewindJournal) : null;
 }
 
+function toCoord(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function isMatchingSpriteXY(
+  entry: {kind?: string; requestedX?: number; requestedY?: number} | null,
+  requestedX: number,
+  requestedY: number,
+): entry is SpriteXYJournalEntry {
+  return (
+    entry?.kind === "spriteXY" &&
+    entry.requestedX === requestedX &&
+    entry.requestedY === requestedY
+  );
+}
+
 /**
  * Journal `setXY` results only when the renderer (or drag lock) changes the
- * requested coordinates. Replay peeks for those entries so unfenced scripts
- * stay journal-compatible with edgeBounce / clones, while `x座標 > 240`
- * scripts still rewind after the sprite hits the stage edge.
+ * requested coordinates. Replay matches those entries by the *requested*
+ * x/y so an unfenced `motion_movesteps` in the same frame does not consume
+ * the fenced `motion_gotoxy` that follows (`もし` then-branch teleport).
  *
  * After `loadProject()`, drawable/skin bounds are often missing, so replay
- * would otherwise apply unfenced x and take a different `control_if` branch.
+ * would otherwise apply unfenced x and take a different `control_if` branch
+ * or land at a different goto destination.
  */
 export function installSpriteXYCapture(input: {
   runtime: SpriteXYRuntimeLike;
@@ -57,9 +77,11 @@ export function installSpriteXYCapture(input: {
     target.setXY = (x: number, y: number, force?: boolean) => {
       const journal = readJournal(runtime);
       const mode = journal?.getMode() ?? "idle";
+      const requestedX = toCoord(x);
+      const requestedY = toCoord(y);
       if (mode === "replay" && journal) {
         const peek = journal.peekReplayEntry();
-        if (peek?.kind === "spriteXY") {
+        if (isMatchingSpriteXY(peek, requestedX, requestedY)) {
           const entry = journal.consume("spriteXY");
           if (!entry || entry.kind !== "spriteXY") {
             throw new RewindJournalMismatchError(
@@ -76,11 +98,13 @@ export function installSpriteXYCapture(input: {
       }
       original(x, y, force);
       if (mode === "record" && journal) {
-        const actualX = target.x ?? 0;
-        const actualY = target.y ?? 0;
-        if (actualX !== x || actualY !== y) {
+        const actualX = toCoord(target.x);
+        const actualY = toCoord(target.y);
+        if (actualX !== requestedX || actualY !== requestedY) {
           journal.append({
             kind: "spriteXY",
+            requestedX,
+            requestedY,
             x: actualX,
             y: actualY,
           } satisfies SpriteXYJournalEntry);

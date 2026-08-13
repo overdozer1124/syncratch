@@ -110,7 +110,7 @@ export type JournalEntry =
       x: number;
       y: number;
     }
-  | {kind: "spriteXY"; x: number; y: number};
+  | {kind: "spriteXY"; requestedX: number; requestedY: number; x: number; y: number};
 
 export interface ReplayResult {
   ok: boolean;

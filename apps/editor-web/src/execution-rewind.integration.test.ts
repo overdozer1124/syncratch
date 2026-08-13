@@ -1,11 +1,84 @@
 import {describe, expect, it} from "vitest";
 import {installExecutionControl} from "./execution-control.js";
 import {installExecutionTrace} from "./execution-trace.js";
-import {createRewindVmHarness} from "./execution-rewind-vm-harness.js";
+import {
+  createRewindVmHarness,
+  type RewindVmHarness,
+} from "./execution-rewind-vm-harness.js";
 import {replayToFrame} from "./execution-rewind-replay.js";
 import {installExecutionRewind} from "./execution-rewind.js";
 import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
 import {stableTargetIdentity} from "./execution-rewind-target-identity.js";
+
+/**
+ * Left-edge fence only, matching the production teleport case: `motion_movesteps`
+ * can pass x=240 unfenced, then `motion_gotoxy(-240)` is clamped.
+ *
+ * `loadProject()` disposes old targets, so the stub must implement
+ * `destroyDrawable` (and tolerate other renderer calls via Proxy).
+ */
+function attachLeftFenceRenderer(
+  runtime: {
+    targets: Array<Record<string, unknown>>;
+    requestRedraw?: () => void;
+    redrawRequested?: boolean;
+  },
+  minX: number,
+): void {
+  runtime.requestRedraw = () => {
+    runtime.redrawRequested = false;
+  };
+  const renderer = new Proxy(
+    {
+      getFencedPositionOfDrawable: (_id: unknown, position: number[]) => [
+        Math.max(minX, position[0] ?? 0),
+        position[1] ?? 0,
+      ],
+      updateDrawablePosition: () => undefined,
+      destroyDrawable: () => undefined,
+      draw: () => undefined,
+    },
+    {
+      get(target, prop, receiver) {
+        if (prop in target) return Reflect.get(target, prop, receiver);
+        return () => undefined;
+      },
+    },
+  );
+  for (const target of runtime.targets) {
+    if (target.isStage) continue;
+    target.renderer = renderer;
+    target.drawableID = 1;
+  }
+}
+
+function assertRewindReady(harness: RewindVmHarness): void {
+  const snapshot = harness.rewind.getSnapshot();
+  expect(
+    snapshot.rewindError,
+    snapshot.rewindError ?? undefined,
+  ).toBeNull();
+  expect(
+    snapshot.canScrub && snapshot.scrubDepthBack > 0,
+    `rewind unavailable: frames=${harness.rewind.getFrames().length} playback=${snapshot.playbackFrameIndex} frontier=${snapshot.recordFrontierFrameIndex} canScrub=${snapshot.canScrub} back=${snapshot.scrubDepthBack}`,
+  ).toBe(true);
+}
+
+/** Forever + warp can pack the teleport into scheduler frame 0. */
+function stepUntilRewindReady(harness: RewindVmHarness): void {
+  for (let i = 0; i < 8; i += 1) {
+    const snapshot = harness.rewind.getSnapshot();
+    if (
+      snapshot.rewindError === null &&
+      snapshot.canScrub &&
+      snapshot.scrubDepthBack > 0
+    ) {
+      return;
+    }
+    harness.control.stepFrame();
+    harness.vm.runtime._step?.();
+  }
+}
 
 describe("execution rewind scratch-vm integration", () => {
   it("reaches frame 1 after origin load and green-flag thread restart", async () => {
@@ -298,7 +371,49 @@ describe("execution rewind scratch-vm integration", () => {
       previousX = x;
     }
     expect(sawThenBranch, "if-true goto should teleport x toward -240").toBe(true);
+    stepUntilRewindReady(harness);
+    assertRewindReady(harness);
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
     expect(harness.rewind.getSnapshot().rewindError).toBeNull();
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 30_000);
+
+  it("rewinds after if-true teleport when only the goto destination is fenced", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    const minX = -180;
+    attachLeftFenceRenderer(harness.vm.runtime, minX);
+    harness.findSprite().x = 0;
+    harness.findSprite().y = 0;
+    harness.vm.greenFlag();
+    harness.control.pause();
+
+    let sawThenBranch = false;
+    let previousX = harness.findSprite().x ?? 0;
+    for (let i = 0; i < 80; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+      const x = harness.findSprite().x ?? 0;
+      if (x < previousX - 50 || x <= minX + 1) {
+        sawThenBranch = true;
+        break;
+      }
+      previousX = x;
+    }
+    expect(sawThenBranch, "if-true goto should teleport toward the left fence").toBe(
+      true,
+    );
+    expect(harness.findSprite().x).toBeGreaterThanOrEqual(minX);
+    expect(
+      harness.journal.cloneEntries().some(entry => entry.kind === "spriteXY"),
+      "fenced goto should be journaled",
+    ).toBe(true);
+    stepUntilRewindReady(harness);
+    assertRewindReady(harness);
 
     const result = await harness.rewind.rewindFrame();
     expect(result.ok, result.error ?? undefined).toBe(true);
