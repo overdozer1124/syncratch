@@ -260,6 +260,26 @@ describe("execution rewind scratch-vm integration", () => {
     harness.control.dispose();
   }, 20_000);
 
+  it("keeps rewind available after free-running forever if-goto frames", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    harness.vm.greenFlag();
+    for (let i = 0; i < 70; i += 1) {
+      harness.vm.runtime._step?.();
+    }
+    harness.control.pause();
+    const snapshot = harness.rewind.getSnapshot();
+    expect(snapshot.rewindError, snapshot.rewindError ?? undefined).toBeNull();
+    expect(snapshot.canScrub).toBe(true);
+    expect(snapshot.scrubDepthBack).toBeGreaterThan(0);
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 20_000);
+
   it("rewinds forever move + if x>240 goto while paused", async () => {
     const harness = await createRewindVmHarness({foreverIfGoto: true});
     harness.vm.greenFlag();
