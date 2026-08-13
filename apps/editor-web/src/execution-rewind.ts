@@ -378,7 +378,6 @@ export function installExecutionRewind(
     playbackFrameIndex = 0;
     journal.clear();
     cloneOrderRegistry.reset();
-    options.onTraceTruncate?.(0);
     options.onHistoryCleared?.("replay-failure");
   };
 

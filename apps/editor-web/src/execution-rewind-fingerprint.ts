@@ -263,16 +263,14 @@ function normalizeStackFrame(
   }
 }
 
-function readCurrentBlock(thread: RewindThreadLike): string | null {
-  let id: unknown = thread.blockGlowInFrame;
-  if (typeof id !== "string" || !id) {
-    try {
-      id = thread.peekStack?.();
-    } catch {
-      id = null;
-    }
+/** Stack top for fingerprints — ignore blockGlowInFrame (UI glow can diverge on replay). */
+function readStackTopBlock(thread: RewindThreadLike): string | null {
+  try {
+    const id = thread.peekStack?.();
+    return typeof id === "string" && id ? id : null;
+  } catch {
+    return null;
   }
-  return typeof id === "string" && id ? id : null;
 }
 
 function hashStackFrames(
@@ -323,7 +321,7 @@ function hashThreadState(
     hash: [
       stableTargetIdentity(target ?? {}),
       thread.topBlock ?? "",
-      readCurrentBlock(thread) ?? "",
+      readStackTopBlock(thread) ?? "",
       thread.status ?? "",
       thread.isKilled ? "1" : "0",
       stack,
