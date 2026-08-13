@@ -80,7 +80,7 @@ describe("execution rewind scratch-vm integration", () => {
     const expectedX = harness.findSprite().x;
 
     const result = await harness.rewind.replayToFrame(targetFrame);
-    expect(result.ok).toBe(true);
+    expect(result.ok, result.error ?? undefined).toBe(true);
     expect(harness.findSprite().x).toBe(expectedX);
 
     harness.rewind.dispose();
@@ -152,7 +152,7 @@ describe("execution rewind scratch-vm integration", () => {
     }));
 
     const result = await harness.rewind.replayToFrame(targetFrame);
-    expect(result.ok).toBe(true);
+    expect(result.ok, result.error ?? undefined).toBe(true);
 
     const positionsAfter = harness.vm.runtime.targets
       .filter(target => (target as {isStage?: boolean}).isStage === false)
@@ -217,6 +217,68 @@ describe("execution rewind scratch-vm integration", () => {
     harness.trace.dispose();
     harness.control.dispose();
   }, 15_000);
+
+  it("replays every recorded frame for forever move + if x>240 goto", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    harness.vm.greenFlag();
+    harness.control.pause();
+    for (let i = 0; i < 12; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+    }
+    const frames = harness.rewind.getFrames();
+    expect(frames.length).toBeGreaterThanOrEqual(9);
+
+    for (let target = 0; target < frames.length; target += 1) {
+      const result = await harness.rewind.replayToFrame(target);
+      expect(result.ok, `frame ${target}: ${result.error ?? ""}`).toBe(true);
+    }
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 30_000);
+
+  it("rewinds after a running segment then paused stepping", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    harness.vm.greenFlag();
+    for (let i = 0; i < 6; i += 1) {
+      harness.vm.runtime._step?.();
+    }
+    harness.control.pause();
+    for (let i = 0; i < 6; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+    }
+    expect(harness.rewind.getFrames().length).toBeGreaterThanOrEqual(9);
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 20_000);
+
+  it("rewinds forever move + if x>240 goto while paused", async () => {
+    const harness = await createRewindVmHarness({foreverIfGoto: true});
+    harness.vm.greenFlag();
+    harness.control.pause();
+    for (let i = 0; i < 12; i += 1) {
+      harness.control.stepFrame();
+      harness.vm.runtime._step?.();
+    }
+    expect(harness.rewind.getFrames().length).toBeGreaterThanOrEqual(9);
+    expect(harness.trace.trace.size()).toBeGreaterThan(0);
+
+    const result = await harness.rewind.rewindFrame();
+    expect(result.ok, result.error ?? undefined).toBe(true);
+    expect(harness.rewind.getSnapshot().rewindError).toBeNull();
+
+    harness.rewind.dispose();
+    harness.trace.dispose();
+    harness.control.dispose();
+  }, 20_000);
 
   it("does not stack wrappers when controllers are reinstalled", async () => {
     const harness = await createRewindVmHarness({steps: [10]});
