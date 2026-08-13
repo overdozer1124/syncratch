@@ -80,19 +80,16 @@ function normalizePrimitive(value: unknown): unknown {
     typeof value === "boolean"
   ) {
     if (typeof value === "number" && !Number.isFinite(value)) {
-      throw new StackFrameNormalizationError("Non-finite number in stack frame");
+      return null;
     }
     return value;
   }
-  throw new StackFrameNormalizationError(
-    `Unsupported primitive type: ${typeof value}`,
-  );
+  return null;
 }
 
 function normalizeJsonValue(value: unknown, depth = 0): unknown {
-  if (depth > 8) {
-    throw new StackFrameNormalizationError("Stack frame value is too deep");
-  }
+  if (depth > 8) return null;
+  if (value === undefined) return null;
   if (value === null) return null;
   if (
     typeof value === "string" ||
@@ -101,27 +98,28 @@ function normalizeJsonValue(value: unknown, depth = 0): unknown {
   ) {
     return normalizePrimitive(value);
   }
+  if (typeof value === "function") return null;
   if (Array.isArray(value)) {
     return value.map(entry => normalizeJsonValue(entry, depth + 1));
   }
   if (isPlainObject(value)) {
     const normalized: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort()) {
-      normalized[key] = normalizeJsonValue(value[key], depth + 1);
+      const next = value[key];
+      if (typeof next === "function") continue;
+      normalized[key] = normalizeJsonValue(next, depth + 1);
     }
     return normalized;
   }
-  throw new StackFrameNormalizationError(
-    `Unsupported stack frame value type: ${typeof value}`,
-  );
+  return null;
 }
 
 function normalizeTimerContext(
   context: Record<string, unknown>,
-): {__waitTimer: {duration: number; pending: boolean}} {
+): {__waitTimer: {duration: number; pending: boolean}} | null {
   const duration = context.duration;
   if (typeof duration !== "number" || !Number.isFinite(duration)) {
-    throw new StackFrameNormalizationError("Invalid wait timer duration");
+    return null;
   }
 
   const timer = context.timer as
@@ -146,14 +144,10 @@ function normalizeTimerContext(
 }
 
 function normalizeVariableReference(value: unknown): unknown {
-  if (!isPlainObject(value)) {
-    throw new StackFrameNormalizationError("Invalid variable reference");
-  }
+  if (!isPlainObject(value)) return null;
   const name = value.name;
   const type = value.type;
-  if (typeof name !== "string" || typeof type !== "string") {
-    throw new StackFrameNormalizationError("Variable reference is incomplete");
-  }
+  if (typeof name !== "string" || typeof type !== "string") return null;
   return {
     __variableRef: {
       name,
@@ -166,9 +160,7 @@ function normalizeExecutionContext(
   context: Record<string, unknown> | null | undefined,
 ): unknown {
   if (context === null || context === undefined) return null;
-  if (!isPlainObject(context)) {
-    throw new StackFrameNormalizationError("executionContext must be an object");
-  }
+  if (!isPlainObject(context)) return null;
 
   const normalized: Record<string, unknown> = {};
   for (const key of Object.keys(context).sort()) {
@@ -177,22 +169,24 @@ function normalizeExecutionContext(
       continue;
     }
     if (value === undefined || typeof value === "function") {
-      throw new StackFrameNormalizationError(
-        `Unsupported executionContext entry: ${key}`,
-      );
+      continue;
     }
     if (key === "duration" && "timer" in context) {
       continue;
     }
     if (isPlainObject(value) && typeof value.name === "string" && "type" in value) {
-      normalized[key] = normalizeVariableReference(value);
+      const ref = normalizeVariableReference(value);
+      if (ref) normalized[key] = ref;
       continue;
     }
     normalized[key] = normalizeJsonValue(value);
   }
 
   if ("timer" in context) {
-    normalized.__waitTimer = normalizeTimerContext(context).__waitTimer;
+    const waitTimer = normalizeTimerContext(context);
+    if (waitTimer) {
+      normalized.__waitTimer = waitTimer.__waitTimer;
+    }
   }
 
   return normalized;
@@ -200,19 +194,15 @@ function normalizeExecutionContext(
 
 function normalizeStackFrame(
   frame: RewindStackFrameLike,
-): NormalizedStackFrame | null {
-  try {
-    return {
-      warpMode: Boolean(frame.warpMode),
-      isLoop: Boolean(frame.isLoop ?? frame.loop),
-      params: frame.params === null || frame.params === undefined
-        ? null
-        : normalizeJsonValue(frame.params),
-      executionContext: normalizeExecutionContext(frame.executionContext),
-    };
-  } catch {
-    return null;
-  }
+): NormalizedStackFrame {
+  return {
+    warpMode: Boolean(frame.warpMode),
+    isLoop: Boolean(frame.isLoop ?? frame.loop),
+    params: frame.params === null || frame.params === undefined
+      ? null
+      : normalizeJsonValue(frame.params),
+    executionContext: normalizeExecutionContext(frame.executionContext),
+  };
 }
 
 function hashStackFrames(
@@ -222,24 +212,27 @@ function hashStackFrames(
     return {hash: "", supported: true};
   }
 
-  const normalized: NormalizedStackFrame[] = [];
-  for (const frame of frames) {
-    const next = normalizeStackFrame(frame);
-    if (!next) return {hash: "", supported: false};
-    normalized.push(next);
-  }
-
+  const normalized = frames.map(frame => normalizeStackFrame(frame));
   return {
     hash: normalized.map(frame => stableJson(frame)).join(";"),
     supported: true,
   };
 }
 
+function hashVariableState(variable: unknown): string {
+  if (!isPlainObject(variable)) return stableJson(normalizeJsonValue(variable));
+  return stableJson({
+    name: typeof variable.name === "string" ? variable.name : "",
+    type: typeof variable.type === "string" ? variable.type : "",
+    value: normalizeJsonValue(variable.value),
+  });
+}
+
 function hashTargetState(target: RewindTargetLike): string {
   const vars = target.variables ?? {};
   const sortedVars = Object.keys(vars)
     .sort()
-    .map(key => `${key}=${stableJson(vars[key])}`)
+    .map(key => `${key}=${hashVariableState(vars[key])}`)
     .join(",");
   return [
     stableTargetIdentity(target),

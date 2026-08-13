@@ -292,12 +292,17 @@ describe("normalizeStackFrame", () => {
     ).toEqual(normalizeStackFrame(base));
   });
 
-  it("returns null for non-normalizable executionContext", () => {
+  it("skips function-valued executionContext entries instead of failing", () => {
     expect(
       normalizeStackFrame({
-        executionContext: {callback: () => undefined},
+        executionContext: {callback: () => undefined, loopCounter: 3},
       }),
-    ).toBeNull();
+    ).toEqual({
+      warpMode: false,
+      isLoop: false,
+      params: null,
+      executionContext: {loopCounter: 3},
+    });
   });
 
   it("normalizes wait timer executionContext without the Timer object", () => {
@@ -422,17 +427,17 @@ describe("computeFrameFingerprint", () => {
     expect(before.fingerprint).not.toEqual(after.fingerprint);
   });
 
-  it("marks unsupported frames when stack frames cannot be normalized", () => {
+  it("stays supported when stack frames contain functions", () => {
     const {runtime} = makeSimulatedRuntime([]);
     runtime.threads![0]!.stackFrames = [{
-      executionContext: {fn: () => undefined},
+      executionContext: {fn: () => undefined, loopCounter: 1},
     }];
     const result = computeFrameFingerprint({
       frameIndex: 0,
       runtime,
       blockGraphHash: "0",
     });
-    expect(result.supported).toBe(false);
+    expect(result.supported).toBe(true);
   });
 
   it("ignores blockGlowInFrame when it differs from peekStack", () => {
@@ -982,7 +987,7 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
-  it("sets canRewind=false when unsupported stack frames are recorded", () => {
+  it("keeps rewind available when stack frames contain functions", () => {
     const {runtime} = makeSimulatedRuntime([]);
     const handle = installExecutionRewind(
       {runtime},
@@ -994,9 +999,10 @@ describe("installExecutionRewind", () => {
       executionContext: {fn: () => undefined},
     }];
     runtime._step!();
+    runtime._step!();
 
-    expect(handle.getSnapshot().canRewind).toBe(false);
-    expect(handle.getSnapshot().rewindError).toMatch(/巻き戻せません/);
+    expect(handle.getSnapshot().rewindError).toBeNull();
+    expect(handle.getSnapshot().canRewind).toBe(true);
     handle.dispose();
   });
 
