@@ -195,6 +195,208 @@ describe("admin rosters ui", () => {
     ).toBe(true);
   });
 
+  it("downloads a header-only CSV template when the roster has no students", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({ok: true, students: []}),
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+    const createObjectUrl = vi.fn(() => "blob:roster-template");
+    const revokeObjectUrl = vi.fn();
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = createObjectUrl;
+        static revokeObjectURL = revokeObjectUrl;
+      },
+    );
+    let downloadedAnchor: HTMLAnchorElement | null = null;
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function () {
+      downloadedAnchor = this;
+    });
+
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    const exportButton = [...pane!.querySelectorAll("button")].find(
+      button => button.textContent === "CSV で書き出す",
+    );
+    exportButton!.click();
+
+    await vi.waitFor(() => expect(createObjectUrl).toHaveBeenCalledOnce());
+    const csvBlob = createObjectUrl.mock.calls[0]![0] as Blob;
+    const csvText = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result)));
+      reader.addEventListener("error", () => reject(reader.error));
+      reader.readAsText(csvBlob);
+    });
+    expect(csvText).toBe(
+      "生徒コード,氏名,出席番号,ログイン名,Google メール,グループ,有効",
+    );
+    expect(downloadedAnchor).not.toBeNull();
+    expect((downloadedAnchor as HTMLAnchorElement | null)?.download).toBe("3A.csv");
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:roster-template");
+  });
+
+  it("shows an error when CSV export cannot load the roster students", async () => {
+    let studentRequestCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          studentRequestCount += 1;
+          return {
+            ok: true,
+            json: async () =>
+              studentRequestCount === 1
+                ? {ok: true, students: []}
+                : {ok: false, message: "名簿を取得できませんでした。"},
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+    const saveFooter = createAdminSaveFooter();
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter,
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    const exportButton = [...pane!.querySelectorAll("button")].find(
+      button => button.textContent === "CSV で書き出す",
+    );
+    exportButton!.click();
+
+    await vi.waitFor(() => {
+      expect(saveFooter.root.textContent).toContain("名簿を取得できませんでした。");
+    });
+  });
+
+  it("shows a fallback error when CSV export throws", async () => {
+    let studentRequestCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          studentRequestCount += 1;
+          if (studentRequestCount === 1) {
+            return {
+              ok: true,
+              json: async () => ({ok: true, students: []}),
+            };
+          }
+          throw new Error("network unavailable");
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+    const saveFooter = createAdminSaveFooter();
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter,
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    const exportButton = [...pane!.querySelectorAll("button")].find(
+      button => button.textContent === "CSV で書き出す",
+    );
+    exportButton!.click();
+
+    await vi.waitFor(() => {
+      expect(saveFooter.root.textContent).toContain(
+        "CSV の書き出しに失敗しました。",
+      );
+    });
+  });
+
   it("shows open sheet button when spreadsheet id is bound", async () => {
     vi.stubGlobal(
       "fetch",
