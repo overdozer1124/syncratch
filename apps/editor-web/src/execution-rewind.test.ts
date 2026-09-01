@@ -272,18 +272,37 @@ describe("normalizeStackFrame", () => {
       isLoop: true,
       params: {count: 1},
       executionContext: {loopCounter: 2},
-      waitingReporter: "block-a",
-      justReported: 5,
-      reported: [{opCached: "block-a", inputValue: 5}],
     });
   });
 
-  it("returns null for non-normalizable executionContext", () => {
+  it("ignores transient reporter fields that differ at frame boundaries", () => {
+    const base = {
+      warpMode: false,
+      isLoop: false,
+      params: null,
+      executionContext: {loopCounter: 1},
+    };
     expect(
       normalizeStackFrame({
-        executionContext: {callback: () => undefined},
+        ...base,
+        waitingReporter: "gt",
+        justReported: 250,
+        reported: [{opCached: "xpos", inputValue: 250}],
       }),
-    ).toBeNull();
+    ).toEqual(normalizeStackFrame(base));
+  });
+
+  it("skips function-valued executionContext entries instead of failing", () => {
+    expect(
+      normalizeStackFrame({
+        executionContext: {callback: () => undefined, loopCounter: 3},
+      }),
+    ).toEqual({
+      warpMode: false,
+      isLoop: false,
+      params: null,
+      executionContext: {loopCounter: 3},
+    });
   });
 
   it("normalizes wait timer executionContext without the Timer object", () => {
@@ -408,17 +427,37 @@ describe("computeFrameFingerprint", () => {
     expect(before.fingerprint).not.toEqual(after.fingerprint);
   });
 
-  it("marks unsupported frames when stack frames cannot be normalized", () => {
+  it("stays supported when stack frames contain functions", () => {
     const {runtime} = makeSimulatedRuntime([]);
     runtime.threads![0]!.stackFrames = [{
-      executionContext: {fn: () => undefined},
+      executionContext: {fn: () => undefined, loopCounter: 1},
     }];
     const result = computeFrameFingerprint({
       frameIndex: 0,
       runtime,
       blockGraphHash: "0",
     });
-    expect(result.supported).toBe(false);
+    expect(result.supported).toBe(true);
+  });
+
+  it("ignores blockGlowInFrame when it differs from peekStack", () => {
+    const {runtime} = makeSimulatedRuntime([]);
+    const origin = makeOrigin(runtime);
+    const thread = runtime.threads![0]!;
+    thread.blockGlowInFrame = "glow-only";
+    thread.peekStack = () => "move";
+    const withGlow = computeFrameFingerprint({
+      frameIndex: 0,
+      runtime,
+      blockGraphHash: origin.blockGraphHash,
+    });
+    thread.blockGlowInFrame = "other-glow";
+    const withOtherGlow = computeFrameFingerprint({
+      frameIndex: 0,
+      runtime,
+      blockGraphHash: origin.blockGraphHash,
+    });
+    expect(withGlow.fingerprint).toBe(withOtherGlow.fingerprint);
   });
 
   it("hashes visible block graphs with stable target identity", () => {
@@ -948,7 +987,7 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
-  it("sets canRewind=false when unsupported stack frames are recorded", () => {
+  it("keeps rewind available when stack frames contain functions", () => {
     const {runtime} = makeSimulatedRuntime([]);
     const handle = installExecutionRewind(
       {runtime},
@@ -960,9 +999,10 @@ describe("installExecutionRewind", () => {
       executionContext: {fn: () => undefined},
     }];
     runtime._step!();
+    runtime._step!();
 
-    expect(handle.getSnapshot().canRewind).toBe(false);
-    expect(handle.getSnapshot().rewindError).toMatch(/巻き戻せません/);
+    expect(handle.getSnapshot().rewindError).toBeNull();
+    expect(handle.getSnapshot().canRewind).toBe(true);
     handle.dispose();
   });
 
@@ -1049,7 +1089,7 @@ describe("installExecutionRewind", () => {
     handle.dispose();
   });
 
-  it("invalidates trace and frame history on replay failure without restarting green flag", async () => {
+  it("invalidates frame history on replay failure without clearing trace", async () => {
     const sim = makeSimulatedRuntime([2, 4]);
     const journal = new RewindJournal();
     let truncatedTo = -1;
@@ -1092,7 +1132,7 @@ describe("installExecutionRewind", () => {
     const result = await handle.rewindFrame();
     expect(result.ok).toBe(false);
     expect(handle.getFrames()).toHaveLength(0);
-    expect(truncatedTo).toBe(0);
+    expect(truncatedTo).toBe(-1);
     expect(clearedReason).toBe("replay-failure");
     // replayToFrame restarts green-flag hats once while loading origin; recovery
     // must not trigger a second restart after the failed replay.

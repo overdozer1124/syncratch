@@ -8,6 +8,7 @@ import {
   ADMIN_AUTH_GOOGLE_PATH,
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
   ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH,
+  ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH,
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
   ADMIN_GOOGLE_OAUTH_START_PATH,
 } from "@blocksync/classroom-access";
@@ -566,5 +567,127 @@ describe("admin google oauth via collab-host", () => {
       scope: DRIVE_FILE_SCOPE,
     });
     expect(body).not.toHaveProperty("credentialId");
+  });
+
+  it("returns picker access token when teacher credential is connected", async () => {
+    const root = mkdtempSync(join(tmpdir(), "admin-google-picker-token-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-1"),
+    };
+    const sessions = createMemoryAdminSessionStore();
+    const db = openAdminDb(dbPath);
+    const admin = db.upsertAdminFromLogin({
+      subject: "google-sub-1",
+      email: "teacher@school.example",
+      displayName: null,
+    });
+    createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys()).upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      accessToken: "picker-access-token",
+      accessExpiresAt: Date.now() + 3600_000,
+      nowIso: new Date().toISOString(),
+    });
+
+    process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID = "test-key";
+    process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON = JSON.stringify({
+      "test-key": Buffer.alloc(32, 7).toString("base64"),
+    });
+    process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+      admin: {
+        db,
+        config,
+        sessions,
+        classroomFlags: {
+          classroomRosterEnabled: true,
+          adminGoogleCredentialEnabled: true,
+        },
+        adminGoogleOAuthEnabled: true,
+      },
+    });
+
+    const cookieJar = {cookie: "", csrfToken: ""};
+    await loginAdmin(handle.url, cookieJar, config);
+
+    const tokenRes = await fetch(
+      new URL(ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH, handle.url),
+      {headers: {cookie: cookieJar.cookie}},
+    );
+    expect(tokenRes.status).toBe(200);
+    expect(await tokenRes.json()).toMatchObject({
+      ok: true,
+      accessToken: "picker-access-token",
+    });
+  });
+
+  it("picker token returns 409 when credential is missing", async () => {
+    const root = mkdtempSync(join(tmpdir(), "admin-google-picker-missing-"));
+    writeFileSync(join(root, "index.html"), "<html></html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-1"),
+    };
+    const sessions = createMemoryAdminSessionStore();
+    const db = openAdminDb(dbPath);
+    db.upsertAdminFromLogin({
+      subject: "google-sub-1",
+      email: "teacher@school.example",
+      displayName: null,
+    });
+
+    process.env.SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID = "test-key";
+    process.env.SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON = JSON.stringify({
+      "test-key": Buffer.alloc(32, 7).toString("base64"),
+    });
+    process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
+    process.env.GOOGLE_CLIENT_SECRET = "secret";
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+      admin: {
+        db,
+        config,
+        sessions,
+        classroomFlags: {
+          classroomRosterEnabled: true,
+          adminGoogleCredentialEnabled: true,
+        },
+        adminGoogleOAuthEnabled: true,
+      },
+    });
+
+    const cookieJar = {cookie: "", csrfToken: ""};
+    await loginAdmin(handle.url, cookieJar, config);
+
+    const tokenRes = await fetch(
+      new URL(ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH, handle.url),
+      {headers: {cookie: cookieJar.cookie}},
+    );
+    expect(tokenRes.status).toBe(409);
+    expect(await tokenRes.json()).toMatchObject({
+      ok: false,
+      code: "CREDENTIAL_MISSING",
+    });
   });
 });

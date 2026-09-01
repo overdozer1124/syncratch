@@ -1,4 +1,7 @@
 import {
+  ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH,
+  ADMIN_GOOGLE_OAUTH_SESSION_PATH,
+  ADMIN_POLICIES_PATH,
   adminPolicySubmissionsPath,
   adminSubmissionContentPath,
   adminSubmissionPath,
@@ -12,14 +15,242 @@ import {
   type AdminClassroomFlags,
 } from "./admin-classroom-flags.js";
 import {
+  adminFetch,
   createBadge,
+  createSegmentControl,
   el,
   emptyValue,
   formatShortTimestamp,
+  type AdminSaveFooterController,
 } from "./admin-console-shared.js";
+import {pickTeacherDriveFolder} from "./admin-google-picker.js";
 
 export type {AdminClassroomFlags};
 export {fetchAdminClassroomFlags};
+
+function truncateFolderId(folderId: string | null): string {
+  if (!folderId) return "未設定";
+  if (folderId.length <= 16) return folderId;
+  return `${folderId.slice(0, 8)}…${folderId.slice(-6)}`;
+}
+
+export function mountPolicySubmissionSettings(
+  policy: ClassroomPolicy,
+  flags: AdminClassroomFlags | null,
+  getCsrf: () => string,
+  saveFooter: AdminSaveFooterController,
+  onSaved: () => Promise<void>,
+  pickFolder: (accessToken: string) => Promise<string | null> = pickTeacherDriveFolder,
+): HTMLElement {
+  const panel = el("div", {
+    class: "admin2-card admin-submission-settings",
+    "data-testid": "admin-submission-settings",
+  });
+  panel.append(
+    el("div", {class: "admin2-card-header"}, undefined),
+  );
+  panel.querySelector(".admin2-card-header")!.append(
+    el("h4", {class: "admin2-card-title"}, "提出設定"),
+  );
+
+  const body = el("div", {class: "admin2-card-body"});
+  const feedback = el("p", {
+    class: "admin2-feedback admin-submission-settings-feedback",
+    hidden: "true",
+  });
+  panel.append(body, feedback);
+
+  if (!flags?.teacherDriveSubmissionEnabled) {
+    body.append(
+      el(
+        "p",
+        {class: "admin2-feedback"},
+        "提出機能はサーバー側で無効です（TEACHER_DRIVE_SUBMISSION）。",
+      ),
+    );
+    return panel;
+  }
+
+  const enabledRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  enabledRow.append(el("span", {class: "admin2-row-label"}, "提出"));
+  const enabledValue = el("div", {class: "admin2-row-value"});
+  enabledRow.append(enabledValue);
+
+  const folderRow = el("div", {class: "admin2-row admin2-row-label-policy"});
+  folderRow.append(el("span", {class: "admin2-row-label"}, "Drive フォルダ"));
+  const folderValue = el("div", {class: "admin2-row-value admin-submission-folder-value"});
+  const pickFolderBtn = el(
+    "button",
+    {type: "button", class: "admin2-btn admin2-btn-secondary admin2-btn-sm"},
+    "Drive フォルダを選ぶ",
+  );
+  folderRow.append(folderValue, pickFolderBtn);
+  body.append(
+    enabledRow,
+    folderRow,
+    el(
+      "p",
+      {style: "font-size:11px;color:#5b708a;margin:6px 0 0"},
+      "生徒の SB3 は教員 Google 連携で選んだフォルダに保存されます。提出 ON にはフォルダ指定が必要です。",
+    ),
+  );
+
+  let submissionEnabled = policy.submission.enabled;
+  let folderId = policy.submissionDriveFolderId;
+
+  function showFeedback(message: string, isError = false): void {
+    feedback.hidden = false;
+    feedback.textContent = message;
+    feedback.className = `admin2-feedback admin-submission-settings-feedback${
+      isError ? " is-error" : ""
+    }`;
+  }
+
+  function hideFeedback(): void {
+    feedback.hidden = true;
+    feedback.textContent = "";
+    feedback.className = "admin2-feedback admin-submission-settings-feedback";
+  }
+
+  function renderFolderLabel(): void {
+    folderValue.replaceChildren(
+      el("span", {class: "is-mono"}, truncateFolderId(folderId)),
+    );
+  }
+
+  function renderEnabledSegment(): void {
+    enabledValue.replaceChildren(
+      createSegmentControl(
+        [
+          {label: "OFF", value: "off"},
+          {label: "ON", value: "on"},
+        ],
+        submissionEnabled ? "on" : "off",
+        value => {
+          if (value === "on" && !folderId) {
+            showFeedback("提出を ON にする前に Drive フォルダを選んでください。", true);
+            renderEnabledSegment();
+            return;
+          }
+          submissionEnabled = value === "on";
+          renderEnabledSegment();
+          void saveSubmissionSettings();
+        },
+      ),
+      el(
+        "span",
+        {style: "font-size:11px;color:#5b708a"},
+        submissionEnabled
+          ? "名簿ログインが必須のクラスで生徒が SB3 を提出できます。"
+          : "提出は無効です。",
+      ),
+    );
+  }
+
+  async function ensureGoogleConnected(): Promise<boolean> {
+    const session = await adminFetch<{
+      ok: boolean;
+      connected?: boolean;
+      googleEmail?: string;
+    }>(ADMIN_GOOGLE_OAUTH_SESSION_PATH);
+    if (!session.ok || !session.connected) {
+      showFeedback(
+        "教員 Google 連携が必要です。アカウント画面から Google を接続してください。",
+        true,
+      );
+      return false;
+    }
+    return true;
+  }
+
+  async function saveSubmissionSettings(
+    nextFolderId = folderId,
+  ): Promise<void> {
+    hideFeedback();
+    const prevEnabled = policy.submission.enabled;
+    const prevFolderId = policy.submissionDriveFolderId;
+    const res = await adminFetch<{ok: boolean; message?: string; code?: string}>(
+      `${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`,
+      {
+        method: "PATCH",
+        csrfToken: getCsrf(),
+        body: JSON.stringify({
+          submission: {enabled: submissionEnabled},
+          submissionDriveFolderId: nextFolderId,
+        }),
+      },
+    );
+    if (!res.ok) {
+      submissionEnabled = prevEnabled;
+      folderId = prevFolderId;
+      renderEnabledSegment();
+      renderFolderLabel();
+      const message =
+        res.code === "SUBMISSION_REQUIRES_FOLDER"
+          ? "提出 ON には Drive フォルダの指定が必要です。"
+          : res.message || "提出設定の保存に失敗しました。";
+      saveFooter.setError(message);
+      showFeedback(message, true);
+      return;
+    }
+    saveFooter.pushUndo(async () => {
+      await adminFetch(`${ADMIN_POLICIES_PATH}/${encodeURIComponent(policy.policyId)}`, {
+        method: "PATCH",
+        csrfToken: getCsrf(),
+        body: JSON.stringify({
+          submission: {enabled: prevEnabled},
+          submissionDriveFolderId: prevFolderId,
+        }),
+      });
+      await onSaved();
+    });
+    policy.submission.enabled = submissionEnabled;
+    policy.submissionDriveFolderId = nextFolderId;
+    folderId = nextFolderId;
+    renderFolderLabel();
+    saveFooter.setSaved();
+    await onSaved();
+  }
+
+  pickFolderBtn.addEventListener("click", () => {
+    void (async () => {
+      hideFeedback();
+      if (!(await ensureGoogleConnected())) return;
+      const tokenRes = await adminFetch<{
+        ok: boolean;
+        accessToken?: string;
+        code?: string;
+        message?: string;
+      }>(ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH);
+      if (!tokenRes.ok || !tokenRes.accessToken) {
+        const message =
+          tokenRes.code === "CREDENTIAL_MISSING"
+            ? "教員 Google 連携が切れています。再接続してください。"
+            : tokenRes.message || "Drive Picker 用トークンを取得できませんでした。";
+        showFeedback(message, true);
+        return;
+      }
+      let picked: string | null;
+      try {
+        picked = await pickFolder(tokenRes.accessToken);
+      } catch (error) {
+        showFeedback(
+          error instanceof Error ? error.message : "Drive フォルダの選択に失敗しました。",
+          true,
+        );
+        return;
+      }
+      if (!picked) return;
+      folderId = picked;
+      renderFolderLabel();
+      await saveSubmissionSettings(picked);
+    })();
+  });
+
+  renderEnabledSegment();
+  renderFolderLabel();
+  return panel;
+}
 
 function formatBytes(sizeBytes: number): string {
   if (sizeBytes < 1024) return `${sizeBytes} B`;

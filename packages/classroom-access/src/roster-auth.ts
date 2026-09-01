@@ -84,3 +84,10 @@ export function studentAuthMethodIncludesGoogle(method: StudentAuthMethod): bool
 export function studentAuthMethodIncludesLocal(method: StudentAuthMethod): boolean {
   return method === "local" || method === "google-or-local";
 }
+
+/** 6-digit roster ID: {YY}{grade}{class}{attendance2digits}, e.g. 261101. */
+export const ROSTER_STUDENT_CODE_PATTERN = /^\d{6}$/;
+
+export function isCanonicalRosterStudentCode(code: string): boolean {
+  return ROSTER_STUDENT_CODE_PATTERN.test(code.trim());
+}

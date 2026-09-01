@@ -6,6 +6,7 @@ import {parse} from "csv-parse/sync";
 import {
   ROSTER_SHEET_COLUMNS,
   canonicalRosterSheetHeader,
+  isCanonicalRosterStudentCode,
   normalizeGoogleEmail,
   type RosterImportPreviewCategory,
   type RosterImportPreviewRow,
@@ -109,6 +110,13 @@ function normalizeRow(
     issues.push({
       code: "MISSING_STUDENT_CODE",
       message: "student_code is required",
+      field: "student_code",
+    });
+  } else if (!isCanonicalRosterStudentCode(studentCode)) {
+    issues.push({
+      code: "STUDENT_CODE_FORMAT",
+      message:
+        "student_code should be 6 digits ({YY}{grade}{class}{attendance}), e.g. 261101",
       field: "student_code",
     });
   }

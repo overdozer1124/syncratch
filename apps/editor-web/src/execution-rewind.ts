@@ -16,6 +16,9 @@ import {
   installEdgeBounceCapture,
 } from "./execution-rewind-edge-bounce.js";
 import {
+  installSpriteXYCapture,
+} from "./execution-rewind-sprite-xy.js";
+import {
   installBroadcastOrderCapture,
 } from "./execution-rewind-broadcast-order.js";
 import {
@@ -244,6 +247,11 @@ export function installExecutionRewind(
     runtime: runtime as import("./execution-rewind-edge-bounce.js").EdgeBounceRuntimeLike,
     journal,
   });
+  const spriteXYCapture = installSpriteXYCapture({
+    runtime: runtime as import("./execution-rewind-sprite-xy.js").SpriteXYRuntimeLike,
+    journal,
+  });
+  const disposeSpriteXYCapture = spriteXYCapture.dispose;
   const disposePromiseResolveCapture = installPromiseResolveCapture({
     runtime: runtime as import("./execution-rewind-promise-resolve.js").PromiseCaptureRuntimeLike,
     journal,
@@ -263,6 +271,7 @@ export function installExecutionRewind(
     }
     nextFrameIndex = 0;
     playbackFrameIndex = 0;
+    spriteXYCapture.ensureWrapped();
   };
   runtime.on?.("PROJECT_START", onProjectStart);
 
@@ -288,6 +297,7 @@ export function installExecutionRewind(
     const journalStart = journal.size;
     const threadsBefore = countRunnableNonMonitorThreads(runtime);
     journal.beginRecord();
+    spriteXYCapture.ensureWrapped();
     let result: unknown;
     try {
       result = innerStep(...args);
@@ -378,7 +388,6 @@ export function installExecutionRewind(
     playbackFrameIndex = 0;
     journal.clear();
     cloneOrderRegistry.reset();
-    options.onTraceTruncate?.(0);
     options.onHistoryCleared?.("replay-failure");
   };
 
@@ -440,6 +449,7 @@ export function installExecutionRewind(
         step: () => innerStep(),
         restoreOrigin: options.restoreOrigin,
         getTraceSize: options.getTraceSize,
+        onRestored: spriteXYCapture.ensureWrapped,
       });
       if (!result.ok) {
         markUnsupported();
@@ -600,6 +610,7 @@ export function installExecutionRewind(
       disposeBackdropResolveCapture();
       disposeSequencerWorkCapture();
       disposeEdgeBounceCapture();
+      disposeSpriteXYCapture();
       disposeBroadcastOrderCapture();
       disposePromiseResolveCapture();
       disposeCloneOrderCapture();

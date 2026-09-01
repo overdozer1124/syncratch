@@ -32,6 +32,7 @@ export interface ReplayToFrameOptions {
   step: () => unknown;
   restoreOrigin: (origin: RewindOrigin) => Promise<void>;
   getTraceSize?: () => number;
+  onRestored?: () => void;
 }
 
 async function restoreRewindOriginState(
@@ -84,6 +85,7 @@ export async function replayToFrame(
     cloneOrderRegistry,
     step,
     restoreOrigin,
+    onRestored,
   } = options;
 
   const expected = validateTargetFrame(frames, targetFrameIndex);
@@ -104,6 +106,7 @@ export async function replayToFrame(
       runtime,
       cloneOrderRegistry,
     );
+    onRestored?.();
   } catch (error) {
     return {
       ok: false,

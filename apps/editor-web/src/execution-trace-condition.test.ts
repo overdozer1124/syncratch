@@ -3,7 +3,7 @@ import {
   describeBlockExpression,
   describeConditionExpression,
 } from "./execution-trace-condition.js";
-import {createTraceDescriptorContext, getTraceDescriptor} from "./execution-trace-format.js";
+import {createTraceDescriptorContext, describeTraceSnapshot, getTraceDescriptor} from "./execution-trace-format.js";
 import type {TraceBlockLike} from "./execution-trace-types.js";
 
 function blockMap(blocks: Record<string, TraceBlockLike>) {
@@ -92,5 +92,55 @@ describe("describeConditionExpression / control_if enrichControl", () => {
       branch: 0,
       conditionText: "x座標 > 50",
     });
+  });
+
+  it("keeps condition text after true branch pushes a substack", () => {
+    const blocks: Record<string, TraceBlockLike> = {
+      iff: {
+        opcode: "control_if",
+        inputs: {CONDITION: {name: "CONDITION", block: "gt"}},
+      },
+      gt: {
+        opcode: "operator_gt",
+        inputs: {
+          OPERAND1: {block: "x", shadow: "n1"},
+          OPERAND2: {block: "n2", shadow: "n2"},
+        },
+      },
+      x: {opcode: "motion_xposition"},
+      n2: {opcode: "math_number", fields: {NUM: {value: "240"}}},
+      goto: {opcode: "motion_gotoxy", inputs: {}},
+    };
+    const utilOnIf = {
+      thread: {peekStack: () => "iff"},
+      target: {blocks: {getBlock: blockMap(blocks)}},
+    };
+    const utilAfterBranch = {
+      thread: {peekStack: () => "goto"},
+      target: {blocks: {getBlock: blockMap(blocks)}},
+    };
+    const descriptor = getTraceDescriptor("control_if")!;
+    const before = descriptor.captureBefore!(
+      {CONDITION: true},
+      utilOnIf,
+      createTraceDescriptorContext(),
+    );
+    expect(before?.conditionText).toBe("x座標 > 240");
+
+    const control = descriptor.enrichControl!(
+      {CONDITION: true},
+      utilAfterBranch,
+      before,
+      createTraceDescriptorContext(),
+    );
+    expect(control).toEqual({
+      branch: 1,
+      conditionText: "x座標 > 240",
+    });
+    expect(describeTraceSnapshot({
+      opcode: "control_if",
+      args: {CONDITION: true},
+      control,
+    })).toBe('もし「x座標 > 240」→ はい。「なら」の中へ進んだ');
   });
 });

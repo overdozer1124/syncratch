@@ -63,6 +63,7 @@ import {
   saveLocalCollabProfile,
 } from "./local-collab-profile.js";
 import {
+  clearPendingHostRoomInvite,
   COLLAB_GOOGLE_CONNECT_HINT,
   COLLAB_GOOGLE_OAUTH_FAILED,
   COLLAB_GOOGLE_REQUIRED_FOR_CREATE,
@@ -73,8 +74,11 @@ import {
   markPendingHostCreate,
   peekPendingGuestInvite,
   peekPendingHostCreate,
+  peekPendingHostRoomInvite,
   savePendingGuestInvite,
+  savePendingHostRoomInvite,
   shouldGateCollabOnGoogle,
+  stageCollabInviteFromLocation,
 } from "./collab-oauth-gate.js";
 import {
   CLASSROOM_DRIVE_BLOCKED_STATUS,
@@ -295,6 +299,7 @@ import {
   resolveTraceEntries,
   type ExecutionTraceHandle,
 } from "./execution-trace.js";
+import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
 import {
   createRewindOrigin,
   installExecutionRewind,
@@ -369,8 +374,10 @@ import {
   showStudentSubmissionUi,
 } from "./student-submission-ui.js";
 import {
+  buildStudentAwareInviteUrl,
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
+  rememberStudentLinkToken,
   replaceStudentUrlWithoutToken,
   showStudentLinkError,
 } from "./student-surface.js";
@@ -672,6 +679,13 @@ const SURFACE_MODE = detectEditorSurfaceMode();
 ).__BLOCKSYNC_GUI_PUBLIC_PATH__ = scratchGuiBasePath();
 let studentPolicy: StudentPolicyView | null = null;
 let submissionPreviewMode = false;
+
+function collabInviteShareUrl(invite: CollabInvite): string {
+  if (SURFACE_MODE.kind === "student") {
+    return buildStudentAwareInviteUrl(window.location.href, invite);
+  }
+  return inviteUrl(window.location.href, invite);
+}
 if (SURFACE_MODE.kind !== "community" && appMain) {
   appMain.hidden = true;
 }
@@ -1364,6 +1378,9 @@ async function restoreRewindExecutionCheckpoint(
   }
   vm.runtime.stopAll?.();
   await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
+  restartGreenFlagHatThreads(
+    vm.runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
+  );
 }
 
 async function persistCurrent(session: ProjectSession): Promise<void> {
@@ -1916,18 +1933,22 @@ async function startCollaboration(
   collabSession = session;
   activeInvite = invite;
   collabFeedback.textContent = "";
-  collabInviteInput.value = inviteUrl(window.location.href, invite);
+  collabInviteInput.value = collabInviteShareUrl(invite);
   const started = session.start({host});
   if (!started.ok) {
     const summary = summarizePreflightIssues(started.issues);
     collabSession = null;
     activeInvite = null;
+    if (host) clearPendingHostRoomInvite();
     renderCollabIdle(summary.summary);
     collabStatus.title = summary.codes.length > 0
       ? `${summary.codes.join(", ")} / 作品の素材や内容を確認してください。`
       : "作品の素材や内容を確認してください。";
   } else {
     publishLocalCollabProfile();
+    if (host && activeInvite) {
+      savePendingHostRoomInvite(activeInvite);
+    }
   }
   closePanelFor(host ? createRoomButton : joinRoomButton);
 }
@@ -1937,7 +1958,7 @@ async function copyActiveInviteLink(options?: {
   panelFeedback?: boolean;
 }): Promise<boolean> {
   if (!activeInvite) return false;
-  const url = inviteUrl(window.location.href, activeInvite);
+  const url = collabInviteShareUrl(activeInvite);
   try {
     await navigator.clipboard.writeText(url);
     appToast.show(INVITE_LINK_COPIED_TOAST);
@@ -1982,7 +2003,7 @@ async function ensureGoogleBeforeCollab(intent: {
   } else if (intent.invite) {
     ensureInviteHashOnLocation(intent.invite);
     savePendingGuestInvite(intent.invite);
-    collabInviteInput.value = inviteUrl(window.location.href, intent.invite);
+    collabInviteInput.value = collabInviteShareUrl(intent.invite);
     renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_JOIN);
   }
 
@@ -2269,6 +2290,7 @@ function leaveRoom(): void {
   collaborationGeneration += 1;
   collabSession = null;
   activeInvite = null;
+  clearPendingHostRoomInvite();
   collabFeedback.textContent = "";
   renderCollabIdle();
 }
@@ -2857,7 +2879,8 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         refreshExecUi?.();
       },
       onHistoryCleared: reason => {
-        if (reason !== "green-flag") {
+        // Keep execution logs after a failed rewind; only scrub rewind metadata.
+        if (reason !== "green-flag" && reason !== "replay-failure") {
           executionTrace?.trace.clear();
         }
         refreshExecUi?.();
@@ -3028,8 +3051,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       execRewindButton.disabled = true;
       try {
         const result = await executionRewind.rewindFrame();
-        if (!result.ok && result.error) {
-          appToast.show(result.error);
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
         }
       } finally {
         render();
@@ -3047,8 +3072,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
         execStepButton.disabled = true;
         try {
           const result = await executionRewind!.scrubForwardOneFrame();
-          if (!result.ok && result.error) {
-            appToast.show(result.error);
+          if (!result.ok) {
+            const message =
+              executionRewind!.getSnapshot().rewindError ?? result.error;
+            if (message) appToast.show(message);
           }
         } finally {
           render();
@@ -3067,8 +3094,10 @@ function installExecutionControls(vmInstance: ScratchVm): void {
       execScrubInput.disabled = true;
       try {
         const result = await executionRewind.scrubToFrame(value);
-        if (!result.ok && result.error) {
-          appToast.show(result.error);
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
         }
       } finally {
         render();
@@ -3621,6 +3650,23 @@ async function boot(): Promise<void> {
   if (oauthReturn === "error") {
     appToast.show(COLLAB_GOOGLE_OAUTH_FAILED);
     renderCollabIdle(COLLAB_GOOGLE_OAUTH_FAILED);
+    if (!driveIntegration.isConnected()) {
+      return;
+    }
+  }
+
+  const hostRoomInvite = peekPendingHostRoomInvite();
+  if (hostRoomInvite && !collabSession) {
+    if (
+      shouldGateCollabOnGoogle(driveIntegration.getStatus()) &&
+      !driveIntegration.isConnected()
+    ) {
+      if (!(await ensureGoogleBeforeCollab({role: "host"}))) {
+        return;
+      }
+    }
+    renderCollabIdle();
+    await startCollaboration(hostRoomInvite, true);
     return;
   }
 
@@ -3642,7 +3688,7 @@ async function boot(): Promise<void> {
   const guestInvite = fragmentInvite ?? pendingGuest;
   if (guestInvite) {
     // Opening a shared invite URL joins after Google (when configured).
-    collabInviteInput.value = inviteUrl(window.location.href, guestInvite);
+    collabInviteInput.value = collabInviteShareUrl(guestInvite);
     ensureInviteHashOnLocation(guestInvite);
     renderCollabIdle();
     if (!(await ensureGoogleBeforeCollab({role: "guest", invite: guestInvite}))) {
@@ -3768,7 +3814,7 @@ connectGoogleButton.addEventListener("click", () => {
         consumePendingGuestInvite() ??
         decodeInviteFragment(window.location.hash);
       if (invite && !collabSession) {
-        collabInviteInput.value = inviteUrl(window.location.href, invite);
+        collabInviteInput.value = collabInviteShareUrl(invite);
         await startCollaboration(invite, false);
       }
     })
@@ -4636,9 +4682,12 @@ async function startEditorSurface(): Promise<void> {
         if (studentErrorShell) showStudentLinkError(studentErrorShell);
         return;
       }
+      rememberStudentLinkToken(SURFACE_MODE.token);
       replaceStudentUrlWithoutToken();
+      stageCollabInviteFromLocation();
       policy = await fetchStudentPolicyFromGrant();
     } else {
+      stageCollabInviteFromLocation();
       policy = await fetchStudentPolicyFromGrant();
     }
     if (!policy) {

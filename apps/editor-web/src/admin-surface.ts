@@ -35,7 +35,10 @@ import {
   renderRosterPane,
   type AdminPaneContext,
 } from "./admin-rosters-ui.js";
-import {mountPolicySubmissionsPanel} from "./admin-submissions-ui.js";
+import {
+  mountPolicySubmissionSettings,
+  mountPolicySubmissionsPanel,
+} from "./admin-submissions-ui.js";
 
 declare global {
   interface Window {
@@ -581,6 +584,16 @@ async function renderConsole(
       mountPolicyRosterControls(
         policy,
         rosters,
+        classroomFlags,
+        getCsrf,
+        saveFooter,
+        refreshAll,
+      ),
+    );
+
+    body.append(
+      mountPolicySubmissionSettings(
+        policy,
         classroomFlags,
         getCsrf,
         saveFooter,

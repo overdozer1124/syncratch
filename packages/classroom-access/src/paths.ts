@@ -12,6 +12,7 @@ export const ADMIN_STUDENTS_PATH = `${ADMIN_API_PREFIX}/students`;
 export const ADMIN_GOOGLE_OAUTH_PREFIX = `${ADMIN_API_PREFIX}/google/oauth`;
 export const ADMIN_GOOGLE_OAUTH_START_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/start`;
 export const ADMIN_GOOGLE_OAUTH_SESSION_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/session`;
+export const ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/picker-token`;
 export const ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH = `${ADMIN_GOOGLE_OAUTH_PREFIX}/disconnect`;
 export const ADMIN_GOOGLE_OAUTH_CALLBACK_PATH = "/oauth/admin-google/callback";
 /** Query param on /admin after OAuth redirect (`ok` | `error`). */

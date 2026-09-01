@@ -4,9 +4,13 @@ import {
   STUDENT_POLICY_PATH,
   createStudentLinkToken,
 } from "@blocksync/classroom-access";
+import {createInvite} from "@blocksync/collab-invite";
 import {
+  buildStudentAwareInviteUrl,
   exchangeStudentGrant,
   fetchStudentPolicyFromGrant,
+  readRememberedStudentLinkToken,
+  rememberStudentLinkToken,
   replaceStudentUrlWithoutToken,
 } from "./student-surface.js";
 
@@ -68,6 +72,29 @@ describe("student-surface grant flow", () => {
     );
     replaceStudentUrlWithoutToken("/");
     expect(replaceState).toHaveBeenCalledWith(null, "", "/s?x=1#invite-abc");
+    vi.unstubAllGlobals();
+  });
+
+  it("re-injects remembered classroom token when building collab invite URLs", () => {
+    const token = createStudentLinkToken(() => new Uint8Array(16).fill(7));
+    const invite = createInvite({
+      randomBytes: length => new Uint8Array(length).fill(9),
+    });
+    const storage = new Map<string, string>();
+    vi.stubGlobal("sessionStorage", {
+      setItem: (key: string, value: string) => storage.set(key, value),
+      getItem: (key: string) => storage.get(key) ?? null,
+    });
+    rememberStudentLinkToken(token);
+    expect(readRememberedStudentLinkToken()).toBe(token);
+
+    const url = buildStudentAwareInviteUrl(
+      "https://syncratch.example/s",
+      invite,
+      "/",
+    );
+    expect(url).toContain(`/s/${encodeURIComponent(token)}#`);
+    expect(url).toContain("blocksync-collab=");
     vi.unstubAllGlobals();
   });
 });

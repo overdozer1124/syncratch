@@ -4,6 +4,7 @@ import {
   applyFlyoutVisualOverlay,
   clampFlyoutWidth,
   computeMetricsFlyoutWidth,
+  computeFlyoutScrollbarNudgePx,
   computeToggleEdgeX,
   computeVisualFlyoutWidth,
   DEFAULT_FLYOUT_WIDTH_PX,
@@ -62,6 +63,33 @@ describe("flyout layout helpers", () => {
       }),
     };
     expect(measureFlyoutContentWidthPx(flyout)).toBe(328);
+  });
+
+  it("computeFlyoutScrollbarNudgePx offsets scrollbar only on hover-expand", () => {
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: false,
+        hoverExpanded: false,
+        metricsWidthPx: DEFAULT_FLYOUT_WIDTH_PX,
+        visualWidthPx: 400,
+      }),
+    ).toBe(0);
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: false,
+        hoverExpanded: true,
+        metricsWidthPx: DEFAULT_FLYOUT_WIDTH_PX,
+        visualWidthPx: 400,
+      }),
+    ).toBe(150);
+    expect(
+      computeFlyoutScrollbarNudgePx({
+        collapsed: true,
+        hoverExpanded: true,
+        metricsWidthPx: 0,
+        visualWidthPx: 400,
+      }),
+    ).toBe(0);
   });
 
   it("computeToggleEdgeX follows the visual flyout edge", () => {
@@ -160,8 +188,7 @@ describe("installFlyoutLayout", () => {
       getWorkspace: () => workspace,
     });
     await new Promise(r => setTimeout(r, 0));
-
-    expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
+    const reflow = flyout.reflow as ReturnType<typeof vi.fn>;
     const resizeCallsAfterAttach = workspace.resize.mock.calls.length;
 
     const toggle = document.querySelector<HTMLButtonElement>(
@@ -169,11 +196,13 @@ describe("installFlyoutLayout", () => {
     );
     expect(toggle).toBeTruthy();
     const leftBeforeHover = toggle!.style.left;
+    const reflowCallsBeforeHover = reflow.mock.calls.length;
 
     const over = new PointerEvent("pointerover", {bubbles: true});
     Object.defineProperty(over, "target", {value: flyoutSvg});
     root.dispatchEvent(over);
     expect(controller.isHoverExpanded()).toBe(true);
+    expect(reflow.mock.calls.length).toBe(reflowCallsBeforeHover);
     // Metrics width unchanged — workspace must not shift.
     expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
     expect(workspace.resize.mock.calls.length).toBe(resizeCallsAfterAttach);
@@ -188,6 +217,9 @@ describe("installFlyoutLayout", () => {
     expect(Number.parseFloat(toggle!.style.left)).toBeGreaterThan(
       Number.parseFloat(leftBeforeHover || "0"),
     );
+    expect(blocks.style.getPropertyValue("--syncratch-flyout-scroll-nudge")).toBe(
+      `${388 - DEFAULT_FLYOUT_WIDTH_PX}px`,
+    );
 
     const out = new PointerEvent("pointerout", {bubbles: true});
     Object.defineProperty(out, "relatedTarget", {value: document.body});
@@ -197,6 +229,9 @@ describe("installFlyoutLayout", () => {
     expect(flyout.getWidth?.()).toBe(DEFAULT_FLYOUT_WIDTH_PX);
     expect(workspace.resize.mock.calls.length).toBe(resizeCallsAfterAttach);
     expect(toggle!.style.left).toBe(leftBeforeHover);
+    expect(blocks.style.getPropertyValue("--syncratch-flyout-scroll-nudge")).toBe(
+      "0px",
+    );
 
     toggle?.click();
     expect(controller.isCollapsed()).toBe(true);

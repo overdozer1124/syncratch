@@ -2897,6 +2897,17 @@ body.syncratch-extension-gallery-open [class*="library_library-scroll-grid"] {
   pointer-events: all;
 }
 
+/* Metrics width stays 250px; shift Blockly's scrollbar to the visual edge. */
+.syncratch-flyout-host .blocklyFlyoutScrollbar {
+  translate: var(--syncratch-flyout-scroll-nudge, 0) 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .syncratch-flyout-host .blocklyFlyoutScrollbar {
+    transition: translate 120ms ease;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   #scratch-gui svg.blocklyFlyout {
     transition: width 120ms ease;

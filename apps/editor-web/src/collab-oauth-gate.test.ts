@@ -3,14 +3,18 @@ import {createInvite, encodeInviteFragment} from "@blocksync/collab-invite";
 import {
   PENDING_GUEST_JOIN_KEY,
   PENDING_HOST_CREATE_KEY,
+  clearPendingHostRoomInvite,
   consumePendingGuestInvite,
   consumePendingHostCreate,
   ensureInviteHashOnLocation,
   markPendingHostCreate,
   peekPendingGuestInvite,
   peekPendingHostCreate,
+  peekPendingHostRoomInvite,
   savePendingGuestInvite,
+  savePendingHostRoomInvite,
   shouldGateCollabOnGoogle,
+  stageCollabInviteFromLocation,
 } from "./collab-oauth-gate.js";
 
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -54,6 +58,31 @@ describe("collab oauth gate", () => {
     expect(consumed?.roomId).toBe(invite.roomId);
     expect(consumed?.secret).toBe(invite.secret);
     expect(consumePendingGuestInvite(storage)).toBeNull();
+  });
+
+  it("persists host room invite until cleared", () => {
+    const storage = memoryStorage();
+    const invite = createInvite();
+    savePendingHostRoomInvite(invite, storage);
+    expect(peekPendingHostRoomInvite(storage)?.roomId).toBe(invite.roomId);
+    clearPendingHostRoomInvite(storage);
+    expect(peekPendingHostRoomInvite(storage)).toBeNull();
+  });
+
+  it("stages guest invite from the location hash", () => {
+    const storage = memoryStorage();
+    const invite = createInvite();
+    const fragment = encodeInviteFragment(invite);
+    const hash = fragment.startsWith("#") ? fragment : `#${fragment}`;
+    const locate = () =>
+      ({
+        pathname: "/s/token",
+        search: "",
+        hash,
+      }) as Location;
+    const staged = stageCollabInviteFromLocation(locate, storage);
+    expect(staged?.roomId).toBe(invite.roomId);
+    expect(peekPendingGuestInvite(storage)?.secret).toBe(invite.secret);
   });
 
   it("writes the invite hash onto the current location", () => {

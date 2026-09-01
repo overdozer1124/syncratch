@@ -109,6 +109,91 @@ function attachForeverMoveBounceScript(
   };
 }
 
+function attachForeverMoveIfGotoScript(
+  project: Record<string, unknown>,
+  threshold = 240,
+): void {
+  const targets = project.targets as Array<Record<string, unknown>>;
+  const sprite = targets.find(target => target.isStage === false);
+  if (!sprite) throw new Error("Sprite target missing in cat-project fixture");
+  sprite.blocks = {
+    hat: {
+      opcode: "event_whenflagclicked",
+      next: "loop",
+      parent: null,
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: true,
+      x: 0,
+      y: 0,
+    },
+    loop: {
+      opcode: "control_forever",
+      next: null,
+      parent: "hat",
+      inputs: {SUBSTACK: [2, "move"]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    move: {
+      opcode: "motion_movesteps",
+      next: "iff",
+      parent: "loop",
+      inputs: {STEPS: [1, [4, "10"]]},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    iff: {
+      opcode: "control_if",
+      next: null,
+      parent: "move",
+      inputs: {
+        CONDITION: [2, "gt"],
+        SUBSTACK: [2, "goto"],
+      },
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    gt: {
+      opcode: "operator_gt",
+      next: null,
+      parent: "iff",
+      inputs: {
+        OPERAND1: [3, "xpos", [4, ""]],
+        OPERAND2: [1, [4, String(threshold)]],
+      },
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    xpos: {
+      opcode: "motion_xposition",
+      next: null,
+      parent: "gt",
+      inputs: {},
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+    goto: {
+      opcode: "motion_gotoxy",
+      next: null,
+      parent: "iff",
+      inputs: {
+        X: [1, [4, "-240"]],
+        Y: [1, [4, "0"]],
+      },
+      fields: {},
+      shadow: false,
+      topLevel: false,
+    },
+  };
+}
+
 function attachForeverMoveScript(project: Record<string, unknown>, stepSize = 1): void {
   const targets = project.targets as Array<Record<string, unknown>>;
   const sprite = targets.find(target => target.isStage === false);
@@ -352,6 +437,7 @@ export async function createRewindVmHarness(
     cloneMoves?: number[];
     forever?: boolean;
     foreverStep?: number;
+    foreverIfGoto?: boolean;
     foreverBounce?: boolean;
     foreverBounceStep?: number;
   } = {},
@@ -365,6 +451,8 @@ export async function createRewindVmHarness(
     attachCloneScript(project, {cloneMoves: options.cloneMoves});
   } else if (options.foreverBounce) {
     attachForeverMoveBounceScript(project, options.foreverBounceStep ?? 10);
+  } else if (options.foreverIfGoto) {
+    attachForeverMoveIfGotoScript(project);
   } else if (options.forever) {
     attachForeverMoveScript(project, options.foreverStep ?? 1);
   } else {
@@ -396,6 +484,15 @@ export async function createRewindVmHarness(
         await vm.loadProject(
           structuredClone(origin.vmProjectJson ?? documentToVmJson(origin.document)),
         );
+      },
+      getTraceSize: () => trace.trace.size(),
+      onTraceDisplayCursor: size => trace.trace.setDisplayCursor(size),
+      onTraceTruncate: size => {
+        trace.trace.truncateTo(size);
+        trace.trace.setDisplayCursor(size);
+      },
+      onReplayLifecycle: phase => {
+        trace.trace.setRecordingSuspended(phase === "start");
       },
     },
   )!;

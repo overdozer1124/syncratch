@@ -54,11 +54,13 @@ export {
 
 export {
   emailDomain,
+  isCanonicalRosterStudentCode,
   isStudentEmailDomainAllowed,
   normalizeAllowedEmailDomains,
   normalizeGoogleEmail,
   normalizeStudentAuthMethod,
   parseAllowedEmailDomainsJson,
+  ROSTER_STUDENT_CODE_PATTERN,
   studentAuthMethodIncludesGoogle,
   studentAuthMethodIncludesLocal,
 } from "./roster-auth.js";
@@ -88,6 +90,7 @@ export {
   ADMIN_GOOGLE_OAUTH_CALLBACK_PATH,
   ADMIN_GOOGLE_OAUTH_DISCONNECT_PATH,
   ADMIN_GOOGLE_OAUTH_PREFIX,
+  ADMIN_GOOGLE_OAUTH_PICKER_TOKEN_PATH,
   ADMIN_GOOGLE_OAUTH_RETURN_FLAG,
   ADMIN_GOOGLE_OAUTH_RETURN_REASON,
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
