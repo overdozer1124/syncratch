@@ -374,7 +374,7 @@ export function buildImportPreviewRows(input: {
     const existing = byCode.get(row.studentCode);
     if (existing) {
       if (row.attendanceNumber) {
-        const collision = input.existingStudents.find(
+        const collision = rosterMembers.find(
           student =>
             student.studentId !== existing.studentId &&
             student.active &&
@@ -455,7 +455,7 @@ export function buildImportPreviewRows(input: {
     }
 
     if (row.attendanceNumber) {
-      const collision = input.existingStudents.find(
+      const collision = rosterMembers.find(
         student => student.active && student.attendanceNumber === row.attendanceNumber,
       );
       if (collision) {

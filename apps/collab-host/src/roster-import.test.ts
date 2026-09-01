@@ -239,4 +239,46 @@ describe("roster-import preview (Hermes PR 3.1 criteria)", () => {
       false,
     );
   });
+
+  it("does not block attendance_number used only on another roster", () => {
+    const csv = [header(), "261701,山田,1,yamada,,A,true"].join("\n");
+    const otherRosterStudent: ExistingRosterStudent = {
+      studentId: "stu-other",
+      studentCode: "261601",
+      displayName: "別クラス",
+      attendanceNumber: "1",
+      loginName: "other",
+      googleEmail: null,
+      groupLabel: null,
+      active: true,
+    };
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [otherRosterStudent],
+      rosterMembers: [],
+    });
+    expect(rows[0]?.category).toBe("add");
+    expect(hasBlockingPreviewRows(rows)).toBe(false);
+  });
+
+  it("still flags attendance_number collision inside the target roster", () => {
+    const csv = [header(), "261702,佐藤,1,sato,,A,true"].join("\n");
+    const member: ExistingRosterStudent = {
+      studentId: "stu-1",
+      studentCode: "261701",
+      displayName: "山田",
+      attendanceNumber: "1",
+      loginName: "yamada",
+      googleEmail: null,
+      groupLabel: null,
+      active: true,
+    };
+    const {rows} = buildImportPreviewRows({
+      parsedRows: parseRosterCsv(csv),
+      existingStudents: [member],
+      rosterMembers: [member],
+    });
+    expect(rows[0]?.category).toBe("attendance_collision");
+    expect(hasBlockingPreviewRows(rows)).toBe(true);
+  });
 });

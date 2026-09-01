@@ -317,6 +317,53 @@ describe("roster-service", () => {
     db.close();
   });
 
+  it("applies import when another roster already uses the same attendance_number", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-attendance-scope",
+      email: "teacher-attendance@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const rosterA = service.createRoster(admin.adminId, {title: "6年1組"});
+    const rosterB = service.createRoster(admin.adminId, {title: "7年1組"});
+    const seed = service.createImportFromCsv(
+      rosterA.rosterId,
+      admin.adminId,
+      [header(), "261601,別クラス,1,other,,A,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: rosterA.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const preview = service.createImportFromCsv(
+      rosterB.rosterId,
+      admin.adminId,
+      [header(), "261701,山田,1,yamada,,A,true"].join("\n"),
+    );
+    expect(preview.rows.every(row => row.category === "add")).toBe(true);
+    expect(preview.rows.some(row => row.category === "attendance_collision")).toBe(
+      false,
+    );
+
+    const applied = service.applyImport({
+      rosterId: rosterB.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    expect(applied.import.status).toBe("applied");
+    expect(service.listStudents(rosterB.rosterId, admin.adminId)).toHaveLength(1);
+    db.close();
+  });
+
   it("rejects apply when preview has blocking rows", () => {
     const db = openAdminDb(":memory:");
     const admin = db.upsertAdminFromLogin({
