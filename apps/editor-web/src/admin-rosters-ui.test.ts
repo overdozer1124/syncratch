@@ -196,6 +196,203 @@ describe("admin rosters ui", () => {
     ).toBe(true);
   });
 
+  it("deletes the roster after confirmation", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === adminRosterPath("r1") && init?.method === "DELETE") {
+        return {ok: true, json: async () => ({ok: true})};
+      }
+      if (url === adminRosterPath("r1")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            roster: {
+              rosterId: "r1",
+              title: "3A",
+              rosterRevision: 1,
+              syncStatus: "active",
+              sheetSpreadsheetId: null,
+              sheetTabName: "Sheet1",
+              sheetRange: null,
+              createdAt: "t0",
+              updatedAt: "t1",
+            },
+          }),
+        };
+      }
+      if (url === adminRosterStudentsPath("r1")) {
+        return {ok: true, json: async () => ({ok: true, students: []})};
+      }
+      throw new Error(`unexpected fetch ${url} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onRosterDeleted = vi.fn(async () => {});
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        onRosterDeleted,
+        rosters: [
+          {
+            rosterId: "r1",
+            title: "3A",
+            studentCount: 0,
+            syncStatus: "active",
+            rosterRevision: 1,
+            createdAt: "t0",
+            updatedAt: "t1",
+          },
+        ],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    pane?.querySelector<HTMLButtonElement>("[data-testid=admin-roster-delete]")?.click();
+
+    expect(window.confirm).toHaveBeenCalledWith("3A を削除しますか？");
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        adminRosterPath("r1"),
+        expect.objectContaining({method: "DELETE", csrfToken: "csrf"}),
+      );
+    });
+    await vi.waitFor(() => expect(onRosterDeleted).toHaveBeenCalledWith("r1"));
+  });
+
+  it("does not send DELETE when roster deletion is cancelled", async () => {
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === adminRosterPath("r1")) {
+        return {
+          ok: true,
+          json: async () => ({
+            ok: true,
+            roster: {
+              rosterId: "r1",
+              title: "3A",
+              rosterRevision: 1,
+              syncStatus: "active",
+              sheetSpreadsheetId: null,
+              sheetTabName: "Sheet1",
+              sheetRange: null,
+              createdAt: "t0",
+              updatedAt: "t1",
+            },
+          }),
+        };
+      }
+      if (url === adminRosterStudentsPath("r1")) {
+        return {ok: true, json: async () => ({ok: true, students: []})};
+      }
+      throw new Error(`unexpected fetch ${url} ${init?.method ?? "GET"}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    const onRosterDeleted = vi.fn(async () => {});
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        onRosterDeleted,
+        rosters: [
+          {
+            rosterId: "r1",
+            title: "3A",
+            studentCount: 0,
+            syncStatus: "active",
+            rosterRevision: 1,
+            createdAt: "t0",
+            updatedAt: "t1",
+          },
+        ],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    pane?.querySelector<HTMLButtonElement>("[data-testid=admin-roster-delete]")?.click();
+
+    expect(window.confirm).toHaveBeenCalledOnce();
+    expect(
+      fetchMock.mock.calls.some(call => (call[1] as RequestInit | undefined)?.method === "DELETE"),
+    ).toBe(false);
+    expect(onRosterDeleted).not.toHaveBeenCalled();
+  });
+
+  it("shows an error when roster deletion fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === adminRosterPath("r1") && init?.method === "DELETE") {
+          return {
+            ok: true,
+            json: async () => ({ok: false, message: "名簿を削除できませんでした。"}),
+          };
+        }
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          return {ok: true, json: async () => ({ok: true, students: []})};
+        }
+        throw new Error(`unexpected fetch ${url} ${init?.method ?? "GET"}`);
+      }),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const saveFooter = createAdminSaveFooter();
+    const onRosterDeleted = vi.fn(async () => {});
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter,
+        onRefresh: async () => {},
+        onRosterDeleted,
+        rosters: [
+          {
+            rosterId: "r1",
+            title: "3A",
+            studentCount: 0,
+            syncStatus: "active",
+            rosterRevision: 1,
+            createdAt: "t0",
+            updatedAt: "t1",
+          },
+        ],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    pane?.querySelector<HTMLButtonElement>("[data-testid=admin-roster-delete]")?.click();
+
+    await vi.waitFor(() => {
+      expect(saveFooter.root.textContent).toContain("名簿を削除できませんでした。");
+    });
+    expect(onRosterDeleted).not.toHaveBeenCalled();
+  });
+
   it("downloads a header-only CSV template when the roster has no students", async () => {
     vi.stubGlobal(
       "fetch",

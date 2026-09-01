@@ -345,6 +345,19 @@ export function createRosterRoutesHandler(
           sendJson(res, 200, {ok: true, roster});
           return true;
         }
+        if (req.method === "DELETE") {
+          if (!requireAdminCsrf(req, adminSession)) {
+            sendJson(res, 403, {ok: false, code: "CSRF", message: "CSRF token required"});
+            return true;
+          }
+          const deleted = service.deleteRoster(route.rosterId, adminSession.adminId);
+          if (!deleted) {
+            sendJson(res, 404, {ok: false, code: "ROSTER_NOT_FOUND"});
+            return true;
+          }
+          sendJson(res, 200, {ok: true});
+          return true;
+        }
         sendJson(res, 405, {ok: false, code: "METHOD_NOT_ALLOWED"});
         return true;
       }
