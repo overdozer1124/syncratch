@@ -364,6 +364,44 @@ describe("roster-service", () => {
     db.close();
   });
 
+  it("deletes a roster and unbinds policies without removing owner students", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-delete-roster",
+      email: "teacher-delete@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "不要な名簿"});
+    service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "261101",
+      displayName: "山田",
+      attendanceNumber: "1",
+    });
+    const policyResult = db.createPolicy(
+      admin.adminId,
+      {title: "教室", rosterId: roster.rosterId},
+      {classroomRosterEnabled: true},
+    );
+    expect(policyResult.ok).toBe(true);
+    const policyId = policyResult.ok ? policyResult.policy.policyId : "";
+
+    expect(service.deleteRoster(roster.rosterId, admin.adminId)).toBe(true);
+    expect(service.deleteRoster(roster.rosterId, admin.adminId)).toBe(false);
+    expect(service.getRoster(roster.rosterId, admin.adminId)).toBeNull();
+    expect(service.listRosters(admin.adminId)).toHaveLength(0);
+    expect(db.getPolicy(policyId, admin.adminId)?.rosterId).toBeNull();
+    const leftoverStudents = db.sqlite
+      .prepare(`SELECT COUNT(*) AS c FROM classroom_students WHERE owner_admin_id = ?`)
+      .get(admin.adminId) as {c: number};
+    expect(leftoverStudents.c).toBe(1);
+    const leftoverMemberships = db.sqlite
+      .prepare(`SELECT COUNT(*) AS c FROM classroom_roster_memberships`)
+      .get() as {c: number};
+    expect(leftoverMemberships.c).toBe(0);
+    db.close();
+  });
+
   it("rejects apply when preview has blocking rows", () => {
     const db = openAdminDb(":memory:");
     const admin = db.upsertAdminFromLogin({

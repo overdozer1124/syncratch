@@ -91,6 +91,7 @@ export interface AdminPaneContext {
   flags: AdminClassroomFlags | null;
   saveFooter: AdminSaveFooterController;
   onRefresh: () => Promise<void>;
+  onRosterDeleted?: (rosterId: string) => Promise<void>;
   rosters: ClassroomRosterListItem[];
   adminEmail: string;
 }
@@ -631,9 +632,35 @@ export async function renderRosterPane(
   );
   const deleteBtn = el(
     "button",
-    {type: "button", class: "admin2-btn admin2-btn-danger admin2-btn-sm"},
+    {
+      type: "button",
+      class: "admin2-btn admin2-btn-danger admin2-btn-sm",
+      "data-testid": "admin-roster-delete",
+    },
     "削除",
   );
+  deleteBtn.addEventListener("click", () => {
+    void (async () => {
+      if (!window.confirm(`${rosterRecord.title} を削除しますか？`)) return;
+      try {
+        const res = await adminFetch<{ok: boolean; message?: string}>(
+          adminRosterPath(rosterId),
+          {method: "DELETE", csrfToken: ctx.getCsrf()},
+        );
+        if (!res.ok) {
+          ctx.saveFooter.setError(res.message || "名簿の削除に失敗しました。");
+          return;
+        }
+        if (ctx.onRosterDeleted) {
+          await ctx.onRosterDeleted(rosterId);
+          return;
+        }
+        await ctx.onRefresh();
+      } catch {
+        ctx.saveFooter.setError("名簿の削除に失敗しました。");
+      }
+    })();
+  });
   headerActions.append(syncNowBtn, deleteBtn);
   header.append(headerActions);
 

@@ -369,8 +369,8 @@ describe("roster admin routes", () => {
     expect(stale.status).toBe(409);
   });
 
-  it("does not expose DELETE /api/admin/rosters/:id", async () => {
-    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-no-delete-"));
+  it("deletes a roster with DELETE /api/admin/rosters/:id", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-roster-delete-"));
     writeFileSync(join(root, "index.html"), "<html>host</html>");
     const dbPath = join(root, "admin.sqlite");
     const config: AdminAuthConfig = {
@@ -378,7 +378,7 @@ describe("roster admin routes", () => {
       allowlist: new Set(["teacher@school.example"]),
       cookieSecure: false,
       verifyGoogleIdToken: async () =>
-        claims("teacher@school.example", "google-sub-no-delete"),
+        claims("teacher@school.example", "google-sub-delete"),
     };
     const {handle: h} = await boot(config, dbPath, root, true);
     const {cookie, csrfToken} = await loginAdmin(h.url, config);
@@ -396,7 +396,12 @@ describe("roster admin routes", () => {
       method: "DELETE",
       headers: {cookie, "x-csrf-token": csrfToken},
     });
-    expect(deleted.status).toBe(405);
+    expect(deleted.status).toBe(200);
+    expect(await deleted.json()).toEqual({ok: true});
+    const missing = await fetch(new URL(adminRosterPath(roster.rosterId), h.url), {
+      headers: {cookie},
+    });
+    expect(missing.status).toBe(404);
   });
 
   it("returns 404 for sync when rosterSheets flag is OFF", async () => {

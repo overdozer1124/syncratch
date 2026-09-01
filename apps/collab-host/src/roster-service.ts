@@ -220,6 +220,7 @@ export interface RosterService {
     ownerAdminId: string,
     patch: ClassroomRosterInput,
   ): ClassroomRoster | null;
+  deleteRoster(rosterId: string, ownerAdminId: string): boolean;
   listStudents(
     rosterId: string,
     ownerAdminId: string,
@@ -876,6 +877,49 @@ export function createRosterService(db: Database.Database): RosterService {
         ownerAdminId,
       );
       return next;
+    },
+
+    deleteRoster(rosterId, ownerAdminId) {
+      const existing = this.getRoster(rosterId, ownerAdminId);
+      if (!existing) return false;
+      const ts = nowIso();
+      const tx = db.transaction(() => {
+        db.prepare(
+          `UPDATE classroom_policies
+           SET roster_id = NULL,
+               student_auth_required = 0,
+               updated_at = ?
+           WHERE roster_id = ?`,
+        ).run(ts, rosterId);
+        db.prepare(
+          `DELETE FROM roster_import_rows
+           WHERE import_id IN (
+             SELECT import_id FROM roster_imports WHERE roster_id = ?
+           )`,
+        ).run(rosterId);
+        db.prepare(`DELETE FROM roster_imports WHERE roster_id = ?`).run(rosterId);
+        db.prepare(
+          `DELETE FROM classroom_roster_memberships WHERE roster_id = ?`,
+        ).run(rosterId);
+        db.prepare(
+          `INSERT INTO classroom_audit_events (
+            event_id, owner_admin_id, roster_id, student_id,
+            event_type, payload_json, created_at
+          ) VALUES (?, ?, ?, NULL, 'roster.deleted', ?, ?)`,
+        ).run(
+          createOpaqueId(),
+          ownerAdminId,
+          rosterId,
+          JSON.stringify({title: existing.title}),
+          ts,
+        );
+        db.prepare(
+          `DELETE FROM classroom_rosters
+           WHERE roster_id = ? AND owner_admin_id = ?`,
+        ).run(rosterId, ownerAdminId);
+      });
+      tx();
+      return true;
     },
 
     listStudents(rosterId, ownerAdminId) {

@@ -330,6 +330,12 @@ async function renderConsole(
       flags: classroomFlags,
       saveFooter,
       onRefresh: refreshAll,
+      onRosterDeleted: async (rosterId: string) => {
+        if (selection?.kind === "roster" && selection.rosterId === rosterId) {
+          selection = {kind: "account"};
+        }
+        await refreshAll();
+      },
       rosters,
       adminEmail,
     };
