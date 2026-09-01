@@ -215,6 +215,7 @@ function toListItem(link: StudentLink): StudentLinkListItem {
     expiresAt: link.expiresAt,
     createdAt: link.createdAt,
     revokedAt: link.revokedAt,
+    token: link.token,
   };
 }
 

@@ -71,6 +71,17 @@ function requestOrigin(req: IncomingMessage): string {
   return `${scheme}://${host}`;
 }
 
+function attachStudentUrl<T extends {token?: string}>(
+  link: T,
+  origin: string,
+): T & {studentUrl?: string} {
+  if (!link.token) return link;
+  return {
+    ...link,
+    studentUrl: `${origin}${studentSurfacePath(link.token)}`,
+  };
+}
+
 export interface CreateAdminApiHandlerOptions {
   db: AdminDb;
   config: AdminAuthConfig | null;
@@ -364,9 +375,12 @@ export function createAdminApiHandler(
           sendJson(res, 404, {ok: false, code: "NOT_FOUND", message: "policy not found"});
           return true;
         }
+        const origin = requestOrigin(req);
         sendJson(res, 200, {
           ok: true,
-          links: options.db.listLinks(session.adminId, policyId),
+          links: options.db
+            .listLinks(session.adminId, policyId)
+            .map(link => attachStudentUrl(link, origin)),
         });
         return true;
       }
@@ -511,9 +525,12 @@ export function createAdminApiHandler(
     }
 
     if (urlPath === ADMIN_LINKS_PATH && req.method === "GET") {
+      const origin = requestOrigin(req);
       sendJson(res, 200, {
         ok: true,
-        links: options.db.listLinks(session.adminId),
+        links: options.db
+          .listLinks(session.adminId)
+          .map(link => attachStudentUrl(link, origin)),
       });
       return true;
     }
