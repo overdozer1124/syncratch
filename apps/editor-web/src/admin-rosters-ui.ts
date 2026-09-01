@@ -1004,48 +1004,60 @@ export async function renderRosterPane(
 
   exportCsvBtn.addEventListener("click", () => {
     void (async () => {
-      const res = await adminFetch<{
-        ok: boolean;
-        students?: ClassroomStudentListItem[];
-      }>(adminRosterStudentsPath(rosterId));
-      if (!res.ok || !res.students?.length) return;
-      const header = ROSTER_SHEET_COLUMNS.map(
-        column => ROSTER_SHEET_COLUMN_LABELS[column],
-      );
-      const lines = [
-        header.join(","),
-        ...res.students.map(student =>
-          ROSTER_SHEET_COLUMNS.map(column => {
-            switch (column) {
-              case "student_code":
-                return student.studentCode;
-              case "display_name":
-                return student.displayName;
-              case "attendance_number":
-                return student.attendanceNumber ?? "";
-              case "login_name":
-                return student.loginName ?? "";
-              case "google_email":
-                return student.googleEmail ?? "";
-              case "group_label":
-                return student.groupLabel ?? "";
-              case "active":
-                return student.active ? "1" : "0";
-              default:
-                return "";
-            }
-          })
-            .map(v => `"${String(v).replace(/"/g, '""')}"`)
-            .join(","),
-        ),
-      ];
-      const blob = new Blob([lines.join("\n")], {type: "text/csv;charset=utf-8"});
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${rosterRecord.title}.csv`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      let objectUrl: string | undefined;
+      try {
+        const res = await adminFetch<{
+          ok: boolean;
+          message?: string;
+          students?: ClassroomStudentListItem[];
+        }>(adminRosterStudentsPath(rosterId));
+        if (!res.ok || !res.students) {
+          ctx.saveFooter.setError(res.message || "CSV の書き出しに失敗しました。");
+          return;
+        }
+        const header = ROSTER_SHEET_COLUMNS.map(
+          column => ROSTER_SHEET_COLUMN_LABELS[column],
+        );
+        const lines = [
+          header.join(","),
+          ...res.students.map(student =>
+            ROSTER_SHEET_COLUMNS.map(column => {
+              switch (column) {
+                case "student_code":
+                  return student.studentCode;
+                case "display_name":
+                  return student.displayName;
+                case "attendance_number":
+                  return student.attendanceNumber ?? "";
+                case "login_name":
+                  return student.loginName ?? "";
+                case "google_email":
+                  return student.googleEmail ?? "";
+                case "group_label":
+                  return student.groupLabel ?? "";
+                case "active":
+                  return student.active ? "1" : "0";
+                default:
+                  return "";
+              }
+            })
+              .map(v => `"${String(v).replace(/"/g, '""')}"`)
+              .join(","),
+          ),
+        ];
+        const blob = new Blob([lines.join("\n")], {
+          type: "text/csv;charset=utf-8",
+        });
+        objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = `${rosterRecord.title}.csv`;
+        anchor.click();
+      } catch {
+        ctx.saveFooter.setError("CSV の書き出しに失敗しました。");
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      }
     })();
   });
 
