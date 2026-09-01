@@ -3,6 +3,7 @@ import {describe, expect, it, vi, beforeEach, afterEach} from "vitest";
 import {
   ADMIN_GOOGLE_OAUTH_SESSION_PATH,
   ADMIN_ROSTERS_PATH,
+  adminRosterImportsPath,
   adminRosterPath,
   adminRosterStudentsPath,
 } from "@blocksync/classroom-access";
@@ -395,6 +396,121 @@ describe("admin rosters ui", () => {
         "CSV の書き出しに失敗しました。",
       );
     });
+  });
+
+  it("shows camelCase CSV preview student fields from the import API", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === adminRosterPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              roster: {
+                rosterId: "r1",
+                title: "3A",
+                rosterRevision: 1,
+                syncStatus: "active",
+                sheetSpreadsheetId: null,
+                sheetTabName: "Sheet1",
+                sheetRange: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+            }),
+          };
+        }
+        if (url === adminRosterStudentsPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({ok: true, students: []}),
+          };
+        }
+        if (url === adminRosterImportsPath("r1")) {
+          return {
+            ok: true,
+            json: async () => ({
+              ok: true,
+              import: {
+                importId: "imp-1",
+                rosterId: "r1",
+                status: "preview_ready",
+                uploadedAt: "t0",
+                previewHash: "hash",
+                baseRosterRevision: 1,
+                appliedAt: null,
+                createdAt: "t0",
+                updatedAt: "t1",
+              },
+              rows: [
+                {
+                  rowId: "row-1",
+                  importId: "imp-1",
+                  rowNumber: 2,
+                  category: "add",
+                  studentId: null,
+                  proposed: {
+                    studentCode: "261101",
+                    displayName: "山田太郎",
+                    attendanceNumber: "1",
+                    loginName: "yamada",
+                    googleEmail: null,
+                    groupLabel: null,
+                    active: true,
+                  },
+                  issues: [],
+                },
+              ],
+              previewHash: "hash",
+              baseRosterRevision: 1,
+              ignoredColumns: [],
+              missingFromCsvCount: 0,
+              deactivateMissing: false,
+            }),
+          };
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      }),
+    );
+
+    const pane = await renderRosterPane(
+      {
+        getCsrf: () => "csrf",
+        flags: {...disabledFlags, classroomRosterEnabled: true},
+        saveFooter: createAdminSaveFooter(),
+        onRefresh: async () => {},
+        rosters: [{rosterId: "r1", title: "3A", studentCount: 0, syncStatus: "active", rosterRevision: 1, createdAt: "t0", updatedAt: "t1"}],
+        adminEmail: "t@example.com",
+      },
+      "r1",
+    );
+
+    const input = pane!.querySelector("input[type=file]") as HTMLInputElement;
+    const file = new File(
+      ["生徒コード,氏名,出席番号,ログイン名,Google メール,グループ,有効\n261101,山田太郎,1,yamada,,,1"],
+      "3A.csv",
+      {type: "text/csv"},
+    );
+    Object.defineProperty(input, "files", {configurable: true, value: [file]});
+    input.dispatchEvent(new Event("change"));
+
+    await vi.waitFor(() => {
+      expect(pane!.textContent).toContain("261101");
+      expect(pane!.textContent).toContain("山田太郎");
+    });
+    const previewTable = [...pane!.querySelectorAll(".admin2-table")].find(
+      table => !table.classList.contains("admin-roster-student-table"),
+    );
+    const previewHeaders = [...previewTable!.querySelectorAll("th")].map(
+      cell => cell.textContent,
+    );
+    expect(previewHeaders).toEqual(["行", "区分", "生徒コード", "氏名", "メモ"]);
+    const previewCells = [...previewTable!.querySelectorAll("td")].map(
+      cell => cell.textContent,
+    );
+    expect(previewCells[2]).toBe("261101");
+    expect(previewCells[3]).toBe("山田太郎");
   });
 
   it("shows open sheet button when spreadsheet id is bound", async () => {

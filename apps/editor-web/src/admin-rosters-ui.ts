@@ -375,7 +375,7 @@ function renderPreviewBox(
 
   const table = el("table", {class: "admin2-table"});
   const head = el("tr");
-  for (const label of ["行", "区分", "student_code", "display_name", "メモ"]) {
+  for (const label of ["行", "区分", "生徒コード", "氏名", "メモ"]) {
     head.append(el("th", {}, label));
   }
   table.append(el("thead", {}, undefined), el("tbody"));
@@ -384,16 +384,20 @@ function renderPreviewBox(
   for (const row of preview.rows.slice(0, 30)) {
     const tr = el("tr");
     const proposed = row.proposed as {
+      studentCode?: string;
+      displayName?: string;
       student_code?: string;
       display_name?: string;
     };
+    const studentCode = proposed.studentCode || proposed.student_code || "なし";
+    const displayName = proposed.displayName || proposed.display_name || "なし";
     const issueText =
       row.issues.length > 0 ? row.issues.map(i => i.message).join("; ") : "なし";
     tr.append(
       el("td", {class: "is-mono"}, String(row.rowNumber)),
       el("td", {}, CATEGORY_LABELS[row.category] ?? row.category),
-      el("td", {class: "is-mono"}, proposed.student_code || "なし"),
-      el("td", {}, proposed.display_name || "なし"),
+      el("td", {class: "is-mono"}, studentCode),
+      el("td", {}, displayName),
       el("td", {}, issueText),
     );
     tbody.append(tr);
