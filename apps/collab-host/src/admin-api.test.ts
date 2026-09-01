@@ -225,6 +225,73 @@ describe("admin / student classroom API", () => {
     expect(after.status).toBe(404);
   });
 
+  it("returns studentUrl when listing existing links", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-link-list-url-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+    const dbPath = join(root, "admin.sqlite");
+    const config: AdminAuthConfig = {
+      clientId: "test-client.apps.googleusercontent.com",
+      allowlist: new Set(["teacher@school.example"]),
+      cookieSecure: false,
+      verifyGoogleIdToken: async () =>
+        claims("teacher@school.example", "google-sub-link-list"),
+    };
+    const {handle: h} = await bootLegacy(config, dbPath, root);
+    const login = await fetch(new URL(ADMIN_AUTH_GOOGLE_PATH, h.url), {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({idToken: "tok"}),
+    });
+    const {cookie, csrfToken} = cookieJar(login);
+    const created = await fetch(new URL(ADMIN_POLICIES_PATH, h.url), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({title: "3年A組"}),
+    });
+    const createdBody = (await created.json()) as {policy: {policyId: string}};
+    const createdLink = await fetch(
+      new URL(
+        `${ADMIN_POLICIES_PATH}/${createdBody.policy.policyId}/links`,
+        h.url,
+      ),
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie,
+          "x-csrf-token": csrfToken,
+        },
+        body: JSON.stringify({label: "授業用"}),
+      },
+    );
+    const createdLinkBody = (await createdLink.json()) as {
+      link: {linkId: string; token: string; studentUrl: string};
+    };
+
+    const listed = await fetch(
+      new URL(
+        `${ADMIN_POLICIES_PATH}/${createdBody.policy.policyId}/links`,
+        h.url,
+      ),
+      {headers: {cookie}},
+    );
+    expect(listed.status).toBe(200);
+    const listedBody = (await listed.json()) as {
+      ok: boolean;
+      links: Array<{linkId: string; token?: string; studentUrl?: string}>;
+    };
+    expect(listedBody.links).toHaveLength(1);
+    expect(listedBody.links[0]?.linkId).toBe(createdLinkBody.link.linkId);
+    expect(listedBody.links[0]?.studentUrl).toBe(createdLinkBody.link.studentUrl);
+    expect(listedBody.links[0]?.studentUrl).toContain(
+      `/s/${createdLinkBody.link.token}`,
+    );
+  });
+
   it("exchanges grant, serves policy without token, and rejects after revoke", async () => {
     const root = mkdtempSync(join(tmpdir(), "collab-host-grant-"));
     writeFileSync(join(root, "index.html"), "<html>host</html>");

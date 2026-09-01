@@ -97,7 +97,8 @@ export interface StudentLink {
   revokedAt: string | null;
 }
 
-/** List row for admin UI — token is omitted except at create/reissue time. */
+/** List row for admin UI. `token` / `studentUrl` are included so the URL
+ * remains visible after reload. */
 export interface StudentLinkListItem {
   linkId: string;
   policyId: string;
@@ -106,7 +107,6 @@ export interface StudentLinkListItem {
   expiresAt: string | null;
   createdAt: string;
   revokedAt: string | null;
-  /** Present only on create / reissue responses. */
   token?: string;
   studentUrl?: string;
 }
