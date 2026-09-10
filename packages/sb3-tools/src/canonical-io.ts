@@ -362,12 +362,8 @@ function parseTarget(
     ) {
       throw new CanonicalImportError("comments must be an object", `${path}.comments`);
     }
-    if (Object.keys(comments).length > 0) {
-      throw new CanonicalImportError(
-        "non-empty comments are disallowed",
-        `${path}.comments`,
-      );
-    }
+    // Scratch projects often include workspace comments. Syncratch does not
+    // round-trip them yet, so drop on import instead of rejecting the project.
   }
 
   const name = String(t.name ?? "");
@@ -469,12 +465,9 @@ export function projectJsonToDocument(
     if (!Array.isArray(root.monitors)) {
       throw new CanonicalImportError("monitors must be an array", "monitors");
     }
-    if (root.monitors.length > 0) {
-      throw new CanonicalImportError(
-        "non-empty monitors are disallowed",
-        "monitors",
-      );
-    }
+    // Scratch projects commonly include stage monitors (variable/list watchers).
+    // Syncratch does not round-trip monitor layout yet, so drop them on import
+    // instead of rejecting the whole project (classroom .sb3 open failures).
   }
 
   if (!Array.isArray(root.targets)) {
