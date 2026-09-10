@@ -212,16 +212,21 @@ function assertPlainObject(
   return value as Record<string, unknown>;
 }
 
-function rejectUnknownKeys(
-  obj: Record<string, unknown>,
-  allowed: Set<string>,
-  path: string,
+/**
+ * Scratch / TurboWarp / Xcratch project.json regularly grows optional fields
+ * (e.g. top-level `extensionURLs`, sprite extras, block metadata). Syncratch
+ * only materializes the allow-listed keys below; unknown keys are ignored so
+ * classroom .sb3 files keep opening instead of failing closed on forward-
+ * compatible metadata. Prototype-pollution keys are still rejected earlier by
+ * `assertSafeCanonicalJson`.
+ */
+function ignoreUnknownKeys(
+  _obj: Record<string, unknown>,
+  _allowed: Set<string>,
+  _path: string,
 ): void {
-  for (const key of Object.keys(obj)) {
-    if (!allowed.has(key)) {
-      throw new CanonicalImportError(`unknown field ${key}`, `${path}.${key}`);
-    }
-  }
+  // Intentional no-op: callers still pass the allow-list for documentation and
+  // so future "strict mode" can flip this back without touching call sites.
 }
 
 function parseCostumeRef(
@@ -320,10 +325,8 @@ function parseBlockEntry(
     return raw;
   }
   const b = assertPlainObject(raw, path);
-  rejectUnknownKeys(b, BLOCK_ALLOWED, path);
-  if ("comment" in b) {
-    throw new CanonicalImportError("block comment field is disallowed", path);
-  }
+  ignoreUnknownKeys(b, BLOCK_ALLOWED, path);
+  // Block-linked comments are dropped (same policy as target.comments).
   return {
     id,
     opcode: String(b.opcode ?? ""),
@@ -351,7 +354,7 @@ function parseTarget(
   const t = assertPlainObject(raw, path);
   const isStage = Boolean(t.isStage);
   const allowed = isStage ? TARGET_STAGE_ALLOWED : TARGET_SPRITE_ALLOWED;
-  rejectUnknownKeys(t, allowed, path);
+  ignoreUnknownKeys(t, allowed, path);
 
   const comments = t.comments;
   if (comments !== undefined) {
@@ -459,7 +462,7 @@ export function projectJsonToDocument(
 ): ProjectDocument {
   assertSafeCanonicalJson(raw);
   const root = assertPlainObject(raw, "project.json");
-  rejectUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json");
+  ignoreUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json");
 
   if (root.monitors !== undefined) {
     if (!Array.isArray(root.monitors)) {

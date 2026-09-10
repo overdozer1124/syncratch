@@ -15,6 +15,13 @@ export class MediaVerifyError extends Error {
 
 const MAX_PCM_SAMPLES = 5_292_000;
 const MAX_AUDIO_SECONDS = 60;
+/** Microsoft PCM (Scratch + almost everything). */
+const WAVE_FORMAT_PCM = 1;
+/**
+ * IMA ADPCM — Scratch library / many student projects ship sounds in this
+ * encoding. Rejecting it made ordinary classroom .sb3 files fail to open.
+ */
+const WAVE_FORMAT_IMA_ADPCM = 17;
 
 export interface ParsedWav {
   sampleRate: number;
@@ -67,6 +74,9 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
   let sampleRate: number | null = null;
   let channels: number | null = null;
   let bitsPerSample: number | null = null;
+  let blockAlign: number | null = null;
+  let audioFormat: number | null = null;
+  let samplesPerBlock: number | null = null;
   let dataBytes: number | null = null;
 
   while (offset + 8 <= bytes.length) {
@@ -80,13 +90,23 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
       if (chunkSize < 16) {
         throw new MediaVerifyError("WAV_FMT");
       }
-      const audioFormat = readU16LE(bytes, chunkData);
-      if (audioFormat !== 1) {
-        throw new MediaVerifyError("WAV_PCM_ONLY");
+      audioFormat = readU16LE(bytes, chunkData);
+      if (
+        audioFormat !== WAVE_FORMAT_PCM &&
+        audioFormat !== WAVE_FORMAT_IMA_ADPCM
+      ) {
+        throw new MediaVerifyError("WAV_UNSUPPORTED_FORMAT");
       }
       channels = readU16LE(bytes, chunkData + 2);
       sampleRate = readU32LE(bytes, chunkData + 4);
+      blockAlign = readU16LE(bytes, chunkData + 12);
       bitsPerSample = readU16LE(bytes, chunkData + 14);
+      if (audioFormat === WAVE_FORMAT_IMA_ADPCM) {
+        if (chunkSize < 20) {
+          throw new MediaVerifyError("WAV_FMT");
+        }
+        samplesPerBlock = readU16LE(bytes, chunkData + 18);
+      }
     } else if (chunkId === "data") {
       dataBytes = chunkSize;
     }
@@ -97,19 +117,34 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
     sampleRate == null ||
     channels == null ||
     bitsPerSample == null ||
+    blockAlign == null ||
+    audioFormat == null ||
     dataBytes == null
   ) {
     throw new MediaVerifyError("WAV_MISSING_CHUNKS");
   }
-  if (channels <= 0 || bitsPerSample <= 0 || sampleRate <= 0) {
+  if (channels <= 0 || bitsPerSample <= 0 || sampleRate <= 0 || blockAlign <= 0) {
     throw new MediaVerifyError("WAV_FMT_VALUES");
   }
-
-  const blockAlign = (channels * bitsPerSample) / 8;
-  if (blockAlign <= 0 || dataBytes % blockAlign !== 0) {
+  if (dataBytes % blockAlign !== 0) {
     throw new MediaVerifyError("WAV_DATA_ALIGN");
   }
-  const sampleFrames = dataBytes / blockAlign;
+
+  let sampleFrames: number;
+  if (audioFormat === WAVE_FORMAT_PCM) {
+    const pcmFrameSize = (channels * bitsPerSample) / 8;
+    if (pcmFrameSize <= 0 || pcmFrameSize !== blockAlign) {
+      throw new MediaVerifyError("WAV_DATA_ALIGN");
+    }
+    sampleFrames = dataBytes / blockAlign;
+  } else {
+    // IMA ADPCM: frames = blocks * samplesPerBlock
+    if (samplesPerBlock == null || samplesPerBlock <= 0) {
+      throw new MediaVerifyError("WAV_FMT_VALUES");
+    }
+    sampleFrames = (dataBytes / blockAlign) * samplesPerBlock;
+  }
+
   if (sampleFrames > MAX_PCM_SAMPLES) {
     throw new MediaVerifyError("WAV_SAMPLE_CEILING");
   }
