@@ -33,3 +33,31 @@ export async function persistDriveFileLink(
   }
   throw new ProjectStoreRevisionConflictError(null, null);
 }
+
+/** Drop a stale Drive binding (e.g. after the user revokes app access in A6). */
+export async function clearDriveFileLink(
+  store: DriveFileLinkStore,
+  localProjectId: string,
+  now: () => string = () => new Date().toISOString(),
+  signal?: AbortSignal,
+): Promise<LocalProjectRecord> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    signal?.throwIfAborted();
+    const record = await store.get(localProjectId);
+    signal?.throwIfAborted();
+    if (!record.driveFileId) return record;
+    const {driveFileId: _removed, ...rest} = record;
+    const next = {
+      ...rest,
+      revision: record.revision + 1,
+      updatedAt: now(),
+    } satisfies LocalProjectRecord;
+    try {
+      signal?.throwIfAborted();
+      return await store.createOrReplace(next, record.revision);
+    } catch (error) {
+      if (!(error instanceof ProjectStoreRevisionConflictError)) throw error;
+    }
+  }
+  throw new ProjectStoreRevisionConflictError(null, null);
+}

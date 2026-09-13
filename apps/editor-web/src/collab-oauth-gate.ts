@@ -14,6 +14,8 @@ import {
 
 export const PENDING_HOST_CREATE_KEY = "blocksync.pendingHostCreate";
 export const PENDING_GUEST_JOIN_KEY = "blocksync.pendingGuestJoin";
+/** Host room invite — survives reload so guests are not left in an empty room. */
+export const PENDING_HOST_ROOM_KEY = "blocksync.pendingHostRoom";
 
 export type SessionStorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -37,6 +39,16 @@ export function markPendingHostCreate(
     storage?.setItem(PENDING_HOST_CREATE_KEY, "1");
   } catch {
     // private mode
+  }
+}
+
+export function peekPendingHostCreate(
+  storage: SessionStorageLike | null = defaultStorage(),
+): boolean {
+  try {
+    return storage?.getItem(PENDING_HOST_CREATE_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -89,6 +101,54 @@ export function peekPendingGuestInvite(
   }
 }
 
+export function savePendingHostRoomInvite(
+  invite: CollabInvite,
+  storage: SessionStorageLike | null = defaultStorage(),
+): void {
+  try {
+    storage?.setItem(PENDING_HOST_ROOM_KEY, encodeInviteFragment(invite));
+  } catch {
+    // private mode
+  }
+}
+
+export function peekPendingHostRoomInvite(
+  storage: SessionStorageLike | null = defaultStorage(),
+): CollabInvite | null {
+  try {
+    const raw = storage?.getItem(PENDING_HOST_ROOM_KEY);
+    if (!raw) return null;
+    return decodeInviteFragment(raw.startsWith("#") ? raw : `#${raw}`);
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingHostRoomInvite(
+  storage: SessionStorageLike | null = defaultStorage(),
+): void {
+  try {
+    storage?.removeItem(PENDING_HOST_ROOM_KEY);
+  } catch {
+    // private mode
+  }
+}
+
+/**
+ * Persist a guest invite from the URL hash before Classroom auth / OAuth can
+ * strip or delay boot auto-join.
+ */
+export function stageCollabInviteFromLocation(
+  locate: () => Location = () => window.location,
+  storage: SessionStorageLike | null = defaultStorage(),
+): CollabInvite | null {
+  const invite = decodeInviteFragment(locate().hash);
+  if (!invite) return null;
+  savePendingGuestInvite(invite, storage);
+  ensureInviteHashOnLocation(invite, locate);
+  return invite;
+}
+
 /**
  * Put the invite hash on the current URL (no reload) so OAuth `return`
  * includes it and boot can auto-join after Google comes back.
@@ -114,3 +174,7 @@ export const COLLAB_GOOGLE_REQUIRED_FOR_JOIN =
 
 export const COLLAB_GOOGLE_REQUIRED_FOR_CREATE =
   "リンクを作る前に Google とつなぎます。";
+
+/** Shown when host OAuth returns `drive_oauth=error` (cancel, missing refresh, etc.). */
+export const COLLAB_GOOGLE_OAUTH_FAILED =
+  "Google アカウントとの接続ができませんでした。アカウントを選び直すか、「Google とつなぐ」をもう一度押してください。";

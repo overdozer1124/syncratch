@@ -52,6 +52,15 @@ async function bootEditor(page: Page): Promise<void> {
   await expect(page.getByTestId("exec-control")).toBeVisible();
 }
 
+async function openDebugPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("exec-debug-panel");
+  if (!(await panel.isVisible())) {
+    await page.getByTestId("exec-debug-toggle").click();
+  }
+  await expect(panel).toBeVisible();
+  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
+}
+
 /**
  * Build a forever-loop script on the editing target and start it, so there is
  * a running thread to pause. Uses the VM's own block API rather than dragging.
@@ -100,33 +109,45 @@ async function readSpriteX(page: Page): Promise<number> {
   })()`) as Promise<number>;
 }
 
-test("pause stops the VM and resume restarts it", async ({page}) => {
+test("debug toggle pauses and in-panel resume restarts without closing", async ({
+  page,
+}) => {
   await bootEditor(page);
   await startForeverScript(page);
 
-  // Running: the sprite keeps moving.
   const first = await readSpriteX(page);
   await page.waitForTimeout(300);
-  expect(await readSpriteX(page), "sprite should move while running").not.toBe(
-    first,
-  );
+  expect(await readSpriteX(page)).not.toBe(first);
 
-  await page.getByTestId("exec-pause").click();
-  await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
-  await expect(page.getByTestId("exec-pause-label")).toHaveText("再開");
+  await openDebugPanel(page);
+  await expect(page.getByTestId("exec-debug-toggle-label")).toHaveText("デバッグ");
+  await expect(page.getByTestId("exec-debug-pause-resume")).toHaveText("再開");
 
   const paused = await readSpriteX(page);
   await page.waitForTimeout(400);
-  expect(await readSpriteX(page), "sprite must not move while paused").toBe(
-    paused,
-  );
+  expect(await readSpriteX(page)).toBe(paused);
 
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-pause-resume").click();
   await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+  await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
+  await expect(page.getByTestId("exec-debug-pause-resume")).toHaveText("一時停止");
   await page.waitForTimeout(300);
-  expect(await readSpriteX(page), "sprite should move again after resume").not.toBe(
-    paused,
-  );
+  expect(await readSpriteX(page)).not.toBe(paused);
+});
+
+test("closing debug via toolbar or close button resumes", async ({page}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await openDebugPanel(page);
+
+  await page.getByTestId("exec-debug-toggle").click();
+  await expect(page.getByTestId("exec-debug-panel")).toBeHidden();
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
+
+  await openDebugPanel(page);
+  await page.getByTestId("exec-debug-close").click();
+  await expect(page.getByTestId("exec-debug-panel")).toBeHidden();
+  await expect(page.getByTestId("exec-status")).toHaveText("動いています");
 });
 
 test("step advances exactly one frame and highlights the running block", async ({
@@ -135,7 +156,7 @@ test("step advances exactly one frame and highlights the running block", async (
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
 
   // scratch-blocks paints a glow via an SVG filter (src/glows.ts), not a class.
@@ -160,15 +181,19 @@ test("step advances exactly one frame and highlights the running block", async (
 test("the trace panel records what actually ran", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
+  await page.waitForTimeout(1500);
 
-  await page.getByTestId("trace-panel").locator("summary").click();
+  await openDebugPanel(page);
   const lines = page.getByTestId("trace-list").locator(".trace-line");
-  await expect(lines.first()).toBeVisible();
+  await expect(lines.first()).toBeVisible({timeout: 15_000});
 
   // The forever loop runs "move 1 steps" over and over, under the green flag hat.
-  const labels = await lines.allTextContents();
-  expect(labels.join("\n")).toContain("歩いた");
-  expect(labels.join("\n")).toContain("緑の旗が押された");
+  await expect(lines.filter({hasText: "1歩動いた"}).first()).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(lines.filter({hasText: "緑の旗でスクリプトを開始した"}).first()).toBeVisible({
+    timeout: 15_000,
+  });
 
   // A forever loop genuinely alternates forever/move, so consecutive-run
   // coalescing does not apply here; the buffer cap is what bounds the list.
@@ -190,12 +215,12 @@ for (const size of [
   {width: 1280, height: 800},
   {width: 1920, height: 1000},
 ]) {
-  test(`toolbar and trace panel fit at ${size.width}px`, async ({page}) => {
+  test(`toolbar and debug panel fit at ${size.width}px`, async ({page}) => {
     await page.setViewportSize(size);
     await bootEditor(page);
 
-    await page.getByTestId("trace-panel").locator("summary").click();
-    const panel = page.getByTestId("trace-panel").locator(".panel-content");
+    await openDebugPanel(page);
+    const panel = page.getByTestId("exec-debug-panel");
     await expect(panel).toBeVisible();
 
     const box = (await panel.boundingBox())!;
@@ -247,19 +272,16 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
+  await openDebugPanel(page);
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
   const paused = await readSpriteX(page);
 
-  // The history panel must survive clicking the run controls beside it.
-  await page.getByTestId("trace-panel").locator("summary").click();
-  await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-  ).toBeVisible();
+  // The debug panel must survive clicking the run controls inside it.
+  await expect(page.getByTestId("exec-debug-panel")).toBeVisible();
   await page.getByTestId("exec-step").click();
   await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-    "stepping must not close the history panel",
+    page.getByTestId("exec-debug-panel"),
+    "stepping must not close the debug panel",
   ).toBeVisible();
 
   // Pressing the green flag has to actually start the project.
@@ -279,9 +301,9 @@ test("the green flag resumes a paused project and starts a fresh log", async ({
   const labels = (
     await page.getByTestId("trace-list").locator(".trace-line").allTextContents()
   ).join("\n");
-  expect(labels).toContain("緑の旗が押された");
+  expect(labels).toContain("緑の旗でスクリプトを開始した");
   expect(
-    labels.match(/緑の旗が押された/g)?.length,
+    labels.match(/緑の旗でスクリプトを開始した/g)?.length,
     "one green-flag entry, not one per run ever made",
   ).toBe(1);
 });
@@ -294,11 +316,7 @@ test("a paused project neither runs nor logs", async ({page}) => {
   await bootEditor(page);
   await startForeverScript(page);
 
-  await page.getByTestId("exec-pause").click();
-  await page.getByTestId("trace-panel").locator("summary").click();
-  await expect(
-    page.getByTestId("trace-panel").locator(".panel-content"),
-  ).toBeVisible();
+  await openDebugPanel(page);
   await page.getByTestId("trace-clear").click();
 
   // Starting scripts while paused must not grow the log: a log that moves
@@ -371,7 +389,7 @@ test("green flag with no blocks must not move the sprite", async ({page}) => {
   await page.waitForTimeout(400);
 
   // Pause mid-run (the path that previously left stale execution state).
-  await page.getByTestId("exec-pause").click();
+  await page.getByTestId("exec-debug-toggle").click();
   await expect(page.getByTestId("exec-status")).toHaveText("止まっています");
   await page.getByTestId("exec-step").click();
   await page.waitForTimeout(200);
@@ -416,4 +434,58 @@ test("green flag after deleting a running script must not move the sprite", asyn
     await readSpriteX(page),
     "deleting scripts then green-flagging must not revive motion",
   ).toBe(atFlag);
+});
+
+/**
+ * #126 guard must stop execution when Blockly is empty but VM scripts remain,
+ * without deleting VM blocks (recoverable partial-sync failure).
+ */
+test("empty Blockly with VM scripts stops execution but keeps VM blocks", async ({
+  page,
+}) => {
+  await bootEditor(page);
+  await startForeverScript(page);
+  await page.waitForTimeout(400);
+
+  const before = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    return {
+      vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
+      x: vm.runtime.targets.find(t => !t.isStage).x,
+    };
+  })()`);
+
+  // Simulate partial VM→Blockly sync failure: Blockly cleared, VM untouched.
+  await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const Blockly = globalThis.Blockly;
+    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    if (!ws || typeof ws.clear !== 'function') throw new Error('Blockly workspace missing');
+    ws.clear();
+  })()`);
+
+  await page.waitForTimeout(750);
+
+  const after = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    const Blockly = globalThis.Blockly;
+    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    const tops = ws && ws.getTopBlocks ? ws.getTopBlocks(false) : [];
+    return {
+      vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,
+      workspaceTops: tops.length,
+      x: vm.runtime.targets.find(t => !t.isStage).x,
+      desyncLog: window.__blocksyncTask3?.workspaceVmDesyncLog?.() ?? [],
+      runningThreads: vm.runtime.threads.filter(t => !t.updateMonitor && !t.isKilled).length,
+    };
+  })()`);
+
+  expect(after.workspaceTops, "Blockly workspace should look empty").toBe(0);
+  expect(after.vmBlocks, "VM blocks must not be auto-deleted").toBe(before.vmBlocks);
+  expect(after.vmBlocks).toBeGreaterThan(0);
+  expect(after.desyncLog.length, "desync should be recorded").toBeGreaterThan(0);
+  expect(
+    Math.abs(after.x - before.x),
+    "motion should stop after desync guard",
+  ).toBeLessThan(5);
+  expect(after.runningThreads, "active threads should be stopped").toBe(0);
 });

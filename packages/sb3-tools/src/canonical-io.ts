@@ -218,10 +218,14 @@ function assertPlainObject(
 /**
  * Fields outside the canonical set are dropped, not rejected.
  *
- * The allow-lists describe what *we* write on export; real SB3 files carry
- * more than that (editor-specific keys, fields from newer Scratch releases,
- * whatever a fork added). Refusing those made ordinary projects unopenable,
- * so import normalizes them away and says so instead.
+ * The allow-lists describe what *we* write on export, and Scratch, TurboWarp
+ * and Xcratch keep growing optional fields beyond it (top-level
+ * `extensionURLs`, sprite extras, block metadata). Failing closed on those
+ * made ordinary projects unopenable, so import normalizes them away — and
+ * says which ones, so the loss is visible rather than silent.
+ *
+ * Prototype-pollution keys are still rejected, earlier, by
+ * `assertSafeCanonicalJson`.
  */
 function dropUnknownKeys(
   obj: Record<string, unknown>,
@@ -333,6 +337,7 @@ function parseBlockEntry(
     return raw;
   }
   const b = assertPlainObject(raw, path);
+  // Block-linked comments are dropped, same policy as target.comments.
   if ("comment" in b) {
     warnings.push(`${path}: block comment dropped on import`);
   }

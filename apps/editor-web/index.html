@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
     <!-- Start downloading the large Scratch bundle while the shell paints. -->
@@ -18,6 +18,30 @@
     />
   </head>
   <body>
+    <div
+      class="admin-shell"
+      data-testid="admin-shell"
+      hidden
+      id="admin-shell"
+    ></div>
+    <div
+      class="student-error-shell"
+      data-testid="student-error-shell"
+      hidden
+      id="student-error-shell"
+    ></div>
+    <div
+      class="student-auth-shell"
+      data-testid="student-auth-shell"
+      hidden
+      id="student-auth-shell"
+    ></div>
+    <div
+      class="admin-preview-banner-host"
+      data-testid="admin-preview-banner"
+      hidden
+      id="admin-preview-banner"
+    ></div>
     <main id="app">
       <div
         aria-hidden="true"
@@ -226,6 +250,44 @@
                 <p class="panel-help">
                   作品ファイルを開いたり、この作品をファイルにして残したりできます。
                 </p>
+                <div class="drive-section">
+                  <div class="drive-section-header">
+                    <img
+                      alt=""
+                      class="drive-section-logo"
+                      src="%BASE_URL%branding/google-drive-2026-color-64dp.png"
+                    />
+                    <span class="drive-section-title">Google ドライブ</span>
+                    <span
+                      aria-hidden="true"
+                      class="panel-status"
+                      data-testid="drive-status"
+                      id="drive-status"
+                    >このパソコンでは使えません</span>
+                  </div>
+                  <!--
+                    Drive section sits above local file buttons so CTAs stay in the
+                    initial panel viewport at 1024×600 (Codex H1 follow-up).
+                    Controls stay above the long help paragraph within the card.
+                  -->
+                  <div class="drive-controls" id="drive-controls">
+                    <button id="connect-google" type="button" disabled>Google とつなぐ</button>
+                    <button id="open-drive" type="button" disabled>ドライブから開く</button>
+                    <button
+                      data-testid="save-drive"
+                      id="save-drive"
+                      type="button"
+                      disabled
+                    >
+                      Google ドライブに保存
+                    </button>
+                    <button id="disconnect-google" type="button" disabled>つながりを切る</button>
+                  </div>
+                  <p class="panel-help" id="drive-section-help">
+                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
+                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
+                  </p>
+                </div>
                 <div class="file-controls">
                   <button
                     class="button-secondary"
@@ -255,32 +317,12 @@
                     <span class="menu-item-label">今すぐ保存</span>
                   </button>
                 </div>
-                <div class="drive-section">
-                  <div class="drive-section-header">
-                    <img
-                      alt=""
-                      class="drive-section-logo"
-                      src="%BASE_URL%branding/google-drive-2026-color-64dp.png"
-                    />
-                    <span class="drive-section-title">Google ドライブ</span>
-                    <span
-                      aria-hidden="true"
-                      class="panel-status"
-                      data-testid="drive-status"
-                      id="drive-status"
-                    >このパソコンでは使えません</span>
-                  </div>
-                  <p class="panel-help">
-                    ドライブにもう1つ保存できます。使わなくても作品は作れます。
-                    ゲストはドライブに保存できませんが、「Google とつなぐ」でアイコン写真は使えます。なまえだけなら、つながっている人メニューからも決められます。
-                  </p>
-                  <div class="drive-controls">
-                    <button id="connect-google" type="button" disabled>Google とつなぐ</button>
-                    <button id="open-drive" type="button" disabled>ドライブから開く</button>
-                    <button id="save-drive" type="button" disabled>ドライブにも保存</button>
-                    <button id="disconnect-google" type="button" disabled>つながりを切る</button>
-                  </div>
-                </div>
+                <div
+                  class="student-submission-panel"
+                  data-testid="student-submission-panel"
+                  hidden
+                  id="student-submission-panel"
+                ></div>
               </div>
             </details>
 
@@ -625,6 +667,58 @@
                 </div>
               </div>
             </details>
+
+            <details
+              class="tool-panel diagnostic-panel"
+              data-testid="diagnostic-panel"
+              id="diagnostic-panel"
+            >
+              <summary>
+                <svg
+                  aria-hidden="true"
+                  class="menu-summary-icon menu-summary-icon--inline"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  width="18"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 3a9 9 0 1 0 9 9A9 9 0 0 0 12 3Zm.75 13.5h-1.5v-1.5h1.5Zm0-3h-1.5V7.5h1.5Z"
+                  ></path>
+                </svg>
+                ヒントを見る
+              </summary>
+              <div class="panel-content diagnostic-panel-content" id="diagnostic-panel-content">
+                <p class="panel-help">
+                  APIキーなしで、この端末だけで作品を確認します。外部へは送りません。
+                </p>
+                <button
+                  class="ai-submit"
+                  data-testid="diagnostic-run"
+                  id="diagnostic-run"
+                  type="button"
+                >
+                  ヒントを見る
+                </button>
+                <p
+                  aria-live="polite"
+                  class="diagnostic-status"
+                  data-testid="diagnostic-status"
+                  id="diagnostic-status"
+                ></p>
+                <div
+                  class="diagnostic-results"
+                  data-testid="diagnostic-results"
+                  id="diagnostic-results"
+                ></div>
+                <p
+                  aria-live="polite"
+                  class="panel-feedback"
+                  data-testid="diagnostic-feedback"
+                  id="diagnostic-feedback"
+                ></p>
+              </div>
+            </details>
           </div>
           <span
             aria-atomic="true"
@@ -673,50 +767,129 @@
           >
             <button
               class="toolbar-action exec-control-button"
-              data-testid="exec-pause"
-              id="exec-pause"
+              data-testid="exec-debug-toggle"
+              id="exec-debug-toggle"
               type="button"
-              aria-pressed="false"
-              aria-label="一時停止"
-              title="一時停止"
+              aria-expanded="false"
+              aria-controls="exec-debug-panel"
+              aria-label="デバッグ"
+              title="デバッグ"
             ><span aria-hidden="true" class="exec-icon">⏯</span
-            ><span class="exec-label" data-testid="exec-pause-label" id="exec-pause-label">一時停止</span></button>
-            <button
-              class="toolbar-action exec-control-button"
-              data-testid="exec-step"
-              id="exec-step"
-              title="1コマ進む"
-              aria-label="1コマ進む"
-              type="button"
-            ><span aria-hidden="true" class="exec-icon">⏭</span
-            ><span class="exec-label">1コマ</span></button>
-            <span
-              class="exec-control-status"
-              data-testid="exec-status"
-              id="exec-status"
-              role="status"
-              aria-live="polite"
-            >動いています</span>
-            <details class="tool-panel trace-panel" data-testid="trace-panel">
-              <summary title="じっこう履歴" aria-label="じっこう履歴"
-                ><span aria-hidden="true" class="exec-icon">🕘</span
-                ><span class="exec-label">履歴</span></summary>
-              <div class="panel-content">
-                <div class="trace-panel-actions">
-                  <button
-                    class="toolbar-action toolbar-action--quiet"
-                    data-testid="trace-clear"
-                    id="trace-clear"
-                    type="button"
-                  >消す</button>
-                </div>
-                <div
-                  class="trace-panel-body"
-                  data-testid="trace-list"
-                  id="trace-list"
-                ></div>
+            ><span class="exec-label" data-testid="exec-debug-toggle-label" id="exec-debug-toggle-label">デバッグ</span></button>
+            <div
+              class="debug-floating-panel"
+              data-testid="exec-debug-panel"
+              id="exec-debug-panel"
+              hidden
+            >
+              <div
+                class="debug-panel-chrome"
+                data-testid="exec-debug-drag-handle"
+                id="exec-debug-drag-handle"
+              >
+                <h2 class="debug-panel-title" id="exec-debug-title">デバッグ</h2>
+                <button
+                  class="debug-panel-close"
+                  data-testid="exec-debug-close"
+                  id="exec-debug-close"
+                  type="button"
+                  aria-label="閉じる（実行を再開）"
+                  title="閉じる（実行を再開）"
+                >×</button>
               </div>
-            </details>
+              <div class="debug-panel-body">
+                <p
+                  class="exec-control-status"
+                  data-testid="exec-status"
+                  id="exec-status"
+                  role="status"
+                  aria-live="polite"
+                >止まっています</p>
+                <div
+                  class="debug-panel-controls"
+                  role="group"
+                  aria-label="コマ送り"
+                >
+                  <button
+                    class="toolbar-action exec-control-button"
+                    data-testid="exec-rewind"
+                    id="exec-rewind"
+                    title="1コマ戻る"
+                    aria-label="1コマ戻る"
+                    type="button"
+                    disabled
+                  ><span aria-hidden="true" class="exec-icon">⏮</span
+                  ><span class="exec-label" data-testid="exec-rewind-label" id="exec-rewind-label">戻る</span></button>
+                  <input
+                    type="range"
+                    class="exec-scrub"
+                    data-testid="exec-scrub"
+                    id="exec-scrub"
+                    min="0"
+                    max="0"
+                    value="0"
+                    step="1"
+                    disabled
+                    aria-label="実行位置"
+                    aria-valuetext="コマ 0 / 0"
+                  />
+                  <span
+                    class="exec-scrub-label exec-label"
+                    data-testid="exec-scrub-label"
+                    id="exec-scrub-label"
+                  >0 / 0</span>
+                  <button
+                    class="toolbar-action exec-control-button"
+                    data-testid="exec-step"
+                    id="exec-step"
+                    title="1コマ進む"
+                    aria-label="1コマ進む"
+                    type="button"
+                  ><span aria-hidden="true" class="exec-icon">⏭</span
+                  ><span class="exec-label">1コマ</span></button>
+                </div>
+                <button
+                  class="toolbar-action debug-panel-pause-resume"
+                  data-testid="exec-debug-pause-resume"
+                  id="exec-debug-pause-resume"
+                  type="button"
+                  aria-label="一時停止"
+                >一時停止</button>
+                <section
+                  class="debug-panel-history"
+                  aria-label="じっこう履歴"
+                  data-testid="trace-panel"
+                >
+                  <div class="debug-panel-history-header">
+                    <h3 class="debug-panel-history-title">履歴</h3>
+                    <button
+                      class="toolbar-action toolbar-action--quiet"
+                      data-testid="trace-clear"
+                      id="trace-clear"
+                      type="button"
+                    >消す</button>
+                  </div>
+                  <label
+                    class="trace-script-filter"
+                    data-testid="trace-script-filter-wrap"
+                    hidden
+                    id="trace-script-filter-wrap"
+                  >
+                    <span class="trace-script-filter-label">スクリプト</span>
+                    <select
+                      aria-label="履歴を見るスクリプト"
+                      data-testid="trace-script-filter"
+                      id="trace-script-filter"
+                    ></select>
+                  </label>
+                  <div
+                    class="trace-panel-body"
+                    data-testid="trace-list"
+                    id="trace-list"
+                  ></div>
+                </section>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -775,9 +948,12 @@
     ></div>
     <script>
       // Scratch GUI webpack assets resolve against this prefix (see prepare-assets).
+      // Must use Vite BASE_URL (absolute), not location-relative "./" — student
+      // routes (/s/{token}) would otherwise resolve media under /s/static/… (404).
       (function () {
-        var base = new URL("./", document.baseURI || location.href).pathname;
-        if (!base.endsWith("/")) base += "/";
+        var base = "%BASE_URL%";
+        if (!base || base.charAt(0) !== "/") base = "/";
+        if (base.charAt(base.length - 1) !== "/") base += "/";
         window.__BLOCKSYNC_GUI_PUBLIC_PATH__ = base;
       })();
     </script>

@@ -21,7 +21,8 @@ async function openPanel(
     | "settings-panel"
     | "file-panel"
     | "edit-panel"
-    | "collab-panel",
+    | "collab-panel"
+    | "diagnostic-panel",
 ): Promise<void> {
   const panel = page.getByTestId(testId);
   if (await panel.getAttribute("open") === null) {
@@ -131,6 +132,51 @@ test("no Google configuration keeps Drive disabled and local editing available",
   );
 
   expect(googleRequests).toEqual([]);
+});
+
+test("file panel shows Drive save CTA without scrolling at 1024x600", async ({
+  page,
+}) => {
+  // Codex ROOT_CAUSE: at this size the CTA used to sit fully below the
+  // initial .panel-content viewport behind local file buttons + long help.
+  await page.setViewportSize({width: 1024, height: 600});
+  await waitUntilReady(page);
+  await openPanel(page, "file-panel");
+
+  const panelContent = page.locator(
+    '[data-testid="file-panel"] > .panel-content',
+  );
+  await expect(panelContent).toBeVisible();
+  expect(await panelContent.evaluate(el => el.scrollTop)).toBe(0);
+
+  const saveDrive = page.getByTestId("save-drive");
+  const connectGoogle = page.locator("#connect-google");
+  await expect(saveDrive).toBeVisible();
+  await expect(saveDrive).toBeInViewport();
+  await expect(saveDrive).toContainText("Google ドライブに保存");
+  await expect(connectGoogle).toBeVisible();
+  await expect(connectGoogle).toBeInViewport();
+
+  // DOM order guard: Drive section above local file buttons; controls above help.
+  const order = await page.locator(".panel-content").evaluate(panel => {
+    const driveSection = panel.querySelector(".drive-section");
+    const fileControls = panel.querySelector(".file-controls");
+    const controls = panel.querySelector(".drive-controls");
+    const help = driveSection?.querySelector(".panel-help");
+    if (!driveSection || !fileControls || !controls || !help) return "missing";
+    const driveBeforeFiles = Boolean(
+      driveSection.compareDocumentPosition(fileControls) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    const controlsBeforeHelp = Boolean(
+      controls.compareDocumentPosition(help) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    return driveBeforeFiles && controlsBeforeHelp
+      ? "drive-before-files-and-controls-before-help"
+      : "unexpected-order";
+  });
+  expect(order).toBe("drive-before-files-and-controls-before-help");
 });
 
 test("VM block mutation autosaves and survives reload", async ({page}) => {
@@ -1009,6 +1055,99 @@ test("signaling outage leaves local editing and SB3 export available", async ({
   await page.waitForFunction(() => window.__blocksyncTask3?.ready === true);
   expect(await page.evaluate(() =>
     window.__blocksyncTask3!.targetName(false))).toBe("Offline edit");
+});
+
+test("standard hints work without API key and do not call /ai/chat", async ({
+  page,
+}) => {
+  const aiChatRequests: string[] = [];
+  page.on("request", request => {
+    if (request.url().includes("/ai/chat")) {
+      aiChatRequests.push(request.url());
+    }
+  });
+
+  await waitUntilReady(page);
+  await openPanel(page, "settings-panel");
+  // Ensure AI stays off / keyless (default).
+  const aiEnabled = page.locator("#ai-enabled");
+  if (await aiEnabled.count()) {
+    if (await aiEnabled.isChecked()) {
+      await aiEnabled.click();
+    }
+  }
+
+  const diagnosticPanel = page.getByTestId("diagnostic-panel");
+  await expect(diagnosticPanel).toBeVisible();
+  if ((await diagnosticPanel.getAttribute("open")) === null) {
+    await diagnosticPanel.locator("summary").click();
+  }
+  await expect(diagnosticPanel).toHaveAttribute("open", "");
+
+  const runButton = page.getByTestId("diagnostic-run");
+  await runButton.focus();
+  await expect(runButton).toBeFocused();
+  await runButton.click();
+
+  await expect(page.getByTestId("diagnostic-status")).toHaveText(
+    "この端末で確認しました",
+    {timeout: 15_000},
+  );
+  await expect(page.getByTestId("diagnostic-results")).not.toBeEmpty();
+  expect(aiChatRequests).toEqual([]);
+
+  // Keyboard: Escape closes the diagnostic panel (tool-panel dismiss).
+  await page.keyboard.press("Escape");
+  await expect(diagnosticPanel).not.toHaveAttribute("open", "");
+});
+
+test("AI ask conversation still works with a mocked /ai/chat proxy", async ({
+  page,
+}) => {
+  await page.route("**/ai/chat", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        content: "モックの助言です",
+        provider: "openai",
+        model: "mock-model",
+      }),
+    });
+  });
+
+  await waitUntilReady(page);
+  await page.evaluate(() => {
+    localStorage.setItem(
+      "blocksync.ai-assist.settings.v1",
+      JSON.stringify({
+        enabled: true,
+        apiKey: "sk-test-mock-key-1234567890",
+        level: 2,
+        modelOverride: "",
+        providerOverride: "openai",
+      }),
+    );
+  });
+  await page.reload();
+  await waitUntilReady(page);
+
+  const aiPanel = page.getByTestId("ai-panel");
+  await expect(aiPanel).toBeVisible();
+  if ((await aiPanel.getAttribute("open")) === null) {
+    await aiPanel.locator("summary").click();
+  }
+  // Long, non-broken question so intent clarification is skipped.
+  await page
+    .locator("#ai-question")
+    .fill(
+      "このスプライトの見た目についてゆっくり説明してください。色や大きさの話を聞きたいです。",
+    );
+  await page.locator("#ai-ask").click();
+  await expect(page.getByTestId("ai-thread")).toContainText("モックの助言です", {
+    timeout: 20_000,
+  });
 });
 
 declare global {

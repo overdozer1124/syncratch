@@ -13,7 +13,9 @@ describe("save coordinator", () => {
     });
 
     coordinator.markDirty();
+    expect(coordinator.getDirtyGeneration()).toBe(1);
     coordinator.markDirty();
+    expect(coordinator.getDirtyGeneration()).toBe(2);
     await vi.advanceTimersByTimeAsync(100);
 
     expect(save).toHaveBeenCalledTimes(1);

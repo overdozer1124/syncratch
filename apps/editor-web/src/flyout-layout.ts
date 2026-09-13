@@ -141,6 +141,17 @@ export function computeToggleEdgeX(options: {
   return options.toolboxRightPx + options.visualFlyoutWidthPx;
 }
 
+/** Blockly positions the flyout scrollbar at metrics width; nudge it for hover overlay. */
+export function computeFlyoutScrollbarNudgePx(options: {
+  collapsed: boolean;
+  hoverExpanded: boolean;
+  metricsWidthPx: number;
+  visualWidthPx: number;
+}): number {
+  if (options.collapsed || !options.hoverExpanded) return 0;
+  return Math.max(0, options.visualWidthPx - options.metricsWidthPx);
+}
+
 /** Apply / clear the hover overlay width on the flyout SVG (metrics untouched). */
 export function applyFlyoutVisualOverlay(
   flyoutSvg: SVGElement | null | undefined,
@@ -244,6 +255,7 @@ export function installFlyoutLayout(options: {
     );
     host.style.removeProperty("--syncratch-toolbox-width");
     host.style.removeProperty("--syncratch-flyout-width");
+    host.style.removeProperty("--syncratch-flyout-scroll-nudge");
     host = next;
     host.classList.add("syncratch-flyout-host");
   }
@@ -262,7 +274,13 @@ export function installFlyoutLayout(options: {
     host.classList.toggle("syncratch-flyout-hover-expanded", hoverExpanded);
   }
 
-  function applyWidth(): void {
+  /**
+   * @param reflow When true, ask Blockly to rebuild flyout contents/geometry.
+   *   Must stay false for MutationObserver-driven updates: reflow mutates the
+   *   flyout DOM, which re-triggers the observer and also breaks flyout button
+   *   clicks (Create Variable / List / Block) mid pointerdown→pointerup.
+   */
+  function applyWidth(reflow = true): void {
     const workspace = options.getWorkspace();
     const flyout = resolveFlyout(workspace);
     if (!flyout) return;
@@ -296,16 +314,18 @@ export function installFlyoutLayout(options: {
     const metricsChanged = metricsWidth !== lastMetricsWidth;
     lastMetricsWidth = metricsWidth;
 
-    try {
-      // Reflow/position always OK; resize only when metrics width changes
-      // (collapse/expand). Hover overlay must not call workspace.resize().
-      flyout.reflow?.();
-      flyout.position?.();
-      if (metricsChanged) {
-        workspace?.resize?.();
+    if (reflow) {
+      try {
+        // Reflow/position only on intentional layout changes. Hover overlay
+        // must not call workspace.resize().
+        flyout.reflow?.();
+        flyout.position?.();
+        if (metricsChanged) {
+          workspace?.resize?.();
+        }
+      } catch {
+        // Blockly may throw during teardown / mid-gesture.
       }
-    } catch {
-      // Blockly may throw during teardown / mid-gesture.
     }
 
     const flyoutSvg = findFlyoutSvg(options.root);
@@ -324,6 +344,15 @@ export function installFlyoutLayout(options: {
     const toolboxWidth = toolbox?.getBoundingClientRect().width ?? 60;
     host.style.setProperty("--syncratch-toolbox-width", `${toolboxWidth}px`);
     host.style.setProperty("--syncratch-flyout-width", `${visualWidth}px`);
+    host.style.setProperty(
+      "--syncratch-flyout-scroll-nudge",
+      `${computeFlyoutScrollbarNudgePx({
+        collapsed,
+        hoverExpanded,
+        metricsWidthPx: metricsWidth,
+        visualWidthPx: visualWidth,
+      })}px`,
+    );
 
     const toolboxRect = toolbox?.getBoundingClientRect();
     const hostRect = host.getBoundingClientRect();
@@ -376,17 +405,21 @@ export function installFlyoutLayout(options: {
   function setHoverExpanded(next: boolean): void {
     if (collapsed) {
       hoverExpanded = false;
-      applyWidth();
+      applyWidth(false);
       return;
     }
     if (next) refreshContentWidth();
     if (hoverExpanded === next) return;
     hoverExpanded = next;
-    applyWidth();
+    // Hover widen is a visual overlay only — reflow rebuilds flyout DOM and
+    // breaks category scroll + block drag/clicks (Scratch shows wrong blocks).
+    applyWidth(false);
   }
 
   let ignoreClickUntil = 0;
   let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True while a pointer is down inside the flyout — skip layout churn. */
+  let flyoutPointerActive = false;
 
   function clearLeaveTimer(): void {
     if (leaveTimer) {
@@ -442,28 +475,45 @@ export function installFlyoutLayout(options: {
     scheduleHoverLeave();
   };
 
+  const onRootPointerDownCapture = (event: PointerEvent) => {
+    if (isFlyoutHoverTarget(event.target)) {
+      flyoutPointerActive = true;
+    }
+  };
+
+  const onGlobalPointerUp = () => {
+    flyoutPointerActive = false;
+  };
+
   toggle.addEventListener("pointerdown", onTogglePointerDown, true);
   toggle.addEventListener("click", onToggleClick);
   options.root.addEventListener("pointerover", onRootPointerOver);
   options.root.addEventListener("pointerout", onRootPointerOut);
+  options.root.addEventListener("pointerdown", onRootPointerDownCapture, true);
+  window.addEventListener("pointerup", onGlobalPointerUp, true);
+  window.addEventListener("pointercancel", onGlobalPointerUp, true);
 
-  let applyScheduled = false;
-  const scheduleApply = () => {
-    if (disposed || applyScheduled) return;
-    applyScheduled = true;
+  let chromeSyncScheduled = false;
+  /**
+   * MutationObserver-driven updates: reposition the collapse toggle / overlay
+   * only. Never reflow — that rebuilds flyout buttons and cancels clicks.
+   */
+  const scheduleChromeSync = () => {
+    if (disposed || chromeSyncScheduled || flyoutPointerActive) return;
+    chromeSyncScheduled = true;
     requestAnimationFrame(() => {
-      applyScheduled = false;
-      if (disposed) return;
+      chromeSyncScheduled = false;
+      if (disposed || flyoutPointerActive) return;
       const flyout = resolveFlyout(options.getWorkspace());
       if (!flyout) return;
-      applyWidth();
+      applyWidth(false);
     });
   };
 
-  const observer = new MutationObserver(() => scheduleApply());
+  const observer = new MutationObserver(() => scheduleChromeSync());
   observer.observe(options.root, {childList: true, subtree: true});
 
-  const onResize = () => applyWidth();
+  const onResize = () => applyWidth(true);
   window.addEventListener("resize", onResize);
 
   const tryAttach = () => {
@@ -490,8 +540,15 @@ export function installFlyoutLayout(options: {
       clearLeaveTimer();
       observer.disconnect();
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("pointerup", onGlobalPointerUp, true);
+      window.removeEventListener("pointercancel", onGlobalPointerUp, true);
       options.root.removeEventListener("pointerover", onRootPointerOver);
       options.root.removeEventListener("pointerout", onRootPointerOut);
+      options.root.removeEventListener(
+        "pointerdown",
+        onRootPointerDownCapture,
+        true,
+      );
       toggle.removeEventListener("pointerdown", onTogglePointerDown, true);
       toggle.removeEventListener("click", onToggleClick);
       toolboxEl?.removeEventListener("click", onCategoryClick);
@@ -510,6 +567,7 @@ export function installFlyoutLayout(options: {
       );
       host.style.removeProperty("--syncratch-toolbox-width");
       host.style.removeProperty("--syncratch-flyout-width");
+      host.style.removeProperty("--syncratch-flyout-scroll-nudge");
     },
   };
 }

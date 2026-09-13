@@ -386,6 +386,7 @@ describe("Drive REST adapter", () => {
 
     await drive.updateFile({
       fileId: "file-1",
+      name: "Renamed.sb3",
       bytes: validSb3,
       knownObservation: {version: "7", snapshotId: "snapshot-1"},
       snapshot: {
@@ -399,6 +400,9 @@ describe("Drive REST adapter", () => {
       "https://www.googleapis.com/upload/drive/v3/files/file-1?uploadType=multipart&supportsAllDrives=true",
     );
     expect(fetch.mock.calls[1]![1].method).toBe("PATCH");
+    const updateBody = await (fetch.mock.calls[1]![1].body as Blob).text();
+    expect(updateBody).toContain('"name":"Renamed.sb3"');
+    expect(updateBody).toContain('"blocksyncSnapshotId":"snapshot-2"');
     expect(fetch.mock.calls.every(call => call[1]?.signal === signal)).toBe(true);
   });
 

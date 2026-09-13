@@ -1,12 +1,17 @@
 import {mkdtempSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
-import {afterEach, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {WebSocket} from "ws";
+import {resetClassroomFeatureFlagsCacheForTests} from "./classroom-feature-flags-runtime.js";
 import {startCollabHost, type CollabHostHandle} from "./server.js";
 
 const TOPIC = "c".repeat(43);
 let handle: CollabHostHandle | undefined;
+
+beforeEach(() => {
+  resetClassroomFeatureFlagsCacheForTests();
+});
 
 afterEach(async () => {
   await handle?.close();
@@ -122,6 +127,36 @@ describe("startCollabHost", () => {
     } finally {
       globalThis.fetch = previousFetch;
     }
+  });
+
+  it("returns 404 for submission preview surface when preview flag is off", async () => {
+    const root = mkdtempSync(join(tmpdir(), "collab-host-preview-off-"));
+    writeFileSync(join(root, "index.html"), "<html>host</html>");
+
+    handle = await startCollabHost({
+      host: "127.0.0.1",
+      port: 0,
+      staticRoot: root,
+      admin: {
+        classroomFlags: {
+          classroomRosterEnabled: true,
+          adminGoogleCredentialEnabled: true,
+          studentLocalAuthEnabled: true,
+          teacherDriveSubmissionEnabled: true,
+          submissionPreviewEnabled: false,
+        },
+        teacherDriveSubmissionEnabled: true,
+        submissionPreviewEnabled: false,
+      },
+    });
+
+    const preview = await fetch(
+      new URL("/admin/submissions/sub-123/preview", handle.url),
+    );
+    expect(preview.status).toBe(404);
+
+    const page = await fetch(new URL("/admin", handle.url));
+    expect(page.status).toBe(200);
   });
 });
 

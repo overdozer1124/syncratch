@@ -47,6 +47,11 @@ export interface EditorDriveDependencies {
     localProjectId: string,
     signal?: AbortSignal,
   ): Promise<void>;
+  /** Clears a Drive file binding after revoked OAuth / lost drive.file access. */
+  clearDriveFileId?(
+    localProjectId: string,
+    signal?: AbortSignal,
+  ): Promise<void>;
   hashBytes(bytes: Uint8Array): Promise<string>;
   createSnapshotId(): string;
   onStatus(status: EditorDriveStatus, message?: string): void;
@@ -84,6 +89,12 @@ export interface EditorDriveIntegration {
 
 function projectTitle(fileName: string): string {
   return fileName.replace(/\.sb3$/i, "") || "Google ドライブの作品";
+}
+
+/** Drive `.sb3` display name from the editor project title. */
+export function driveSb3FileName(title: string): string {
+  const trimmed = title.trim().replace(/\.sb3$/i, "");
+  return `${trimmed || "Project"}.sb3`;
 }
 
 interface TrackedObservation extends DriveObservation {
@@ -173,16 +184,39 @@ export function createEditorDriveIntegration(
     ) {
       return false;
     }
-    const next =
-      error instanceof DriveConflictError ||
-      (error instanceof LocalDriveSaveError && error.state === "conflict")
-        ? "conflict"
-        : "unsynced";
+    // Local IndexedDB commit problems must not be labeled as a remote Drive
+    // conflict ("changed elsewhere"). Only DriveConflictError means the cloud
+    // file diverged from the last observation.
+    if (error instanceof LocalDriveSaveError) {
+      setStatus(
+        "unsynced",
+        `Local project is not committed (${error.state}); save locally before Drive`,
+      );
+      return false;
+    }
+    const next = error instanceof DriveConflictError ? "conflict" : "unsynced";
     const message = error instanceof DriveSyncError
       ? error.message
       : "Google Drive operation failed";
     setStatus(next, message);
     return false;
+  };
+
+  const isStaleDriveLinkError = (error: unknown): boolean =>
+    error instanceof DrivePermissionError ||
+    error instanceof DriveFileNotFoundError;
+
+  const dropStaleDriveLink = async (
+    localProjectId: string,
+    fileId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    if (fileId) {
+      observations.delete(fileId);
+      boundFiles.delete(localProjectId);
+      pendingCreates.delete(fileId);
+    }
+    await dependencies.clearDriveFileId?.(localProjectId, signal);
   };
 
   setStatus(status);
@@ -248,16 +282,27 @@ export function createEditorDriveIntegration(
               setStatus("connected");
               return true;
             }
+            if (
+              error instanceof DrivePermissionError &&
+              isActive(operation) &&
+              dependencies.clearDriveFileId
+            ) {
+              await dropStaleDriveLink(
+                current.localProjectId,
+                current.driveFileId,
+                operation.controller.signal,
+              );
+              setStatus("connected");
+              return true;
+            }
             throw error;
           }
           if (!isActive(operation)) return false;
           if (metadata.stateHash !== localStateHash) {
-            if (metadata.stateHash !== null) {
-              throw new DriveConflictError(
-                "Drive content differs from the committed local project; open from Drive to resolve",
-                "pre-write",
-              );
-            }
+            // Hash mismatch on reconnect is usually "local edits not yet on
+            // Drive" (or a stale app-property), not a mid-session remote
+            // clobber. Keep Google connected and observe remote bytes so the
+            // host can explicitly save or reopen from Drive.
             const downloaded = await dependencies.drive.readFile(
               current.driveFileId,
               operation.controller.signal,
@@ -265,12 +310,23 @@ export function createEditorDriveIntegration(
             if (!isActive(operation)) return false;
             const remoteHash = await dependencies.hashBytes(downloaded.bytes);
             if (!isActive(operation)) return false;
-            if (remoteHash !== localStateHash) {
-              throw new DriveConflictError(
-                "Drive content differs from the committed local project; open from Drive to resolve",
-                "pre-write",
+            if (remoteHash === localStateHash) {
+              trackObservation(
+                current.driveFileId,
+                metadata,
+                localStateHash,
               );
+              boundFiles.set(current.localProjectId, current.driveFileId);
+              setStatus("connected");
+              return true;
             }
+            trackObservation(current.driveFileId, metadata, remoteHash);
+            boundFiles.set(current.localProjectId, current.driveFileId);
+            setStatus(
+              "unsynced",
+              "Local project differs from Drive; save to Drive to update the shared file",
+            );
+            return true;
           }
           trackObservation(
             current.driveFileId,
@@ -488,9 +544,11 @@ export function createEditorDriveIntegration(
           return false;
         }
         const current = dependencies.getCurrent();
+        for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          const fileId = current.driveFileId ??
-            boundFiles.get(current.localProjectId);
+          const fileId = attempt === 0
+            ? current.driveFileId ?? boundFiles.get(current.localProjectId)
+            : undefined;
           const bytes = await dependencies.exportCurrent();
           if (!isActive(operation)) return false;
           if (
@@ -537,10 +595,11 @@ export function createEditorDriveIntegration(
             boundFiles.set(current.localProjectId, targetFileId);
             pendingCreates.add(targetFileId);
           }
+          const fileName = driveSb3FileName(current.title);
           if (pendingCreates.has(targetFileId)) {
             const created = await dependencies.drive.createFile({
                 fileId: targetFileId,
-                name: `${current.title || "Project"}.sb3`,
+                name: fileName,
                 bytes,
                 snapshot,
               }, operation.controller.signal);
@@ -620,6 +679,7 @@ export function createEditorDriveIntegration(
             }
             const updated = await dependencies.drive.updateFile({
               fileId: targetFileId,
+              name: fileName,
               bytes,
               knownObservation: {
                 version: knownObservation.version,
@@ -641,8 +701,27 @@ export function createEditorDriveIntegration(
           if (error instanceof LocalProjectChangedDuringDriveSaveError) {
             return false;
           }
+          const boundId = attempt === 0
+            ? current.driveFileId ?? boundFiles.get(current.localProjectId)
+            : undefined;
+          if (
+            attempt === 0 &&
+            boundId &&
+            isStaleDriveLinkError(error) &&
+            dependencies.clearDriveFileId
+          ) {
+            await dropStaleDriveLink(
+              current.localProjectId,
+              boundId,
+              operation.controller.signal,
+            );
+            if (!isActive(operation)) return false;
+            continue;
+          }
           return handleError(error, current.localProjectId, operation);
         }
+        }
+        return false;
         } finally {
           finishOperation(operation);
         }

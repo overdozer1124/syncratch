@@ -14,11 +14,16 @@
  * light nothing up. The caller supplies a highlighter that talks to the live
  * ScratchBlocks workspace instead, which also keeps this module DOM-free.
  *
- * Known limitation: `wait` blocks and timers read the wall clock, so time keeps
- * passing while execution is paused. A long pause therefore makes pending waits
- * expire immediately on resume. Fixing that needs a virtual clock across the
- * runtime and is deliberately out of scope here.
+ * Known limitation: extension async blocks and timers created before install are
+ * not covered by the virtual clock patch.
+ *
+ * While paused, the VM scheduler still ticks but threads do not advance. The
+ * stage is kept visible by repainting via `renderer.draw()` on those idle ticks,
+ * because WebGL buffers can be cleared by `renderer.resize()` while paused.
  */
+
+import {installVirtualClock} from "./execution-virtual-clock.js";
+import {requestRuntimeStageDraw} from "./execution-stage-draw.js";
 
 const PATCH_FLAG = "_syncratchExecutionControlPatched";
 
@@ -37,8 +42,12 @@ export type ExecutionThreadLike = {
   /** Monitor threads should not be shown as "what the project is doing". */
   updateMonitor?: boolean;
   isKilled?: boolean;
+  /** scratch-vm Thread.STATUS_DONE === 4 */
   status?: number;
 };
+
+/** Matches scratch-vm Thread.STATUS_DONE without importing scratch-vm. */
+const THREAD_STATUS_DONE = 4;
 
 export type ExecutionRuntimeLike = {
   threads?: ExecutionThreadLike[];
@@ -125,12 +134,6 @@ export interface ExecutionController {
   dispose(): void;
 }
 
-/**
- * Blocks each non-monitor thread is sitting on, newest execution first.
- * `blockGlowInFrame` is what the sequencer just ran; `peekStack()` is what it
- * will run next. Prefer the former so a paused VM highlights the block the
- * learner just watched take effect.
- */
 export function readActiveBlockIds(
   runtime: ExecutionRuntimeLike | null | undefined,
 ): string[] {
@@ -138,7 +141,14 @@ export function readActiveBlockIds(
   if (!Array.isArray(threads)) return [];
   const ids: string[] = [];
   for (const thread of threads) {
-    if (!thread || thread.updateMonitor) continue;
+    if (
+      !thread ||
+      thread.updateMonitor ||
+      thread.isKilled ||
+      thread.status === THREAD_STATUS_DONE
+    ) {
+      continue;
+    }
     let id: unknown = thread.blockGlowInFrame;
     if (typeof id !== "string" || !id) {
       try {
@@ -152,6 +162,27 @@ export function readActiveBlockIds(
     }
   }
   return ids;
+}
+
+/** Non-monitor threads that can still advance (matches scratch-vm run status). */
+export function countRunnableNonMonitorThreads(
+  runtime: ExecutionRuntimeLike | null | undefined,
+): number {
+  const threads = runtime?.threads;
+  if (!Array.isArray(threads)) return 0;
+  let count = 0;
+  for (const thread of threads) {
+    if (
+      !thread ||
+      thread.updateMonitor ||
+      thread.isKilled ||
+      thread.status === THREAD_STATUS_DONE
+    ) {
+      continue;
+    }
+    count += 1;
+  }
+  return count;
 }
 
 /**
@@ -213,9 +244,6 @@ export function retireOrphanThreads(
     } else {
       thread.isKilled = true;
     }
-    // Drop it immediately so a paused VM does not keep a zombie around until
-    // the next free-running step filters `isKilled`.
-    threads.splice(i, 1);
     retired += 1;
   }
   return retired;
@@ -246,6 +274,9 @@ export function installExecutionControl(
   // other patchers (turbowarp-vm-compat) wrap this same method.
   const rawStep = runtime._step;
   const originalStep = rawStep.bind(runtime);
+  const virtualClock = installVirtualClock(
+    runtime as import("./execution-virtual-clock.js").VirtualClockRuntimeLike,
+  );
 
   const snapshot = (): ExecutionSnapshot => ({
     state,
@@ -298,10 +329,14 @@ export function installExecutionControl(
   // look like "the sprite moves with no blocks on the workspace".
   const onProjectChanged = () => {
     if (disposed) return;
-    if (retireOrphanThreads(runtime) > 0 && state === "paused") {
-      setHighlight(readActiveBlockIds(runtime));
-      notify();
-    }
+    // Defer so we do not mutate thread state while the sequencer is stepping.
+    queueMicrotask(() => {
+      if (disposed) return;
+      if (retireOrphanThreads(runtime) > 0 && state === "paused") {
+        setHighlight(readActiveBlockIds(runtime));
+        notify();
+      }
+    });
   };
   runtime.on?.("PROJECT_CHANGED", onProjectChanged);
 
@@ -309,7 +344,10 @@ export function installExecutionControl(
     if (disposed) return originalStep(...args);
     retireOrphanThreads(runtime);
     if (state === "paused") {
-      if (framesToRun <= 0) return undefined;
+      if (framesToRun <= 0) {
+        requestRuntimeStageDraw(runtime);
+        return undefined;
+      }
       framesToRun -= 1;
       const result = originalStep(...args);
       steppedFrames += 1;
@@ -327,6 +365,7 @@ export function installExecutionControl(
       if (disposed || state === "paused") return;
       state = "paused";
       framesToRun = 0;
+      virtualClock?.freeze();
       setHighlight(readActiveBlockIds(runtime));
       notify();
     },
@@ -334,6 +373,7 @@ export function installExecutionControl(
       if (disposed || state === "running") return;
       state = "running";
       framesToRun = 0;
+      virtualClock?.unfreeze();
       setHighlight([]);
       notify();
     },
@@ -359,6 +399,7 @@ export function installExecutionControl(
       runtime.off?.("PROJECT_CHANGED", onProjectChanged);
       setHighlight([]);
       listeners.clear();
+      virtualClock?.dispose();
       runtime._step = rawStep;
       runtime[PATCH_FLAG] = false;
     },

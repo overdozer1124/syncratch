@@ -22,6 +22,7 @@ export {
   consumeDriveOAuthReturnFlag,
   createHostBackedGoogleAuthorization,
   probeHostDriveOAuthAvailable,
+  type DriveOAuthReturnResult,
   type HostBackedGoogleAuthorizationOptions,
   type HostOAuthSessionResponse,
   type HostOAuthStatusResponse,

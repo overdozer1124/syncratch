@@ -1,0 +1,662 @@
+import {describe, expect, it, vi} from "vitest";
+import {ROSTER_SHEET_COLUMNS} from "@blocksync/classroom-access";
+import {DRIVE_FILE_SCOPE} from "@blocksync/google-drive-sync";
+import {openAdminDb} from "./admin-db.js";
+import {
+  createAdminGoogleCredentialStore,
+} from "./admin-google-credential-store.js";
+import {testAdminGoogleCryptoKeys} from "./admin-google-oauth.js";
+import {
+  applySheetSync,
+  createRosterService,
+  createSheetSyncPreview,
+  RosterServiceError,
+} from "./roster-service.js";
+
+function header(): string {
+  return ROSTER_SHEET_COLUMNS.join(",");
+}
+
+describe("roster-service", () => {
+  it("creates roster, imports CSV, applies preview with audit and revision bump", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-1",
+      email: "teacher@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    expect(roster.rosterRevision).toBe(0);
+
+    const csv = [
+      header(),
+      "S001,山田太郎,007,yamada01,,A,true",
+      "S002,佐藤花子,02,sato02,,A,true",
+    ].join("\n");
+    const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
+    expect(preview.baseRosterRevision).toBe(0);
+    expect(preview.rows.some(row => row.category === "add")).toBe(true);
+    expect(preview.previewHash).toMatch(/^[0-9a-f]{64}$/);
+
+    const result = service.applyImport({
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    expect(result.roster.rosterRevision).toBe(1);
+    expect(result.import.status).toBe("applied");
+
+    const students = service.listStudents(roster.rosterId, admin.adminId);
+    expect(students).toHaveLength(2);
+    expect(students.find(s => s.studentCode === "S001")?.attendanceNumber).toBe(
+      "007",
+    );
+
+    const auditCount = db.sqlite
+      .prepare(`SELECT COUNT(*) AS c FROM classroom_audit_events WHERE roster_id = ?`)
+      .get(roster.rosterId) as {c: number};
+    expect(auditCount.c).toBeGreaterThan(0);
+
+    db.close();
+  });
+
+  it("adds a student inline with revision bump and audit", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-add-student",
+      email: "teacher-add@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+      attendanceNumber: "01",
+      loginName: "yamada01",
+      groupLabel: "A",
+    });
+
+    expect(student.studentCode).toBe("S001");
+    expect(student.displayName).toBe("山田太郎");
+    expect(student.accountStatus).toBe("pending_activation");
+    expect(student.googleEmail).toBeNull();
+    expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(1);
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(1);
+
+    const auditCount = db.sqlite
+      .prepare(
+        `SELECT COUNT(*) AS c FROM classroom_audit_events
+         WHERE roster_id = ? AND event_type = 'roster.student.added'`,
+      )
+      .get(roster.rosterId) as {c: number};
+    expect(auditCount.c).toBe(1);
+    db.close();
+  });
+
+  it("lists student account status from student_accounts", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-account-status",
+      email: "teacher-status@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+    });
+
+    const listed = service.listStudents(roster.rosterId, admin.adminId);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.studentId).toBe(student.studentId);
+    expect(listed[0]?.accountStatus).toBe("pending_activation");
+    expect(listed[0]?.firstRegisteredAt).toBeNull();
+
+    db.sqlite
+      .prepare(
+        `UPDATE student_accounts SET status = 'active', updated_at = ? WHERE student_id = ?`,
+      )
+      .run(new Date().toISOString(), student.studentId);
+
+    const activated = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(activated?.accountStatus).toBe("active");
+    expect(activated?.firstRegisteredAt).toBeTruthy();
+    db.close();
+  });
+
+  it("exposes google identity fields on student list items", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-google-identity",
+      email: "teacher-google@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    const student = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+      googleEmail: "taro@school.example",
+    });
+    const pending = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(pending?.googleEmail).toBe("taro@school.example");
+    expect(pending?.googleSubject).toBeNull();
+    expect(pending?.googleIdentityEstablishedAt).toBeNull();
+
+    const boundAt = new Date().toISOString();
+    db.sqlite
+      .prepare(
+        `UPDATE classroom_students SET google_subject = ?, updated_at = ? WHERE student_id = ?`,
+      )
+      .run("google-sub-123", boundAt, student.studentId);
+
+    const bound = service.listStudents(roster.rosterId, admin.adminId)[0];
+    expect(bound?.googleSubject).toBe("google-sub-123");
+    expect(bound?.googleIdentityEstablishedAt).toBe(boundAt);
+    db.close();
+  });
+
+  it("rejects duplicate student_code on inline add", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-dup-student",
+      email: "teacher-dup@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+    service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S001",
+      displayName: "山田太郎",
+    });
+
+    expect(() =>
+      service.addStudent(roster.rosterId, admin.adminId, {
+        studentCode: "S001",
+        displayName: "別名",
+      }),
+    ).toThrow(RosterServiceError);
+    db.close();
+  });
+
+  it("rejects stale preview_hash on apply", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-2",
+      email: "teacher2@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "名簿"});
+    const csv = [header(), "S001,山田,01,y,,A,true"].join("\n");
+    const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
+
+    expect(() =>
+      service.applyImport({
+        rosterId: roster.rosterId,
+        importId: preview.import.importId,
+        ownerAdminId: admin.adminId,
+        previewHash: "deadbeef".padEnd(64, "0"),
+        baseRosterRevision: preview.baseRosterRevision,
+        deactivateMissing: preview.deactivateMissing,
+      }),
+    ).toThrow(RosterServiceError);
+
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(0);
+    expect(service.getRoster(roster.rosterId, admin.adminId)?.rosterRevision).toBe(0);
+    db.close();
+  });
+
+  it("allows only one apply winner per roster revision", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-concurrent",
+      email: "teacher-concurrent@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "名簿"});
+    const previewA = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,,A,true"].join("\n"),
+    );
+    const previewB = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S002,佐藤,02,s,B,true"].join("\n"),
+    );
+
+    const applied = service.applyImport({
+      rosterId: roster.rosterId,
+      importId: previewA.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: previewA.previewHash,
+      baseRosterRevision: previewA.baseRosterRevision,
+      deactivateMissing: previewA.deactivateMissing,
+    });
+    expect(applied.roster.rosterRevision).toBe(1);
+
+    let loserCode = "";
+    try {
+      service.applyImport({
+        rosterId: roster.rosterId,
+        importId: previewB.import.importId,
+        ownerAdminId: admin.adminId,
+        previewHash: previewB.previewHash,
+        baseRosterRevision: previewB.baseRosterRevision,
+        deactivateMissing: previewB.deactivateMissing,
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(RosterServiceError);
+      loserCode = (error as RosterServiceError).code;
+    }
+    expect(["STALE_PREVIEW", "REVISION_CONFLICT"]).toContain(loserCode);
+
+    const students = service.listStudents(roster.rosterId, admin.adminId);
+    expect(students).toHaveLength(1);
+    expect(students[0]?.studentCode).toBe("S001");
+    expect(
+      service.getImport(roster.rosterId, previewB.import.importId, admin.adminId)
+        ?.status,
+    ).toBe("preview_ready");
+    db.close();
+  });
+
+  it("links existing owner student_code into another roster on apply", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-cross",
+      email: "teacher-cross@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const rosterA = service.createRoster(admin.adminId, {title: "A組"});
+    const rosterB = service.createRoster(admin.adminId, {title: "B組"});
+    const seed = service.createImportFromCsv(
+      rosterA.rosterId,
+      admin.adminId,
+      [header(), "S001,共有,01,shared,,A,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: rosterA.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const linkPreview = service.createImportFromCsv(
+      rosterB.rosterId,
+      admin.adminId,
+      [header(), "S001,共有更新,01,shared,,A,true"].join("\n"),
+    );
+    expect(linkPreview.rows.some(row => row.category === "add")).toBe(false);
+    expect(linkPreview.rows.some(row => row.category === "update")).toBe(true);
+
+    service.applyImport({
+      rosterId: rosterB.rosterId,
+      importId: linkPreview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: linkPreview.previewHash,
+      baseRosterRevision: linkPreview.baseRosterRevision,
+      deactivateMissing: linkPreview.deactivateMissing,
+    });
+
+    expect(service.listStudents(rosterB.rosterId, admin.adminId)).toHaveLength(1);
+    expect(
+      service.listStudents(rosterB.rosterId, admin.adminId)[0]?.displayName,
+    ).toBe("共有更新");
+    db.close();
+  });
+
+  it("applies import when another roster already uses the same attendance_number", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-attendance-scope",
+      email: "teacher-attendance@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const rosterA = service.createRoster(admin.adminId, {title: "6年1組"});
+    const rosterB = service.createRoster(admin.adminId, {title: "7年1組"});
+    const seed = service.createImportFromCsv(
+      rosterA.rosterId,
+      admin.adminId,
+      [header(), "261601,別クラス,1,other,,A,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: rosterA.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const preview = service.createImportFromCsv(
+      rosterB.rosterId,
+      admin.adminId,
+      [header(), "261701,山田,1,yamada,,A,true"].join("\n"),
+    );
+    expect(preview.rows.every(row => row.category === "add")).toBe(true);
+    expect(preview.rows.some(row => row.category === "attendance_collision")).toBe(
+      false,
+    );
+
+    const applied = service.applyImport({
+      rosterId: rosterB.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    expect(applied.import.status).toBe("applied");
+    expect(service.listStudents(rosterB.rosterId, admin.adminId)).toHaveLength(1);
+    db.close();
+  });
+
+  it("deletes a roster and unbinds policies without removing owner students", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-delete-roster",
+      email: "teacher-delete@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "不要な名簿"});
+    service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "261101",
+      displayName: "山田",
+      attendanceNumber: "1",
+    });
+    const policyResult = db.createPolicy(
+      admin.adminId,
+      {title: "教室", rosterId: roster.rosterId},
+      {classroomRosterEnabled: true},
+    );
+    expect(policyResult.ok).toBe(true);
+    const policyId = policyResult.ok ? policyResult.policy.policyId : "";
+
+    expect(service.deleteRoster(roster.rosterId, admin.adminId)).toBe(true);
+    expect(service.deleteRoster(roster.rosterId, admin.adminId)).toBe(false);
+    expect(service.getRoster(roster.rosterId, admin.adminId)).toBeNull();
+    expect(service.listRosters(admin.adminId)).toHaveLength(0);
+    expect(db.getPolicy(policyId, admin.adminId)?.rosterId).toBeNull();
+    const leftoverStudents = db.sqlite
+      .prepare(`SELECT COUNT(*) AS c FROM classroom_students WHERE owner_admin_id = ?`)
+      .get(admin.adminId) as {c: number};
+    expect(leftoverStudents.c).toBe(1);
+    const leftoverMemberships = db.sqlite
+      .prepare(`SELECT COUNT(*) AS c FROM classroom_roster_memberships`)
+      .get() as {c: number};
+    expect(leftoverMemberships.c).toBe(0);
+    db.close();
+  });
+
+  it("rejects apply when preview has blocking rows", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-3",
+      email: "teacher3@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "名簿"});
+    const csv = [
+      header(),
+      "S001,重複,01,a,,A,true",
+      "S001,重複2,02,b,,B,true",
+    ].join("\n");
+    const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
+
+    expect(() =>
+      service.applyImport({
+        rosterId: roster.rosterId,
+        importId: preview.import.importId,
+        ownerAdminId: admin.adminId,
+        previewHash: preview.previewHash,
+        baseRosterRevision: preview.baseRosterRevision,
+        deactivateMissing: preview.deactivateMissing,
+      }),
+    ).toThrow(RosterServiceError);
+
+    db.close();
+  });
+
+  it("stores normalized google_email on inline add and import apply", () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-google-email",
+      email: "teacher@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "3年A組"});
+
+    const inline = service.addStudent(roster.rosterId, admin.adminId, {
+      studentCode: "S010",
+      displayName: "Google 太郎",
+      googleEmail: "  Tarou@School.Example  ",
+    });
+    expect(inline.googleEmail).toBe("tarou@school.example");
+
+    expect(() =>
+      service.addStudent(roster.rosterId, admin.adminId, {
+        studentCode: "S011",
+        displayName: "重複",
+        googleEmail: "tarou@school.example",
+      }),
+    ).toThrow(RosterServiceError);
+
+    const csv = [
+      header(),
+      "S020,CSV 花子,02,hanako,Hanako@School.Example,A,true",
+    ].join("\n");
+    const preview = service.createImportFromCsv(roster.rosterId, admin.adminId, csv);
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    const imported = service
+      .listStudents(roster.rosterId, admin.adminId)
+      .find(s => s.studentCode === "S020");
+    expect(imported?.googleEmail).toBe("hanako@school.example");
+
+    db.close();
+  });
+
+  it("sheet sync preview defaults deactivateMissing false and apply is two-stage", async () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-sheet",
+      email: "teacher-sheet@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "Sheet roster"});
+    service.updateRoster(roster.rosterId, admin.adminId, {
+      sheetSpreadsheetId: "sheet-123",
+      sheetTabName: "Roster",
+      sheetRange: null,
+    });
+
+    const seed = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,,A,true", "S002,佐藤,02,s,,B,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const store = createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys());
+    store.upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      accessToken: "access-1",
+      accessExpiresAt: Date.now() + 3_600_000,
+      nowIso: new Date().toISOString(),
+    });
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/values/")) {
+        return new Response(
+          JSON.stringify({
+            values: [
+              header().split(","),
+              ["S001", "山田更新", "01", "y", "", "A", "true"],
+            ],
+          }),
+          {status: 200},
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const preview = await createSheetSyncPreview(
+      db.sqlite,
+      {
+        oauthConfig: {clientId: "client", clientSecret: "secret", fetch: fetchMock},
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      roster.rosterId,
+      admin.adminId,
+    );
+    expect(preview.deactivateMissing).toBe(false);
+    expect(preview.rows.some(row => row.category === "deactivate")).toBe(false);
+    expect(service.listStudents(roster.rosterId, admin.adminId)).toHaveLength(2);
+
+    const result = applySheetSync(db.sqlite, {
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: preview.deactivateMissing,
+    });
+    expect(result.sync.syncStatus).toBe("active");
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S001",
+      )?.displayName,
+    ).toBe("山田更新");
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S002",
+      )?.active,
+    ).toBe(true);
+
+    const syncedAudit = db.sqlite
+      .prepare(
+        `SELECT payload_json FROM classroom_audit_events
+         WHERE roster_id = ? AND event_type = 'roster.sheet.synced'`,
+      )
+      .get(roster.rosterId) as {payload_json: string};
+    expect(JSON.parse(syncedAudit.payload_json).deactivateCount).toBe(0);
+    db.close();
+  });
+
+  it("sheet sync deactivateMissing true deactivates missing rows on apply", async () => {
+    const db = openAdminDb(":memory:");
+    const admin = db.upsertAdminFromLogin({
+      subject: "sub-sheet-deact",
+      email: "teacher-sheet-deact@school.example",
+      displayName: "Teacher",
+    });
+    const service = createRosterService(db.sqlite);
+    const roster = service.createRoster(admin.adminId, {title: "Sheet roster"});
+    service.updateRoster(roster.rosterId, admin.adminId, {
+      sheetSpreadsheetId: "sheet-123",
+      sheetTabName: "Roster",
+    });
+    const seed = service.createImportFromCsv(
+      roster.rosterId,
+      admin.adminId,
+      [header(), "S001,山田,01,y,,A,true", "S002,佐藤,02,s,,B,true"].join("\n"),
+    );
+    service.applyImport({
+      rosterId: roster.rosterId,
+      importId: seed.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: seed.previewHash,
+      baseRosterRevision: seed.baseRosterRevision,
+      deactivateMissing: seed.deactivateMissing,
+    });
+
+    const store = createAdminGoogleCredentialStore(db.sqlite, testAdminGoogleCryptoKeys());
+    store.upsertCredential({
+      adminId: admin.adminId,
+      googleSubject: "google-sub",
+      googleEmail: admin.email,
+      scope: DRIVE_FILE_SCOPE,
+      refreshToken: "refresh-1",
+      accessToken: "access-1",
+      accessExpiresAt: Date.now() + 3_600_000,
+      nowIso: new Date().toISOString(),
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/values/")) {
+        return new Response(
+          JSON.stringify({
+            values: [header().split(","), ["S001", "山田", "01", "y", "", "A", "true"]],
+          }),
+          {status: 200},
+        );
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    const preview = await createSheetSyncPreview(
+      db.sqlite,
+      {
+        oauthConfig: {clientId: "c", clientSecret: "s", fetch: fetchMock},
+        credentialStore: store,
+        fetch: fetchMock,
+      },
+      roster.rosterId,
+      admin.adminId,
+      {deactivateMissing: true},
+    );
+    expect(preview.deactivateMissing).toBe(true);
+    expect(preview.rows.some(row => row.category === "deactivate")).toBe(true);
+
+    applySheetSync(db.sqlite, {
+      rosterId: roster.rosterId,
+      importId: preview.import.importId,
+      ownerAdminId: admin.adminId,
+      previewHash: preview.previewHash,
+      baseRosterRevision: preview.baseRosterRevision,
+      deactivateMissing: true,
+    });
+    expect(
+      service.listStudents(roster.rosterId, admin.adminId).find(
+        s => s.studentCode === "S002",
+      )?.active,
+    ).toBe(false);
+    db.close();
+  });
+});

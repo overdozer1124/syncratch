@@ -1,6 +1,6 @@
 import type {LocalProjectRecord} from "@blocksync/project-local-core";
 import type {ProjectStore} from "@blocksync/project-store-idb";
-import {persistDriveFileLink} from "./drive-file-link.js";
+import {clearDriveFileLink, persistDriveFileLink} from "./drive-file-link.js";
 
 export interface PersistDriveFileIdAndSyncCurrentOptions {
   store: Pick<ProjectStore, "get" | "createOrReplace">;
@@ -18,6 +18,33 @@ export async function persistDriveFileIdAndSyncCurrent(
     options.store,
     options.localProjectId,
     options.driveFileId,
+    undefined,
+    options.signal,
+  );
+  const current = options.getCurrent();
+  if (
+    current?.localProjectId === options.localProjectId &&
+    current.revision < saved.revision
+  ) {
+    options.setCurrent(saved);
+  }
+  options.signal?.throwIfAborted();
+}
+
+export interface ClearDriveFileIdAndSyncCurrentOptions {
+  store: Pick<ProjectStore, "get" | "createOrReplace">;
+  localProjectId: string;
+  signal?: AbortSignal;
+  getCurrent(): LocalProjectRecord | undefined;
+  setCurrent(record: LocalProjectRecord): void;
+}
+
+export async function clearDriveFileIdAndSyncCurrent(
+  options: ClearDriveFileIdAndSyncCurrentOptions,
+): Promise<void> {
+  const saved = await clearDriveFileLink(
+    options.store,
+    options.localProjectId,
     undefined,
     options.signal,
   );

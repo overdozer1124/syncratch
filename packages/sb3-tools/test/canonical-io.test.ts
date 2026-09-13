@@ -800,6 +800,41 @@ describe("canonical SB3 I/O", () => {
     expect(doc.targets[0]!.comments).toEqual({});
   });
 
+  it("normalizes non-empty monitors and comments instead of rejecting", () => {
+    const projectJson = buildAudioCorpusProjectJson();
+    const { _assetIds: _, ...clean } = projectJson;
+    clean.monitors = [
+      {
+        id: "list-monitor",
+        mode: "list",
+        opcode: "data_listcontents",
+        params: {LIST: "チャット"},
+        spriteName: null,
+        value: ["a"],
+        width: 100,
+        height: 100,
+        x: 0,
+        y: 0,
+        visible: true,
+      },
+    ];
+    const stage = clean.targets[0] as Record<string, unknown>;
+    stage.comments = {
+      c1: {
+        blockId: null,
+        x: 10,
+        y: 10,
+        width: 200,
+        height: 100,
+        minimized: false,
+        text: "メモ",
+      },
+    };
+    const doc = projectJsonToDocument(clean);
+    expect(doc.monitors).toEqual([]);
+    expect(doc.targets[0]!.comments).toEqual({});
+  });
+
   it.each([
     ["blocks", (target: Record<string, unknown>, value: unknown) => {
       Object.defineProperty(target.blocks as object, "__proto__", {

@@ -87,7 +87,21 @@ describe("host-backed Google authorization", () => {
         }) as Location,
       replaceUrl,
     );
-    expect(ok).toBe(true);
+    expect(ok).toBe("ok");
     expect(replaceUrl).toHaveBeenCalledWith("/#room");
+  });
+
+  it("reports oauth error returns without treating them as success", () => {
+    const replaceUrl = vi.fn();
+    expect(
+      consumeDriveOAuthReturnFlag(
+        () =>
+          ({
+            href: `http://localhost/?${DRIVE_OAUTH_RETURN_FLAG}=error`,
+          }) as Location,
+        replaceUrl,
+      ),
+    ).toBe("error");
+    expect(replaceUrl).toHaveBeenCalledWith("/");
   });
 });

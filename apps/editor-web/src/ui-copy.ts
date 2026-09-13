@@ -40,6 +40,16 @@ const DRIVE_MESSAGES: Array<[RegExp, string]> = [
     "いっしょに作るリンクを作った人だけが Google ドライブに保存できます。",
   ],
   [
+    // Must stay above the generic /conflict/ pattern — local messages may
+    // include the word "conflict" for IndexedDB STALE_REVISION.
+    /local project is not committed/i,
+    "先に「もう一度保存」でこのパソコンへ保存してから、Google ドライブに保存してください。",
+  ],
+  [
+    /local project differs from drive/i,
+    "このパソコンと Google ドライブの内容がちがいます。「Google ドライブに保存」で上書きするか、Driveから開き直してください。",
+  ],
+  [
     /differs|changed during|conflict/i,
     "このパソコンと Google ドライブの作品がちがいます。内容をたしかめてください。",
   ],
@@ -47,6 +57,9 @@ const DRIVE_MESSAGES: Array<[RegExp, string]> = [
 
 export function friendlyDriveMessage(message?: string): string | undefined {
   if (!message) return undefined;
+  // Already-localized details (e.g. accidental re-render) must not fall through
+  // to the generic retry copy.
+  if (/[\u3040-\u30ff\u3400-\u9fff]/.test(message)) return message;
   for (const [pattern, copy] of DRIVE_MESSAGES) {
     if (pattern.test(message)) return copy;
   }
@@ -151,6 +164,13 @@ export const INVITE_LINK_COPIED_TOAST =
 
 export const INVITE_LINK_COPY_FAILED_TOAST =
   "コピーできませんでした。リンクを選んでコピーしてください。";
+
+/** ClassroomPolicy blocked Drive entirely (no collab escape hatch). */
+export const CLASSROOM_DRIVE_BLOCKED_STATUS =
+  "この教室では Google ドライブは使えません";
+
+export const CLASSROOM_DRIVE_BLOCKED_HELP =
+  "先生が教室設定で Google ドライブを有効にすると、ここにボタンが表示されます。";
 
 export const drivePanelStatusText: Record<
   | "not-configured"

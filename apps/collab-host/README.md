@@ -4,6 +4,8 @@ Same-origin verification host for Syncratch:
 
 - serves `apps/editor-web/dist` over HTTP
 - attaches `@blocksync/collab-signaling` at `WS /signal`
+- optional classroom admin API (`/api/admin/*`) + student grant/policy API
+  (`/api/student/grant`, `/api/student/policy`, legacy `/api/student/policy-by-token/*`)
 
 Intended for **Railway** (or any always-on Node host). This is not TURN and not a
 central project store — Yjs / assets still travel over encrypted WebRTC data
@@ -54,6 +56,34 @@ Endpoints when configured:
 
 Refresh tokens never leave the server process. Current store is in-memory (single
 Railway instance); a process restart clears sessions and users reconnect once.
+
+## Classroom admin (Phase 1 + 2)
+
+Optional layer for allowlisted teachers. Spec:
+`docs/superpowers/specs/2026-07-30-admin-student-access-design.md`.
+
+| Runtime env | Value |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | Same browser client ID (ID token `aud`) |
+| `SYNCRATCH_ADMIN_EMAILS` | CSV of allowed admin emails (required; no self-signup) |
+| `ADMIN_DB_PATH` | Optional SQLite path (default `./data/admin.sqlite`) |
+| `SYNCRATCH_DATA_DIR` | Optional data dir; uses `<dir>/admin.sqlite` when `ADMIN_DB_PATH` unset (Docker default `/app/data`) |
+| `VITE_GOOGLE_CLIENT_ID` | Build-time; needed for `/admin` GIS login button |
+
+To keep policies/links across redeploys on Railway, attach a **Railway Volume**
+mounted at `/app/data` (do not add a Docker `VOLUME` instruction — Railway rejects it).
+
+Surfaces (SPA via static fallback):
+
+- `/admin` — allowlisted Google login, policy edit, link issue/revoke/reissue, expiry
+- `/s/{token}` — first load exchanges token → HttpOnly grant → URL becomes `/s`
+- `/s` — student editor session (grant cookie; policy via `/api/student/policy`)
+- `/` — unchanged Community editor
+
+Student grant cookie `syncratch_student_grant` (HttpOnly, short TTL) is separate
+from admin `syncratch_admin_session` and Drive `syncratch_drive_session`.
+
+HTML responses for `/s` navigations include `Referrer-Policy: no-referrer`.
 
 ## Health
 

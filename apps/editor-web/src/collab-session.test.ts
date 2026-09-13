@@ -2206,4 +2206,37 @@ describe("conflict handling stops automatic Drive saves", () => {
     expect(session.canPersistToDrive().ok).toBe(true);
     expect(vm.current().targets.some((t) => t.id === "s1")).toBe(true);
   });
+
+  it("does not re-emit when Drive conflict is reported again from onState", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const vm = fakeVm(project([stage(), sprite("s1", "S1")]));
+    let reenterFromState = false;
+    let stateEmissions = 0;
+    const session = createCollabSession({
+      roomId: "room-conflict-reentry",
+      secret: "conflict-secret-conflict-reentry-0001",
+      debounceMs: 0,
+      participantId: "peer-a",
+      createProvider: create,
+      materializeLocal: vm.materializeLocal,
+      applyRemoteToLocal: vm.applyRemoteToLocal,
+      onState: () => {
+        stateEmissions += 1;
+        // Mimic main.ts: conflict Drive status re-reports on every collab state render.
+        if (reenterFromState) session.reportDriveConflict();
+      },
+    });
+    session.start({host: true});
+    await flush(session);
+    const emissionsAfterStart = stateEmissions;
+
+    reenterFromState = true;
+    expect(() => session.reportDriveConflict()).not.toThrow();
+    expect(session.getState().conflict).toBe(true);
+    expect(stateEmissions).toBe(emissionsAfterStart + 1);
+
+    session.reportDriveConflict();
+    expect(stateEmissions).toBe(emissionsAfterStart + 1);
+  });
 });

@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ja" class="admin-console-mode">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Syncratch（シンクラッチ）— 管理者モックアップ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ── Syncratch design tokens (from apps/editor-web/src/style.css) ── */
+      :root {
+        --syncratch-chrome: #1565a9;
+        --syncratch-chrome-dark: #0f4d7a;
+        --sc-ink: #16324f;
+        --sc-muted: #5f7690;
+      }
+
+      html.admin-console-mode,
+      body.admin-console-mode {
+        overflow-x: hidden;
+        overflow-y: auto;
+        height: auto;
+        min-height: 100%;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+      }
+
+      /* ── Admin styles (copied from style.css, admin section) ── */
+      .admin-shell {
+        min-height: 100vh;
+        box-sizing: border-box;
+        padding: 2.5rem 1.5rem 3rem;
+        background:
+          radial-gradient(120% 80% at 10% 0%, #d7ebff 0%, transparent 55%),
+          linear-gradient(165deg, #f4f8fc 0%, #e7f0f8 45%, #d9e8f4 100%);
+        color: var(--sc-ink);
+        font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic ProN", sans-serif;
+      }
+
+      .admin-brand {
+        margin: 0 0 0.35rem;
+        font-size: clamp(2rem, 5vw, 2.75rem);
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        color: var(--syncratch-chrome-dark);
+      }
+
+      .admin-brand-kana {
+        margin-left: 0.35rem;
+        font-size: 0.55em;
+        font-weight: 700;
+        color: var(--sc-muted);
+      }
+
+      .admin-shell h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.35rem;
+        font-weight: 700;
+      }
+
+      .admin-status {
+        margin: 0 0 1.25rem;
+        color: var(--sc-muted);
+      }
+
+      .admin-body {
+        display: grid;
+        gap: 1rem;
+        max-width: 42rem;
+      }
+
+      .admin-button {
+        appearance: none;
+        border: 1px solid #b7c9db;
+        background: #fff;
+        color: var(--sc-ink);
+        border-radius: 0.55rem;
+        padding: 0.55rem 0.9rem;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        width: fit-content;
+      }
+
+      .admin-button.primary {
+        background: var(--syncratch-chrome);
+        border-color: var(--syncratch-chrome);
+        color: #fff;
+      }
+
+      a.admin-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+      }
+
+      a.admin-button[hidden] {
+        display: none !important;
+      }
+
+      .admin-policy-card {
+        display: grid;
+        gap: 0.65rem;
+        padding: 1rem 0;
+        border-top: 1px solid #c9d7e6;
+      }
+
+      .admin-policy-card h2 {
+        margin: 0;
+        font-size: 1.1rem;
+      }
+
+      .admin-muted,
+      .admin-link-out {
+        margin: 0;
+        color: var(--sc-muted);
+        word-break: break-all;
+      }
+
+      .admin-toggles {
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .admin-links {
+        margin: 0;
+        padding-left: 1.2rem;
+        color: var(--sc-muted);
+      }
+
+      .admin-submissions-panel {
+        display: grid;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed #c9d7e6;
+      }
+
+      .admin-submission-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      .admin-submission-table th,
+      .admin-submission-table td {
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .admin-rosters-panel {
+        display: grid;
+        gap: 0.75rem;
+        margin: 1rem 0;
+        padding: 1rem;
+        border: 1px solid #c9d7e6;
+        border-radius: 8px;
+        background: #f8fafc;
+      }
+
+      .admin-rosters-panel h2 {
+        margin: 0;
+        font-size: 1.15rem;
+      }
+
+      .admin-roster-toolbar,
+      .admin-roster-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      .admin-roster-credential,
+      .admin-roster-card,
+      .admin-policy-roster {
+        display: grid;
+        gap: 0.5rem;
+        padding-top: 0.75rem;
+        border-top: 1px dashed #c9d7e6;
+      }
+
+      .admin-roster-card h3,
+      .admin-roster-credential h3,
+      .admin-policy-roster h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .admin-roster-sheet-form,
+      .admin-roster-csv-form,
+      .admin-roster-students {
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .admin-roster-sheet-form h4,
+      .admin-roster-csv-form h4,
+      .admin-roster-students h4 {
+        margin: 0;
+        font-size: inherit;
+        font-weight: 700;
+      }
+
+      .admin-roster-input,
+      .admin-roster-select,
+      .admin-roster-file {
+        width: 100%;
+        max-width: 28rem;
+        padding: 0.35rem 0.5rem;
+        border: 1px solid #c9d7e6;
+        border-radius: 4px;
+        font: inherit;
+      }
+
+      .admin-roster-preview-table,
+      .admin-roster-student-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.92rem;
+      }
+
+      .admin-roster-preview-table th,
+      .admin-roster-preview-table td,
+      .admin-roster-student-table th,
+      .admin-roster-student-table td {
+        padding: 0.35rem 0.5rem;
+        border-bottom: 1px solid #e2e8f0;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .admin-roster-feedback.is-error {
+        color: #b42318;
+      }
+
+      .admin-roster-feedback[hidden] {
+        display: none;
+      }
+
+      .mockup-note {
+        margin: 2rem 0 0;
+        padding-top: 1rem;
+        border-top: 1px solid #c9d7e6;
+        font-size: 0.85rem;
+        color: var(--sc-muted);
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body class="admin-console-mode">
+    <!--
+      現行 /admin 管理画面の 1:1 静的モックアップ。
+      DOM 構造・クラス名・CSS は apps/editor-web/src/style.css および
+      admin-surface.ts / admin-rosters-ui.ts / admin-submissions-ui.ts に準拠。
+      ボタン・フォームは動作しません。
+    -->
+    <div class="admin-shell" id="admin-shell">
+      <p class="admin-brand">
+        Syncratch<span class="admin-brand-kana"> シンクラッチ</span>
+      </p>
+      <h1>管理者</h1>
+      <p class="admin-status" data-testid="admin-status">
+        overdozer@gmail.com でログイン中（開発中の管理者画面）
+      </p>
+
+      <div class="admin-body" data-testid="admin-body">
+        <button type="button" class="admin-button">ログアウト</button>
+
+        <!-- admin-rosters-host -->
+        <div class="admin-rosters-host" data-testid="admin-rosters-host">
+          <section class="admin-rosters-panel" data-testid="admin-rosters-panel">
+            <h2>名簿</h2>
+
+            <div class="admin-roster-toolbar">
+              <button
+                type="button"
+                class="admin-button primary"
+                data-testid="admin-create-roster"
+              >
+                名簿を作る
+              </button>
+            </div>
+
+            <div class="admin-roster-credential" data-testid="admin-roster-credential">
+              <h3>教員 Google 連携（名簿 Sheet / 提出用）</h3>
+              <p class="admin-muted">連携中: overdozer@gmail.com</p>
+              <div class="admin-roster-actions">
+                <button type="button" class="admin-button">連携を解除</button>
+              </div>
+            </div>
+
+            <div class="admin-roster-list">
+              <section class="admin-roster-card" data-testid="admin-roster-card">
+                <h3>2026年度 3年A組</h3>
+                <p class="admin-muted">
+                  revision 0 / 同期: active / 生徒 0 名
+                </p>
+
+                <div class="admin-roster-sheet-form">
+                  <h4>Google スプレッドシート</h4>
+                  <p class="admin-muted">
+                    空の Sheet
+                    でも構いません。「テンプレート Sheet
+                    を作成」でヘッダー行入りのスプレッドシートを自動作成できます。
+                  </p>
+                  <p class="admin-muted">
+                    列: student_code, display_name, attendance_number,
+                    login_name, group_label, active
+                  </p>
+                  <input
+                    type="text"
+                    class="admin-roster-input"
+                    placeholder="スプレッドシート ID"
+                    value="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                  />
+                  <input
+                    type="text"
+                    class="admin-roster-input"
+                    placeholder="シート名（例: Sheet1）"
+                    value="Sheet1"
+                  />
+                  <input
+                    type="text"
+                    class="admin-roster-input"
+                    placeholder="範囲（例: A:F または空）"
+                    value=""
+                  />
+                  <div class="admin-roster-actions">
+                    <button type="button" class="admin-button primary">
+                      テンプレート Sheet を作成
+                    </button>
+                    <a
+                      class="admin-button primary admin-roster-open-sheet"
+                      data-testid="admin-roster-open-sheet"
+                      href="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      スプレッドシートを開く
+                    </a>
+                    <button type="button" class="admin-button">
+                      Sheet 設定を保存
+                    </button>
+                  </div>
+                  <button type="button" class="admin-button">
+                    Sheet から同期（プレビュー）
+                  </button>
+                  <div class="admin-roster-preview-host"></div>
+                </div>
+
+                <div class="admin-roster-csv-form">
+                  <h4>CSV 取込</h4>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    class="admin-roster-file"
+                  />
+                  <button type="button" class="admin-button">CSV をプレビュー</button>
+                  <div class="admin-roster-preview-host"></div>
+                </div>
+
+                <div class="admin-roster-students">
+                  <h4>登録生徒</h4>
+                  <div class="admin-roster-students-list">まだ生徒がいません。</div>
+                </div>
+
+                <p class="admin-roster-feedback">
+                  テンプレート Sheet
+                  を作成し、名簿に紐づけました。2行目以降に生徒データを入力してください。
+                </p>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <button
+          type="button"
+          class="admin-button primary"
+          data-testid="admin-create-policy"
+        >
+          教室設定を作る
+        </button>
+
+        <div class="admin-policy-list" data-testid="admin-policy-list">
+          <section class="admin-policy-card">
+            <h2>新しい教室設定</h2>
+            <p class="admin-muted">
+              AI: オフ / 設定パネル: 非表示 / 拡張機能: 禁止 / 状態: active
+            </p>
+
+            <div class="admin-toggles">
+              <label><input type="checkbox" /> AI を許可</label>
+              <label
+                ><input type="checkbox" /> 生徒に設定パネルを出す</label
+              >
+              <label
+                ><input type="checkbox" /> 拡張機能ギャラリーを許可</label
+              >
+              <button type="button" class="admin-button">設定を保存</button>
+            </div>
+
+            <label class="admin-expiry-label">
+              有効期限（任意）
+              <input
+                type="datetime-local"
+                class="admin-expiry-input"
+                data-testid="admin-link-expiry"
+              />
+            </label>
+            <button
+              type="button"
+              class="admin-button primary"
+              data-testid="admin-create-link"
+            >
+              生徒用リンクを作る
+            </button>
+            <p class="admin-link-out" data-testid="admin-link-out"></p>
+
+            <ul class="admin-links">
+              <li>
+                授業用 — active — 2026-08-04T10:00:00.000Z / 期限: なし
+                <button type="button" class="admin-button">失効</button>
+                <button type="button" class="admin-button">再発行</button>
+              </li>
+            </ul>
+
+            <div class="admin-policy-roster" data-testid="admin-policy-roster">
+              <h3>名簿と生徒ログイン</h3>
+              <label>紐づける名簿</label>
+              <select class="admin-roster-select">
+                <option value="">名簿なし（匿名リンク）</option>
+                <option value="r1" selected>2026年度 3年A組</option>
+              </select>
+              <label>
+                <input type="checkbox" checked />
+                名簿ログイン必須（生徒はログイン/初回登録が必要）
+              </label>
+              <button type="button" class="admin-button">名簿設定を保存</button>
+              <p class="admin-roster-feedback" hidden="true"></p>
+            </div>
+
+            <section
+              class="admin-submissions-panel"
+              data-testid="admin-submissions-panel"
+            >
+              <h3>提出一覧</h3>
+              <p class="admin-submission-feedback" hidden="true"></p>
+              <div class="admin-submission-list">まだ提出はありません。</div>
+              <div class="admin-submission-detail"></div>
+            </section>
+          </section>
+        </div>
+
+        <p class="mockup-note">
+          静的モックアップ（現行デザイン 1:1）。実装:
+          <code>apps/editor-web/src/admin-surface.ts</code>,
+          <code>admin-rosters-ui.ts</code>,
+          <code>admin-submissions-ui.ts</code>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

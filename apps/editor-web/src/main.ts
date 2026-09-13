@@ -63,7 +63,9 @@ import {
   saveLocalCollabProfile,
 } from "./local-collab-profile.js";
 import {
+  clearPendingHostRoomInvite,
   COLLAB_GOOGLE_CONNECT_HINT,
+  COLLAB_GOOGLE_OAUTH_FAILED,
   COLLAB_GOOGLE_REQUIRED_FOR_CREATE,
   COLLAB_GOOGLE_REQUIRED_FOR_JOIN,
   consumePendingGuestInvite,
@@ -71,10 +73,15 @@ import {
   ensureInviteHashOnLocation,
   markPendingHostCreate,
   peekPendingGuestInvite,
+  peekPendingHostCreate,
+  peekPendingHostRoomInvite,
   savePendingGuestInvite,
+  savePendingHostRoomInvite,
   shouldGateCollabOnGoogle,
+  stageCollabInviteFromLocation,
 } from "./collab-oauth-gate.js";
 import {
+  CLASSROOM_DRIVE_BLOCKED_STATUS,
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
@@ -105,6 +112,9 @@ import {
 } from "./tool-panel-dismiss.js";
 import {setMenuButtonLabel} from "./menu-button-label.js";
 import {installAiFloatingPanel} from "./ai-floating-panel.js";
+import {createDiagnosticController} from "./diagnostic-controller.js";
+import {renderDiagnosticView} from "./diagnostic-ui.js";
+import {captureLiveProjectSnapshot} from "./live-project-snapshot.js";
 import {installSyncratchChromeLayout} from "./unified-chrome.js";
 import {
   closeExtensionLibraryAction,
@@ -162,6 +172,7 @@ import {applyGuestInitialProject} from "./guest-project-apply.js";
 import {applyRemoteProjectUpdate} from "./apply-remote-update.js";
 import {createAssetHashCache} from "./asset-hash-cache.js";
 import {preserveTargetIds} from "./target-identity.js";
+import {scratchGuiBasePath} from "./gui-public-path.js";
 import {staticAssetUrl} from "./static-url.js";
 import {
   createProjectSessionTracker,
@@ -181,7 +192,7 @@ import {
   isDriveAutosaveEligible,
   type DriveAutosave,
 } from "./drive-autosave.js";
-import {persistDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
+import {persistDriveFileIdAndSyncCurrent, clearDriveFileIdAndSyncCurrent} from "./drive-file-current.js";
 import {prepareCommittedDriveExport} from "./drive-export.js";
 import {
   createInvite,
@@ -191,7 +202,7 @@ import {
   parseInviteFromUrl,
   type CollabInvite,
 } from "@blocksync/collab-invite";
-import {createWebRtcProvider} from "@blocksync/collab-webrtc";
+import {createCollabProvider, createMemoryMesh, createWebRtcProvider} from "@blocksync/collab-webrtc";
 import {
   parseCollabIceServers,
   resolveCollabIceServers,
@@ -200,6 +211,7 @@ import {
   createCollabSession,
   evaluateCollabReadiness,
   type ApplyRemoteContext,
+  type CollabProviderConfig,
   type CollabSession,
   type CollabState,
 } from "./collab-session.js";
@@ -243,15 +255,79 @@ import {
 } from "./execution-control.js";
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
 import {
+  getWorkspaceVmDesyncLog,
+  type BlocklyWorkspaceLike,
+  type VmBlockLike,
+} from "./workspace-desync-diagnostics.js";
+import {
+  getE2eSideEffectCounters,
+  recordE2eCollabOutbound,
+  recordE2ePersistAttempt,
+  resetE2eSideEffectCounters,
+} from "./e2e-side-effect-counters.js";
+import {
+  getActiveLoadKind,
+  getLoadBoundaryLog,
+  getLoadEpoch,
+  getSuppressedDirtyLog,
+  getWorkspaceUpdateLog,
+  installWorkspaceUpdateListener,
+  recordLoadBoundaryTransition,
+  recordSuppressedProjectChanged,
+  type LoadBoundaryKind,
+} from "./workspace-update-instrumentation.js";
+import {
+  getBlocklyEventLog,
+  getBlocklyVmGraphDiffLog,
+  getSyncGeneration as readSyncGeneration,
+  installBlocklyVmEventPipeline,
+  isBlocklyVmEventPipelineInstalled,
+  isGraphMutatingBlocklyEvent,
+  rebindWorkspaceBlockListener,
+  type BlockEventDropKind,
+  type BlocklyEventLike,
+} from "./blockly-vm-event-instrumentation.js";
+import {
+  armBlockEventDropNext,
+  armBlockEventDropAll,
+  disarmBlockEventDrop,
+  getBlockEventDropLog,
+  logBlockEventDrop,
+  peekArmedBlockEventDrop,
+} from "./blockly-event-drop-harness.js";
+import {
   installExecutionTrace,
   resolveTraceEntries,
   type ExecutionTraceHandle,
 } from "./execution-trace.js";
+import {restartGreenFlagHatThreads} from "./execution-rewind-green-flag.js";
+import {
+  createRewindOrigin,
+  installExecutionRewind,
+  type ExecutionRewindHandle,
+  type RewindClearReason,
+  type RewindOrigin,
+  type RewindSnapshot,
+} from "./execution-rewind.js";
+import {installDebugFloatingPanel} from "./debug-floating-panel.js";
+import {
+  formatRewindButtonLabel,
+  formatRewindButtonTitle,
+  formatScrubSliderAriaValueText,
+  formatScrubSliderLabel,
+  shouldNotifyRewindUnavailable,
+} from "./execution-rewind-ui.js";
 import {createTraceListView} from "./execution-trace-ui.js";
+import {
+  filterEntriesByScript,
+  listTraceScripts,
+  resolveSelectedScriptKey,
+} from "./execution-trace-scripts.js";
 import {resolveCollabSignalingUrl} from "./signaling-url.js";
 import {
   AI_CHAT_ADVICE_MAX_TOKENS,
   AI_CHAT_PROXY_PATH,
+  DEFAULT_AI_SETTINGS,
   buildAdviceMessages,
   buildAiProjectContext,
   buildContinuationUserPrompt,
@@ -273,6 +349,39 @@ import {
   type AiChatMessage,
   type AiConversationTurn,
 } from "@blocksync/ai-assist";
+import type {StudentPolicyView} from "@blocksync/classroom-access";
+import {startAdminSurface} from "./admin-surface.js";
+import {
+  applyAdminSubmissionPreviewReadOnlyChrome,
+  fetchAdminSubmissionPreviewData,
+  mountAdminSubmissionPreviewBanner,
+} from "./admin-submission-preview.js";
+import {
+  aiSettingsFromStudentPolicy,
+  applyStudentPolicyToDom,
+  isStudentDriveFullyBlocked,
+  studentPolicyBlocksAiPersist,
+} from "./classroom-policy-apply.js";
+import {detectEditorSurfaceMode} from "./surface-mode.js";
+import {
+  hideStudentAuthShell,
+  shouldShowStudentAuthGate,
+  showStudentAuthShell,
+} from "./student-auth-gate.js";
+import {fetchStudentIdentitySession} from "./student-auth-ui.js";
+import {
+  hideStudentSubmissionUi,
+  mountStudentSubmissionUi,
+  showStudentSubmissionUi,
+} from "./student-submission-ui.js";
+import {
+  buildStudentAwareInviteUrl,
+  exchangeStudentGrant,
+  fetchStudentPolicyFromGrant,
+  rememberStudentLinkToken,
+  replaceStudentUrlWithoutToken,
+  showStudentLinkError,
+} from "./student-surface.js";
 import {
   aiModeOptionsForLevel,
   aiPanelHidden,
@@ -313,6 +422,7 @@ interface ScratchVm {
   loadProject(project: unknown): Promise<void>;
   setEditingTarget(targetId: string): void;
   setTurboMode(enabled: boolean): void;
+  blockListener: (event: unknown) => void;
   editingTarget?: {
     id?: string;
     isStage?: boolean;
@@ -357,6 +467,8 @@ interface ScratchGuiGlobal {
     element: HTMLElement,
   ): {
     render(options: {
+      /** Absolute asset prefix for blocks-media (must not be route-relative "./"). */
+      basePath?: string;
       canEditTitle: boolean;
       canSave: boolean;
       canManageFiles?: boolean;
@@ -435,10 +547,29 @@ const retryButton = requiredElement<HTMLButtonElement>("retry-save");
 const execControlGroup = requiredElement<HTMLElement>("exec-control");
 const tracePanelList = requiredElement<HTMLElement>("trace-list");
 const traceClearButton = requiredElement<HTMLButtonElement>("trace-clear");
-const execPauseButton = requiredElement<HTMLButtonElement>("exec-pause");
+const traceScriptFilterWrap = requiredElement<HTMLElement>(
+  "trace-script-filter-wrap",
+);
+const traceScriptFilter = requiredElement<HTMLSelectElement>(
+  "trace-script-filter",
+);
+const execDebugToggleButton =
+  requiredElement<HTMLButtonElement>("exec-debug-toggle");
+const execDebugToggleLabel = requiredElement<HTMLElement>(
+  "exec-debug-toggle-label",
+);
+const execDebugPauseResumeButton = requiredElement<HTMLButtonElement>(
+  "exec-debug-pause-resume",
+);
+const execRewindButton = requiredElement<HTMLButtonElement>("exec-rewind");
+const execRewindLabel = requiredElement<HTMLElement>("exec-rewind-label");
+const execScrubInput = requiredElement<HTMLInputElement>("exec-scrub");
+const execScrubLabel = requiredElement<HTMLElement>("exec-scrub-label");
 const execStepButton = requiredElement<HTMLButtonElement>("exec-step");
 const execStatus = requiredElement<HTMLElement>("exec-status");
-const execPauseLabel = requiredElement<HTMLElement>("exec-pause-label");
+const execDebugPanel = requiredElement<HTMLElement>("exec-debug-panel");
+const execDebugDragHandle = requiredElement<HTMLElement>("exec-debug-drag-handle");
+const execDebugCloseButton = requiredElement<HTMLButtonElement>("exec-debug-close");
 const saveStatus = requiredElement<HTMLElement>("save-status");
 const projectStatusDetails = requiredElement<HTMLElement>("project-status-details");
 const statusIconRow = requiredElement<HTMLElement>("status-icon-row");
@@ -452,6 +583,8 @@ const saveDriveButton = requiredElement<HTMLButtonElement>("save-drive");
 const disconnectGoogleButton =
   requiredElement<HTMLButtonElement>("disconnect-google");
 const driveStatus = requiredElement<HTMLElement>("drive-status");
+const driveSectionHelp = requiredElement<HTMLElement>("drive-section-help");
+const driveControls = requiredElement<HTMLElement>("drive-controls");
 const createRoomButton = requiredElement<HTMLButtonElement>("create-room");
 const joinRoomButton = requiredElement<HTMLButtonElement>("join-room");
 const copyInviteButton = requiredElement<HTMLButtonElement>("copy-invite");
@@ -522,10 +655,43 @@ const aiPageStatus = requiredElement<HTMLElement>("ai-page-status");
 const aiThread = requiredElement<HTMLElement>("ai-thread");
 const aiAnswer = requiredElement<HTMLElement>("ai-answer");
 const aiFeedback = requiredElement<HTMLElement>("ai-feedback");
+const diagnosticPanel = requiredElement<HTMLDetailsElement>("diagnostic-panel");
+const diagnosticRunButton = requiredElement<HTMLButtonElement>("diagnostic-run");
+const diagnosticStatus = requiredElement<HTMLElement>("diagnostic-status");
+const diagnosticResults = requiredElement<HTMLElement>("diagnostic-results");
+const diagnosticFeedback = requiredElement<HTMLElement>("diagnostic-feedback");
 const guiHost = requiredElement<HTMLElement>("scratch-gui");
 const guiSplash = document.querySelector<HTMLElement>("#gui-splash");
+const appMain = document.querySelector<HTMLElement>("#app");
+const adminShell = document.querySelector<HTMLElement>("#admin-shell");
+const studentErrorShell = document.querySelector<HTMLElement>(
+  "#student-error-shell",
+);
+const studentAuthShell = document.querySelector<HTMLElement>(
+  "#student-auth-shell",
+);
+const studentSubmissionPanel = document.querySelector<HTMLElement>(
+  "#student-submission-panel",
+);
+const SURFACE_MODE = detectEditorSurfaceMode();
+// Pin before loadScratchGui / Blocks media resolve (nested /s/{token} routes).
+(
+  window as Window & {__BLOCKSYNC_GUI_PUBLIC_PATH__?: string}
+).__BLOCKSYNC_GUI_PUBLIC_PATH__ = scratchGuiBasePath();
+let studentPolicy: StudentPolicyView | null = null;
+let submissionPreviewMode = false;
+
+function collabInviteShareUrl(invite: CollabInvite): string {
+  if (SURFACE_MODE.kind === "student") {
+    return buildStudentAwareInviteUrl(window.location.href, invite);
+  }
+  return inviteUrl(window.location.href, invite);
+}
+if (SURFACE_MODE.kind !== "community" && appMain) {
+  appMain.hidden = true;
+}
 const chromeLeft = document.querySelector<HTMLElement>(".chrome-left");
-if (chromeLeft) {
+if (chromeLeft && SURFACE_MODE.kind !== "admin") {
   installSyncratchChromeLayout({chromeLeft, guiHost});
 }
 const toolPanels = [
@@ -552,10 +718,10 @@ for (const panel of toolPanels) {
 }
 
 document.addEventListener("pointerdown", event => {
-  // Pausing or stepping while watching the history must not close the history.
+  // Pausing or stepping in the debug panel must not close other toolbar menus.
   if (
     event.target instanceof Node &&
-    execControlGroup.contains(event.target)
+    (execControlGroup.contains(event.target) || execDebugPanel.contains(event.target))
   ) {
     return;
   }
@@ -628,6 +794,99 @@ let driveIntegration: EditorDriveIntegration;
 let driveAutosave: DriveAutosave;
 let driveReady = false;
 let suppressVmChanges = true;
+
+function readWorkspaceUpdateInstrumentationContext(): {
+  suppressVmChanges: boolean;
+  diagnosticReady: boolean;
+  uiRestoreEpoch: number;
+  collaborationGeneration: number;
+  projectSessionId: number;
+  saveDirtyGeneration: number;
+  editingTarget: ScratchVm["editingTarget"] | null | undefined;
+} {
+  return {
+    suppressVmChanges,
+    diagnosticReady: diagnostic.ready,
+    uiRestoreEpoch,
+    collaborationGeneration,
+    projectSessionId: projectSessions.getActive(),
+    saveDirtyGeneration: saveCoordinator?.getDirtyGeneration?.() ?? 0,
+    editingTarget: vm?.editingTarget ?? null,
+  };
+}
+
+function readWorkspaceUpdateInstrumentationContextFull(): import("./workspace-update-instrumentation.js").WorkspaceUpdateInstrumentationContext {
+  return {
+    loadEpoch: getLoadEpoch(),
+    loadKind: getActiveLoadKind(),
+    ...readWorkspaceUpdateInstrumentationContext(),
+  };
+}
+
+function readBlocklyVmEventContext(): import("./blockly-vm-event-instrumentation.js").BlocklyVmEventContext {
+  return {
+    loadEpoch: getLoadEpoch(),
+    ...readWorkspaceUpdateInstrumentationContext(),
+    editingTargetId: vm?.editingTarget?.id,
+  };
+}
+
+function readE2eBlockEventDropDecision(): import("./blockly-vm-event-instrumentation.js").BlockEventDropDecision {
+  const kind = peekArmedBlockEventDrop();
+  if (!kind) return null;
+  return {
+    kind,
+    logDrop: entry =>
+      logBlockEventDrop({
+        at: Date.now(),
+        kind: entry.kind,
+        event: entry.event,
+        syncGeneration: entry.syncGeneration,
+      }),
+  };
+}
+
+function readBlocklyVmEditingTarget():
+  | {
+      blocks?: {
+        getScripts?: () => string[];
+        _blocks?: Record<string, VmBlockLike>;
+      };
+    }
+  | null
+  | undefined {
+  return vm?.editingTarget as ScratchVm["editingTarget"] & {
+    blocks?: {
+      getScripts?: () => string[];
+      _blocks?: Record<string, VmBlockLike>;
+    };
+  };
+}
+
+function ensureBlocklyVmEventPipeline(): void {
+  if (!vm) return;
+  if (!isBlocklyVmEventPipelineInstalled(vm)) {
+    installBlocklyVmEventPipeline(
+      vm,
+      readBlocklyVmEventContext,
+      blocklyWorkspace,
+      readBlocklyVmEditingTarget,
+      import.meta.env.MODE === "e2e"
+        ? {readDropDecision: readE2eBlockEventDropDecision}
+        : undefined,
+    );
+  }
+  rebindWorkspaceBlockListener(blocklyWorkspace());
+}
+
+function setSuppressedVmChanges(kind: LoadBoundaryKind, value: boolean): void {
+  recordLoadBoundaryTransition(
+    kind,
+    value,
+    readWorkspaceUpdateInstrumentationContext(),
+  );
+  suppressVmChanges = value;
+}
 let failNextWrite = false;
 let collabSession: CollabSession | null = null;
 let activeInvite: CollabInvite | null = null;
@@ -640,7 +899,14 @@ let guestInitialRollback: {
 let collaborationTestGate = false;
 let lastLocalSaveState: LocalSaveState = "clean";
 let lastDriveStatus: EditorDriveStatus = "not-configured";
+/** Friendly Japanese detail for status icons / titles. */
 let lastDriveMessage: string | undefined;
+/**
+ * Raw English (or gate) detail from Drive integration. Must be kept separately
+ * from `lastDriveMessage` — re-running friendlyDriveMessage on already-localized
+ * text falls through to the generic "もう一度ためしてください" copy.
+ */
+let lastDriveRawMessage: string | undefined;
 let driveOverwriteConfirmationRequired = false;
 /** Google profile picture for the collab avatar chip; cleared on disconnect. */
 let googleAvatarUrl: string | undefined;
@@ -869,6 +1135,95 @@ const diagnostic = {
       issues: materialized && !materialized.ok ? materialized.issues : null,
     };
   },
+  workspaceVmDesyncLog() {
+    return getWorkspaceVmDesyncLog();
+  },
+  workspaceUpdateLog() {
+    return getWorkspaceUpdateLog();
+  },
+  loadBoundaryLog() {
+    return getLoadBoundaryLog();
+  },
+  suppressedDirtyLog() {
+    return getSuppressedDirtyLog();
+  },
+  blocklyEventLog() {
+    return getBlocklyEventLog();
+  },
+  blocklyVmGraphDiffLog() {
+    return getBlocklyVmGraphDiffLog();
+  },
+  getSyncGeneration() {
+    return readSyncGeneration();
+  },
+  blockEventDropLog() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("blockEventDropLog is available only in E2E mode");
+    }
+    return getBlockEventDropLog();
+  },
+  armDropNext(kind: BlockEventDropKind, count: number | "all" = 1) {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("armDropNext is available only in E2E mode");
+    }
+    if (count === "all") {
+      armBlockEventDropAll(kind);
+      return;
+    }
+    armBlockEventDropNext(kind, count);
+  },
+  disarmDrop() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("disarmDrop is available only in E2E mode");
+    }
+    disarmBlockEventDrop();
+  },
+  resetE2eSideEffectCounters() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("E2E side-effect counters are available only in E2E mode");
+    }
+    resetE2eSideEffectCounters();
+  },
+  getE2eSideEffectCounters() {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("E2E side-effect counters are available only in E2E mode");
+    }
+    return getE2eSideEffectCounters();
+  },
+  async reloadCurrentProject(): Promise<number> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("reloadCurrentProject is available only in E2E mode");
+    }
+    if (!hasCurrent) throw new Error("No current project");
+    const epochBefore = getLoadEpoch();
+    await loadRecord(structuredClone(current));
+    return epochBefore;
+  },
+  async installE2ePublishableCollabSession(): Promise<void> {
+    await installE2ePublishableCollabSession();
+  },
+  async publishE2eCollabLocalChange(): Promise<void> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("publishE2eCollabLocalChange is available only in E2E mode");
+    }
+    if (!collabSession) {
+      throw new Error("No publishable collaboration session");
+    }
+    collabSession.noteLocalChange({force: true});
+    await collabSession.flush();
+  },
+  async flushE2eLocalSave(): Promise<void> {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("flushE2eLocalSave is available only in E2E mode");
+    }
+    await saveCoordinator.flush();
+  },
+  getExecutionRewindSnapshot(): RewindSnapshot | null {
+    if (import.meta.env.MODE !== "e2e") {
+      throw new Error("getExecutionRewindSnapshot is available only in E2E mode");
+    }
+    return executionRewind?.getSnapshot() ?? null;
+  },
 };
 
 declare global {
@@ -962,6 +1317,73 @@ function documentFromVm(assets = runtimeAssetMap()): ProjectDocument {
   );
 }
 
+/** Restore execution rewind origin. Side-effect suppression is handled by replay lifecycle hooks. */
+function localUiRestoreHooksForProjectLoad():
+  | import("./load-project-preserving-editing-target.js").LocalUiRestoreHooks
+  | undefined {
+  if (!editorGuiState) return undefined;
+  return {
+    store: guiStoreTrackingInternalMetrics(editorGuiState.store),
+    readToolboxCategoryId,
+    restoreToolboxCategory,
+    rememberedViewportForSelection: selection =>
+      hasCurrent
+        ? viewportMemory.get(
+            current.localProjectId,
+            selection?.documentId ?? null,
+          )
+        : null,
+    rememberViewportForSelection,
+    preferRememberedViewport: () => suppressViewportMemoryCapture,
+    applyViewport: viewport => {
+      if (isScratchBlockInteractionActive(scratchWorkspace())) return;
+      applyWorkspaceViewport(viewport);
+    },
+    beginRestoreEpoch: bumpUiRestoreEpoch,
+    isRestoreEpochCurrent: epoch => epoch === uiRestoreEpoch,
+    currentRuntimeEditingTargetId: () => vm.editingTarget?.id,
+  };
+}
+
+async function loadVmProjectJson(
+  projectJson: Record<string, unknown>,
+): Promise<void> {
+  const assets = runtimeAssetMap();
+  const beforeDocument = documentFromVm(assets);
+  const afterDocument = projectJsonToDocument(
+    projectJson,
+    assetHashCache.hashesFor(assets),
+  );
+  await loadProjectPreservingEditingTarget(vm, structuredClone(projectJson), {
+    beforeDocument,
+    afterDocument,
+    localUi: localUiRestoreHooksForProjectLoad(),
+  });
+}
+
+async function restoreRewindOrigin(origin: RewindOrigin): Promise<void> {
+  if (origin.vmProjectJson !== undefined) {
+    await loadVmProjectJson(
+      structuredClone(origin.vmProjectJson) as Record<string, unknown>,
+    );
+    return;
+  }
+  await loadVmProjectJson(documentToProjectJson(origin.document));
+}
+
+async function restoreRewindExecutionCheckpoint(
+  checkpoint: unknown,
+): Promise<void> {
+  if (!checkpoint || typeof checkpoint !== "object") {
+    throw new Error("Execution checkpoint is unavailable");
+  }
+  vm.runtime.stopAll?.();
+  await loadVmProjectJson(structuredClone(checkpoint) as Record<string, unknown>);
+  restartGreenFlagHatThreads(
+    vm.runtime as import("./execution-rewind-green-flag.js").GreenFlagRuntimeLike,
+  );
+}
+
 async function persistCurrent(session: ProjectSession): Promise<void> {
   await projectSessions.runSerialized(session, async isActive => {
     if (failNextWrite) {
@@ -986,6 +1408,9 @@ async function persistCurrent(session: ProjectSession): Promise<void> {
         assets: assetRecordsFromMap(document, assets),
         saveState: "clean",
       };
+      if (import.meta.env.MODE === "e2e") {
+        recordE2ePersistAttempt();
+      }
       const saved = await store.createOrReplace(next, source.revision);
       if (!isActive()) return;
       current = saved;
@@ -1096,6 +1521,10 @@ function renderSaveState(state: LocalSaveState): void {
 
 function installSaveCoordinator(session: ProjectSession): void {
   saveCoordinator?.dispose();
+  if (submissionPreviewMode) {
+    renderSaveState("clean");
+    return;
+  }
   saveCoordinator = createSaveCoordinator({
     debounceMs: 250,
     save: () => persistCurrent(session),
@@ -1107,7 +1536,11 @@ function installSaveCoordinator(session: ProjectSession): void {
 }
 
 function markDirty(): void {
-  if (suppressVmChanges) return;
+  if (submissionPreviewMode) return;
+  if (suppressVmChanges) {
+    recordSuppressedProjectChanged(readWorkspaceUpdateInstrumentationContext());
+    return;
+  }
   saveCoordinator.markDirty();
   // Only the room-creating device may mark Drive unsynced / autosave.
   if (!collabSession || collabSession.createdThisRoom()) {
@@ -1175,7 +1608,7 @@ let syncingDriveControlsFromCollab = false;
 function refreshDriveControlsForCollab(): void {
   syncingDriveControlsFromCollab = true;
   try {
-    renderDriveStatus(lastDriveStatus, lastDriveMessage);
+    renderDriveStatus(lastDriveStatus, lastDriveRawMessage);
   } finally {
     syncingDriveControlsFromCollab = false;
   }
@@ -1282,7 +1715,7 @@ async function applyCollaborativeProject(
         installSaveCoordinator(session);
       },
       setSuppressed(value) {
-        suppressVmChanges = value;
+        setSuppressedVmChanges("guest", value);
       },
     });
     if (applied) {
@@ -1382,13 +1815,55 @@ async function applyCollaborativeProject(
       renderSaveState(persisted ? "clean" : "error");
     },
     setSuppressed(value) {
-      suppressVmChanges = value;
+      setSuppressedVmChanges("remote", value);
     },
     onPersistError() {
       // Status is set in commit({persisted:false}); keep for diagnostics.
     },
   });
+  if (result.applied) {
+    clearExecutionRewindHistory("remote-apply");
+  }
   return result.applied;
+}
+
+async function installE2ePublishableCollabSession(): Promise<void> {
+  if (import.meta.env.MODE !== "e2e") {
+    throw new Error("E2E collab session helper is available only in E2E mode");
+  }
+  collabSession?.leave();
+  const generation = ++collaborationGeneration;
+  const mesh = createMemoryMesh();
+  const session = createCollabSession({
+    roomId: "e2e-workspace-side-effects",
+    secret: "e2e-workspace-side-effects-secret-value",
+    participantId: randomParticipantId(),
+    debounceMs: 0,
+    createProvider: (config: CollabProviderConfig) =>
+      createCollabProvider({
+        doc: config.doc,
+        secret: config.secret,
+        transport: mesh.createTransport(),
+        participantId: config.participantId,
+        applyRemoteUpdate: config.applyRemoteUpdate,
+        isLocalOrigin: config.isLocalOrigin,
+      }),
+    materializeLocal: () => {
+      const assets = runtimeAssetMap();
+      return {document: documentFromVm(assets), assets};
+    },
+    applyRemoteToLocal: async () => true,
+    onLocalPush: recordE2eCollabOutbound,
+    onState: renderCollabState,
+  });
+  if (generation !== collaborationGeneration) return;
+  const started = session.start({host: true});
+  if (!started.ok) {
+    throw new Error("Failed to start E2E publishable collab session");
+  }
+  collabSession = session;
+  activeInvite = createInvite();
+  await session.flush();
 }
 
 async function startCollaboration(
@@ -1453,22 +1928,28 @@ async function startCollaboration(
       }
     },
     onState: renderCollabState,
+    onLocalPush:
+      import.meta.env.MODE === "e2e" ? recordE2eCollabOutbound : undefined,
   });
   collabSession = session;
   activeInvite = invite;
   collabFeedback.textContent = "";
-  collabInviteInput.value = inviteUrl(window.location.href, invite);
+  collabInviteInput.value = collabInviteShareUrl(invite);
   const started = session.start({host});
   if (!started.ok) {
     const summary = summarizePreflightIssues(started.issues);
     collabSession = null;
     activeInvite = null;
+    if (host) clearPendingHostRoomInvite();
     renderCollabIdle(summary.summary);
     collabStatus.title = summary.codes.length > 0
       ? `${summary.codes.join(", ")} / 作品の素材や内容を確認してください。`
       : "作品の素材や内容を確認してください。";
   } else {
     publishLocalCollabProfile();
+    if (host && activeInvite) {
+      savePendingHostRoomInvite(activeInvite);
+    }
   }
   closePanelFor(host ? createRoomButton : joinRoomButton);
 }
@@ -1478,7 +1959,7 @@ async function copyActiveInviteLink(options?: {
   panelFeedback?: boolean;
 }): Promise<boolean> {
   if (!activeInvite) return false;
-  const url = inviteUrl(window.location.href, activeInvite);
+  const url = collabInviteShareUrl(activeInvite);
   try {
     await navigator.clipboard.writeText(url);
     appToast.show(INVITE_LINK_COPIED_TOAST);
@@ -1505,7 +1986,17 @@ async function ensureGoogleBeforeCollab(intent: {
   invite?: CollabInvite;
 }): Promise<boolean> {
   if (!shouldGateCollabOnGoogle(driveIntegration.getStatus())) return true;
-  if (driveIntegration.isConnected()) return true;
+  if (driveIntegration.isConnected()) {
+    // Already Google-connected (e.g. prior OAuth). Re-observe so a stale
+    // "connected" status cannot hide local↔Drive drift, then push the host
+    // baseline when still unsynced.
+    if (intent.role === "host") {
+      await driveIntegration.connect();
+      await syncGoogleAvatarProfile();
+      await pushHostDriveBaselineBeforeCollab();
+    }
+    return true;
+  }
 
   if (intent.role === "host") {
     markPendingHostCreate();
@@ -1513,7 +2004,7 @@ async function ensureGoogleBeforeCollab(intent: {
   } else if (intent.invite) {
     ensureInviteHashOnLocation(intent.invite);
     savePendingGuestInvite(intent.invite);
-    collabInviteInput.value = inviteUrl(window.location.href, intent.invite);
+    collabInviteInput.value = collabInviteShareUrl(intent.invite);
     renderCollabIdle(COLLAB_GOOGLE_REQUIRED_FOR_JOIN);
   }
 
@@ -1528,7 +2019,24 @@ async function ensureGoogleBeforeCollab(intent: {
     }
     return false;
   }
+  if (intent.role === "host") {
+    await pushHostDriveBaselineBeforeCollab();
+  }
   return true;
+}
+
+/**
+ * Host "いっしょに作る" asserts the current local project as the shared source
+ * of truth. If reconnect left Drive unsynced (local ≠ remote), push an
+ * explicit save before the room opens so the host is not stuck on a diverge
+ * banner with only a mislabeled secondary button.
+ * Failure is non-fatal: local-first collab still starts; the Save CTA remains.
+ */
+async function pushHostDriveBaselineBeforeCollab(): Promise<void> {
+  if (driveIntegration.getStatus() !== "unsynced") return;
+  if (!driveIntegration.isConnected()) return;
+  driveAutosave?.cancel();
+  await driveIntegration.saveToDrive({explicit: true});
 }
 
 async function createRoom(): Promise<void> {
@@ -1757,6 +2265,7 @@ function ensureBlockUndoKeepAlive(): void {
 
 function noteEditingTargetMaybeChanged(): void {
   const editingId = vm?.editingTarget?.id ?? null;
+  ensureBlocklyVmEventPipeline();
   ensureBlockUndoKeepAlive();
   // Best-effort capture if the previous sprite's stack is still present.
   lastUndoTargetId = captureUndoBeforeTargetSwitch({
@@ -1782,6 +2291,7 @@ function leaveRoom(): void {
   collaborationGeneration += 1;
   collabSession = null;
   activeInvite = null;
+  clearPendingHostRoomInvite();
   collabFeedback.textContent = "";
   renderCollabIdle();
 }
@@ -1797,6 +2307,7 @@ async function loadRecord(
   signal?: AbortSignal,
 ): Promise<void> {
   driveAutosave?.cancel();
+  clearExecutionRewindHistory("project-load");
   clearLocalUiMemoryForProjectReplacement();
   resetEditHistory();
   const candidate = structuredClone(record);
@@ -1808,7 +2319,7 @@ async function loadRecord(
       candidate,
       previous,
       setSuppressed(value) {
-        suppressVmChanges = value;
+        setSuppressedVmChanges("load", value);
       },
       async load(recordToLoad) {
         attachLocalStorage(recordToLoad);
@@ -1945,6 +2456,10 @@ function scratchWorkspace() {
   return resolveScratchWorkspace(guiHost, blocksApi ?? null);
 }
 
+function blocklyWorkspace(): BlocklyWorkspaceLike | null {
+  return scratchWorkspace() as BlocklyWorkspaceLike | null;
+}
+
 function readToolboxCategoryId(): string | null {
   try {
     const selected = scratchWorkspace()?.getToolbox?.()?.getSelectedItem?.();
@@ -2061,6 +2576,8 @@ async function getVm(): Promise<ScratchVm> {
     const root = GUI.createStandaloneRoot(state, guiHost);
     installScratchAccessibility(guiHost);
     root.render({
+      // Absolute site root — not "./". Nested /s/{token} would break blocks-media.
+      basePath: scratchGuiBasePath(),
       canEditTitle: false,
       canSave: false,
       // Syncratch owns 設定/ファイル/編集 menus (see feature-panels).
@@ -2070,6 +2587,15 @@ async function getVm(): Promise<ScratchVm> {
       canChangeTheme: false,
       onVmInit: vmInstance => {
         // Warm TurboWarp compat while the default sprite/skins still exist.
+        installBlocklyVmEventPipeline(
+          vmInstance,
+          readBlocklyVmEventContext,
+          blocklyWorkspace,
+          readBlocklyVmEditingTarget,
+          import.meta.env.MODE === "e2e"
+            ? {readDropDecision: readE2eBlockEventDropDecision}
+            : undefined,
+        );
         // loadProject() clears targets before reloading extensions, so Animated
         // Text needs cached Skin/RenderedTarget from this moment.
         ensureTurbowarpVmCompat(vmInstance);
@@ -2157,6 +2683,21 @@ function syncScratchNativeMenuControls(): void {
   );
 }
 
+function installStudentExtensionBlock(state: EditorGuiState): void {
+  let intercepting = false;
+  state.store.subscribe?.(() => {
+    if (intercepting) return;
+    if (!isExtensionLibraryOpen(state.store.getState())) return;
+    intercepting = true;
+    try {
+      state.store.dispatch(closeExtensionLibraryAction());
+      appToast.show("このリンクでは拡張機能を追加できません");
+    } finally {
+      intercepting = false;
+    }
+  });
+}
+
 function installScratchNativeMenus(
   state: EditorGuiState,
   scratchVm: ScratchVm,
@@ -2167,31 +2708,97 @@ function installScratchNativeMenus(
     syncScratchNativeMenuControls();
   });
   ensureBlockUndoKeepAlive();
-  installDefaultExtensionGallery(state, scratchVm);
+  const extensionsAllowed =
+    !studentPolicy || studentPolicy.editor.allowExtensions;
+  if (extensionsAllowed) {
+    installDefaultExtensionGallery(state, scratchVm);
+  } else {
+    installStudentExtensionBlock(state);
+  }
 }
 
 let executionController: ExecutionController | null = null;
 let executionTrace: ExecutionTraceHandle | null = null;
+let executionRewind: ExecutionRewindHandle | null = null;
+let disposeDebugPanel: (() => void) | null = null;
+let rewindInvalidationInstalled = false;
 const traceListView = createTraceListView(tracePanelList);
+/** User-picked script key; null means auto (most recently active). */
+let selectedTraceScriptKey: string | null = null;
+let traceScriptFilterUserPicked = false;
+
+function clearExecutionRewindHistory(reason: RewindClearReason): void {
+  executionRewind?.clearRewindHistory(reason);
+}
+
+function installRewindInvalidationListeners(): void {
+  if (rewindInvalidationInstalled) return;
+  const workspace = blocklyWorkspace();
+  if (!workspace?.addChangeListener) return;
+  workspace.addChangeListener((event: BlocklyEventLike) => {
+    if (suppressVmChanges || getActiveLoadKind()) return;
+    if (event.recordUndo === false) return;
+    if (!isGraphMutatingBlocklyEvent(event)) return;
+    clearExecutionRewindHistory("code-edit");
+  });
+  rewindInvalidationInstalled = true;
+}
+
+function syncTraceScriptFilter(
+  scripts: ReturnType<typeof listTraceScripts>,
+  selectedKey: string | null,
+): void {
+  const showFilter = scripts.length > 1;
+  traceScriptFilterWrap.hidden = !showFilter;
+  if (!showFilter) {
+    traceScriptFilter.replaceChildren();
+    return;
+  }
+  const previousFocus = document.activeElement === traceScriptFilter;
+  traceScriptFilter.replaceChildren();
+  for (const script of scripts) {
+    const option = document.createElement("option");
+    option.value = script.key;
+    option.textContent = script.label;
+    if (script.key === selectedKey) option.selected = true;
+    traceScriptFilter.appendChild(option);
+  }
+  if (selectedKey) traceScriptFilter.value = selectedKey;
+  if (previousFocus) traceScriptFilter.focus();
+}
 
 /**
  * Repaint the trace panel from the recorded entries.
  *
  * Only runs while the panel is open: a `forever` loop records constantly, and
  * rebuilding a list nobody is looking at would burn frames for nothing.
+ *
+ * When several hats have run, history is filtered to one script at a time
+ * (selectable). A single hat-less stack run shows only that stack.
  */
 function renderExecutionTrace(vmInstance: ScratchVm): void {
   if (!executionTrace) return;
-  const panel = tracePanelList.closest("details");
-  if (panel && !panel.open) return;
+  if (execDebugPanel.hidden) return;
   const targets = (vmInstance.runtime as {targets?: unknown[]} | undefined)
     ?.targets;
-  traceListView.render(
-    resolveTraceEntries(
-      executionTrace.trace.getEntries(),
-      (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
-    ),
+  const displayEntries = resolveTraceEntries(
+    executionTrace.trace.getDisplayEntries(),
+    (targets ?? []) as Parameters<typeof resolveTraceEntries>[1],
   );
+  const scripts = listTraceScripts(displayEntries);
+  const preferred = traceScriptFilterUserPicked ? selectedTraceScriptKey : null;
+  const selectedKey = resolveSelectedScriptKey(scripts, preferred);
+  if (traceScriptFilterUserPicked && preferred && selectedKey !== preferred) {
+    // Cleared / truncated away — resume auto-follow of the latest script.
+    traceScriptFilterUserPicked = false;
+  }
+  selectedTraceScriptKey = selectedKey;
+  syncTraceScriptFilter(scripts, selectedKey);
+  const visible =
+    scripts.length > 1
+      ? filterEntriesByScript(displayEntries, selectedKey)
+      : displayEntries;
+  traceListView.render(visible);
 }
 
 /** scratch-blocks builds this filter at inject time (src/glows.ts). */
@@ -2234,15 +2841,64 @@ function highlightExecutingBlocks(blockIds: string[]): void {
  */
 function installExecutionControls(vmInstance: ScratchVm): void {
   executionController?.dispose();
+  executionRewind?.dispose();
   executionTrace?.dispose();
+  disposeDebugPanel?.();
+  disposeDebugPanel = null;
 
   // Order matters. Both wrap Runtime._step, and the pause gate has to sit
-  // OUTSIDE the recorder: gate -> recorder -> real step. Installed the other
-  // way round, the recorder still ran while execution was paused, so pressing
-  // the green flag grew the history while the stage stayed frozen — "the log
-  // moves but my sprite does not".
+  // OUTSIDE the recorder: gate -> recorder -> rewind -> real step. Installed
+  // the other way round, the recorder still ran while execution was paused, so
+  // pressing the green flag grew the history while the stage stayed frozen —
+  // "the log moves but my sprite does not".
   executionTrace = installExecutionTrace(
     vmInstance as unknown as {runtime?: unknown},
+  );
+
+  let refreshExecUi: (() => void) | null = null;
+
+  executionRewind = installExecutionRewind(
+    vmInstance as unknown as {runtime?: unknown},
+    {
+      captureOrigin: () => {
+        if (!hasCurrent) return null;
+        const vmProjectJson = JSON.parse(vm.toJSON()) as Record<string, unknown>;
+        return createRewindOrigin({
+          document: documentFromVm(),
+          assets: runtimeAssetMap(),
+          projectSessionId: projectSessions.getActive(),
+          runtime: vmInstance.runtime as import("./execution-rewind-fingerprint.js").RewindRuntimeLike,
+          vmProjectJson,
+        });
+      },
+      restoreOrigin: restoreRewindOrigin,
+      captureExecutionCheckpoint: () => {
+        if (!hasCurrent) return null;
+        return JSON.parse(vm.toJSON()) as Record<string, unknown>;
+      },
+      restoreExecutionCheckpoint: restoreRewindExecutionCheckpoint,
+      getTraceSize: () => executionTrace?.trace.size() ?? 0,
+      onReplayLifecycle: phase => {
+        setSuppressedVmChanges("rewind", phase === "start");
+        executionTrace?.trace.setRecordingSuspended(phase === "start");
+      },
+      onTraceDisplayCursor: traceSize => {
+        executionTrace?.trace.setDisplayCursor(traceSize);
+        refreshExecUi?.();
+      },
+      onTraceTruncate: traceSize => {
+        executionTrace?.trace.truncateTo(traceSize);
+        executionTrace?.trace.setDisplayCursor(traceSize);
+        refreshExecUi?.();
+      },
+      onHistoryCleared: reason => {
+        // Keep execution logs after a failed rewind; only scrub rewind metadata.
+        if (reason !== "green-flag" && reason !== "replay-failure") {
+          executionTrace?.trace.clear();
+        }
+        refreshExecUi?.();
+      },
+    },
   );
 
   // Independent of pause/step: a stale glow must not cancel the frame's draw.
@@ -2269,39 +2925,223 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   executionController = controller;
   execControlGroup.hidden = false;
 
-  const tracePanel = tracePanelList.closest("details");
-  tracePanel?.addEventListener("toggle", () => {
-    renderExecutionTrace(vmInstance);
-  });
+  let lastRewindSnapshot: RewindSnapshot | null = null;
+
+  let scrubDebounceTimer: number | null = null;
+
+  const updateScrubSliderFill = (input: HTMLInputElement): void => {
+    const max = Number(input.max);
+    const value = Number(input.value);
+    const pct = max > 0 ? (value / max) * 100 : 0;
+    input.style.setProperty("--scrub-progress", `${pct}%`);
+  };
+
+  const renderRewindControl = (): void => {
+    const snapshot = executionRewind?.getSnapshot() ?? null;
+    const paused = executionController?.getSnapshot().state === "paused";
+    const canScrub = snapshot?.canScrub ?? false;
+    const isReplaying = snapshot?.isReplaying ?? false;
+    execRewindButton.disabled = !canScrub || isReplaying || (snapshot?.scrubDepthBack ?? 0) <= 0;
+    const title = formatRewindButtonTitle(snapshot);
+    execRewindButton.title = title;
+    execRewindButton.setAttribute("aria-label", title);
+    execRewindLabel.textContent = formatRewindButtonLabel(snapshot);
+
+    const frontier = snapshot?.recordFrontierFrameIndex ?? -1;
+    execScrubInput.min = "0";
+    execScrubInput.max = String(Math.max(0, frontier));
+    execScrubInput.value = String(snapshot?.playbackFrameIndex ?? 0);
+    execScrubInput.disabled = !canScrub || isReplaying || !paused || frontier < 1;
+    execScrubInput.setAttribute(
+      "aria-valuetext",
+      formatScrubSliderAriaValueText(snapshot),
+    );
+    execScrubLabel.textContent = formatScrubSliderLabel(snapshot);
+    updateScrubSliderFill(execScrubInput);
+
+    if (shouldNotifyRewindUnavailable(lastRewindSnapshot, snapshot)) {
+      appToast.show(title);
+    }
+    lastRewindSnapshot = snapshot;
+  };
+
   traceClearButton.addEventListener("click", () => {
     executionTrace?.trace.clear();
+    selectedTraceScriptKey = null;
+    traceScriptFilterUserPicked = false;
     renderExecutionTrace(vmInstance);
   });
-  // While running, refresh on a timer rather than per frame.
-  window.setInterval(() => renderExecutionTrace(vmInstance), 700);
+
+  traceScriptFilter.addEventListener("change", () => {
+    selectedTraceScriptKey = traceScriptFilter.value || null;
+    traceScriptFilterUserPicked = true;
+    renderExecutionTrace(vmInstance);
+  });
+
+  const debugPanel = installDebugFloatingPanel({
+    panel: execDebugPanel,
+    handle: execDebugDragHandle,
+    closeButton: execDebugCloseButton,
+  });
+  disposeDebugPanel = () => debugPanel.dispose();
+
+  const resumeExecution = (): void => {
+    executionRewind?.commitPlaybackBranch();
+    controller.resume();
+  };
+
+  const closeDebugPanelAndResume = (): void => {
+    if (controller.getSnapshot().state === "paused") {
+      resumeExecution();
+    }
+    debugPanel.setOpen(false);
+    render();
+  };
+
+  const openDebugPanelAndPause = (): void => {
+    if (controller.getSnapshot().state === "running") {
+      controller.pause();
+    }
+    debugPanel.setOpen(true);
+    render();
+  };
+
+  // While running, refresh trace (when open) and rewind availability on a timer.
+  window.setInterval(() => {
+    renderExecutionTrace(vmInstance);
+    renderRewindControl();
+  }, 700);
 
   const render = () => {
     const {state} = controller.getSnapshot();
     const paused = state === "paused";
+    const panelOpen = debugPanel.isOpen();
     execControlGroup.dataset.state = state;
-    const pauseLabel = paused ? "再開" : "一時停止";
-    execPauseLabel.textContent = pauseLabel;
-    // The label is hidden on narrow toolbars, so the state has to live here too.
-    execPauseButton.setAttribute("aria-label", pauseLabel);
-    execPauseButton.title = pauseLabel;
-    execPauseButton.setAttribute("aria-pressed", paused ? "true" : "false");
+
+    execDebugToggleLabel.textContent = "デバッグ";
+    execDebugToggleButton.setAttribute("aria-label", "デバッグ");
+    execDebugToggleButton.title = "デバッグ";
+    execDebugToggleButton.setAttribute(
+      "aria-expanded",
+      panelOpen ? "true" : "false",
+    );
+
+    const pauseResumeLabel = paused ? "再開" : "一時停止";
+    execDebugPauseResumeButton.textContent = pauseResumeLabel;
+    execDebugPauseResumeButton.setAttribute("aria-label", pauseResumeLabel);
+
     execStatus.textContent = paused ? "止まっています" : "動いています";
     renderExecutionTrace(vmInstance);
+    renderRewindControl();
   };
 
+  refreshExecUi = render;
+
   controller.subscribe(render);
-  execPauseButton.addEventListener("click", () => {
+  execDebugToggleButton.addEventListener("click", () => {
+    if (debugPanel.isOpen()) {
+      closeDebugPanelAndResume();
+      return;
+    }
+    openDebugPanelAndPause();
+  });
+  execDebugCloseButton.addEventListener("click", () => {
+    closeDebugPanelAndResume();
+  });
+  execDebugPauseResumeButton.addEventListener("click", () => {
     const {state} = controller.getSnapshot();
-    if (state === "paused") controller.resume();
-    else controller.pause();
+    if (state === "paused") {
+      resumeExecution();
+    } else {
+      controller.pause();
+    }
+  });
+  execRewindButton.addEventListener("click", () => {
+    void (async () => {
+      if (!executionRewind) return;
+      const {state} = controller.getSnapshot();
+      if (state === "running") controller.pause();
+      execRewindButton.disabled = true;
+      try {
+        const result = await executionRewind.rewindFrame();
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
+        }
+      } finally {
+        render();
+      }
+    })();
   });
   execStepButton.addEventListener("click", () => {
-    controller.stepFrame();
+    void (async () => {
+      const snapshot = executionRewind?.getSnapshot();
+      if (
+        snapshot?.canScrub &&
+        snapshot.scrubDepthForward > 0 &&
+        executionController?.getSnapshot().state === "paused"
+      ) {
+        execStepButton.disabled = true;
+        try {
+          const result = await executionRewind!.scrubForwardOneFrame();
+          if (!result.ok) {
+            const message =
+              executionRewind!.getSnapshot().rewindError ?? result.error;
+            if (message) appToast.show(message);
+          }
+        } finally {
+          render();
+        }
+        return;
+      }
+      controller.stepFrame();
+    })();
+  });
+
+  const runScrubToSliderValue = (value: number): void => {
+    void (async () => {
+      if (!executionRewind) return;
+      const {state} = controller.getSnapshot();
+      if (state === "running") controller.pause();
+      execScrubInput.disabled = true;
+      try {
+        const result = await executionRewind.scrubToFrame(value);
+        if (!result.ok) {
+          const message =
+            executionRewind.getSnapshot().rewindError ?? result.error;
+          if (message) appToast.show(message);
+        }
+      } finally {
+        render();
+      }
+    })();
+  };
+
+  execScrubInput.addEventListener("input", () => {
+    updateScrubSliderFill(execScrubInput);
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+    }
+    const value = Number(execScrubInput.value);
+    scrubDebounceTimer = window.setTimeout(() => {
+      scrubDebounceTimer = null;
+      runScrubToSliderValue(value);
+    }, 150);
+  });
+  execScrubInput.addEventListener("change", () => {
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+      scrubDebounceTimer = null;
+    }
+    runScrubToSliderValue(Number(execScrubInput.value));
+  });
+  execScrubInput.addEventListener("pointerup", () => {
+    if (scrubDebounceTimer !== null) {
+      window.clearTimeout(scrubDebounceTimer);
+      scrubDebounceTimer = null;
+    }
+    runScrubToSliderValue(Number(execScrubInput.value));
   });
 
   // Green flag runs every sprite. Learners often stare at an empty workspace
@@ -2322,14 +3162,15 @@ function installExecutionControls(vmInstance: ScratchVm): void {
   }, 500);
 
   render();
+  installRewindInvalidationListeners();
 }
 
 let emptyWorkspaceGuardToastAt = 0;
 
 /**
  * If the Blockly workspace shows no scripts but the editing target still has
- * VM scripts or running threads, stop and clear so the stage matches the empty
- * workspace the learner is looking at.
+ * VM scripts or running threads, stop execution and record diagnostics.
+ * VM blocks are not deleted automatically — the learner chooses how to recover.
  */
 function enforceWorkspaceMatchesVm(
   vmInstance: ScratchVm,
@@ -2356,13 +3197,18 @@ function enforceWorkspaceMatchesVm(
     runtime: vmInstance.runtime as import("./workspace-run-guard.js").GuardRuntimeLike,
     editingTarget,
   });
-  if (!result || (!result.stopped && !result.clearedVmScripts)) return;
+  if (!result?.detected) return;
+  if (result.stopped) {
+    clearExecutionRewindHistory("vm-blockly-desync");
+  }
   if (!options.announce) return;
   const now = Date.now();
   if (now - emptyWorkspaceGuardToastAt < 4000) return;
   emptyWorkspaceGuardToastAt = now;
   appToast.show(
-    "画面上にブロックが無いので実行を止めました（中に残っていたスクリプトを消しました）",
+    result.stopped
+      ? "画面上にブロックが無いのに実行されていました。安全のため実行を止めました。"
+      : "画面上にブロックが無いのにスクリプトが残っています。保存前に内容を確認してください。",
   );
 }
 
@@ -2557,6 +3403,22 @@ function renderDriveStatus(
   status: EditorDriveStatus,
   message?: string,
 ): void {
+  if (studentPolicy && isStudentDriveFullyBlocked(studentPolicy)) {
+    driveStatus.textContent = CLASSROOM_DRIVE_BLOCKED_STATUS;
+    driveStatus.title = CLASSROOM_DRIVE_BLOCKED_STATUS;
+    connectGoogleButton.hidden = true;
+    openDriveButton.hidden = true;
+    saveDriveButton.hidden = true;
+    disconnectGoogleButton.hidden = true;
+    driveControls.hidden = true;
+    return;
+  }
+  driveControls.hidden = false;
+  connectGoogleButton.hidden = false;
+  openDriveButton.hidden = false;
+  saveDriveButton.hidden = false;
+  disconnectGoogleButton.hidden = false;
+
   const previousStatus = lastDriveStatus;
   const conflictAction = driveConflictAction(status);
   if (
@@ -2577,6 +3439,7 @@ function renderDriveStatus(
   );
   const friendlyMessage = friendlyDriveMessage(detailMessage);
   lastDriveStatus = status;
+  lastDriveRawMessage = detailMessage;
   lastDriveMessage = friendlyMessage;
   const collabGuest = Boolean(
     collabSession && !collabSession.createdThisRoom(),
@@ -2600,6 +3463,16 @@ function renderDriveStatus(
   // Host: keep Save enabled during conflict for explicit retry after re-baseline.
   // Guest: always disabled — only the invite creator may write Drive.
   saveDriveButton.disabled = controls.saveDisabled;
+  // Disconnected: emphasize Connect. Connected (and allowed to write): always
+  // emphasize Save so it cannot blend into the gray Drive card.
+  connectGoogleButton.classList.toggle(
+    "drive-connect-primary",
+    !controls.connectDisabled && status === "disconnected",
+  );
+  saveDriveButton.classList.toggle(
+    "drive-save-primary",
+    !controls.saveDisabled && !controls.guestDriveBlocked,
+  );
   disconnectGoogleButton.disabled = controls.disconnectDisabled;
   if (conflictAction === "report") collabSession?.reportDriveConflict();
   if (conflictAction === "clear") collabSession?.clearDriveConflict();
@@ -2628,6 +3501,21 @@ async function persistDriveFileId(
   await persistDriveFileIdAndSyncCurrent({
     store,
     driveFileId,
+    localProjectId,
+    signal,
+    getCurrent: () => hasCurrent ? current : undefined,
+    setCurrent: saved => {
+      if (hasCurrent) current = saved;
+    },
+  });
+}
+
+async function clearDriveFileId(
+  localProjectId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await clearDriveFileIdAndSyncCurrent({
+    store,
     localProjectId,
     signal,
     getCurrent: () => hasCurrent ? current : undefined,
@@ -2701,6 +3589,7 @@ async function setupDriveIntegration(): Promise<EditorDriveIntegration> {
     }),
     importAsNewLocal: importProject,
     persistDriveFileId,
+    clearDriveFileId,
     hashBytes: async bytes => sha256Hex(bytes),
     createSnapshotId: () => crypto.randomUUID(),
     onStatus: renderDriveStatus,
@@ -2727,6 +3616,12 @@ async function boot(): Promise<void> {
   const guiReady = getVm();
   store = await openProjectStore();
   vm = await guiReady;
+  ensureBlocklyVmEventPipeline();
+  installWorkspaceUpdateListener(
+    vm as import("./workspace-update-instrumentation.js").WorkspaceUpdateListenerVm,
+    readWorkspaceUpdateInstrumentationContextFull,
+    blocklyWorkspace,
+  );
   vm.on("PROJECT_CHANGED", markDirty);
   vm.on("targetsUpdate", () => {
     noteEditingTargetMaybeChanged();
@@ -2757,17 +3652,45 @@ async function boot(): Promise<void> {
   }
   diagnostic.ready = true;
   driveReady = true;
-  consumeDriveOAuthReturnFlag();
+  const oauthReturn = consumeDriveOAuthReturnFlag();
   renderDriveStatus(driveIntegration.getStatus());
   await driveIntegration.tryRestoreSession();
   await syncGoogleAvatarProfile();
 
+  // OAuth cancel / missing refresh_token / expired state returns here with
+  // drive_oauth=error. Do not auto-redirect back to Google — that looks like
+  // being stuck on the account chooser.
+  if (oauthReturn === "error") {
+    appToast.show(COLLAB_GOOGLE_OAUTH_FAILED);
+    renderCollabIdle(COLLAB_GOOGLE_OAUTH_FAILED);
+    if (!driveIntegration.isConnected()) {
+      return;
+    }
+  }
+
+  const hostRoomInvite = peekPendingHostRoomInvite();
+  if (hostRoomInvite && !collabSession) {
+    if (
+      shouldGateCollabOnGoogle(driveIntegration.getStatus()) &&
+      !driveIntegration.isConnected()
+    ) {
+      if (!(await ensureGoogleBeforeCollab({role: "host"}))) {
+        return;
+      }
+    }
+    renderCollabIdle();
+    await startCollaboration(hostRoomInvite, true);
+    return;
+  }
+
   // After host OAuth for "create link", resume create once Google is ready.
+  // Peek first so a failed/incomplete connect does not wipe the pending flag.
   if (
-    consumePendingHostCreate() &&
+    peekPendingHostCreate() &&
     driveIntegration.isConnected() &&
     shouldGateCollabOnGoogle(driveIntegration.getStatus())
   ) {
+    consumePendingHostCreate();
     renderCollabIdle();
     await createRoom();
     return;
@@ -2778,7 +3701,7 @@ async function boot(): Promise<void> {
   const guestInvite = fragmentInvite ?? pendingGuest;
   if (guestInvite) {
     // Opening a shared invite URL joins after Google (when configured).
-    collabInviteInput.value = inviteUrl(window.location.href, guestInvite);
+    collabInviteInput.value = collabInviteShareUrl(guestInvite);
     ensureInviteHashOnLocation(guestInvite);
     renderCollabIdle();
     if (!(await ensureGoogleBeforeCollab({role: "guest", invite: guestInvite}))) {
@@ -2795,6 +3718,7 @@ driveIntegration = await setupDriveIntegration();
 driveAutosave = createDriveAutosave({
   delayMs: 2_000,
   isEligible: () => {
+    if (submissionPreviewMode) return false;
     const state = collabSession?.getState();
     return hasCurrent &&
       !driveOverwriteConfirmationRequired &&
@@ -2907,7 +3831,7 @@ connectGoogleButton.addEventListener("click", () => {
         consumePendingGuestInvite() ??
         decodeInviteFragment(window.location.hash);
       if (invite && !collabSession) {
-        collabInviteInput.value = inviteUrl(window.location.href, invite);
+        collabInviteInput.value = collabInviteShareUrl(invite);
         await startCollaboration(invite, false);
       }
     })
@@ -2994,9 +3918,12 @@ collabDiagnosticsButton.addEventListener("click", () => {
 /* Settings live in localStorage only (never Y.Doc / .sb3 / signaling).        */
 /* -------------------------------------------------------------------------- */
 
-let aiSettings: AiAssistSettings = loadAiAssistSettings(
-  typeof localStorage === "undefined" ? null : localStorage,
-);
+let aiSettings: AiAssistSettings =
+  SURFACE_MODE.kind === "student" || SURFACE_MODE.kind === "admin"
+    ? {...DEFAULT_AI_SETTINGS}
+    : loadAiAssistSettings(
+        typeof localStorage === "undefined" ? null : localStorage,
+      );
 let aiAskInFlight = false;
 /** In-memory advice thread for this editor session (not persisted). */
 let aiConversation: AiConversationTurn[] = [];
@@ -3192,6 +4119,14 @@ function renderAiUi(settings: AiAssistSettings = aiSettings): void {
 }
 
 function persistAiSettingsFromForm(): AiAssistSettings {
+  if (studentPolicy && studentPolicyBlocksAiPersist(studentPolicy)) {
+    aiSettings = aiSettingsFromStudentPolicy(studentPolicy);
+    applyAiSettingsToForm(aiSettings);
+    renderAiUi(aiSettings);
+    aiSettingsFeedback.textContent =
+      "このリンクでは設定を変更できません（管理者の設定に従います）。";
+    return aiSettings;
+  }
   const next = readSettingsFromForm({
     enabled: aiEnabledInput.checked,
     apiKey: aiApiKeyInput.value,
@@ -3216,6 +4151,55 @@ fillAiProviderSelect();
 fillAiLevelSelect();
 applyAiSettingsToForm(aiSettings);
 renderAiUi(aiSettings);
+
+const diagnosticController = createDiagnosticController({
+  captureSnapshot: () =>
+    captureLiveProjectSnapshot({
+      readVmJson:
+        typeof vm === "undefined" || !vm
+          ? null
+          : () => vm.toJSON(),
+      previousDocument: hasCurrent ? current.document : null,
+      assetHashes:
+        typeof vm === "undefined" || !vm
+          ? undefined
+          : assetHashCache.hashesFor(runtimeAssetMap()),
+    }),
+});
+
+const diagnosticUiBindings = {
+  runButton: diagnosticRunButton,
+  statusEl: diagnosticStatus,
+  resultsEl: diagnosticResults,
+  feedbackEl: diagnosticFeedback,
+};
+
+function paintDiagnosticView(): void {
+  renderDiagnosticView(
+    diagnosticUiBindings,
+    diagnosticController.getViewModel(),
+    {
+      onReveal: findingId => {
+        diagnosticController.revealNextHint(findingId);
+        paintDiagnosticView();
+      },
+    },
+  );
+}
+
+paintDiagnosticView();
+
+diagnosticRunButton.addEventListener("click", () => {
+  void (async () => {
+    // Kick off run (sets running) then paint after the first microtask.
+    const pending = diagnosticController.run();
+    paintDiagnosticView();
+    await pending;
+    paintDiagnosticView();
+    diagnosticPanel.open = true;
+    diagnosticRunButton.focus();
+  })();
+});
 
 aiSettingsSaveButton.addEventListener("click", () => {
   persistAiSettingsFromForm();
@@ -3558,11 +4542,208 @@ aiClarifyOtherSubmit.addEventListener("click", () => {
   void askAiWithIntent(buildOtherClarifyChoice(other));
 });
 
-boot().catch(error => {
+async function bootSubmissionPreview(bytes: Uint8Array, title: string): Promise<void> {
+  submissionPreviewMode = true;
+  if (appMain) appMain.hidden = false;
+  const previewBannerHost = document.querySelector<HTMLElement>("#admin-preview-banner");
+  if (previewBannerHost) previewBannerHost.hidden = false;
+
+  store = await openProjectStore();
+  vm = await getVm();
+  ensureBlocklyVmEventPipeline();
+  installWorkspaceUpdateListener(
+    vm as import("./workspace-update-instrumentation.js").WorkspaceUpdateListenerVm,
+    readWorkspaceUpdateInstrumentationContextFull,
+    blocklyWorkspace,
+  );
+  vm.on("PROJECT_CHANGED", markDirty);
+  vm.on("targetsUpdate", () => {
+    noteEditingTargetMaybeChanged();
+  });
+
+  const result = await loadSb3(bytes);
+  if (!result.ok || !result.document || !result.assets) {
+    const message = result.issues.map(issue => issue.message).join("; ");
+    throw new Error(message || "Scratch の作品ファイルではありません");
+  }
+  const record: LocalProjectRecord = {
+    format: LOCAL_PROJECT_FORMAT,
+    localProjectId: crypto.randomUUID(),
+    title,
+    revision: 0,
+    updatedAt: new Date().toISOString(),
+    document: result.document,
+    assets: assetRecordsFromMap(result.document, result.assets),
+    saveState: "clean",
+  };
+  await loadRecord(record);
+  titleInput.readOnly = true;
+  diagnostic.ready = true;
+  driveReady = false;
+  renderDriveStatus(driveIntegration.getStatus());
+  renderCollabIdle();
+  setGuiLoadingVisible(guiHost, false);
+  setGuiSplashVisible(guiSplash, false);
+}
+
+async function startEditorSurface(): Promise<void> {
+  if (SURFACE_MODE.kind === "admin-submission-preview") {
+    if (adminShell) adminShell.hidden = true;
+    const previewBannerHost = document.querySelector<HTMLElement>("#admin-preview-banner");
+    const preview = await fetchAdminSubmissionPreviewData(SURFACE_MODE.submissionId);
+    if (!preview.ok) {
+      if (appMain) {
+        appMain.hidden = false;
+        appMain.replaceChildren();
+        const msg = document.createElement("p");
+        msg.className = "admin-submission-preview-error";
+        msg.textContent = preview.message;
+        appMain.append(msg);
+      }
+      return;
+    }
+    if (previewBannerHost) {
+      mountAdminSubmissionPreviewBanner(previewBannerHost, preview.detail);
+    }
+    applyAdminSubmissionPreviewReadOnlyChrome();
+    try {
+      await bootSubmissionPreview(preview.bytes, preview.detail.projectTitle);
+    } catch (error) {
+      fatalBootError =
+        error instanceof Error ? error.message : "プレビューを開けませんでした。";
+      if (appMain) appMain.hidden = false;
+      setGuiSplashVisible(guiSplash, true);
+      setGuiSplashProgress(guiSplash, {
+        ratio: 1,
+        label: fatalBootError,
+      });
+    }
+    return;
+  }
+
+  if (SURFACE_MODE.kind === "admin") {
+    if (!adminShell) {
+      throw new Error("admin shell missing");
+    }
+    await startAdminSurface(adminShell);
+    return;
+  }
+
+  const revealStudentEditor = (policy: StudentPolicyView) => {
+    studentPolicy = policy;
+    if (studentAuthShell) hideStudentAuthShell(studentAuthShell);
+    aiSettings = aiSettingsFromStudentPolicy(policy);
+    applyAiSettingsToForm(aiSettings);
+    renderAiUi(aiSettings);
+    applyStudentPolicyToDom(policy, {
+      settingsPanel: document.querySelector<HTMLElement>(
+        '[data-testid="settings-panel"]',
+      ),
+      aiPanel,
+      aiEnabledInput,
+      aiApiKeyInput,
+      aiSettingsSaveButton,
+      downloadButton,
+      openButton,
+      fileInput,
+      connectGoogleButton,
+      openDriveButton,
+      saveDriveButton,
+      disconnectGoogleButton,
+      createRoomButton,
+      joinRoomButton,
+      copyInviteButton,
+      collabInviteInput,
+      driveStatus,
+      driveSectionHelp,
+      driveControls,
+      drivePanel: document.querySelector<HTMLElement>(
+        '[data-testid="drive-panel"]',
+      ),
+      collabPanel: document.querySelector<HTMLElement>(
+        '[data-testid="collab-panel"]',
+      ),
+      filePanel: document.querySelector<HTMLElement>(
+        '[data-testid="file-panel"]',
+      ),
+    });
+    if (
+      policy.submission.enabled &&
+      policy.studentAuth.required &&
+      studentSubmissionPanel
+    ) {
+      showStudentSubmissionUi(studentSubmissionPanel);
+      mountStudentSubmissionUi({
+        root: studentSubmissionPanel,
+        exportSb3: exportCurrentSb3,
+        getProjectTitle: () => titleInput.value,
+      });
+    } else if (studentSubmissionPanel) {
+      hideStudentSubmissionUi(studentSubmissionPanel);
+    }
+    if (appMain) appMain.hidden = false;
+  };
+
+  let studentBootStarted = false;
+  const startStudentBootOnce = async () => {
+    if (studentBootStarted) return;
+    studentBootStarted = true;
+    await boot();
+  };
+
+  if (SURFACE_MODE.kind === "student") {
+    let policy: StudentPolicyView | null = null;
+    if (SURFACE_MODE.token) {
+      const exchanged = await exchangeStudentGrant(SURFACE_MODE.token);
+      if (!exchanged) {
+        if (studentErrorShell) showStudentLinkError(studentErrorShell);
+        return;
+      }
+      rememberStudentLinkToken(SURFACE_MODE.token);
+      replaceStudentUrlWithoutToken();
+      stageCollabInviteFromLocation();
+      policy = await fetchStudentPolicyFromGrant();
+    } else {
+      stageCollabInviteFromLocation();
+      policy = await fetchStudentPolicyFromGrant();
+    }
+    if (!policy) {
+      if (studentErrorShell) showStudentLinkError(studentErrorShell);
+      return;
+    }
+    if (shouldShowStudentAuthGate(policy)) {
+      const identity = await fetchStudentIdentitySession();
+      if (identity) {
+        revealStudentEditor(policy);
+        await startStudentBootOnce();
+        return;
+      }
+      if (studentAuthShell) {
+        showStudentAuthShell(studentAuthShell, {
+          policy,
+          onAuthenticated: () => {
+            revealStudentEditor(policy!);
+            void startStudentBootOnce();
+          },
+        });
+      }
+      if (appMain) appMain.hidden = true;
+      return;
+    }
+    revealStudentEditor(policy);
+    await startStudentBootOnce();
+    return;
+  }
+
+  await boot();
+}
+
+startEditorSurface().catch(error => {
   diagnostic.error = error instanceof Error ? error.message : String(error);
   fatalBootError =
     "エディターを始められませんでした。ページを読み直してください。";
   console.error("[syncratch] boot failed", error);
+  if (appMain) appMain.hidden = false;
   setGuiSplashVisible(guiSplash, true);
   setGuiSplashProgress(guiSplash, {
     ratio: 1,

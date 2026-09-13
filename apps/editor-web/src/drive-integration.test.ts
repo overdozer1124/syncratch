@@ -13,12 +13,22 @@ import {
 } from "@blocksync/project-local-core";
 import {openProjectStore} from "@blocksync/project-store-idb";
 import {emptyProject} from "@blocksync/project-schema";
+import {LocalDriveSaveError} from "./drive-export.js";
 import {
   createEditorDriveIntegration,
+  driveSb3FileName,
   type EditorDriveDependencies,
 } from "./drive-integration.js";
 
 const bytes = new Uint8Array([80, 75, 3, 4]);
+
+describe("driveSb3FileName", () => {
+  it("builds a .sb3 name from the project title", () => {
+    expect(driveSb3FileName("新しい名前")).toBe("新しい名前.sb3");
+    expect(driveSb3FileName(" already.sb3 ")).toBe("already.sb3");
+    expect(driveSb3FileName("   ")).toBe("Project.sb3");
+  });
+});
 
 function localRecord(localProjectId: string): LocalProjectRecord {
   return {
@@ -377,6 +387,81 @@ describe("editor Drive integration", () => {
     expect(deps.importAsNewLocal).not.toHaveBeenCalled();
   });
 
+  it("clears a stale Drive link on reconnect after OAuth access was revoked", async () => {
+    const clearDriveFileId = vi.fn(async () => undefined);
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      clearDriveFileId,
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => {
+          throw new DrivePermissionError("Google Drive permission denied");
+        }),
+      },
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(true);
+    expect(clearDriveFileId).toHaveBeenCalledWith(
+      "local-1",
+      expect.any(AbortSignal),
+    );
+    expect(integration.getStatus()).toBe("connected");
+  });
+
+  it("creates a new Drive file when the linked file lost drive.file access", async () => {
+    const clearDriveFileId = vi.fn(async () => undefined);
+    const metadata = {
+      id: "existing-file",
+      name: "Local.sb3",
+      mimeType: "application/x.scratch.sb3",
+      size: 4,
+      version: "12",
+      headRevisionId: "head-12",
+      snapshotId: "snapshot-12",
+      leadershipEpoch: "0",
+      stateHash: "hash-old",
+      canEdit: true,
+      canDownload: true,
+    };
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      clearDriveFileId,
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => metadata),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata,
+        })),
+        updateFile: vi.fn(async () => {
+          throw new DrivePermissionError("Google Drive permission denied");
+        }),
+      },
+      hashBytes: vi.fn(async () => "state-hash"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+    await integration.connect();
+
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(clearDriveFileId).toHaveBeenCalledWith(
+      "local-1",
+      expect.any(AbortSignal),
+    );
+    expect(deps.drive.createFile).toHaveBeenCalled();
+    expect(deps.drive.updateFile).toHaveBeenCalledTimes(1);
+    expect(integration.getStatus()).toBe("synced");
+  });
+
   it("re-observes an existing Drive-backed project on explicit reconnect", async () => {
     const deps = dependencies({
       getCurrent: vi.fn(() => ({
@@ -414,7 +499,49 @@ describe("editor Drive integration", () => {
     expect(deps.drive.updateFile).toHaveBeenCalledWith(
       expect.objectContaining({
         fileId: "existing-file",
+        name: "Local.sb3",
         knownObservation: {version: "12", snapshotId: "snapshot-12"},
+      }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("renames an existing Drive file when the project title changes", async () => {
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "新しい名前",
+        driveFileId: "existing-file",
+      })),
+      drive: {
+        ...dependencies().drive,
+        getMetadata: vi.fn(async () => ({
+          id: "existing-file",
+          name: "古い名前.sb3",
+          mimeType: "application/x.scratch.sb3",
+          size: 4,
+          version: "12",
+          headRevisionId: "head-12",
+          snapshotId: "snapshot-12",
+          leadershipEpoch: "0",
+          stateHash: "hash-12",
+          canEdit: true,
+          canDownload: true,
+        })),
+      },
+      // Match Drive stateHash so connect can re-observe, then still update
+      // (content write + rename) on the subsequent save.
+      hashBytes: vi.fn(async () => "hash-12"),
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await integration.connect();
+    await expect(integration.saveToDrive()).resolves.toBe(true);
+
+    expect(deps.drive.updateFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileId: "existing-file",
+        name: "新しい名前.sb3",
       }),
       expect.any(AbortSignal),
     );
@@ -637,7 +764,35 @@ describe("editor Drive integration", () => {
     expect(integration.getStatus()).toBe("synced");
   });
 
-  it("refuses reconnect baseline when remote state hash differs", async () => {
+  it("does not mislabel a local save conflict as a remote Drive conflict", async () => {
+    const onStatus = vi.fn();
+    const deps = dependencies({
+      getCurrent: vi.fn(() => ({
+        localProjectId: "local-1",
+        title: "Local",
+        driveFileId: "existing-file",
+      })),
+      exportCurrent: vi.fn(async () => {
+        throw new LocalDriveSaveError("conflict");
+      }),
+      onStatus,
+    });
+    const integration = createEditorDriveIntegration(deps);
+
+    await expect(integration.connect()).resolves.toBe(false);
+    expect(integration.getStatus()).toBe("unsynced");
+    expect(onStatus).toHaveBeenCalledWith(
+      "unsynced",
+      expect.stringMatching(/local project is not committed \(conflict\)/i),
+    );
+  });
+
+  it("keeps Google connected as unsynced when remote state hash differs", async () => {
+    const hashBytes = vi
+      .fn()
+      .mockResolvedValueOnce("local-hash") // connect export
+      .mockResolvedValueOnce("remote-bytes-hash") // connect download compare
+      .mockResolvedValueOnce("local-hash"); // save export
     const deps = dependencies({
       getCurrent: vi.fn(() => ({
         localProjectId: "local-1",
@@ -659,18 +814,33 @@ describe("editor Drive integration", () => {
           canEdit: true,
           canDownload: true,
         })),
+        readFile: vi.fn(async () => ({
+          bytes,
+          metadata: {
+            id: "existing-file",
+            name: "Local.sb3",
+            mimeType: "application/octet-stream",
+            size: 4,
+            version: "12",
+            headRevisionId: "head-12",
+            snapshotId: "snapshot-12",
+            leadershipEpoch: "0",
+            stateHash: "remote-hash",
+            canEdit: true,
+            canDownload: true,
+          },
+        })),
       },
-      hashBytes: vi.fn(async () => "local-hash"),
+      hashBytes,
     });
     const integration = createEditorDriveIntegration(deps);
 
-    await expect(integration.connect()).resolves.toBe(false);
-    expect(integration.getStatus()).toBe("conflict");
+    await expect(integration.connect()).resolves.toBe(true);
+    expect(integration.getStatus()).toBe("unsynced");
 
-    // Explicit save may re-baseline; here remote bytes hash as local-hash so
-    // the project is treated as already matching and no upload occurs.
-    await expect(integration.saveToDrive()).resolves.toBe(true);
-    expect(deps.drive.updateFile).not.toHaveBeenCalled();
+    // Explicit save uploads local bytes using the remote observation baseline.
+    await expect(integration.saveToDrive({explicit: true})).resolves.toBe(true);
+    expect(deps.drive.updateFile).toHaveBeenCalled();
     expect(integration.getStatus()).toBe("synced");
   });
 

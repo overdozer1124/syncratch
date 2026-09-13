@@ -76,6 +76,111 @@ The editor calls `/oauth/google/session` to obtain short-lived access tokens.
 If these host env vars are missing, the editor falls back to the GIS token client
 (memory-only; re-auth on each reload).
 
+### Classroom admin (optional)
+
+Allowlisted teachers can open `/admin`, define a ClassroomPolicy, and issue
+`/s/{token}` student links. Phase 2 exchanges the URL token for an HttpOnly
+grant (`syncratch_student_grant`); after first load the browser URL becomes
+token-less `/s`. Policy is fetched via `GET /api/student/policy` (re-validates
+link revoke/expiry on every request). See
+`docs/superpowers/specs/2026-07-30-admin-student-access-design.md`.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_ADMIN_EMAILS` | CSV of admin emails (no self-registration) |
+| `GOOGLE_CLIENT_ID` | ID token audience (same as Drive client ID is fine) |
+| `ADMIN_DB_PATH` or `SYNCRATCH_DATA_DIR` | SQLite for policies/links/grants (default `/app/data/admin.sqlite` in Docker) |
+
+Build-time `VITE_GOOGLE_CLIENT_ID` is required for the `/admin` Google button.
+Admin sessions use cookie `syncratch_admin_session` (never reuse Drive session).
+Student grants use separate HttpOnly cookie `syncratch_student_grant`.
+
+#### Teacher Google credential (classroom roster PR 2+, optional)
+
+When `SYNCRATCH_CLASSROOM_ROSTER_ENABLED=1` and
+`SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED=1`, allowlisted admins can connect a
+**separate** teacher Google OAuth session for server-side `drive.file` access
+(Sheet sync and Drive submissions in later PRs). This is **not** the editor Drive
+session (`syncratch_drive_session`) and **not** implied by admin login alone.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_CLASSROOM_ROSTER_ENABLED` | `1` / `true` — master flag |
+| `SYNCRATCH_ADMIN_GOOGLE_CREDENTIAL_ENABLED` | `1` / `true` — requires roster flag |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Same OAuth client as editor Drive |
+| `SYNCRATCH_ADMIN_GOOGLE_KEYS_JSON` | JSON map of key id → base64 AES-256 key (32 bytes) |
+| `SYNCRATCH_ADMIN_GOOGLE_ACTIVE_KEY_ID` | Active key id for new ciphertext |
+| `ADMIN_GOOGLE_OAUTH_REDIRECT_URI` | Optional override; default `https://<host>/oauth/admin-google/callback` |
+| `ADMIN_GOOGLE_OAUTH_COOKIE_SECURE` | `true` on HTTPS (default when `NODE_ENV=production`) |
+
+Register **Authorized redirect URI** e.g.
+`https://syncratch-production.up.railway.app/oauth/admin-google/callback`.
+
+Flow: admin logs in → `GET /api/admin/google/oauth/start` → Google consent
+(`drive.file` only) → `/oauth/admin-google/callback` stores an AES-256-GCM
+encrypted refresh token in SQLite. **No teacher-credential browser cookie is
+issued** — status is resolved via admin session + `GET /api/admin/google/oauth/session`.
+Disconnect: `POST /api/admin/google/oauth/disconnect` (CSRF required).
+
+When flags are OFF, these routes return **404**.
+HTML for `/s` navigations sets `Referrer-Policy: no-referrer`.
+
+#### Student submissions (classroom PR 6–8, optional)
+
+When roster, student local auth, and teacher Drive submission flags are enabled,
+students can upload SB3 via `POST /api/student/submissions` (metadata in SQLite,
+bytes in teacher Drive). Admins list submissions in `/admin` when
+`SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED=1`.
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_STUDENT_LOCAL_AUTH_ENABLED` | `1` / `true` — requires roster |
+| `SYNCRATCH_STUDENT_IDENTITY_SECRET` | HMAC secret for student identity cookie (required when auth ON) |
+| `SYNCRATCH_TEACHER_DRIVE_SUBMISSION_ENABLED` | `1` / `true` — requires student local auth + teacher Google credential |
+| `SYNCRATCH_SUBMISSION_MAX_BYTES` | Optional upload cap (default 5 MiB) |
+| `SYNCRATCH_SUBMISSION_PREVIEW_ENABLED` | `1` / `true` — enables `/admin/submissions/{id}/preview` read-only surface; requires teacher submission flag |
+
+Preview flag OFF: list/download in `/admin` still works when submission flag ON;
+preview URL returns **404**.
+
+#### Student Google identity (roster PR G3+, optional)
+
+When roster, student local auth, and roster Google student auth flags are enabled,
+students can sign in with **Google openid+email only** (no `drive.file`). Policy
+`studentAuth.method` controls which login surfaces are active:
+
+| `method` | Google login | Local login / activate |
+| --- | --- | --- |
+| `google-or-local` | yes | yes (default for migrated classrooms) |
+| `google` | yes | **server rejects** (403) |
+| `local` | **server rejects** (403) | yes |
+
+| Runtime env (collab-host) | Value |
+| --- | --- |
+| `SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED` | `1` / `true` — requires roster + student local auth |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Same OAuth client as editor Drive |
+| `SYNCRATCH_STUDENT_GOOGLE_OAUTH_REDIRECT_URI` | Optional override; default `https://<host>/oauth/student-google/callback` |
+| `STUDENT_GOOGLE_OAUTH_COOKIE_SECURE` | `true` on HTTPS (default when `NODE_ENV=production`) |
+| `SYNCRATCH_STUDENT_IDENTITY_SECRET` | HMAC secret for student identity cookie (required when auth ON) |
+
+Register **Authorized redirect URI** e.g.
+`https://syncratch-production.up.railway.app/oauth/student-google/callback`.
+
+Flow: student opens `/s/{token}` grant → `GET /api/student/auth/google/start`
+(PKCE, grant-bound) → Google consent (`openid email` only) →
+`/oauth/student-google/callback` issues the existing HttpOnly identity cookie
+`syncratch_student_identity`. Roster match uses `classroom_students.google_email`
+(and binds `google_subject` on first login). Empty `google_email` rows cannot
+use Google login; local fallback remains available when `method` allows it.
+
+When `SYNCRATCH_ROSTER_GOOGLE_STUDENT_AUTH_ENABLED` is OFF, behavior matches
+pre-G3 main (local auth only; Google start/callback return **404**).
+
+To persist the admin DB across redeploys, add a **Railway Volume** mounted at
+`/app/data` in the service settings. Do not put a Docker `VOLUME` instruction in
+the Dockerfile — Railway fails the build with
+`docker VOLUME … is not supported, use Railway Volumes`.
+
 ## Signaling
 
 Set `VITE_COLLAB_SIGNALING_URL` to an explicit `wss://` endpoint running

@@ -1,63 +1,76 @@
-# Local-First pivot → mainline 最終受け入れレポート
+# Local-First Stage 5 受け入れレポート
 
 | 項目 | 値 |
 |---|---|
-| 日時 | 2026-07-22 07:00:30 JST |
-| 対象 tip | `48b94c499a496dbf6c15ecee63c57f6e8e256258` |
-| 元ブランチ | `feat/local-first-pivot-impl` |
-| 本流ブランチ | `main`（同一 tip で新設） |
-| 受け入れ PR | https://github.com/overdozer1124/syncratch/pull/15（Draft） |
+| 日時 | 2026-08-02 JST（手動ゲート完了） |
+| 対象 tip | 自動ゲート基準 `d179eff…` / 手動完了時 main `6267f59…` |
+| 本流ブランチ | `main` |
 | 製品名 | Syncratch（シンクラッチ） |
+| Stage 5 状態 | **COMPLETE** — 自動 PASS + 手動 A1–A7 / B1–B3 すべて PASS |
+| オンライン検証 | `https://syncratch-production.up.railway.app/`（`/healthz` → `ok`） |
+| Google Cloud | project `syncratch` / APP_ID `863099193805`（Picker） |
+| 手動手順 | `docs/local-first/STAGE5_MANUAL_GATES.md` §C.1.2 |
 
 ## 結論
 
-自動ゲートはすべて PASS。Community Local-First primary track（単独編集・SB3・任意 Drive・少人数 WebRTC 共同編集・local UI 保全）を本流候補として受け入れ可能。
+Community Local-First の **Stage 5 受け入れは完了**。
 
-手動 Google OAuth / Drive 実ユーザー試験は CI 資格情報では実行していない（`RELEASE_CHECKLIST.md` の Manual Google gates）。デプロイ前に実 Google プロジェクトで実施すること。
+- 自動ゲート: tip `d179eff` で PASS（`RELEASE_CHECKLIST.md` §Automated gates）
+- 手動 Google gates A1–A7: PASS（最終確認 2026-08-02、記録 `STAGE5_MANUAL_GATES.md` §C.1.2）
+- Failure / privacy B1–B3: PASS（B2 は Apps Script 未導入で 2026-07-23 から PASS）
 
-## 自動ゲート結果
+Railway 本番で Drive 連携（OAuth `drive.file` / Picker / 保存）、共同編集ホスト限定 Drive 書き込み、
+権限取り消し後のローカル継続、Drive 競合停止、peer 切断表示、token 非永続化を実機確認した。
+
+## Drive 本番証跡
+
+| 項目 | 結果 |
+|---|---|
+| Railway `/healthz` | PASS |
+| production JS に Client ID / API key / APP_ID | PASS |
+| production JS に `drive.file` | PASS |
+| ユーザー実機 A1–A7 | PASS（2026-08-02） |
+| ユーザー実機 B1 / B3 | PASS（2026-08-02） |
+
+## 自動ゲート結果（tip `d179eff`）
 
 | ゲート | 結果 |
 |---|---|
 | `pnpm gate0:test` | PASS |
 | `pnpm gate0:collab` | PASS（2/2） |
 | `@blocksync/editor-web` typecheck | PASS |
-| `@blocksync/editor-web` test | PASS（190/190） |
+| `@blocksync/editor-web` test | PASS（206/206） |
 | `@blocksync/editor-web` build（production） | PASS |
-| production `dist/index.html` あり / `collab-harness.html` なし | PASS |
-| `BLOCKSYNC_BASE_PATH=/` `verify:static` | PASS |
-| Playwright `e2e/editor.spec.ts` + `collab.spec.ts` | PASS（16/16） |
+| Playwright `e2e/editor.spec.ts` + `collab.spec.ts` | PASS（18/18） |
 | `@blocksync/google-drive-sync` test | PASS（25/25） |
-| `@blocksync/classroom-apps-script` test | PASS（14/14） |
-| `@blocksync/collaboration-domain` test | PASS（36/36） |
-| `@blocksync/collab-webrtc` test | PASS（35/35） |
-| `@blocksync/collab-signaling` test | PASS（17/17） |
-| `@blocksync/collab-invite` test | PASS（13/13） |
-| Frozen School: `pnpm r1:persist:test` | PASS |
-| Frozen School: `pnpm r1:auth:test` | PASS |
-| `git diff --check` | PASS |
+| その他 packages（collab / classroom-apps-script 等） | PASS（`RELEASE_CHECKLIST.md` 参照） |
+| Railway `/healthz` | PASS |
 
-## 含まれる主要マイルストーン（既に tip 上）
+## 手動ゲート結果（2026-08-02）
 
-- PR #10: local-first 共同編集統合（bootstrap/reconnect、block 収束、asset 同期、選択維持、Syncratch 改名、ja 漢字）
-- PR #13: regular remote apply 時の local-only UI（tab / per-target Blockly viewport）保全
-- Frozen School/self-hosted track は buildable のまま Community 実行時必須依存にしない
+| ゲート | 結果 |
+|---|---|
+| A5 Creator-only Drive write | PASS |
+| A6 Revoke keeps local/SB3 | PASS |
+| A7 Conflict safe stop | PASS |
+| B1 Peer disconnect honesty | PASS |
+| B3 No persisted tokens | PASS |
+
+詳細メモ: `STAGE5_MANUAL_GATES.md` §C.1.2
 
 ## 既知の限界（リリース告知に含めない／含めないもの）
 
 受け入れ対象外・非目標（設計どおり）:
 
-- 同一スプライト同時ブロック編集は `blocksJson` LWW
+- 同一 block id / 同一接続辺の同時変更は per-block LWW（決定的勝者一方）
 - AI / 中央バックアップ / 大規模 room / 新規 school directory
 - Drive の厳密分散ロック・atomic CAS 保証なし（best-effort leader）
-- guest-initial / new / open で「前作品の UI」を復元しない（漏えい禁止）
+- TURN なし（制限の強い NAT / 学校ネットでは peer 接続が失敗し得る）
+- guest-initial / new / open で「前作品の UI」を復元しない
 - `currentCostume` 等の共有作品状態を peer 同期しない
 
-## 本流化手順（ユーザー承認後）
+## 本流化・公開メモ
 
-1. 本レポートを含む PR を `main` へ merge する。
-2. GitHub の default branch を `feat/local-first-pivot-impl` から `main` へ切り替える。
-3. 残存 Draft PR（例: #5, #7）の base を `main` へ付け替えるか、不要なら close する。
-4. 手動 Google gates（`RELEASE_CHECKLIST.md`）を実プロジェクトで実施してから公開デプロイする。
-
-自動で default branch 変更・公開デプロイは行わない。
+1. Stage 5 完了。`RELEASE_CHECKLIST.md` の Manual / Failure 項目は 2026-08-02 時点ですべてチェック済み。
+2. ローカル保存完了は toolbar ステータスアイコンの tooltip（sr-only テキスト）で確認する UI 設計。
+3. 生徒リンク `/s/{token}` は ClassroomPolicy に従う（`drive.allow` / `collab.allow`）。

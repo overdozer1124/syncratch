@@ -168,17 +168,28 @@ export function createHostBackedGoogleAuthorization(
   };
 }
 
-/** Strip OAuth return flag from the current URL without reloading. */
+export type DriveOAuthReturnResult = "ok" | "error" | null;
+
+/**
+ * Strip OAuth return flag from the current URL without reloading.
+ * Returns the flag value so boot can avoid immediately re-entering Google
+ * when the previous attempt failed (`error`) — that loop looks like being
+ * stuck on Google's account chooser.
+ */
 export function consumeDriveOAuthReturnFlag(
   locate: () => Location = () => window.location,
   replaceUrl: (url: string) => void = url =>
     window.history.replaceState({}, "", url),
-): boolean {
+): DriveOAuthReturnResult {
   const location = locate();
   const url = new URL(location.href);
-  if (!url.searchParams.has(DRIVE_OAUTH_RETURN_FLAG)) return false;
+  const raw = url.searchParams.get(DRIVE_OAUTH_RETURN_FLAG);
+  if (raw === null) return null;
   url.searchParams.delete(DRIVE_OAUTH_RETURN_FLAG);
   const next = `${url.pathname}${url.search}${url.hash}`;
   replaceUrl(next);
-  return true;
+  if (raw === "ok") return "ok";
+  if (raw === "error") return "error";
+  // Unknown values are treated as failure so we never silent-retry OAuth.
+  return "error";
 }

@@ -60,11 +60,15 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
 ENV STATIC_ROOT=/app/public
+ENV SYNCRATCH_DATA_DIR=/app/data
 
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+RUN corepack enable && corepack prepare pnpm@10.33.0 --activate \
+  && mkdir -p /app/data
 
 COPY --from=export /out/app /app
 
 EXPOSE 8080
+# Do not use Docker VOLUME here — Railway rejects it ("use Railway Volumes").
+# Persist admin SQLite by mounting a Railway Volume at /app/data (optional).
 
 CMD ["pnpm", "start"]

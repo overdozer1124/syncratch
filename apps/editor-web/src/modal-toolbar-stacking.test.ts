@@ -19,6 +19,16 @@ describe("Scratch modal vs Syncratch toolbar stacking", () => {
     );
   });
 
+  it("keeps the flyout collapse toggle below Scratch modals (variable prompt)", () => {
+    expect(styleCss).toMatch(/--syncratch-flyout-toggle-z:\s*750/);
+    expect(styleCss).toContain("z-index: var(--syncratch-flyout-toggle-z)");
+    const toggleZ = Number(
+      styleCss.match(/--syncratch-flyout-toggle-z:\s*(\d+)/)?.[1],
+    );
+    const modalZ = Number(styleCss.match(/--syncratch-modal-z:\s*(\d+)/)?.[1]);
+    expect(toggleZ).toBeLessThan(modalZ);
+  });
+
   it("raises portaled Scratch modal overlays (not scoped under #scratch-gui)", () => {
     expect(styleCss).toContain('[class*="modal_modal-overlay_"]');
     expect(styleCss).not.toContain(

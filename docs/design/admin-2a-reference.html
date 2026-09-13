@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Syncratch 管理者 — 2a 実装リファレンス</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+body { margin:0; background:#eef2f7; font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN","Meiryo",sans-serif; color:#1a2b3c; -webkit-font-smoothing:antialiased; }
+*,*::before,*::after { box-sizing:border-box; }
+button,input,select { font-family:inherit; }
+button,a,input,select { transition:background-color 120ms ease, border-color 120ms ease; }
+:focus-visible { outline:2px solid #1558c0; outline-offset:1px; }
+a { color:#1558c0; text-decoration:none; }
+a:hover { color:#0f4488; text-decoration:underline; }
+.h1:hover{background:#274b73 !important}
+.h2:hover{background:#dbeafc !important}
+.h3:hover{background:#f4f7fa !important}
+.h4:hover{background:#f0f4f9 !important}
+.h5:hover{background:#fdf0ea !important}
+.h6:hover{background:#0f4488 !important;border-color:#0f4488 !important}
+.h7:hover{background:#dbeafc !important;text-decoration:none !important}
+</style>
+</head>
+<body>
+<div style="padding:32px;display:grid;gap:32px;justify-items:start">
+<div id="2a" style="display:grid;gap:10px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:11px;font-weight:700;color:#fff;background:#1b3a5f;border-radius:3px;padding:3px 7px;font-family:ui-monospace,SFMono-Regular,monospace">2a</span>
+      <h2 style="margin:0;font-size:17px;font-weight:700;color:#1b3a5f">運用コンソール型 — マスター / ディテール</h2>
+      <span style="font-size:12px;color:#5b708a">左に全オブジェクト、右に選択中の1件。教室・名簿が増えても破綻しない</span>
+    </div>
+
+    <div style="width:1180px;background:#f4f7fa;border:1px solid #b3c3d4;border-radius:6px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 14px;height:44px;background:#1b3a5f;color:#fff">
+        <div style="display:flex;align-items:baseline;gap:7px;white-space:nowrap">
+          <span style="font-size:17px;font-weight:700">Syncratch</span>
+          <span style="font-size:11px;color:#b9cbe0">シンクラッチ</span>
+          <span style="width:1px;height:14px;background:#3d5f85;margin:0 3px"></span>
+          <span style="font-size:12px;font-weight:500;color:#dbe6f2">管理者</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;white-space:nowrap">
+          <span style="font-size:11px;color:#b9cbe0;font-family:ui-monospace,SFMono-Regular,monospace">overdozer@gmail.com</span>
+          <button type="button" style="font-size:12px;font-weight:500;color:#dbe6f2;background:transparent;border:1px solid #4a6c92;border-radius:4px;padding:5px 10px;cursor:pointer;white-space:nowrap" class="h1">ログアウト</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:248px 1fr;height:760px">
+
+        <div style="border-right:1px solid #dbe3ec;background:#fff;display:grid;grid-template-rows:auto 1fr;overflow:hidden">
+          <div style="padding:10px;border-bottom:1px solid #e6ecf3">
+            <input type="text" placeholder="教室・名簿を検索" style="width:100%;font-size:13px;color:#1a2b3c;padding:6px 9px;border:1px solid #b3c3d4;border-radius:4px;background:#fff">
+          </div>
+          <div style="overflow:auto">
+            <div style="display:flex;align-items:center;gap:7px;padding:9px 12px 5px">
+              <span style="font-size:12px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">教室設定</span>
+              <span style="font-size:11px;color:#5b708a">3</span>
+              <button type="button" style="margin-left:auto;font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:3px 8px;cursor:pointer;white-space:nowrap" class="h2">＋</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid #1558c0;background:#eaf2fc;cursor:pointer">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">3年A組 理科</span>
+                <span style="font-size:11px;color:#5b708a;white-space:nowrap">2026年度 3年A組 · 34名</span>
+              </div>
+              <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">active</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid transparent;cursor:pointer" class="h3">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">3年B組 理科</span>
+                <span style="font-size:11px;color:#5b708a;white-space:nowrap">2026年度 3年B組 · 33名</span>
+              </div>
+              <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">active</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid transparent;cursor:pointer" class="h3">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#5b708a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">研修用（一時）</span>
+                <span style="font-size:11px;color:#90a2b7;white-space:nowrap">名簿なし · 匿名リンク</span>
+              </div>
+              <span style="font-size:11px;color:#5b708a;background:#f0f4f9;border:1px solid #dbe3ec;border-radius:3px;padding:2px 6px;white-space:nowrap">停止</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:7px;padding:14px 12px 5px;border-top:1px solid #e6ecf3;margin-top:7px">
+              <span style="font-size:12px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">アカウント</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid transparent;cursor:pointer" class="h3">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Google 連携</span>
+                <span style="font-size:11px;color:#5b708a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">overdozer@gmail.com</span>
+              </div>
+              <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">連携中</span>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:7px;padding:14px 12px 5px;border-top:1px solid #e6ecf3;margin-top:7px">
+              <span style="font-size:12px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">名簿</span>
+              <span style="font-size:11px;color:#5b708a">2</span>
+              <button type="button" style="margin-left:auto;font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:3px 8px;cursor:pointer;white-space:nowrap" class="h2">＋</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid transparent;cursor:pointer" class="h3">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">2026年度 3年A組</span>
+                <span style="font-size:11px;color:#5b708a;white-space:nowrap">Sheet 同期 · 34名</span>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:7px;align-items:center;padding:7px 12px;border-left:2px solid transparent;cursor:pointer" class="h3">
+              <div style="display:grid;gap:2px;min-width:0">
+                <span style="font-size:13px;font-weight:500;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">2026年度 3年B組</span>
+                <span style="font-size:11px;color:#8a5a00;white-space:nowrap">同期エラー · 33名</span>
+              </div>
+              <span style="font-size:11px;color:#8a5a00;background:#fff6e0;border:1px solid #ecd9a8;border-radius:3px;padding:2px 6px;white-space:nowrap">要確認</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-rows:auto 1fr auto;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border-bottom:1px solid #dbe3ec">
+            <h3 style="margin:0;font-size:17px;font-weight:700;color:#1a2b3c">3年A組 理科</h3>
+            <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">active</span>
+            <span style="font-size:11px;color:#5b708a;font-family:ui-monospace,SFMono-Regular,monospace">pol_8f31c2</span>
+            <div style="margin-left:auto;display:flex;gap:7px">
+              <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">複製</button>
+              <button type="button" style="font-size:12px;font-weight:500;color:#c9531f;background:#fff;border:1px solid #c9531f;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h5">削除</button>
+            </div>
+          </div>
+
+          <div style="overflow:auto;padding:16px;display:grid;gap:16px;align-content:start">
+
+            <div style="background:#fff;border:1px solid #dbe3ec;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6ecf3">
+                <h4 style="margin:0;font-size:13px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">生徒用リンク</h4>
+                <span style="font-size:11px;color:#5b708a">配布中 1 件</span>
+                <button type="button" style="margin-left:auto;font-size:12px;font-weight:500;color:#fff;background:#1558c0;border:1px solid #1558c0;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h6">＋ リンクを作る</button>
+              </div>
+              <div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 14px">
+                <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">配布中</span>
+                <span style="font-size:13px;font-family:ui-monospace,SFMono-Regular,monospace;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">https://syncratch.app/j/8f31c2-ra9k</span>
+                <div style="display:flex;gap:7px">
+                  <button type="button" style="font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h2">コピー</button>
+                  <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">QR</button>
+                  <button type="button" style="font-size:12px;font-weight:500;color:#c9531f;background:#fff;border:1px solid #c9531f;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h5">失効</button>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:6rem 1fr;gap:10px;align-items:center;padding:7px 14px 10px;border-top:1px solid #e6ecf3">
+                <span style="font-size:13px;font-weight:500;color:#33506e">有効期限</span>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <input type="datetime-local" style="font-size:13px;color:#1a2b3c;padding:6px 9px;border:1px solid #b3c3d4;border-radius:4px;background:#fff">
+                  <span style="font-size:11px;color:#5b708a">未設定＝無期限</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #dbe3ec;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6ecf3">
+                <h4 style="margin:0;font-size:13px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">この教室で許可する機能</h4>
+                <span style="font-size:11px;color:#5b708a">変更は配布中のリンクに即時反映されます</span>
+              </div>
+              <div style="padding:2px 14px 10px">
+                <div style="display:grid;grid-template-columns:11rem 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e6ecf3">
+                  <span style="font-size:13px;font-weight:500;color:#33506e">AI</span>
+                  <div style="display:inline-flex;border:1px solid #b3c3d4;border-radius:4px;overflow:hidden;width:fit-content">
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#fff;color:#33506e">許可</button>
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#1558c0;color:#fff">禁止</button>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:11rem 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e6ecf3">
+                  <span style="font-size:13px;font-weight:500;color:#33506e">生徒の設定パネル</span>
+                  <div style="display:inline-flex;border:1px solid #b3c3d4;border-radius:4px;overflow:hidden;width:fit-content">
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#fff;color:#33506e">表示</button>
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#1558c0;color:#fff">非表示</button>
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:11rem 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e6ecf3">
+                  <span style="font-size:13px;font-weight:500;color:#33506e">拡張機能ギャラリー</span>
+                  <div style="display:inline-flex;border:1px solid #b3c3d4;border-radius:4px;overflow:hidden;width:fit-content">
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#fff;color:#33506e">許可</button>
+                    <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#1558c0;color:#fff">禁止</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #dbe3ec;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6ecf3">
+                <h4 style="margin:0;font-size:13px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">名簿と生徒ログイン</h4>
+              </div>
+              <div style="padding:2px 14px 10px">
+                <div style="display:grid;grid-template-columns:11rem 1fr auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e6ecf3">
+                  <span style="font-size:13px;font-weight:500;color:#33506e">紐づける名簿</span>
+                  <select style="width:fit-content;min-width:18rem;font-size:13px;color:#1a2b3c;padding:6px 9px;border:1px solid #b3c3d4;border-radius:4px;background:#fff">
+                    <option>2026年度 3年A組（34名）</option>
+                    <option>2026年度 3年B組（33名）</option>
+                    <option>名簿なし（匿名リンク）</option>
+                  </select>
+                  <button type="button" style="font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h2">名簿を開く</button>
+                </div>
+                <div style="display:grid;grid-template-columns:11rem 1fr;gap:10px;align-items:center;padding:7px 0;border-top:1px solid #e6ecf3">
+                  <span style="font-size:13px;font-weight:500;color:#33506e">名簿ログイン</span>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="display:inline-flex;border:1px solid #b3c3d4;border-radius:4px;overflow:hidden;width:fit-content">
+                      <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#1558c0;color:#fff">必須</button>
+                      <button type="button" style="font-size:12px;font-weight:500;padding:6px 12px;border:0;cursor:pointer;white-space:nowrap;background:#fff;color:#33506e">任意</button>
+                    </div>
+                    <span style="font-size:11px;color:#5b708a">生徒は初回にログイン名で登録します</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="background:#fff;border:1px solid #dbe3ec;border-radius:6px">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6ecf3">
+                <h4 style="margin:0;font-size:13px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">提出</h4>
+                <span style="font-size:11px;color:#5b708a">12 / 34 名</span>
+                <button type="button" style="margin-left:auto;font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">CSV で書き出す</button>
+              </div>
+              <table style="width:100%;border-collapse:collapse;font-size:13px">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">出席番号</th>
+                    <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">氏名</th>
+                    <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">提出</th>
+                    <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">日時</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">1</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">青木 遥</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">提出済</span></td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a;white-space:nowrap">08-04 10:22</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">2</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">井上 千尋</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">提出済</span></td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a;white-space:nowrap">08-04 10:31</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">3</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">大西 蓮</td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:13px;color:#90a2b7">なし</span></td>
+                    <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;color:#90a2b7">なし</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;height:36px;padding:0 16px;background:#fff;border-top:1px solid #dbe3ec">
+            <span style="font-size:12px;color:#5b708a;white-space:nowrap">● 保存しました</span>
+            <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:5px 10px;cursor:pointer;white-space:nowrap" class="h4">元に戻す</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div id="2a-roster" style="display:grid;gap:10px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:11px;font-weight:700;color:#fff;background:#5b708a;border-radius:3px;padding:3px 7px;font-family:ui-monospace,SFMono-Regular,monospace">2a-名簿</span>
+      <h2 style="margin:0;font-size:17px;font-weight:700;color:#1b3a5f">同じ右ペインに名簿を選んだ状態</h2>
+      <span style="font-size:12px;color:#5b708a">Sheet の ID・範囲は「接続」1行に畳み、通常は生徒一覧が主役</span>
+    </div>
+
+    <div style="width:1180px;background:#fff;border:1px solid #b3c3d4;border-radius:6px;overflow:hidden;display:grid;grid-template-rows:auto 1fr auto">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border-bottom:1px solid #dbe3ec">
+        <h3 style="margin:0;font-size:17px;font-weight:700;color:#1a2b3c">2026年度 3年A組</h3>
+        <span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">同期 active</span>
+        <span style="font-size:11px;color:#5b708a">revision 12 · 34名</span>
+        <div style="margin-left:auto;display:flex;gap:7px">
+          <button type="button" style="font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h2">今すぐ同期</button>
+          <button type="button" style="font-size:12px;font-weight:500;color:#c9531f;background:#fff;border:1px solid #c9531f;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h5">削除</button>
+        </div>
+      </div>
+
+      <div style="padding:16px;display:grid;gap:16px;align-content:start">
+
+        <div style="border:1px solid #dbe3ec;border-radius:6px">
+          <div style="display:grid;grid-template-columns:5rem 1fr auto;gap:10px;align-items:center;padding:9px 14px">
+            <span style="font-size:13px;font-weight:500;color:#33506e">接続</span>
+            <div style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="font-size:12px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:3px 7px;white-space:nowrap">Google Sheet</span>
+              <span style="font-size:13px;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">1BxiMVs0XRA5nFMdKvBdBZjgm… · Sheet1 · A:F</span>
+              <span style="font-size:11px;color:#5b708a;white-space:nowrap">最終 08-04 09:10</span>
+            </div>
+            <div style="display:flex;gap:7px">
+              <a href="#2a-roster" style="font-size:12px;font-weight:500;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:4px;padding:6px 10px;white-space:nowrap;text-decoration:none" class="h7">Sheet を開く ↗</a>
+              <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">接続を変更</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="border:1px solid #dbe3ec;border-radius:6px">
+          <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #e6ecf3">
+            <h4 style="margin:0;font-size:13px;font-weight:700;color:#1b3a5f;letter-spacing:.02em">生徒</h4>
+            <span style="font-size:11px;color:#5b708a">34 名</span>
+            <input type="text" placeholder="氏名・ログイン名で絞り込み" style="margin-left:10px;width:16rem;font-size:13px;color:#1a2b3c;padding:6px 9px;border:1px solid #b3c3d4;border-radius:4px;background:#fff">
+            <div style="margin-left:auto;display:flex;gap:7px">
+              <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">CSV で取り込む</button>
+              <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">CSV で書き出す</button>
+              <button type="button" style="font-size:12px;font-weight:500;color:#fff;background:#1558c0;border:1px solid #1558c0;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h6">＋ 生徒を追加</button>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">出席番号</th>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">氏名</th>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">ログイン名</th>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">グループ</th>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">初回登録</th>
+                <th style="text-align:left;font-size:11px;font-weight:500;color:#5b708a;padding:6px 14px;border-bottom:1px solid #e6ecf3;white-space:nowrap">状態</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">1</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">青木 遥</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">aoki.h</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">1班</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a;white-space:nowrap">08-04 10:18</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">active</span></td>
+              </tr>
+              <tr>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">2</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">井上 千尋</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">inoue.c</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">1班</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a;white-space:nowrap">08-04 10:20</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:11px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:2px 6px;white-space:nowrap">active</span></td>
+              </tr>
+              <tr>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">3</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">大西 蓮</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;font-family:ui-monospace,SFMono-Regular,monospace;color:#5b708a">onishi.r</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3">2班</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3;color:#90a2b7">なし</td>
+                <td style="padding:7px 14px;border-bottom:1px solid #e6ecf3"><span style="font-size:11px;color:#8a5a00;background:#fff6e0;border:1px solid #ecd9a8;border-radius:3px;padding:2px 6px;white-space:nowrap">未登録</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;height:36px;padding:0 16px;border-top:1px solid #dbe3ec">
+        <span style="font-size:12px;color:#5b708a;white-space:nowrap">● 変更なし</span>
+        <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:5px 10px;cursor:pointer;white-space:nowrap" class="h4">元に戻す</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="2a-account" style="display:grid;gap:10px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-size:11px;font-weight:700;color:#fff;background:#5b708a;border-radius:3px;padding:3px 7px;font-family:ui-monospace,SFMono-Regular,monospace">2a-アカウント</span>
+      <h2 style="margin:0;font-size:17px;font-weight:700;color:#1b3a5f">同じ右ペインにアカウントを選んだ状態</h2>
+      <span style="font-size:12px;color:#5b708a">管理者スコープの設定。名簿ごとではなくアカウント単位で1か所に集約</span>
+    </div>
+
+    <div style="width:1180px;background:#fff;border:1px solid #b3c3d4;border-radius:6px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:#fff;border-bottom:1px solid #dbe3ec">
+        <h3 style="margin:0;font-size:17px;font-weight:700;color:#1a2b3c">アカウント</h3>
+        <span style="font-size:11px;color:#5b708a;font-family:ui-monospace,SFMono-Regular,monospace">overdozer@gmail.com</span>
+        <button type="button" style="margin-left:auto;font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">ログアウト</button>
+      </div>
+
+      <div style="padding:2px 16px 14px">
+        <div style="display:grid;grid-template-columns:9rem 1fr auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #e6ecf3">
+          <span style="font-size:13px;font-weight:500;color:#33506e">Google 連携</span>
+          <div style="display:flex;align-items:center;gap:10px;min-width:0">
+            <span style="font-size:12px;color:#1f7a4d;background:#e8f6ee;border:1px solid #bfe3ce;border-radius:3px;padding:3px 7px;white-space:nowrap">連携中</span>
+            <span style="font-size:13px;font-family:ui-monospace,SFMono-Regular,monospace;color:#1a2b3c;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">overdozer@gmail.com</span>
+            <span style="font-size:11px;color:#5b708a;white-space:nowrap">名簿 Sheet の読み取り / 提出物の書き出しに使用</span>
+          </div>
+          <div style="display:flex;gap:7px">
+            <button type="button" style="font-size:12px;font-weight:500;color:#1a2b3c;background:#fff;border:1px solid #b3c3d4;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h4">別のアカウントで連携</button>
+            <button type="button" style="font-size:12px;font-weight:500;color:#c9531f;background:#fff;border:1px solid #c9531f;border-radius:4px;padding:6px 10px;cursor:pointer;white-space:nowrap" class="h5">連携を解除</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:9rem 1fr;gap:10px;align-items:start;padding:9px 0;border-top:1px solid #e6ecf3">
+          <span style="font-size:13px;font-weight:500;color:#33506e">連携中の名簿</span>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span style="font-size:11px;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:3px;padding:2px 6px;white-space:nowrap">2026年度 3年A組</span>
+            <span style="font-size:11px;color:#1558c0;background:#eaf2fc;border:1px solid #b9d3f0;border-radius:3px;padding:2px 6px;white-space:nowrap">2026年度 3年B組</span>
+            <span style="font-size:11px;color:#5b708a;white-space:nowrap">解除するとこの2件の Sheet 同期が停止します</span>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:9rem 1fr;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #e6ecf3">
+          <span style="font-size:13px;font-weight:500;color:#33506e">権限</span>
+          <span style="font-size:13px;color:#1a2b3c">管理者<span style="font-size:11px;color:#5b708a"> — 教室設定・名簿の作成と削除ができます</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
