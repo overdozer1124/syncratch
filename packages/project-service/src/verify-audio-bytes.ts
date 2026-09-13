@@ -6,8 +6,11 @@ import {
 } from "@blocksync/project-schema";
 import { AssetRefMismatchError } from "./errors.js";
 
-const MAX_PCM_SAMPLES = 5_292_000;
-const MAX_AUDIO_SECONDS = 60;
+// Background music in a real project routinely runs past a minute, so the old
+// 60s ceiling rejected sounds Scratch accepts. These bound decode memory
+// (frames x 4 bytes, so ~58MB at the cap), not how long a song may be.
+export const MAX_AUDIO_SECONDS = 300;
+const MAX_PCM_SAMPLES = MAX_AUDIO_SECONDS * 48_000;
 
 export interface ParsedWav {
   sampleRate: number;

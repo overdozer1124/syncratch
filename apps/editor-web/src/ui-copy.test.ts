@@ -3,6 +3,7 @@ import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
+  friendlySb3ImportMessage,
   INVITE_LINK_COPIED_TOAST,
 } from "./ui-copy.js";
 
@@ -72,5 +73,52 @@ describe("drivePanelStatusText", () => {
   it("keeps Google Drive prefix so synced is not mistaken for local save", () => {
     expect(drivePanelStatusText.synced).toContain("Google ドライブ");
     expect(drivePanelStatusText.unsynced).toContain("Google ドライブ");
+  });
+});
+
+describe("friendlySb3ImportMessage", () => {
+  it("names the blocks Syncratch cannot open, since nothing else explains it", () => {
+    const message = friendlySb3ImportMessage([
+      {
+        code: "SCHEMA_INVALID",
+        message: "UNKNOWN_OPCODE: opcode tw_getLastKeyPressed is not in allow-list",
+      },
+      {
+        code: "SCHEMA_INVALID",
+        message: "DISALLOWED_EXTENSION_ID: Extension id jgJSON is not in \u00a76.6.2 allow-list",
+      },
+    ]);
+    expect(message).toContain("tw_getLastKeyPressed");
+    expect(message).toContain("jgJSON");
+    expect(message).toContain("まだ使えないブロック");
+  });
+
+  it("caps the list so one bad extension does not fill the screen", () => {
+    const message = friendlySb3ImportMessage(
+      ["a", "b", "c", "d", "e"].map(name => ({
+        code: "SCHEMA_INVALID",
+        message: `UNKNOWN_OPCODE: opcode ext_${name} is not in allow-list`,
+      })),
+    );
+    expect(message).toContain("ほか2個");
+    expect(message).not.toContain("ext_d");
+  });
+
+  it("explains an oversized file in terms a child can act on", () => {
+    expect(
+      friendlySb3ImportMessage([
+        {code: "TOO_LARGE", message: "Upload exceeds 33554432 bytes"},
+      ]),
+    ).toContain("大きすぎます");
+  });
+
+  it("falls back to the raw detail rather than saying nothing useful", () => {
+    expect(
+      friendlySb3ImportMessage([{code: "WAT", message: "something odd"}]),
+    ).toContain("something odd");
+  });
+
+  it("handles an empty issue list", () => {
+    expect(friendlySb3ImportMessage([])).toContain("Scratch の作品ファイル");
   });
 });

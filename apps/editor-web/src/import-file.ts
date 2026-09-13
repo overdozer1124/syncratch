@@ -1,8 +1,13 @@
 import {DEFAULT_LIMITS} from "@blocksync/sb3-tools/browser";
 
+const MIB = 1024 * 1024;
+
 export class Sb3FileTooLargeError extends Error {
   constructor(size: number) {
-    super(`SB3 file is too large (${size} bytes)`);
+    super(
+      `作品ファイルが大きすぎます（${(size / MIB).toFixed(1)}MB）。` +
+        `${Math.round(DEFAULT_LIMITS.maxBytes / MIB)}MB までなら開けます。`,
+    );
     this.name = "Sb3FileTooLargeError";
   }
 }

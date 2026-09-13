@@ -103,12 +103,12 @@ const MUTATION_REQUIRED_KEYS: Record<string, readonly string[]> = {
     "argumentdefaults",
     "warp",
   ],
+  // No "warp": the VM takes warp from the prototype, and Scratch omits it here.
   procedures_call: [
     "tagName",
     "children",
     "proccode",
     "argumentids",
-    "warp",
   ],
 };
 
@@ -286,7 +286,11 @@ function validateSb3InputEncoding(
       return;
     }
     validateSb3InputDescriptor(inputVal[1], `${path}[1]`, blocks, issues);
-    validateSb3InputDescriptor(inputVal[2], `${path}[2]`, blocks, issues);
+    // An obscured input with no shadow underneath — a boolean slot, say —
+    // serializes its shadow slot as null. Scratch writes this; accept it.
+    if (inputVal[2] !== null) {
+      validateSb3InputDescriptor(inputVal[2], `${path}[2]`, blocks, issues);
+    }
     return;
   }
   issues.push(
@@ -443,32 +447,45 @@ function validateProcedureArgumentIds(
   }
 }
 
+/**
+ * Scratch writes `warp` as a boolean as often as a string, and the VM reads
+ * both (sequencer.js: `typeof warp === 'boolean' ? warp : JSON.parse(warp)`).
+ * Accepting only the string form rejected real projects.
+ */
 function validatePrototypeWarpField(
   warp: unknown,
   path: string,
   issues: ValidationIssue[],
 ): void {
+  if (typeof warp === "boolean") return;
   if (warp !== "true" && warp !== "false") {
     issues.push(
       issue(
         "INVALID_MUTATION",
-        'warp must be string "true" or "false"',
+        'warp must be a boolean or the string "true"/"false"',
         path,
       ),
     );
   }
 }
 
+/**
+ * The VM never reads `warp` off a call block — it reads the prototype's — so a
+ * call mutation may legitimately omit it. Only a present-but-nonsense value is
+ * worth reporting.
+ */
 function validateCallWarpField(
   warp: unknown,
   path: string,
   issues: ValidationIssue[],
 ): void {
+  if (warp === undefined || warp === null) return;
+  if (typeof warp === "boolean") return;
   if (warp !== "true" && warp !== "false" && warp !== "null") {
     issues.push(
       issue(
         "INVALID_MUTATION",
-        'warp must be string "true", "false", or "null"',
+        'warp must be a boolean or the string "true", "false", or "null"',
         path,
       ),
     );

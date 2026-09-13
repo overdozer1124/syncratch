@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   assertValidMp3Bytes,
+  MAX_MP3_SECONDS,
   Mp3ParseError,
   parseMp3Audio,
   verifyMp3RefAgainstBytes,
 } from "./mp3-bytes.js";
+
+/** MPEG1 Layer III carries 1152 samples per frame; these are 44.1kHz frames. */
+const FRAMES_PER_SECOND = 44100 / 1152;
+const FRAMES_AT_CEILING = Math.floor(MAX_MP3_SECONDS * FRAMES_PER_SECOND);
+const FRAMES_OVER_CEILING = Math.ceil(MAX_MP3_SECONDS * FRAMES_PER_SECOND) + 4;
 
 /** Minimal MPEG1 Layer III frames (128kbps / 44.1kHz, 417 bytes each). */
 export function minimalMp3FrameBytes(frameCount: number): Uint8Array {
@@ -54,8 +60,8 @@ describe("mp3-bytes", () => {
     expect(parsed.sampleRate).toBe(44100);
   });
 
-  it("rejects MP3 longer than 60 seconds", () => {
-    const bytes = minimalMp3FrameBytes(2300);
+  it("rejects MP3 longer than the duration ceiling", () => {
+    const bytes = minimalMp3FrameBytes(FRAMES_OVER_CEILING);
     expect(() => parseMp3Audio(bytes)).toThrow(Mp3ParseError);
     try {
       parseMp3Audio(bytes);
@@ -65,15 +71,15 @@ describe("mp3-bytes", () => {
     }
   });
 
-  it("accepts MP3 at the 60 second ceiling", () => {
-    const bytes = minimalMp3FrameBytes(2296);
+  it("accepts MP3 at the duration ceiling", () => {
+    const bytes = minimalMp3FrameBytes(FRAMES_AT_CEILING);
     const parsed = parseMp3Audio(bytes);
-    expect(parsed.durationSeconds).toBeLessThanOrEqual(60);
-    expect(parsed.durationSeconds).toBeGreaterThan(59.9);
+    expect(parsed.durationSeconds).toBeLessThanOrEqual(MAX_MP3_SECONDS);
+    expect(parsed.durationSeconds).toBeGreaterThan(MAX_MP3_SECONDS - 0.1);
   });
 
-  it("rejects actual duration over 60 seconds via frame scan", () => {
-    const bytes = minimalMp3FrameBytes(2300);
+  it("rejects actual duration over the ceiling via frame scan", () => {
+    const bytes = minimalMp3FrameBytes(FRAMES_OVER_CEILING);
     expect(() => verifyMp3RefAgainstBytes(bytes, 44100, 44100)).toThrow(
       Mp3ParseError,
     );

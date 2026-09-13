@@ -13,8 +13,14 @@ export class MediaVerifyError extends Error {
   }
 }
 
-const MAX_PCM_SAMPLES = 5_292_000;
-const MAX_AUDIO_SECONDS = 60;
+// Background music in a real project routinely runs past a minute, so the old
+// 60s ceiling rejected sounds Scratch accepts. These bound decode memory
+// (frames x 4 bytes, so ~58MB at the cap), not how long a song may be.
+const MAX_AUDIO_SECONDS = 300;
+const MAX_PCM_SAMPLES = MAX_AUDIO_SECONDS * 48_000;
+const WAVE_FORMAT_PCM = 1;
+/** Scratch 2 recorded sounds this way, and scratch-audio still decodes them. */
+const WAVE_FORMAT_IMA_ADPCM = 17;
 
 export interface ParsedWav {
   sampleRate: number;
@@ -68,6 +74,8 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
   let channels: number | null = null;
   let bitsPerSample: number | null = null;
   let dataBytes: number | null = null;
+  let isAdpcm = false;
+  let adpcmBlockAlign = 0;
 
   while (offset + 8 <= bytes.length) {
     const chunkId = readFourCc(bytes, offset);
@@ -81,12 +89,16 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
         throw new MediaVerifyError("WAV_FMT");
       }
       const audioFormat = readU16LE(bytes, chunkData);
-      if (audioFormat !== 1) {
+      if (audioFormat !== WAVE_FORMAT_PCM && audioFormat !== WAVE_FORMAT_IMA_ADPCM) {
         throw new MediaVerifyError("WAV_PCM_ONLY");
       }
+      isAdpcm = audioFormat === WAVE_FORMAT_IMA_ADPCM;
       channels = readU16LE(bytes, chunkData + 2);
       sampleRate = readU32LE(bytes, chunkData + 4);
       bitsPerSample = readU16LE(bytes, chunkData + 14);
+      // IMA ADPCM packs samples into blocks, so blockAlign comes from the
+      // header rather than from channels x bits.
+      adpcmBlockAlign = readU16LE(bytes, chunkData + 12);
     } else if (chunkId === "data") {
       dataBytes = chunkSize;
     }
@@ -103,6 +115,25 @@ export function parseWavBytes(bytes: Uint8Array): ParsedWav {
   }
   if (channels <= 0 || bitsPerSample <= 0 || sampleRate <= 0) {
     throw new MediaVerifyError("WAV_FMT_VALUES");
+  }
+
+  // ADPCM's data is a sequence of fixed-size blocks that each decode to many
+  // frames, so frame count comes from the block layout, not from byte width.
+  // The numbers only bound duration here; decoding is the audio engine's job.
+  if (isAdpcm) {
+    if (adpcmBlockAlign <= 0 || dataBytes % adpcmBlockAlign !== 0) {
+      throw new MediaVerifyError("WAV_DATA_ALIGN");
+    }
+    const samplesPerBlock =
+      ((adpcmBlockAlign - 4 * channels) * 8) / (bitsPerSample * channels) + 1;
+    const frames = (dataBytes / adpcmBlockAlign) * samplesPerBlock;
+    if (frames > MAX_PCM_SAMPLES) {
+      throw new MediaVerifyError("WAV_SAMPLE_CEILING");
+    }
+    if (frames / sampleRate > MAX_AUDIO_SECONDS) {
+      throw new MediaVerifyError("WAV_DURATION");
+    }
+    return { sampleRate, sampleFrames: frames };
   }
 
   const blockAlign = (channels * bitsPerSample) / 8;

@@ -85,6 +85,9 @@ const BLOCK_ALLOWED = new Set([
   "mutation",
 ]);
 
+/** `comment` gets its own warning below, so keep it out of the generic sweep. */
+const BLOCK_COMMENT_TOLERANT = new Set([...BLOCK_ALLOWED, "comment"]);
+
 const COSTUME_FORMATS = new Set(["svg", "png", "jpg", "jpeg", "bmp", "gif"]);
 const SOUND_FORMATS = new Set(["wav", "mp3"]);
 
@@ -212,14 +215,23 @@ function assertPlainObject(
   return value as Record<string, unknown>;
 }
 
-function rejectUnknownKeys(
+/**
+ * Fields outside the canonical set are dropped, not rejected.
+ *
+ * The allow-lists describe what *we* write on export; real SB3 files carry
+ * more than that (editor-specific keys, fields from newer Scratch releases,
+ * whatever a fork added). Refusing those made ordinary projects unopenable,
+ * so import normalizes them away and says so instead.
+ */
+function dropUnknownKeys(
   obj: Record<string, unknown>,
   allowed: Set<string>,
   path: string,
+  warnings: string[],
 ): void {
   for (const key of Object.keys(obj)) {
     if (!allowed.has(key)) {
-      throw new CanonicalImportError(`unknown field ${key}`, `${path}.${key}`);
+      warnings.push(`${path}.${key}: unsupported field dropped on import`);
     }
   }
 }
@@ -309,6 +321,7 @@ function parseBlockEntry(
   id: string,
   raw: unknown,
   path: string,
+  warnings: string[],
 ): BlockMapEntry {
   if (Array.isArray(raw)) {
     if (!isPrimitiveBlockEntry(raw)) {
@@ -320,10 +333,10 @@ function parseBlockEntry(
     return raw;
   }
   const b = assertPlainObject(raw, path);
-  rejectUnknownKeys(b, BLOCK_ALLOWED, path);
   if ("comment" in b) {
-    throw new CanonicalImportError("block comment field is disallowed", path);
+    warnings.push(`${path}: block comment dropped on import`);
   }
+  dropUnknownKeys(b, BLOCK_COMMENT_TOLERANT, path, warnings);
   return {
     id,
     opcode: String(b.opcode ?? ""),
@@ -342,16 +355,65 @@ function parseBlockEntry(
   };
 }
 
+/** Block ids named by one raw SB3 input descriptor, e.g. [3, "id", [10, ""]]. */
+function inputBlockRefs(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const refs: string[] = [];
+  for (let i = 1; i < input.length; i += 1) {
+    const slot = input[i];
+    if (typeof slot === "string") refs.push(slot);
+  }
+  return refs;
+}
+
+/**
+ * Detach blocks whose parent does not own them.
+ *
+ * Editing a custom block's signature leaves its old argument reporters in the
+ * file, still naming a prototype that no longer names them — or that is gone
+ * entirely. Scratch ships projects like this and its VM simply never reaches
+ * those blocks. Clearing the stale pointer makes the document consistent, so
+ * the project opens and everything downstream still sees a valid graph.
+ */
+function repairOrphanParents(
+  blocks: Record<string, BlockMapEntry>,
+  path: string,
+  warnings: string[],
+): void {
+  let detached = 0;
+  for (const [id, entry] of Object.entries(blocks)) {
+    if (Array.isArray(entry)) continue;
+    const parentId = entry.parent;
+    if (!parentId) continue;
+    const parent = blocks[parentId];
+    const owned =
+      parent !== undefined &&
+      !Array.isArray(parent) &&
+      (parent.next === id ||
+        Object.values(parent.inputs ?? {}).some(input =>
+          inputBlockRefs(input).includes(id),
+        ));
+    if (owned) continue;
+    entry.parent = null;
+    entry.topLevel = true;
+    detached += 1;
+  }
+  if (detached > 0) {
+    warnings.push(`${path}.blocks: ${detached} orphaned block(s) detached`);
+  }
+}
+
 function parseTarget(
   raw: unknown,
   index: number,
   assetShaByMd5ext: Map<string, string>,
+  warnings: string[],
 ): ScratchTarget {
   const path = `targets[${index}]`;
   const t = assertPlainObject(raw, path);
   const isStage = Boolean(t.isStage);
   const allowed = isStage ? TARGET_STAGE_ALLOWED : TARGET_SPRITE_ALLOWED;
-  rejectUnknownKeys(t, allowed, path);
+  dropUnknownKeys(t, allowed, path, warnings);
 
   const comments = t.comments;
   if (comments !== undefined) {
@@ -362,11 +424,9 @@ function parseTarget(
     ) {
       throw new CanonicalImportError("comments must be an object", `${path}.comments`);
     }
-    if (Object.keys(comments).length > 0) {
-      throw new CanonicalImportError(
-        "non-empty comments are disallowed",
-        `${path}.comments`,
-      );
+    const count = Object.keys(comments).length;
+    if (count > 0) {
+      warnings.push(`${path}.comments: ${count} comment(s) dropped on import`);
     }
   }
 
@@ -378,8 +438,9 @@ function parseTarget(
       : {};
   const blocks: Record<string, BlockMapEntry> = {};
   for (const [id, bRaw] of Object.entries(blocksIn)) {
-    blocks[id] = parseBlockEntry(id, bRaw, `${targetPath}.blocks.${id}`);
+    blocks[id] = parseBlockEntry(id, bRaw, `${targetPath}.blocks.${id}`, warnings);
   }
+  repairOrphanParents(blocks, targetPath, warnings);
 
   const costumes: CostumeRef[] = [];
   if (Array.isArray(t.costumes)) {
@@ -456,23 +517,29 @@ function parseTarget(
   };
 }
 
-/** Convert SB3 project.json to schemaVersion 2 ProjectDocument (Design §6.4–§6.5). */
+/**
+ * Convert SB3 project.json to schemaVersion 2 ProjectDocument (Design §6.4–§6.5).
+ *
+ * Anything outside the canonical shape — monitors, comments, fields we do not
+ * model — is normalized away and reported through `warnings`. Only structurally
+ * unsafe or unrecoverable input throws.
+ */
 export function projectJsonToDocument(
   raw: unknown,
   assetShaByMd5ext: Map<string, string> = new Map(),
+  warnings: string[] = [],
 ): ProjectDocument {
   assertSafeCanonicalJson(raw);
   const root = assertPlainObject(raw, "project.json");
-  rejectUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json");
+  dropUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json", warnings);
 
   if (root.monitors !== undefined) {
     if (!Array.isArray(root.monitors)) {
       throw new CanonicalImportError("monitors must be an array", "monitors");
     }
     if (root.monitors.length > 0) {
-      throw new CanonicalImportError(
-        "non-empty monitors are disallowed",
-        "monitors",
+      warnings.push(
+        `monitors: ${root.monitors.length} stage monitor(s) dropped on import`,
       );
     }
   }
@@ -482,7 +549,7 @@ export function projectJsonToDocument(
   }
 
   const targets = root.targets.map((t, i) =>
-    parseTarget(t, i, assetShaByMd5ext),
+    parseTarget(t, i, assetShaByMd5ext, warnings),
   );
 
   return {
