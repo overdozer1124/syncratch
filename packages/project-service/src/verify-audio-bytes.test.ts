@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AssetRefMismatchError } from "./errors.js";
 import {
   assertValidMp3Bytes,
+  MAX_AUDIO_SECONDS,
   parseWavBytes,
   verifyMp3RefAgainstBytes,
   verifyWavRefAgainstBytes,
@@ -42,8 +43,11 @@ describe("verify-audio-bytes", () => {
     );
   });
 
-  it("rejects WAV longer than 60 seconds", () => {
-    const bytes = minimalWavBytes({ sampleCount: 61, rate: 1 });
+  it("rejects WAV longer than the duration ceiling", () => {
+    const bytes = minimalWavBytes({
+      sampleCount: MAX_AUDIO_SECONDS + 1,
+      rate: 1,
+    });
     expect(() => parseWavBytes(bytes)).toThrow(AssetRefMismatchError);
   });
 
@@ -72,19 +76,23 @@ describe("verify-audio-bytes", () => {
     expect(() => assertValidMp3Bytes(bytes)).toThrow(AssetRefMismatchError);
   });
 
-  it("rejects MP3 longer than 60 seconds via frame scan", () => {
-    const bytes = minimalMp3FrameBytes(2300);
+  it("rejects MP3 longer than the duration ceiling via frame scan", () => {
+    const bytes = minimalMp3FrameBytes(
+      Math.ceil((MAX_AUDIO_SECONDS * 44100) / 1152) + 4,
+    );
     expect(() => assertValidMp3Bytes(bytes)).toThrow(AssetRefMismatchError);
   });
 
-  it("accepts Scratch metadata when frame scan duration differs but actual <= 60s", () => {
+  it("accepts Scratch metadata when frame scan duration differs but actual is under the ceiling", () => {
     const bytes = minimalMp3FrameBytes(2);
     expect(() => verifyMp3RefAgainstBytes(bytes, 44100, 1)).not.toThrow();
   });
 
-  it("rejects claimed metadata duration over 60 seconds", () => {
+  it("rejects claimed metadata duration over the ceiling", () => {
     const bytes = minimalMp3FrameBytes(2);
-    expect(() => verifyMp3RefAgainstBytes(bytes, 1, 61)).toThrow(
+    expect(() =>
+      verifyMp3RefAgainstBytes(bytes, 1, MAX_AUDIO_SECONDS + 1),
+    ).toThrow(
       AssetRefMismatchError,
     );
   });

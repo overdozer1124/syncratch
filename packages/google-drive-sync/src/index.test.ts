@@ -543,12 +543,14 @@ describe("Drive REST adapter", () => {
 
   it("rejects oversized and invalid downloads before returning bytes", async () => {
     const validateSb3 = vi.fn(async () => false);
+    const maxBytes = 5 * 1024 * 1024;
     const oversizedFetch = vi.fn()
-      .mockResolvedValueOnce(response(200, metadata({size: "5242881"})));
+      .mockResolvedValueOnce(response(200, metadata({size: String(maxBytes + 1)})));
     const oversized = createDriveRestAdapter({
       fetch: oversizedFetch,
       getAccessToken: () => "token",
       validateSb3,
+      maxBytes,
     });
     await expect(oversized.readFile("file-1")).rejects.toBeInstanceOf(
       DriveInvalidFileError,

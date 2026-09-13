@@ -109,6 +109,55 @@ export function friendlyCollaborationMessage(
   );
 }
 
+export interface Sb3ImportIssueLike {
+  code: string;
+  message: string;
+}
+
+const SB3_IMPORT_MESSAGES: Record<string, string> = {
+  TOO_LARGE: "作品ファイルが大きすぎます。音や画像をへらしてから、もう一度ためしてください。",
+  TOO_MANY_ENTRIES: "作品に入っている絵や音が多すぎます。いらないコスチュームをへらしてください。",
+  RATIO_EXCEEDED: "作品ファイルの中身が大きすぎて開けませんでした。",
+  PATH_TRAVERSAL: "作品ファイルがこわれているか、安全ではありません。",
+  ABSOLUTE_PATH: "作品ファイルがこわれているか、安全ではありません。",
+  BAD_DEPTH: "作品ファイルがこわれているか、安全ではありません。",
+  MISSING_PROJECT_JSON: "Scratch の作品ファイルではありません。",
+  INVALID_JSON: "作品ファイルがこわれていて読めませんでした。",
+  MISSING_ASSET: "作品の中の絵か音が足りません。ファイルがこわれているかもしれません。",
+  ASSET_HASH_MISMATCH: "作品の中の絵か音がこわれています。",
+  ASSET_REF_MISMATCH: "作品の中の絵か音がこわれています。",
+  SVG_UNSAFE: "作品の中に安全ではない絵が入っていました。",
+  MEDIA_INVALID: "作品の中の絵か音を読めませんでした。",
+};
+
+/**
+ * Blocks Syncratch has no definition for. There is nothing the child can do
+ * about it, so name the block instead of giving generic "broken file" copy.
+ */
+function unsupportedBlockMessage(issues: Sb3ImportIssueLike[]): string | undefined {
+  const names = new Set<string>();
+  for (const issue of issues) {
+    const opcode = /opcode ([A-Za-z0-9_.]+) is not in allow-list/.exec(issue.message);
+    if (opcode) names.add(opcode[1]!);
+    const extension = /Extension id ([A-Za-z0-9_.-]+) is not in/.exec(issue.message);
+    if (extension) names.add(extension[1]!);
+  }
+  if (names.size === 0) return undefined;
+  const listed = [...names].slice(0, 3).join("、");
+  const more = names.size > 3 ? ` ほか${names.size - 3}個` : "";
+  return `この作品には Syncratch がまだ使えないブロックが入っています（${listed}${more}）。`;
+}
+
+/** Plain-Japanese copy for an sb3 that would not open, with the raw detail appended. */
+export function friendlySb3ImportMessage(issues: Sb3ImportIssueLike[]): string {
+  if (issues.length === 0) return "Scratch の作品ファイルではありません。";
+  const unsupported = unsupportedBlockMessage(issues);
+  if (unsupported) return unsupported;
+  const mapped = SB3_IMPORT_MESSAGES[issues[0]!.code];
+  if (mapped) return mapped;
+  return `作品ファイルを開けませんでした（${issues[0]!.message}）。`;
+}
+
 /** Shown after creating an invite link and copying it to the clipboard. */
 export const INVITE_LINK_COPIED_TOAST =
   "いっしょに作るリンクがコピーされました。友だちに教えてね。";

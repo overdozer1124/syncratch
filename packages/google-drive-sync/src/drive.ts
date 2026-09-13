@@ -13,7 +13,8 @@ import {SB3_MIME_TYPE} from "./picker.js";
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
-const DEFAULT_MAX_SB3_BYTES = 5 * 1024 * 1024;
+/** Keep in step with sb3-tools DEFAULT_LIMITS.maxBytes, or Drive becomes the tighter gate. */
+const DEFAULT_MAX_SB3_BYTES = 32 * 1024 * 1024;
 const METADATA_FIELDS = [
   "id",
   "name",

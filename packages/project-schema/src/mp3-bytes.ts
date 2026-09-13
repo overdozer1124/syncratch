@@ -7,7 +7,8 @@ export class Mp3ParseError extends Error {
   }
 }
 
-export const MAX_MP3_SECONDS = 60;
+/** MP3 is what background music arrives as, and a minute does not cover a song. */
+export const MAX_MP3_SECONDS = 300;
 
 const MPEG1_L3_BITRATE_KBPS = [
   0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,

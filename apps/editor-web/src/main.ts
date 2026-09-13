@@ -85,6 +85,7 @@ import {
   drivePanelStatusText,
   friendlyCollaborationMessage,
   friendlyDriveMessage,
+  friendlySb3ImportMessage,
   INVITE_LINK_COPIED_TOAST,
   INVITE_LINK_COPY_FAILED_TOAST,
 } from "./ui-copy.js";
@@ -2401,8 +2402,20 @@ async function importProject(
 ): Promise<void> {
   const result = await loadSb3(bytes);
   if (!result.ok || !result.document || !result.assets) {
-    const message = result.issues.map(issue => issue.message).join("; ");
-    throw new Error(message || "Scratch の作品ファイルではありません");
+    for (const issue of result.issues) {
+      console.warn(`sb3 import rejected: ${issue.code}: ${issue.message}`);
+    }
+    throw new Error(friendlySb3ImportMessage(result.issues));
+  }
+  // Import normalizes away monitors, comments and fields we do not model. The
+  // project opens either way, but the child should hear that something changed.
+  if (result.warnings.length > 0) {
+    for (const warning of result.warnings) {
+      console.info(`sb3 import: ${warning}`);
+    }
+    appToast.show(
+      "作品を開きました。コメントや変数の表示など、一部は引きつがれませんでした。",
+    );
   }
   const record: LocalProjectRecord = {
     format: LOCAL_PROJECT_FORMAT,
@@ -3732,9 +3745,13 @@ fileInput.addEventListener("change", async () => {
       await readSb3File(file),
       file.name.replace(/\.sb3$/i, ""),
     );
-  } catch {
-    localOperationError =
-      "作品ファイルを開けませんでした。今の作品はそのままです。";
+  } catch (error) {
+    // Say why. Without the reason every failure reads the same and there is
+    // nothing the child or their teacher can act on.
+    const reason = error instanceof Error ? error.message : "";
+    localOperationError = reason
+      ? `${reason} 今の作品はそのままです。`
+      : "作品ファイルを開けませんでした。今の作品はそのままです。";
     renderProjectStatus();
     retryButton.hidden = true;
   } finally {

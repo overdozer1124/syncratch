@@ -79,11 +79,21 @@ export interface Sb3SafetyLimits {
   maxDepth: number;
 }
 
+/**
+ * Sized for projects people actually make, not for a minimal test fixture.
+ *
+ * `maxBytes` matches the server-side import spool cap (32 MiB) so the browser
+ * and the server agree on what is too big; a frame-by-frame animation easily
+ * carries several hundred costumes, so `maxEntries` has to clear that. The
+ * zip-bomb defense is `maxUncompressedBytes`, which bounds peak memory whatever
+ * the archive claims; `maxCompressionRatio` stays as a cheap early exit, high
+ * enough that text-heavy SVG costumes do not look like a bomb.
+ */
 export const DEFAULT_LIMITS: Sb3SafetyLimits = {
-  maxBytes: 5 * 1024 * 1024,
-  maxEntries: 200,
-  maxUncompressedBytes: 20 * 1024 * 1024,
-  maxCompressionRatio: 100,
+  maxBytes: 32 * 1024 * 1024,
+  maxEntries: 2000,
+  maxUncompressedBytes: 128 * 1024 * 1024,
+  maxCompressionRatio: 200,
   maxDepth: 4,
 };
 
@@ -120,6 +130,36 @@ export interface LoadResult {
 
 function pathDepth(name: string): number {
   return name.split("/").filter(Boolean).length;
+}
+
+/** Resource forks macOS adds when a folder is compressed in Finder. */
+function isMacOsMetadataEntry(name: string): boolean {
+  if (name === "__MACOSX" || name.startsWith("__MACOSX/")) return true;
+  const base = name.slice(name.lastIndexOf("/") + 1);
+  return base === ".DS_Store" || base.startsWith("._");
+}
+
+/**
+ * Locate project.json, allowing for an sb3 that was unzipped and re-zipped.
+ *
+ * "Compress" in Finder (and most desktop zip tools) wraps the contents in a
+ * folder named after it, so project.json lands one level down. Every entry
+ * then shares that prefix, which is what makes stripping it safe: a single
+ * common directory is a wrapper, two would be an archive of something else.
+ * Returns the prefix to strip, or null when there is no usable project.json.
+ */
+export function findProjectRootPrefix(entryNames: string[]): string | null {
+  const names = entryNames.filter(name => !isMacOsMetadataEntry(name));
+  if (names.includes("project.json")) return "";
+
+  const candidates = names.filter(name => name.endsWith("/project.json"));
+  if (candidates.length !== 1) return null;
+  const prefix = candidates[0]!.slice(0, -"project.json".length);
+  // The wrapper's own directory entry may be listed with or without its slash.
+  const bare = prefix.slice(0, -1);
+  return names.every(name => name === bare || name.startsWith(prefix))
+    ? prefix
+    : null;
 }
 
 function posixNormalize(p: string): string {
@@ -189,6 +229,7 @@ export function isUnsafePath(
 function md5Hex(data: Uint8Array): string {
   return bytesToHex(md5(data));
 }
+
 
 /** Map jpeg zip entry names to canonical jpg md5ext keys after import normalization. */
 function registerAssetMd5extAliases(assets: Map<string, Uint8Array>): void {
@@ -313,7 +354,15 @@ export async function loadSb3(
   let uncompressed = 0;
   const assets = new Map<string, Uint8Array>();
 
+  const rootPrefix = findProjectRootPrefix(entries);
+  if (rootPrefix) {
+    warnings.push(
+      `archive contents live under "${rootPrefix}"; treating it as the project root`,
+    );
+  }
+
   for (const name of entries) {
+    if (isMacOsMetadataEntry(name)) continue;
     const unsafe = isUnsafePath(name, limits);
     if (unsafe) {
       issues.push(unsafe);
@@ -321,6 +370,11 @@ export async function loadSb3(
     }
     const f = zip.files[name];
     if (!f || f.dir) continue;
+    // Names are keyed relative to the project root so md5ext lookups match.
+    const localName =
+      rootPrefix && name.startsWith(rootPrefix)
+        ? name.slice(rootPrefix.length)
+        : name;
 
     const remaining = limits.maxUncompressedBytes - uncompressed;
     if (remaining <= 0) {
@@ -382,8 +436,8 @@ export async function loadSb3(
         ],
       };
     }
-    if (name !== "project.json") {
-      assets.set(name, data);
+    if (localName !== "project.json") {
+      assets.set(localName, data);
     }
   }
 
@@ -391,7 +445,7 @@ export async function loadSb3(
 
   registerAssetMd5extAliases(assets);
 
-  const projectFile = zip.file("project.json");
+  const projectFile = zip.file(`${rootPrefix ?? ""}project.json`);
   if (!projectFile) {
     return {
       ok: false,
@@ -425,7 +479,7 @@ export async function loadSb3(
 
   let document: ProjectDocument;
   try {
-    document = projectJsonToDocument(raw, assetShaByMd5ext);
+    document = projectJsonToDocument(raw, assetShaByMd5ext, warnings);
     document = attachAssetSha256(document, assets);
   } catch (e) {
     if (e instanceof CanonicalImportError) {
@@ -514,12 +568,17 @@ export async function loadSb3(
         });
         continue;
       }
+      // assetId is a name, not a signature: Scratch does not re-hash an asset
+      // it re-serializes, so genuine projects ship costumes whose bytes no
+      // longer match their id. The bytes are still checked for real by the
+      // SVG sanitizer and the raster/audio verifiers below, which is where
+      // safety actually comes from — so a stale id is worth saying, not
+      // worth refusing to open.
       const digest = md5Hex(file);
       if (digest !== assetId) {
-        issues.push({
-          code: "ASSET_HASH_MISMATCH",
-          message: `Asset ${md5ext} md5 ${digest} != assetId ${assetId}`,
-        });
+        warnings.push(
+          `Asset ${md5ext} md5 ${digest} != assetId ${assetId} (kept)`,
+        );
       }
     }
   }

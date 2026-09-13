@@ -13,8 +13,11 @@ export class MediaVerifyError extends Error {
   }
 }
 
-const MAX_PCM_SAMPLES = 5_292_000;
-const MAX_AUDIO_SECONDS = 60;
+// Background music in a real project routinely runs past a minute, so the
+// old 60s ceiling rejected sounds Scratch accepts. These bound decode
+// memory (frames x 4 bytes, ~58MB at the cap), not how long a song may be.
+const MAX_AUDIO_SECONDS = 300;
+const MAX_PCM_SAMPLES = MAX_AUDIO_SECONDS * 48_000;
 /** Microsoft PCM (Scratch + almost everything). */
 const WAVE_FORMAT_PCM = 1;
 /**

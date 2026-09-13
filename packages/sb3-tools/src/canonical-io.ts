@@ -85,6 +85,9 @@ const BLOCK_ALLOWED = new Set([
   "mutation",
 ]);
 
+/** `comment` gets its own warning below, so keep it out of the generic sweep. */
+const BLOCK_COMMENT_TOLERANT = new Set([...BLOCK_ALLOWED, "comment"]);
+
 const COSTUME_FORMATS = new Set(["svg", "png", "jpg", "jpeg", "bmp", "gif"]);
 const SOUND_FORMATS = new Set(["wav", "mp3"]);
 
@@ -213,20 +216,28 @@ function assertPlainObject(
 }
 
 /**
- * Scratch / TurboWarp / Xcratch project.json regularly grows optional fields
- * (e.g. top-level `extensionURLs`, sprite extras, block metadata). Syncratch
- * only materializes the allow-listed keys below; unknown keys are ignored so
- * classroom .sb3 files keep opening instead of failing closed on forward-
- * compatible metadata. Prototype-pollution keys are still rejected earlier by
+ * Fields outside the canonical set are dropped, not rejected.
+ *
+ * The allow-lists describe what *we* write on export, and Scratch, TurboWarp
+ * and Xcratch keep growing optional fields beyond it (top-level
+ * `extensionURLs`, sprite extras, block metadata). Failing closed on those
+ * made ordinary projects unopenable, so import normalizes them away — and
+ * says which ones, so the loss is visible rather than silent.
+ *
+ * Prototype-pollution keys are still rejected, earlier, by
  * `assertSafeCanonicalJson`.
  */
-function ignoreUnknownKeys(
-  _obj: Record<string, unknown>,
-  _allowed: Set<string>,
-  _path: string,
+function dropUnknownKeys(
+  obj: Record<string, unknown>,
+  allowed: Set<string>,
+  path: string,
+  warnings: string[],
 ): void {
-  // Intentional no-op: callers still pass the allow-list for documentation and
-  // so future "strict mode" can flip this back without touching call sites.
+  for (const key of Object.keys(obj)) {
+    if (!allowed.has(key)) {
+      warnings.push(`${path}.${key}: unsupported field dropped on import`);
+    }
+  }
 }
 
 function parseCostumeRef(
@@ -314,6 +325,7 @@ function parseBlockEntry(
   id: string,
   raw: unknown,
   path: string,
+  warnings: string[],
 ): BlockMapEntry {
   if (Array.isArray(raw)) {
     if (!isPrimitiveBlockEntry(raw)) {
@@ -325,8 +337,11 @@ function parseBlockEntry(
     return raw;
   }
   const b = assertPlainObject(raw, path);
-  ignoreUnknownKeys(b, BLOCK_ALLOWED, path);
-  // Block-linked comments are dropped (same policy as target.comments).
+  // Block-linked comments are dropped, same policy as target.comments.
+  if ("comment" in b) {
+    warnings.push(`${path}: block comment dropped on import`);
+  }
+  dropUnknownKeys(b, BLOCK_COMMENT_TOLERANT, path, warnings);
   return {
     id,
     opcode: String(b.opcode ?? ""),
@@ -345,16 +360,65 @@ function parseBlockEntry(
   };
 }
 
+/** Block ids named by one raw SB3 input descriptor, e.g. [3, "id", [10, ""]]. */
+function inputBlockRefs(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const refs: string[] = [];
+  for (let i = 1; i < input.length; i += 1) {
+    const slot = input[i];
+    if (typeof slot === "string") refs.push(slot);
+  }
+  return refs;
+}
+
+/**
+ * Detach blocks whose parent does not own them.
+ *
+ * Editing a custom block's signature leaves its old argument reporters in the
+ * file, still naming a prototype that no longer names them — or that is gone
+ * entirely. Scratch ships projects like this and its VM simply never reaches
+ * those blocks. Clearing the stale pointer makes the document consistent, so
+ * the project opens and everything downstream still sees a valid graph.
+ */
+function repairOrphanParents(
+  blocks: Record<string, BlockMapEntry>,
+  path: string,
+  warnings: string[],
+): void {
+  let detached = 0;
+  for (const [id, entry] of Object.entries(blocks)) {
+    if (Array.isArray(entry)) continue;
+    const parentId = entry.parent;
+    if (!parentId) continue;
+    const parent = blocks[parentId];
+    const owned =
+      parent !== undefined &&
+      !Array.isArray(parent) &&
+      (parent.next === id ||
+        Object.values(parent.inputs ?? {}).some(input =>
+          inputBlockRefs(input).includes(id),
+        ));
+    if (owned) continue;
+    entry.parent = null;
+    entry.topLevel = true;
+    detached += 1;
+  }
+  if (detached > 0) {
+    warnings.push(`${path}.blocks: ${detached} orphaned block(s) detached`);
+  }
+}
+
 function parseTarget(
   raw: unknown,
   index: number,
   assetShaByMd5ext: Map<string, string>,
+  warnings: string[],
 ): ScratchTarget {
   const path = `targets[${index}]`;
   const t = assertPlainObject(raw, path);
   const isStage = Boolean(t.isStage);
   const allowed = isStage ? TARGET_STAGE_ALLOWED : TARGET_SPRITE_ALLOWED;
-  ignoreUnknownKeys(t, allowed, path);
+  dropUnknownKeys(t, allowed, path, warnings);
 
   const comments = t.comments;
   if (comments !== undefined) {
@@ -365,8 +429,10 @@ function parseTarget(
     ) {
       throw new CanonicalImportError("comments must be an object", `${path}.comments`);
     }
-    // Scratch projects often include workspace comments. Syncratch does not
-    // round-trip them yet, so drop on import instead of rejecting the project.
+    const count = Object.keys(comments).length;
+    if (count > 0) {
+      warnings.push(`${path}.comments: ${count} comment(s) dropped on import`);
+    }
   }
 
   const name = String(t.name ?? "");
@@ -377,8 +443,9 @@ function parseTarget(
       : {};
   const blocks: Record<string, BlockMapEntry> = {};
   for (const [id, bRaw] of Object.entries(blocksIn)) {
-    blocks[id] = parseBlockEntry(id, bRaw, `${targetPath}.blocks.${id}`);
+    blocks[id] = parseBlockEntry(id, bRaw, `${targetPath}.blocks.${id}`, warnings);
   }
+  repairOrphanParents(blocks, targetPath, warnings);
 
   const costumes: CostumeRef[] = [];
   if (Array.isArray(t.costumes)) {
@@ -455,22 +522,31 @@ function parseTarget(
   };
 }
 
-/** Convert SB3 project.json to schemaVersion 2 ProjectDocument (Design §6.4–§6.5). */
+/**
+ * Convert SB3 project.json to schemaVersion 2 ProjectDocument (Design §6.4–§6.5).
+ *
+ * Anything outside the canonical shape — monitors, comments, fields we do not
+ * model — is normalized away and reported through `warnings`. Only structurally
+ * unsafe or unrecoverable input throws.
+ */
 export function projectJsonToDocument(
   raw: unknown,
   assetShaByMd5ext: Map<string, string> = new Map(),
+  warnings: string[] = [],
 ): ProjectDocument {
   assertSafeCanonicalJson(raw);
   const root = assertPlainObject(raw, "project.json");
-  ignoreUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json");
+  dropUnknownKeys(root, TOP_LEVEL_ALLOWED, "project.json", warnings);
 
   if (root.monitors !== undefined) {
     if (!Array.isArray(root.monitors)) {
       throw new CanonicalImportError("monitors must be an array", "monitors");
     }
-    // Scratch projects commonly include stage monitors (variable/list watchers).
-    // Syncratch does not round-trip monitor layout yet, so drop them on import
-    // instead of rejecting the whole project (classroom .sb3 open failures).
+    if (root.monitors.length > 0) {
+      warnings.push(
+        `monitors: ${root.monitors.length} stage monitor(s) dropped on import`,
+      );
+    }
   }
 
   if (!Array.isArray(root.targets)) {
@@ -478,7 +554,7 @@ export function projectJsonToDocument(
   }
 
   const targets = root.targets.map((t, i) =>
-    parseTarget(t, i, assetShaByMd5ext),
+    parseTarget(t, i, assetShaByMd5ext, warnings),
   );
 
   return {
