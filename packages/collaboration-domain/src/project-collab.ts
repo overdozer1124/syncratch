@@ -37,6 +37,23 @@ import {
 export const LOCAL_ORIGIN: unique symbol = Symbol("blocksync-collab-local");
 export const REMOTE_ORIGIN: unique symbol = Symbol("blocksync-collab-remote");
 
+/**
+ * Root map holding the bootstrap checkpoint. It sits beside the project rather
+ * than inside it: `materialize()` never reads it, so a write here changes the
+ * shared metadata and nothing a peer would show the learner.
+ *
+ * Declared here, not in bootstrap.ts, because bootstrap.ts imports this module.
+ */
+export const BOOTSTRAP_MAP_NAME = "bootstrap";
+
+export interface RemoteChange {
+  /**
+   * True when the transaction touched the project itself. False for bootstrap
+   * metadata, which materializes to the same document the peer already shows.
+   */
+  contentChanged: boolean;
+}
+
 export interface ProjectCollabLimits {
   /** Maximum canonical JSON byte length of the materialized document. */
   maxProjectBytes: number;
@@ -541,14 +558,32 @@ export class ProjectCollaborationDocument {
    * caller push remote Yjs state into the VM without triggering VM -> Yjs -> VM
    * feedback. Returns an unsubscribe function.
    */
-  onRemoteChange(callback: () => void): () => void {
+  onRemoteChange(callback: (change: RemoteChange) => void): () => void {
     const handler = (transaction: Y.Transaction): void => {
       if (transaction.origin === LOCAL_ORIGIN) return;
       if (transaction.changedParentTypes.size === 0) return;
-      callback();
+      callback({contentChanged: this.touchedProjectContent(transaction)});
     };
     this.ydoc.on("afterTransaction", handler);
     return () => this.ydoc.off("afterTransaction", handler);
+  }
+
+  /**
+   * Did this transaction change anything a peer would materialize?
+   *
+   * The host reseals on a timer, and each seal rewrites the bootstrap map for a
+   * project that has not changed. Callers reload the VM on remote change, and a
+   * reload stops every running thread — so treating those rewrites as edits
+   * meant nobody could keep a program running. Anything outside the bootstrap
+   * map counts as content, so a new root type is content until decided
+   * otherwise.
+   */
+  private touchedProjectContent(transaction: Y.Transaction): boolean {
+    const bootstrap: unknown = this.ydoc.getMap<unknown>(BOOTSTRAP_MAP_NAME);
+    for (const type of transaction.changedParentTypes.keys()) {
+      if ((type as unknown) !== bootstrap) return true;
+    }
+    return false;
   }
 
   /** Materialize + validate + limit-check the current shared state. */

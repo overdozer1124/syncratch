@@ -224,10 +224,10 @@ describe("remote apply while block interaction is active", () => {
     expect(guest.getBootstrapPhase()).toBe("ready");
     applySpy.mockClear();
 
-    hostVm.materializeLocal = () => {
-      const document = project([stage(), sprite("s1", "AfterDrag")]);
-      return {document, assets: assetsFor(document)};
-    };
+    // Reassigning hostVm.materializeLocal would not reach the session, which
+    // captured the function when it was created — edit the fake VM's project so
+    // the host actually publishes a content change.
+    hostVm.editTargetName("s1", "AfterDrag");
     // Force a host publish of the renamed sprite while the guest is "dragging".
     host.noteLocalChange({force: true});
     await flush(host);
@@ -238,6 +238,121 @@ describe("remote apply while block interaction is active", () => {
     await new Promise(resolve => setTimeout(resolve, 250));
     await flush(guest);
     expect(applySpy).toHaveBeenCalled();
+  });
+});
+
+describe("remote apply while the learner's project is running", () => {
+  // Applying a remote change is a full vm.loadProject, and loadProject clears
+  // the runtime: dispose -> stopAll -> threads = []. Reloading mid-run wiped
+  // every thread the green flag had started, so the project never ran.
+  it("waits for the program to stop before reloading the VM", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Host")]));
+    const guestVm = fakeVm(project([stage()]));
+    let running = true;
+    const applySpy = vi.fn(async (
+      document: ProjectDocument,
+      assets: Map<string, Uint8Array>,
+      context: ApplyRemoteContext,
+    ) => {
+      guestVm.applyRemoteToLocal(document, assets, context);
+    });
+    const host = createCollabSession({
+      roomId: "room-running-defer",
+      secret: "running-defer-secret-running-defer-xx",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      roomId: "room-running-defer",
+      secret: "running-defer-secret-running-defer-xx",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: applySpy,
+      isProjectRunning: () => running,
+    });
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    applySpy.mockClear();
+
+    hostVm.editTargetName("s1", "AfterRun");
+    host.noteLocalChange({force: true});
+    await flush(host);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    expect(applySpy).not.toHaveBeenCalled();
+
+    // Pressing stop (or the script finishing) releases the edit.
+    running = false;
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await flush(guest);
+    expect(applySpy).toHaveBeenCalled();
+    host.leave();
+    guest.leave();
+  });
+
+  // The host reseals on a timer. A seal rewrites only the bootstrap map, so it
+  // materializes to the project the guest already shows — reloading for it
+  // stopped running programs every few hundred ms for no gain.
+  it("ignores a host seal that carries no project change", async () => {
+    const mesh = createMemoryMesh();
+    const create = sessionFactory(mesh);
+    const hostVm = fakeVm(project([stage(), sprite("s1", "Host")]));
+    const guestVm = fakeVm(project([stage()]));
+    const applySpy = vi.fn(async (
+      document: ProjectDocument,
+      assets: Map<string, Uint8Array>,
+      context: ApplyRemoteContext,
+    ) => {
+      guestVm.applyRemoteToLocal(document, assets, context);
+    });
+    const host = createCollabSession({
+      roomId: "room-seal-noop",
+      secret: "seal-noop-secret-seal-noop-secret-xxx",
+      debounceMs: 0,
+      participantId: "peer-host",
+      createProvider: create,
+      materializeLocal: hostVm.materializeLocal,
+      applyRemoteToLocal: () => {},
+    });
+    const guest = createCollabSession({
+      roomId: "room-seal-noop",
+      secret: "seal-noop-secret-seal-noop-secret-xxx",
+      debounceMs: 0,
+      participantId: "peer-guest",
+      createProvider: create,
+      materializeLocal: guestVm.materializeLocal,
+      applyRemoteToLocal: applySpy,
+    });
+    expect(host.start({host: true}).ok).toBe(true);
+    guest.start({host: false});
+    await flush(host, guest);
+    expect(guest.getBootstrapPhase()).toBe("ready");
+    applySpy.mockClear();
+
+    // No project edit: this publishes nothing but still reseals.
+    host.noteLocalChange({force: true});
+    await flush(host);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await flush(guest);
+    expect(applySpy).not.toHaveBeenCalled();
+
+    // A real edit still gets through.
+    hostVm.editTargetName("s1", "Edited");
+    host.noteLocalChange({force: true});
+    await flush(host);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    await flush(guest);
+    expect(applySpy).toHaveBeenCalled();
+    host.leave();
+    guest.leave();
   });
 });
 

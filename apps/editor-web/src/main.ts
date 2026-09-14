@@ -249,9 +249,11 @@ import {
 import {installProjectExtensionLoader} from "./extension-project-load.js";
 import {ensureTurbowarpVmCompat} from "./turbowarp-vm-compat.js";
 import {
+  countRunnableNonMonitorThreads,
   guardGlowUpdates,
   installExecutionControl,
   type ExecutionController,
+  type ExecutionRuntimeLike,
 } from "./execution-control.js";
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
 import {
@@ -1915,6 +1917,13 @@ async function startCollaboration(
     },
     isBlockInteractionActive: () =>
       isScratchBlockInteractionActive(scratchWorkspace()),
+    // A remote apply reloads the VM, and loadProject stops every thread. Hold
+    // applies while the learner's project is running so the green flag and key
+    // hats are not wiped a few hundred ms after they fire.
+    isProjectRunning: () =>
+      countRunnableNonMonitorThreads(
+        (vm as unknown as {runtime?: ExecutionRuntimeLike}).runtime,
+      ) > 0,
     cancelBlockInteraction: () => {
       cancelScratchBlockGesture(scratchWorkspace());
     },
