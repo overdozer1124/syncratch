@@ -37,6 +37,16 @@ const FIBER_HELPERS = `
     const candidate = props && props.vm;
     return candidate && candidate.runtime ? candidate : null;
   });
+  // globalThis.Blockly is a Msg-only stub here, so it has no getMainWorkspace.
+  // The app resolves the live workspace the same way (resolveScratchWorkspace).
+  const resolveWorkspace = () => walkFibers(fiber => {
+    const ws = fiber.stateNode && fiber.stateNode.workspace;
+    return ws && typeof ws.getTopBlocks === 'function' ? ws : null;
+  });
+  const resolveScratchBlocks = () => walkFibers(fiber => {
+    const api = fiber.stateNode && fiber.stateNode.ScratchBlocks;
+    return api && typeof api.defineBlocksWithJsonArray === 'function' ? api : null;
+  });
 `;
 
 async function bootEditor(page: Page): Promise<void> {
@@ -456,19 +466,30 @@ test("empty Blockly with VM scripts stops execution but keeps VM blocks", async 
   })()`);
 
   // Simulate partial VM→Blockly sync failure: Blockly cleared, VM untouched.
+  //
+  // Events have to be off for that. A plain ws.clear() fires BLOCK_DELETE, the
+  // GUI forwards it to the VM, and the VM deletes the blocks for real — which
+  // is ordinary edit sync, not the desync this guard exists for, and it left
+  // the test asserting against a VM that had legitimately emptied. scratch-gui
+  // disables events the same way around its own workspace loads.
   await page.evaluate(`(() => { ${FIBER_HELPERS}
-    const Blockly = globalThis.Blockly;
-    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    const ws = resolveWorkspace();
     if (!ws || typeof ws.clear !== 'function') throw new Error('Blockly workspace missing');
-    ws.clear();
+    const Blocks = resolveScratchBlocks();
+    if (!Blocks || !Blocks.Events) throw new Error('ScratchBlocks namespace missing');
+    Blocks.Events.disable();
+    try {
+      ws.clear();
+    } finally {
+      Blocks.Events.enable();
+    }
   })()`);
 
   await page.waitForTimeout(750);
 
   const after = await page.evaluate(`(() => { ${FIBER_HELPERS}
     const vm = resolveVm();
-    const Blockly = globalThis.Blockly;
-    const ws = Blockly && Blockly.getMainWorkspace && Blockly.getMainWorkspace();
+    const ws = resolveWorkspace();
     const tops = ws && ws.getTopBlocks ? ws.getTopBlocks(false) : [];
     return {
       vmBlocks: Object.keys(vm.editingTarget.blocks._blocks).length,

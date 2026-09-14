@@ -158,7 +158,10 @@ test("file panel shows Drive save CTA without scrolling at 1024x600", async ({
   await expect(connectGoogle).toBeInViewport();
 
   // DOM order guard: Drive section above local file buttons; controls above help.
-  const order = await page.locator(".panel-content").evaluate(panel => {
+  // Reuse the scoped locator above: a bare .panel-content now matches every
+  // panel in the app, so this asserted DOM order against whichever one came
+  // first rather than the file panel.
+  const order = await panelContent.evaluate(panel => {
     const driveSection = panel.querySelector(".drive-section");
     const fileControls = panel.querySelector(".file-controls");
     const controls = panel.querySelector(".drive-controls");
