@@ -3766,7 +3766,8 @@ fileInput.addEventListener("change", async () => {
     // nothing the child or their teacher can act on.
     const reason = error instanceof Error ? error.message : "";
     localOperationError = reason
-      ? `${reason} 今の作品はそのままです。`
+      // No space between the sentences: Japanese does not put one after 。
+      ? `${reason}今の作品はそのままです。`
       : "作品ファイルを開けませんでした。今の作品はそのままです。";
     renderProjectStatus();
     retryButton.hidden = true;
