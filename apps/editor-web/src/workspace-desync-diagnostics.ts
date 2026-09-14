@@ -29,6 +29,28 @@ export type WorkspaceVmDesyncEntry = {
   repeatCount?: number;
   editingTargetId?: string;
   editingTargetName?: string;
+  /**
+   * Blockly's own id for the workspace that was measured. With the editing
+   * target id beside it, a report shows whether the two halves of the
+   * comparison even belong to the same workspace.
+   */
+  workspaceId?: string;
+  /**
+   * UI restore epoch at the time of the reading — which project load produced
+   * this workspace. A mismatch against a stale generation reads very
+   * differently from one inside a single load.
+   */
+  loadGeneration?: number;
+  /**
+   * The last "Workspace Update Error" scratch-gui logged, if any.
+   *
+   * `Blocks.onWorkspaceUpdate` swallows failures from
+   * `clearWorkspaceAndLoadFromXml` and keeps the VM running over an incomplete
+   * workspace — the exact shape of this bug. Without this field a report
+   * cannot distinguish "the XML load failed" from every other way the two
+   * sides can drift apart.
+   */
+  lastWorkspaceUpdateError?: {message: string; at: number};
   workspaceTopBlocks: number | null;
   vmScriptCount: number;
   vmBlockIds: string[];
@@ -252,6 +274,13 @@ function entrySignature(
     .join(",");
   return [
     entry.editingTargetId ?? "",
+    // A different workspace or a later load is a different situation, not a
+    // repeat of the same one — those must not collapse into one entry.
+    entry.workspaceId ?? "",
+    String(entry.loadGeneration ?? ""),
+    // The message, not its timestamp: a new XML failure is worth its own entry,
+    // but re-reading the same one every poll is not.
+    entry.lastWorkspaceUpdateError?.message ?? "",
     String(entry.workspaceTopBlocks),
     String(entry.vmScriptCount),
     entry.vmEdgeHash,

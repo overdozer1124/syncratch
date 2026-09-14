@@ -16,6 +16,7 @@ import {
   recordWorkspaceVmDesync,
   type WorkspaceVmDesyncEntry,
 } from "./workspace-desync-diagnostics.js";
+import {getLastWorkspaceUpdateError} from "./workspace-update-error-log.js";
 
 export type GuardWorkspaceLike = {
   id?: string;
@@ -184,9 +185,18 @@ function recordDesync(options: {
   editingTarget: GuardTargetLike;
   visible: number;
   vmScripts: number;
+  loadGeneration?: number;
   action: WorkspaceVmDesyncEntry["action"];
 }): void {
-  const {workspace, runtime, editingTarget, visible, vmScripts, action} = options;
+  const {
+    workspace,
+    runtime,
+    editingTarget,
+    visible,
+    vmScripts,
+    loadGeneration,
+    action,
+  } = options;
   const blocklyTopIds = workspaceTopBlockIds(workspace);
   const vmIds = vmBlockIds(editingTarget);
   const vmBlocks = editingTarget.blocks?._blocks;
@@ -196,6 +206,11 @@ function recordDesync(options: {
       typeof editingTarget.getName === "function"
         ? editingTarget.getName()
         : undefined,
+    workspaceId: typeof workspace?.id === "string" ? workspace.id : undefined,
+    loadGeneration,
+    // Captured before the stop, so a report shows whether an XML load had just
+    // failed underneath this mismatch.
+    lastWorkspaceUpdateError: getLastWorkspaceUpdateError() ?? undefined,
     workspaceTopBlocks: visible,
     vmScriptCount: vmScripts,
     vmBlockIds: vmIds,
@@ -217,8 +232,10 @@ export function reconcileEmptyWorkspaceWithVm(options: {
   workspace: GuardWorkspaceLike | null | undefined;
   runtime: GuardRuntimeLike | null | undefined;
   editingTarget: GuardTargetLike | null | undefined;
+  /** UI restore epoch: which project load produced this workspace. */
+  loadGeneration?: number;
 }): WorkspaceRunGuardResult | null {
-  const {workspace, runtime, editingTarget} = options;
+  const {workspace, runtime, editingTarget, loadGeneration} = options;
   if (!runtime || !editingTarget?.blocks) return null;
   if (workspace?.disposed) return null;
   if (workspace?.isDragging?.()) {
@@ -241,6 +258,7 @@ export function reconcileEmptyWorkspaceWithVm(options: {
     editingTarget,
     visible,
     vmScripts,
+    loadGeneration,
     action: "detected",
   });
 
@@ -265,6 +283,7 @@ export function reconcileEmptyWorkspaceWithVm(options: {
       editingTarget,
       visible,
       vmScripts,
+      loadGeneration,
       action: "stopped",
     });
   }
