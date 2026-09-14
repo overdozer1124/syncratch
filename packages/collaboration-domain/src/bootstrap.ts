@@ -95,6 +95,30 @@ export function sha256Hex(bytes: Uint8Array): string {
   return bytesToHex(sha256(bytes));
 }
 
+/**
+ * sha256 of asset bytes, memoized on the array's identity.
+ *
+ * The host reseals on every edit and re-hashed every costume and sound each
+ * time: 33ms of a 36ms seal at the 5MB asset cap, a few times a second, for
+ * bytes that had not changed — editing blocks does not touch a costume. Guests
+ * re-hashed the same way when checking a seal.
+ *
+ * Identity is a sound key here because `materialize()` hands back the very
+ * Uint8Array objects the Y.Doc holds, so repeat calls hit; a different object
+ * is hashed afresh; and nothing in this package mutates asset bytes in place —
+ * assets are content-addressed, so a change means a new md5ext and new bytes.
+ * A WeakMap also lets the entry go as soon as the asset does.
+ */
+const assetDigestCache = new WeakMap<Uint8Array, string>();
+
+export function assetDigest(bytes: Uint8Array): string {
+  const cached = assetDigestCache.get(bytes);
+  if (cached !== undefined) return cached;
+  const digest = sha256Hex(bytes);
+  assetDigestCache.set(bytes, digest);
+  return digest;
+}
+
 export function base64UrlFromBytes(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -153,7 +177,7 @@ export function buildAssetManifest(
     const bytes = assets.get(md5ext) ?? new Uint8Array();
     return {
       md5ext,
-      contentSha256: sha256Hex(bytes),
+      contentSha256: assetDigest(bytes),
       byteLength: bytes.byteLength,
     };
   });
@@ -310,7 +334,7 @@ export function runHostPreflight(
       ));
     }
     totalAssetBytes += bytes.byteLength;
-    const digest = sha256Hex(bytes);
+    const digest = assetDigest(bytes);
     if (referenceHashes(document, md5ext).some(hash => hash !== digest)) {
       issues.push(issue(
         "ASSET_HASH_MISMATCH",
@@ -505,7 +529,7 @@ export function validateSealedCheckpoint(
       ));
       continue;
     }
-    const digest = sha256Hex(bytes);
+    const digest = assetDigest(bytes);
     if (digest !== entry.contentSha256) {
       integrityIssues.push(issue(
         "ASSET_HASH_MISMATCH",
@@ -577,7 +601,7 @@ function countVerifiedAssets(
     const bytes = assets.get(entry.md5ext);
     if (!(bytes instanceof Uint8Array)) continue;
     if (bytes.byteLength !== entry.byteLength) continue;
-    if (sha256Hex(bytes) !== entry.contentSha256) continue;
+    if (assetDigest(bytes) !== entry.contentSha256) continue;
     count += 1;
   }
   return count;

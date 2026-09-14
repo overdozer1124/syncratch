@@ -259,8 +259,11 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
     buffer: Buffer.from([1, 2, 3]),
   });
 
+  // The status now names the reason instead of one generic sentence: these
+  // bytes are not a zip at all, which is a different thing to tell a learner
+  // than "too big" or "uses blocks Syncratch does not have".
   await expect(page.getByTestId("save-status")).toHaveText(
-    "作品ファイルを開けませんでした。今の作品はそのままです。",
+    "作品ファイルがこわれていて読めませんでした。今の作品はそのままです。",
   );
   expect(
     await page.evaluate(() => window.__blocksyncTask3!.getState().localProjectId),
@@ -269,7 +272,7 @@ test("invalid SB3 import is recoverable and preserves retry and export", async (
     window.__blocksyncTask3!.configureCollaborationTestGate("import-failure"),
   );
   await expect(page.getByTestId("save-status")).toHaveText(
-    "作品ファイルを開けませんでした。今の作品はそのままです。",
+    "作品ファイルがこわれていて読めませんでした。今の作品はそのままです。",
   );
   await openPanel(page, "file-panel");
   const downloadPromise = page.waitForEvent("download");

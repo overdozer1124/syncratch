@@ -256,6 +256,7 @@ import {
   type ExecutionRuntimeLike,
 } from "./execution-control.js";
 import {reconcileEmptyWorkspaceWithVm} from "./workspace-run-guard.js";
+import {installWorkspaceUpdateErrorCapture} from "./workspace-update-error-log.js";
 import {
   getWorkspaceVmDesyncLog,
   type BlocklyWorkspaceLike,
@@ -3165,6 +3166,11 @@ function installExecutionControls(vmInstance: ScratchVm): void {
     });
   });
 
+  // scratch-gui swallows failed workspace XML loads and keeps the VM running
+  // over an incomplete workspace. Capture that before the guard reads it, so a
+  // desync report says whether a load had just failed.
+  installWorkspaceUpdateErrorCapture();
+
   // Catch Blockly/VM desync even when the learner is not pressing the flag.
   window.setInterval(() => {
     enforceWorkspaceMatchesVm(vmInstance, {announce: true});
@@ -3205,6 +3211,7 @@ function enforceWorkspaceMatchesVm(
     workspace,
     runtime: vmInstance.runtime as import("./workspace-run-guard.js").GuardRuntimeLike,
     editingTarget,
+    loadGeneration: uiRestoreEpoch,
   });
   if (!result?.detected) return;
   if (result.stopped) {
@@ -3759,7 +3766,8 @@ fileInput.addEventListener("change", async () => {
     // nothing the child or their teacher can act on.
     const reason = error instanceof Error ? error.message : "";
     localOperationError = reason
-      ? `${reason} 今の作品はそのままです。`
+      // No space between the sentences: Japanese does not put one after 。
+      ? `${reason}今の作品はそのままです。`
       : "作品ファイルを開けませんでした。今の作品はそのままです。";
     renderProjectStatus();
     retryButton.hidden = true;
