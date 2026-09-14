@@ -7,6 +7,7 @@ import {
   ProjectCollaborationDocument,
 } from "./project-collab.js";
 import {
+  assetDigest,
   buildAssetManifest,
   bytesFromBase64Url,
   encodeStateVectorBase64,
@@ -145,6 +146,50 @@ describe("host preflight", () => {
         expect.objectContaining({code: "SAFE_KEY_VIOLATION"}),
       ]));
     }
+  });
+});
+
+describe("assetDigest", () => {
+  // The host reseals on every edit and re-hashed every costume and sound each
+  // time — 33ms of a 36ms seal at the 5MB asset cap, several times a second,
+  // for bytes that had not changed. Editing blocks does not touch a costume.
+  it("hashes the same bytes once per array", () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const first = assetDigest(bytes);
+    expect(first).toBe(sha256Hex(bytes));
+    expect(assetDigest(bytes)).toBe(first);
+  });
+
+  it("hashes a different array separately, even with equal contents", () => {
+    // Identity is the key, so an equal-but-distinct array must not take a
+    // cached digest from somewhere else — it is hashed on its own.
+    const a = new Uint8Array([9, 9, 9]);
+    const b = new Uint8Array([9, 9, 9]);
+    expect(assetDigest(a)).toBe(assetDigest(b));
+    expect(assetDigest(b)).toBe(sha256Hex(b));
+
+    const other = new Uint8Array([9, 9, 8]);
+    expect(assetDigest(other)).not.toBe(assetDigest(a));
+    expect(assetDigest(other)).toBe(sha256Hex(other));
+  });
+
+  it("still rejects a project whose asset bytes do not match its hashes", () => {
+    // Caching must not weaken the integrity check preflight exists for.
+    const mismatched = project([stage()]);
+    mismatched.targets[0]!.costumes![0]!.contentSha256 = "0".repeat(64);
+    expect(runHostPreflight(mismatched, assetsFor(mismatched)).ok).toBe(false);
+  });
+
+  it("gives preflight the same manifest whether or not the cache is warm", () => {
+    const source = project([stage(), sprite("s1")]);
+    const assets = assetsFor(source);
+    const cold = runHostPreflight(source, assets);
+    const warm = runHostPreflight(source, assets);
+    expect(cold.ok).toBe(true);
+    expect(warm.ok).toBe(true);
+    if (!cold.ok || !warm.ok) return;
+    expect(warm.assetManifest).toEqual(cold.assetManifest);
+    expect(warm.documentHash).toBe(cold.documentHash);
   });
 });
 
