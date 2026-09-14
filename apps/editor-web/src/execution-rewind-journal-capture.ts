@@ -38,6 +38,9 @@ export type JournalCaptureRuntimeLike = {
 };
 
 const JOURNAL_WRAP_FLAG = "__syncratchRewindJournalWrap";
+/** The journal's own updateCurrentMSecs wrapper, so displacement is detectable. */
+const CLOCK_WRAPPER_FLAG = "__syncratchRewindClockWrapper";
+const CLOCK_REINSTALL_FLAG = "__syncratchRewindClockReinstall";
 
 type RandomJournalEntry = Extract<JournalEntry, {kind: "random"}>;
 
@@ -125,24 +128,76 @@ function patchClock(
   };
 
   if (typeof originalUpdateCurrentMSecs === "function") {
-    runtime.updateCurrentMSecs = () => {
-      const mode = journal.getMode();
-      if (mode === "replay") {
-        const entry = journal.consume("clock");
-        if (!entry || entry.kind !== "clock") {
-          throw new RewindJournalMismatchError("Expected clock journal entry");
-        }
-        applyClockSnapshot(runtime, entry);
-        return;
-      }
-      originalUpdateCurrentMSecs();
-      if (mode === "record") {
-        journal.append(
-          readClockSnapshot(runtime, clock, originalProjectTimer),
-        );
-      }
-    };
+    installClockOwnership(runtime, clock, journal);
   }
+}
+
+/**
+ * Give the journal the outermost say over `runtime.currentMSecs`.
+ *
+ * `control_wait` has no other clock: its stack timer is built with
+ * `nowObj = {now: () => runtime.currentMSecs}` (block-utility.js), and
+ * `Sequencer.stepThreads()` refreshes that value once per step. So replay is
+ * deterministic only if this wrapper, not wall time, supplies the value.
+ *
+ * It has to be re-assertable because it is not the only patch on this method.
+ * `installVirtualClock` wraps it too, and the install order is fixed by a
+ * different constraint — the `_step` chain must read gate -> recorder ->
+ * rewind -> real step, which puts the journal in first and the virtual clock
+ * in second. Installed second, the virtual clock captured this wrapper and
+ * then never called it, so replay silently ran on wall time: waits that
+ * expired between two recorded frames did not expire during the much faster
+ * replay, and every scrub forward past a `wait` failed on a fingerprint
+ * mismatch. Re-wrapping at the start of each record/replay session keeps the
+ * journal outermost no matter who patched in between, and keeps the virtual
+ * clock underneath it, which is what record mode wants: the recorded value
+ * must come from the virtual timeline so paused time stays out of it.
+ */
+function installClockOwnership(
+  runtime: JournalCaptureRuntimeLike,
+  clock: NonNullable<JournalCaptureRuntimeLike["ioDevices"]>["clock"],
+  journal: RewindJournal,
+): void {
+  const originalProjectTimer = clock?.__syncratchRewindOriginalProjectTimer;
+  const inner = runtime.updateCurrentMSecs?.bind(runtime);
+  if (typeof inner !== "function" || typeof originalProjectTimer !== "function") {
+    return;
+  }
+
+  const wrapper = (): void => {
+    const mode = journal.getMode();
+    if (mode === "replay") {
+      const entry = journal.consume("clock");
+      if (!entry || entry.kind !== "clock") {
+        throw new RewindJournalMismatchError("Expected clock journal entry");
+      }
+      applyClockSnapshot(runtime, entry);
+      return;
+    }
+    inner();
+    if (mode === "record") {
+      journal.append(readClockSnapshot(runtime, clock, originalProjectTimer));
+    }
+  };
+
+  runtime.updateCurrentMSecs = wrapper;
+  (runtime as Record<string, unknown>)[CLOCK_WRAPPER_FLAG] = wrapper;
+  (runtime as Record<string, unknown>)[CLOCK_REINSTALL_FLAG] = () =>
+    installClockOwnership(runtime, clock, journal);
+}
+
+/**
+ * Re-wrap `updateCurrentMSecs` if another patch has displaced the journal's.
+ * Call this when a record or replay session starts; a no-op when the journal
+ * is already outermost, and when no capture is installed at all.
+ */
+export function reassertRewindClockOwnership(runtime: unknown): void {
+  if (!runtime || typeof runtime !== "object") return;
+  const holder = runtime as Record<string, unknown>;
+  const current = holder.updateCurrentMSecs;
+  if (current === holder[CLOCK_WRAPPER_FLAG]) return;
+  const reinstall = holder[CLOCK_REINSTALL_FLAG];
+  if (typeof reinstall === "function") (reinstall as () => void)();
 }
 
 function patchMouse(

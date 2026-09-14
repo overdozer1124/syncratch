@@ -19,7 +19,10 @@ import {
   RewindJournal,
   RewindJournalMismatchError,
 } from "./execution-rewind-journal.js";
-import {installJournalCapture} from "./execution-rewind-journal-capture.js";
+import {
+  installJournalCapture,
+  reassertRewindClockOwnership,
+} from "./execution-rewind-journal-capture.js";
 import {
   resolveNonDeterministicOpcode,
 } from "./execution-rewind-non-deterministic.js";
@@ -483,6 +486,63 @@ describe("installJournalCapture", () => {
       {kind: "random", from: 1, to: 10, value: 5},
       {kind: "random", from: 1, to: 10, value: 2},
     ]);
+  });
+
+  // The virtual clock in execution-control wraps updateCurrentMSecs too, and
+  // install order puts it in second. When it captured the journal's wrapper and
+  // never called it, replay read currentMSecs from wall time — control_wait has
+  // no other clock — so waits that expired between two recorded frames never
+  // expired during the much faster replay, and every scrub past a wait failed
+  // with a fingerprint mismatch. That shipped for over a month.
+  it("takes the clock back when a later patch displaces it", () => {
+    const journal = new RewindJournal();
+    const {runtime} = makeSimulatedRuntime([]);
+    const dispose = installJournalCapture(runtime, journal);
+
+    // Stand in for installVirtualClock: wrap, capture ours, never call it.
+    // It advances every call, so a replayed value is distinguishable from a
+    // freshly computed one.
+    let fakeNow = 1_000;
+    const displaced = runtime.updateCurrentMSecs!.bind(runtime);
+    runtime.updateCurrentMSecs = () => {
+      void displaced;
+      fakeNow += 1_000;
+      runtime.currentMSecs = fakeNow;
+    };
+
+    // Record one frame. The journal sits outside the displaced clock, so it
+    // records the value that clock produced.
+    reassertRewindClockOwnership(runtime);
+    journal.beginRecord();
+    runtime._step!();
+    journal.endFrame();
+    const recorded = journal
+      .slice(0, journal.size)
+      .filter(entry => entry.kind === "clock") as Array<{currentMSecs: number}>;
+    expect(recorded.length).toBeGreaterThan(0);
+    const recordedMSecs = recorded[0]!.currentMSecs;
+
+    // Replay must reproduce that value, not whatever the clock says now.
+    const nowIfNotReplayed = fakeNow + 1_000;
+    runtime.currentMSecs = 0;
+    reassertRewindClockOwnership(runtime);
+    journal.beginReplay(0, journal.size);
+    runtime.updateCurrentMSecs!();
+    journal.endFrame();
+
+    expect(runtime.currentMSecs).toBe(recordedMSecs);
+    expect(runtime.currentMSecs).not.toBe(nowIfNotReplayed);
+    dispose();
+  });
+
+  it("leaves the clock alone when it is already outermost", () => {
+    const journal = new RewindJournal();
+    const {runtime} = makeSimulatedRuntime([]);
+    const dispose = installJournalCapture(runtime, journal);
+    const wrapper = runtime.updateCurrentMSecs;
+    reassertRewindClockOwnership(runtime);
+    expect(runtime.updateCurrentMSecs).toBe(wrapper);
+    dispose();
   });
 
   it("records projectTimer and currentMSecs", () => {
