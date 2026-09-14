@@ -11,6 +11,7 @@ import {
   ProjectCollaborationDocument,
   diffBlocks,
 } from "./project-collab.js";
+import {readBootstrapCheckpoint, writeBootstrapSealed} from "./bootstrap.js";
 // Existing Gate 0 API must remain exported and intact.
 import {CollaborationDocument} from "./index.js";
 
@@ -269,6 +270,42 @@ describe("feedback-loop prevention via origin tracking", () => {
     b.setTarget(sprite("s1", {name: "FromB"}));
     a.applyRemoteUpdate(b.encodeState());
     expect(remoteSpy).toHaveBeenCalled();
+  });
+
+  // The host reseals on a timer, rewriting only the bootstrap map. Callers
+  // reload the VM on a content change, and a reload stops every running
+  // thread, so a seal must not look like an edit.
+  it("separates a bootstrap-only write from a project edit", () => {
+    const source = project([stage(), sprite("s1")]);
+    const a = new ProjectCollaborationDocument();
+    a.loadLocalProject(source, assetsFor(source));
+    const b = new ProjectCollaborationDocument();
+    b.applyRemoteUpdate(a.encodeState());
+
+    // The session reads the checkpoint, which is what instantiates the
+    // bootstrap type on this doc; Yjs only reports types it has materialized.
+    readBootstrapCheckpoint(a.ydoc);
+
+    const changes: boolean[] = [];
+    a.onRemoteChange(change => changes.push(change.contentChanged));
+
+    writeBootstrapSealed(
+      b.ydoc,
+      {
+        bootstrapId: "boot-1",
+        projectTitle: "t",
+        contentStateVector: "sv",
+        documentHash: "hash",
+        assetManifest: [],
+      },
+      "peer-b",
+    );
+    a.applyRemoteUpdate(b.encodeState());
+    expect(changes).toEqual([false]);
+
+    b.setTarget(sprite("s1", {name: "RealEdit"}));
+    a.applyRemoteUpdate(b.encodeState());
+    expect(changes).toEqual([false, true]);
   });
 });
 

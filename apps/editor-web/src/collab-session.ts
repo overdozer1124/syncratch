@@ -37,6 +37,7 @@ import {
   REMOTE_APPLY_DRAG_MAX_WAIT_MS,
   REMOTE_APPLY_DRAG_RETRY_MS,
   decideRemoteApplyDuringInteraction,
+  REMOTE_APPLY_RUNNING_RETRY_MS,
 } from "./block-interaction.js";
 
 export interface CollabReadinessInput {
@@ -129,6 +130,11 @@ export interface CollabSessionOptions {
    * gesture (cursor stuck until reload).
    */
   isBlockInteractionActive?: () => boolean;
+  /**
+   * True while the learner's project is running. Applying a remote change is a
+   * full VM reload, which stops every thread, so applies wait for the program.
+   */
+  isProjectRunning?: () => boolean;
   /** Best-effort cancel of the open Blockly gesture before a forced apply. */
   cancelBlockInteraction?: () => void;
   /**
@@ -1013,16 +1019,19 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
           return;
         }
         const interacting = Boolean(options.isBlockInteractionActive?.());
-        if (interacting) {
+        const running = Boolean(options.isProjectRunning?.());
+        if (interacting || running) {
           if (dragApplyWaitStartedAt === null) {
             dragApplyWaitStartedAt = Date.now();
           }
           const waitedMs = Date.now() - dragApplyWaitStartedAt;
           const decision = decideRemoteApplyDuringInteraction({
-            interacting: true,
+            interacting,
+            running,
             waitedMs,
             retryMs: REMOTE_APPLY_DRAG_RETRY_MS,
             maxWaitMs: REMOTE_APPLY_DRAG_MAX_WAIT_MS,
+            runningRetryMs: REMOTE_APPLY_RUNNING_RETRY_MS,
           });
           if (decision.action === "defer") {
             scheduleApplyToLocal(decision.delayMs);
@@ -1102,14 +1111,18 @@ export function createCollabSession(options: CollabSessionOptions): CollabSessio
       .catch(() => undefined);
   };
 
-  domain.onRemoteChange(() => {
+  domain.onRemoteChange(change => {
     markProgress("peer");
     if (guestApplyInFlight && !createdThisRoom && !guestReady) {
       stagingChangedDuringGuestApply = true;
     }
     if (!createdThisRoom && !guestReady) {
+      // Bootstrap watches the seal itself, so it must see metadata too.
       scheduleGuestEvaluate();
-    } else {
+    } else if (change.contentChanged) {
+      // Only the project reaches the VM. A bootstrap-only write materializes to
+      // the document this peer already shows, and reloading for it would stop
+      // whatever the learner is running.
       scheduleApplyToLocal();
       if (createdThisRoom) scheduleRollingSeal();
     }

@@ -17,6 +17,7 @@ import {
 import * as Y from "yjs";
 import {
   assertSafeKeys,
+  BOOTSTRAP_MAP_NAME,
   DEFAULT_PROJECT_COLLAB_LIMITS,
   type ProjectCollabLimits,
 } from "./project-collab.js";
@@ -79,7 +80,8 @@ export const MAX_DECODED_UPDATE_BYTES = 16 * 1024 * 1024;
 export const MAX_PROJECT_TITLE_CODE_POINTS = 200;
 export const COLLAB_FALLBACK_TITLE = "共同編集プロジェクト";
 
-const BOOTSTRAP_MAP = "bootstrap";
+// Shared with project-collab so "is this only metadata?" cannot drift.
+const BOOTSTRAP_MAP = BOOTSTRAP_MAP_NAME;
 
 function issue(
   code: PreflightIssueCode,
