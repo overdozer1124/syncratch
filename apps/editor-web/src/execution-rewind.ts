@@ -38,7 +38,10 @@ import {
   extractExtensionIds,
   IMPLEMENTED_JOURNAL_KINDS,
 } from "./execution-rewind-non-deterministic.js";
-import {installJournalCapture} from "./execution-rewind-journal-capture.js";
+import {
+  installJournalCapture,
+  reassertRewindClockOwnership,
+} from "./execution-rewind-journal-capture.js";
 import {RewindJournal} from "./execution-rewind-journal.js";
 import {replayToFrame, truncateFramesAfter} from "./execution-rewind-replay.js";
 import {requestRuntimeStageDraw} from "./execution-stage-draw.js";
@@ -296,6 +299,9 @@ export function installExecutionRewind(
 
     const journalStart = journal.size;
     const threadsBefore = countRunnableNonMonitorThreads(runtime);
+    // Another patch may have wrapped updateCurrentMSecs after us; the journal
+    // has to stay outermost or the clock it records is not the one replay gets.
+    reassertRewindClockOwnership(runtime);
     journal.beginRecord();
     spriteXYCapture.ensureWrapped();
     let result: unknown;

@@ -18,6 +18,7 @@ import type {
   RewindFrame,
   RewindOrigin,
 } from "./execution-rewind-types.js";
+import {reassertRewindClockOwnership} from "./execution-rewind-journal-capture.js";
 
 export type ReplayRuntimeLike = RewindRuntimeLike;
 
@@ -130,6 +131,9 @@ export async function replayToFrame(
         };
       }
 
+      // Keep the journal outermost over the clock: replay must read
+      // currentMSecs from the recording, never from wall time.
+      reassertRewindClockOwnership(runtime);
       journal.beginReplay(frame.journalStart, frame.journalEnd);
       try {
         step();
