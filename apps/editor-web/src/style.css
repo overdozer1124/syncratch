@@ -267,11 +267,19 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   width: 100%;
 }
 
+/*
+ * Shrinkable, not fixed. With `flex: 0 0 auto; width: max-content` this side
+ * could never give ground, so every button added to .feature-panels pushed the
+ * row past the window — at 1280px the toolbar measured 1280px of content in
+ * 1256px of space. Letting it shrink (and the title truncate) absorbs the next
+ * addition too, instead of needing the labels trimmed again each time.
+ */
 .chrome-left {
-  flex: 0 0 auto;
-  width: max-content;
+  flex: 0 1 auto;
+  width: auto;
   max-width: none;
   gap: 8px;
+  min-width: 0;
 }
 
 .feature-panels {
@@ -431,6 +439,8 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  flex-shrink: 1;
   height: 2.1rem;
   padding: 0 6px 0 10px;
   border-radius: 10px;
@@ -474,6 +484,8 @@ body:has(.ai-floating-panel.is-open) .toolbar-menu-backdrop {
 /* Title field: glass chip on the blue bar. */
 .title-field input {
   width: 132px;
+  /* Give way before the row overflows; the full name stays in the field. */
+  min-width: 0;
   min-height: auto;
   padding: 1px 0 0;
   border: 0;

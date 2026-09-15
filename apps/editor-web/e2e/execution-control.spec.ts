@@ -504,9 +504,19 @@ test("empty Blockly with VM scripts stops execution but keeps VM blocks", async 
   expect(after.vmBlocks, "VM blocks must not be auto-deleted").toBe(before.vmBlocks);
   expect(after.vmBlocks).toBeGreaterThan(0);
   expect(after.desyncLog.length, "desync should be recorded").toBeGreaterThan(0);
-  expect(
-    Math.abs(after.x - before.x),
-    "motion should stop after desync guard",
-  ).toBeLessThan(5);
   expect(after.runningThreads, "active threads should be stopped").toBe(0);
+
+  // Motion has stopped when the sprite stops moving — not when it has moved
+  // less than some distance since before the guard ran. The guard polls every
+  // 500ms, so how far the sprite travelled before it fired depends on machine
+  // load; comparing against `before` measured detection latency, and under a
+  // loaded suite one extra `move 10 steps` frame was enough to fail it.
+  await page.waitForTimeout(500);
+  const settledX = await page.evaluate(`(() => { ${FIBER_HELPERS}
+    const vm = resolveVm();
+    return vm.runtime.targets.find(t => !t.isStage).x;
+  })()`);
+  expect(settledX, "sprite must not move once execution is stopped").toBe(
+    after.x,
+  );
 });
